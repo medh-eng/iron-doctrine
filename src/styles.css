@@ -308,3 +308,22 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .toast.out { opacity: 0; transform: translateY(-6px); }
 .reduced-motion .toast, .reduced-motion .btn, .reduced-motion .switch::after { transition: none; }
+
+/* ---------- battle result card */
+.card-result { align-items: center; min-width: min(360px, 100%); gap: 12px; }
+.stamp {
+  font-family: var(--font-stencil);
+  font-size: 28px;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  border: 3px solid var(--amber);
+  border-radius: 6px;
+  padding: 4px 14px;
+  transform: rotate(-3deg);
+  animation: stamp-slam 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.stamp-red { color: #E0533D; border-color: #E0533D; }
+@keyframes stamp-slam { from { transform: rotate(-3deg) scale(2.2); opacity: 0; } to { transform: rotate(-3deg) scale(1); opacity: 1; } }
+.reduced-motion .stamp { animation: none; }
+.result-facts { display: grid; grid-template-columns: 1fr; gap: 2px; width: 100%; font-size: 14px; }
+.fact { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid rgba(230, 220, 195, 0.1); padding: 2px 0; }

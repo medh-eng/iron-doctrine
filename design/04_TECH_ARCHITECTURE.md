@@ -34,19 +34,23 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
 07_data.js         part catalogue, templates, terrain types, buildings, recipes, levelConfig
 08_design.js       grid model, placement rules, validation, statsOf(), randomiser, marks
 09_physics.js      rigid bodies, wheel/track contacts, buoyancy, lift, heightfield, debris
+                   (split: 09a_physics_terrain.js, 09b_physics_body.js)
 10_combat.js       projectiles, ballistics, grid raycast, penetration, damage, spotting
+                   (split: 10a_combat.js, 10b_effects.js for particles, smoke and shake)
 11_ai.js           unit behaviours, squad orders, force orders, enemy tactics
 12_battle.js       battlefield generator, battle state, objectives, results
+                   (split: 12_battle.js, 12b_battle_render.js for part drawing, sprites and the battle view)
 13_autoresolve.js  headless battle runner
 14_campaign.js     map generation, regions, forces, movement, clock, fog, strategic AI
 15_economy.js      production, stockpiles, supply network, construction, growth
 16_screens.js      title, ladder, workshop, designer, map, battle, results, settings, pause
+                   (split: 16a_screens.js for the manager, title and pause helpers; 16b_screen_battle.js)
 17_main.js         boot, resize/orientation, loop, visibility handling
 ```
 
 **Splitting large files:** when a file passes about 800 lines, split it with letter suffixes that keep the order, e.g. `09a_physics_body.js`, `09b_physics_terrain.js`.
 
-**So far:** `00`–`06`, `16` and `17` exist (Part 1a). Create the others as their part is built. Until the battle arrives in Part 1b, `16_screens.js` holds a controls test range that stands in for it.
+**So far:** `00`–`12`, `16` and `17` exist (Part 1b). `13`–`15` come with auto-resolve, the campaign and the economy.
 
 ## 3. Rendering
 
@@ -60,7 +64,8 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
 
 **Caching**
 - Static layers (parallax backgrounds, the map base, the blueprint grid) are pre-rendered to offscreen canvases.
-- Terrain is pre-rendered in 256 px chunks.
+- Terrain is pre-rendered in 256 px chunks. (Part 1b draws the visible ground as one path each frame instead: about 200 points, cheap enough so far. Switch to chunks if the performance probe says so.)
+- Each vehicle's parts are drawn once to an offscreen sprite and redrawn only when damage changes; barrels are drawn live so they can elevate and recoil.
 
 **Draw order each frame**
 1. Clear
@@ -222,7 +227,7 @@ Every number is clamped to the caps in 01 §14.3.
 
 Take a screenshot after each step.
 
-**Performance probe:** average frame time over 10 s of a heavy battle. Headless isn't a phone, so compare builds with each other; don't treat it as an absolute number.
+**Performance probe** (`tests/perf.mjs`): average frame time and game-work time over 300 frames of a battle. Headless isn't a phone, so compare builds with each other; don't treat it as an absolute number.
 
 ## 11. Tooling
 

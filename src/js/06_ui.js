@@ -50,8 +50,9 @@ const ui = {
     const entry = { scrim, onClose };
     this.stack.push(entry);
     input.releaseAll();
-    const first = card.querySelector('button');
-    if (first && FINE_POINTER.matches) first.focus({ preventScroll: true });
+    // Focus the main button after a moment, so a key held for the game (Space to fire) can't click it.
+    const first = card.querySelector('.btn-primary') || card.querySelector('button');
+    if (first && FINE_POINTER.matches) setTimeout(() => { if (first.isConnected) first.focus({ preventScroll: true }); }, 450);
     return () => this.close(entry);
   },
 
@@ -300,6 +301,13 @@ const ui = {
 const floaters = makePool(() => ({ alive: false, text: '', x: 0, y: 0, t: 0, amber: false }), MAX_FLOATING_TEXT);
 
 function floatText(text, x, y, amber) {
+  // Stack above recent texts at the same spot so they stay readable.
+  for (let k = 0; k < 4; k++) {
+    let clash = false;
+    floaters.forEachAlive((o) => { if (o.t < 0.6 && Math.abs(o.x - x) < 6 && Math.abs(o.y - y) < 1.2) clash = true; });
+    if (!clash) break;
+    y += 1.6;
+  }
   const f = floaters.take();
   f.text = text; f.x = x; f.y = y; f.t = 0; f.amber = !!amber;
 }
@@ -322,7 +330,8 @@ function drawFloaters(g, toScreenX, toScreenY) {
     g.globalAlpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
     g.font = `700 ${size}px ${FONT_UI}`;
     g.fillStyle = f.amber ? PAL.amber : PAL.linen;
-    const sx = toScreenX(f.x);
+    const half = g.measureText(f.text).width / 2 + 8;
+    const sx = clamp(toScreenX(f.x), layout.safe.l + half, layout.w - layout.safe.r - half);
     const sy = toScreenY(f.y) - 40 * e;
     g.strokeText(f.text, sx, sy);
     g.fillText(f.text, sx, sy);

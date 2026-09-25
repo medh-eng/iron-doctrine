@@ -3,7 +3,7 @@
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.1.1';
+const GAME_VERSION = '0.1.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 1;
 const STORE_PREFIX = 'irondoctrine.';
@@ -630,6 +630,10 @@ const audio = {
     }
   },
 
+  // Battle music intensity 0..3 (design/03 §6.3).
+  intensity: 0,
+  setIntensity(n) { this.intensity = clamp(n, 0, 3); },
+
   // ---------- sound effects (design/03 §7)
   sfx(name, pan = 0, vel = 1) {
     if (!this.ctx || this.ctx.state !== 'running' || !save.settings.sound) return;
@@ -640,6 +644,54 @@ const audio = {
 
 // Themes: step(a, i, t, sd, rng) is called once per 16th note.
 const THEMES = {
+  // Battle: D natural minor, 100 bpm at intensity 0 rising to 132 at 3. Layers:
+  // 0 snare ostinato + string drone; 1 + bass drum + string ostinato; 2 + brass motif; 3 + full brass + timpani rolls.
+  battle: {
+    bpm: 100,
+    seed: 100,
+    roots: [38, 34, 36, 33],            // Dm, Bb, C, Am (one per bar)
+    thirds: [3, 4, 4, 3],
+    motifs: [
+      [[0, 62, 3], [3, 65, 1], [4, 69, 4], [8, 67, 2], [10, 65, 2], [12, 64, 4]],
+      [[0, 69, 2], [2, 67, 2], [4, 65, 2], [6, 64, 2], [8, 62, 6], [14, 60, 2]],
+      [[0, 62, 2], [2, 62, 2], [4, 65, 4], [8, 70, 4], [12, 69, 4]],
+    ],
+    motif: null,
+    step(a, i, t, sd, rng) {
+      const lvl = a.intensity;
+      this.bpm = 100 + lvl * 10.67;
+      const bus = a.musicBus;
+      const bar = Math.floor(i / 16) % 4;
+      const s = i % 16;
+      const root = this.roots[bar];
+      if (s === 0 && bar === 0) this.motif = rng.pick(this.motifs);
+      // Snare ostinato with accents.
+      if (s % 2 === 0) a.snare(bus, t, s % 8 === 4 ? 0.34 : 0.13);
+      else if (lvl >= 2 && rng.next() < 0.25) a.snare(bus, t, 0.08);
+      // String drone: root and fifth, a bar long.
+      if (s === 0) {
+        a.strings(bus, t, midiToHz(root), sd * 16, 0.9);
+        a.strings(bus, t, midiToHz(root + 7), sd * 16, 0.7);
+      }
+      if (lvl >= 1) {
+        if (s === 0 || s === 8 || (s === 11 && rng.next() < 0.5)) a.kick(bus, t, 0.7);
+        if (s % 2 === 0) {
+          const n = s % 4 === 0 ? root + 12 : root + 12 + (s % 8 === 2 ? this.thirds[bar] : 7);
+          a.strings(bus, t, midiToHz(n), sd * 1.6, 0.55);
+        }
+      }
+      if (lvl >= 2 && this.motif && (bar === 1 || bar === 3)) {
+        for (const n of this.motif) if (n[0] === s) a.brass(bus, t, midiToHz(n[1]), n[2] * sd * 0.9, 0.8);
+      }
+      if (lvl >= 3) {
+        if (s === 0 || s === 6 || s === 12) {
+          a.brass(bus, t, midiToHz(root + 24), sd * 1.5, 0.6);
+          a.brass(bus, t, midiToHz(root + 24 + this.thirds[bar]), sd * 1.5, 0.5);
+        }
+        if (bar === 3 && s >= 12) { a.timpani(bus, t, midiToHz(root + 12), 0.4); a.timpani(bus, t + sd / 2, midiToHz(root + 12), 0.3); }
+      }
+    },
+  },
   // Title: slow march, 84 bpm, D Dorian. Strings, snare ruffs, brass motif.
   title: {
     bpm: 84,
@@ -815,6 +867,54 @@ const SFX = {
   timeStart(a, t, pan) {
     SFX.clunk(a, t, pan);
     for (let k = 0; k < 3; k++) SFX.tick(a, t + 0.18 + k * 0.2, pan, 1 - k * 0.2);
+  },
+  // Ricochet ping: 2.4 kHz sine with a fast pitch bend.
+  ricochet(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 0.35, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.22, 0.3);
+    const o = a.osc('sine', 2400, t, t + 0.35, g);
+    o.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+  },
+  // Part destroyed: metallic crunch.
+  crunch(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.3, 0.5, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.45 * vel, 0.22);
+    a.noiseSrc(t, t + 0.3, a.filter('bandpass', 900, 1.5, g));
+    const m = a.gain(out);
+    a.env(m.gain, t, 0.001, 0.2 * vel, 0.15);
+    const o = a.osc('square', 180, t, t + 0.2, a.filter('lowpass', 1400, 0, m));
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.15);
+  },
+  // Explosions: noise plus low sine with a long tail.
+  boom(a, t, pan, vel) {
+    const k = clamp(vel, 0.5, 2);
+    const out = a.voice(a.sfxBus, t, 1.4 * k, 1, pan);
+    const n = a.gain(out);
+    a.env(n.gain, t, 0.004, 0.9, 0.9 * k);
+    const f = a.filter('lowpass', 1600, 0, n);
+    f.frequency.exponentialRampToValueAtTime(160, t + 0.9 * k);
+    a.noiseSrc(t, t + 1.4 * k, f);
+    const b = a.gain(out);
+    a.env(b.gain, t, 0.005, 1, 0.8 * k);
+    const o = a.osc('sine', 70, t, t + 1.2 * k, b);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.8 * k);
+  },
+  thud(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.25, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.3 * vel, 0.18);
+    a.noiseSrc(t, t + 0.25, a.filter('lowpass', 500, 0, g));
+  },
+  // Objective progress tick.
+  objective(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 0.3, 0.25, pan);
+    for (const [dt, f] of [[0, 880], [0.09, 1320]]) {
+      const g = a.gain(out);
+      a.env(g.gain, t + dt, 0.003, 0.2, 0.12);
+      a.osc('triangle', f, t + dt, t + dt + 0.2, g);
+    }
   },
   engineRev(a, t, pan) {
     const out = a.voice(a.sfxBus, t, 0.5, 0.25, pan);
@@ -1411,8 +1511,9 @@ const ui = {
     const entry = { scrim, onClose };
     this.stack.push(entry);
     input.releaseAll();
-    const first = card.querySelector('button');
-    if (first && FINE_POINTER.matches) first.focus({ preventScroll: true });
+    // Focus the main button after a moment, so a key held for the game (Space to fire) can't click it.
+    const first = card.querySelector('.btn-primary') || card.querySelector('button');
+    if (first && FINE_POINTER.matches) setTimeout(() => { if (first.isConnected) first.focus({ preventScroll: true }); }, 450);
     return () => this.close(entry);
   },
 
@@ -1661,6 +1762,13 @@ const ui = {
 const floaters = makePool(() => ({ alive: false, text: '', x: 0, y: 0, t: 0, amber: false }), MAX_FLOATING_TEXT);
 
 function floatText(text, x, y, amber) {
+  // Stack above recent texts at the same spot so they stay readable.
+  for (let k = 0; k < 4; k++) {
+    let clash = false;
+    floaters.forEachAlive((o) => { if (o.t < 0.6 && Math.abs(o.x - x) < 6 && Math.abs(o.y - y) < 1.2) clash = true; });
+    if (!clash) break;
+    y += 1.6;
+  }
   const f = floaters.take();
   f.text = text; f.x = x; f.y = y; f.t = 0; f.amber = !!amber;
 }
@@ -1683,7 +1791,8 @@ function drawFloaters(g, toScreenX, toScreenY) {
     g.globalAlpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
     g.font = `700 ${size}px ${FONT_UI}`;
     g.fillStyle = f.amber ? PAL.amber : PAL.linen;
-    const sx = toScreenX(f.x);
+    const half = g.measureText(f.text).width / 2 + 8;
+    const sx = clamp(toScreenX(f.x), layout.safe.l + half, layout.w - layout.safe.r - half);
     const sy = toScreenY(f.y) - 40 * e;
     g.strokeText(f.text, sx, sy);
     g.fillText(f.text, sx, sy);
@@ -1691,9 +1800,2257 @@ function drawFloaters(g, toScreenX, toScreenY) {
   g.restore();
 }
 
-/* ---------- 16_screens.js ---------- */
+/* ---------- 07_data.js ---------- */
+/* ==== 07 DATA ==== */
+// Part catalogue (design/05), terrain types, templates and battle setups.
+// Numbers here are tuning data: raw numbers only, never shown as ratings.
+
+const CELL = 0.5;                 // metres per grid cell
+const GRAVITY = 9.81;
+
+// Battles compress distance: 1 km on the design sheet = 50 m on the battlefield,
+// so fights happen on screen. Penetration fall-off uses the nominal (sheet) range.
+const BATTLE_DISTANCE_SCALE = 0.05;
+// Locomotion speed caps are multiplied by this in battle (design/05 §7.1 BATTLE_TIME_SCALE).
+const BATTLE_SPEED_SCALE = 0.5;
+
+// Weapon extras used in battle. vel = muzzle speed on the battlefield (m/s),
+// dmg = damage to a part per hit, spread = aiming error in degrees (1 sigma),
+// cal = calibre in mm (recoil = cal² × 0.9 N·s), auto = automatic weapon.
+const WEAPON_STATS = {
+  mg: { vel: 260, dmg: 6, spread: 1.4, cal: 8, auto: true, burst: 6 },
+  hmg: { vel: 250, dmg: 11, spread: 1.2, cal: 13, auto: true, burst: 5 },
+  // burst / burstR: the shell's small bursting charge after it penetrates (damage, radius in m).
+  c37: { vel: 180, dmg: 45, spread: 0.55, cal: 37, shells: 40, burst: 25, burstR: 1.0 },
+  c75: { vel: 165, dmg: 95, spread: 0.5, cal: 75, shells: 30, burst: 55, burstR: 1.6, heDmg: 70, heRadius: 3 },
+  c105: { vel: 155, dmg: 150, spread: 0.45, cal: 105, shells: 20, burst: 80, burstR: 2.0, heDmg: 110, heRadius: 4 },
+  how: { vel: 95, dmg: 180, spread: 0.9, cal: 150, shells: 12, heDmg: 180, heRadius: 6, indirect: true },
+};
+
+// id: [name, category, w, h, mass, hp, armour, extras]
+const PART_ROWS = [
+  // Structure
+  ['frame', 'Light frame', 'structure', 1, 1, 60, 40, 5, { cost: { metal: 1 } }],
+  ['timber', 'Timber frame', 'structure', 1, 1, 40, 25, 3, { cost: { wood: 1 }, burns: true }],
+  ['plate', 'Hull plate', 'structure', 1, 1, 120, 60, 15, { cost: { metal: 2 } }],
+  ['arm20', 'Armour 20 mm', 'structure', 1, 1, 190, 80, 20, { cost: { metal: 3 } }],
+  ['arm40', 'Armour 40 mm', 'structure', 1, 1, 380, 120, 40, { cost: { metal: 5 } }],
+  ['arm80', 'Armour 80 mm', 'structure', 1, 1, 760, 180, 80, { cost: { metal: 9 } }],
+  ['slope40', 'Sloped armour 40 mm', 'structure', 1, 1, 300, 110, 40, { cost: { metal: 5 }, sloped: true }],
+  ['crew2', 'Crew compartment', 'structure', 2, 2, 300, 80, 10, { cost: { metal: 3 }, crew: 2 }],
+  ['turret', 'Turret ring', 'structure', 3, 1, 250, 90, 20, { cost: { metal: 3 }, power: -5, ring: true }],
+  // Mobility
+  ['eng_s', 'Petrol engine S', 'mobility', 2, 2, 450, 60, 5, { cost: { metal: 3 }, power: 110, heat: 12, fuelUse: 30, rel: 0.990 }],
+  ['eng_m', 'Diesel engine M', 'mobility', 3, 2, 1100, 90, 5, { cost: { metal: 7 }, power: 300, heat: 25, fuelUse: 55, rel: 0.994 }],
+  ['eng_h', 'Diesel engine H', 'mobility', 4, 2, 1900, 120, 5, { cost: { metal: 12 }, power: 520, heat: 45, fuelUse: 95, rel: 0.992 }],
+  ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
+  ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
+  ['wheel_l', 'Off-road wheel', 'mobility', 2, 2, 200, 50, 5, { cost: { metal: 1, rubber: 3 }, loco: 'wheel', contact: 0.12, maxLoad: 5000, cap: 75, radius: 0.5 }],
+  ['track', 'Track segment', 'mobility', 2, 1, 450, 70, 10, { cost: { metal: 3, rubber: 1 }, loco: 'track', contact: 0.35, maxLoad: 10000, cap: 55, radius: 0.25 }],
+  // Weapons
+  ['mg', 'Machine gun', 'weapon', 1, 1, 40, 20, 5, { cost: { metal: 1 }, pen: 8, rpm: 600, range: 600 }],
+  ['hmg', 'Heavy machine gun', 'weapon', 1, 1, 80, 25, 5, { cost: { metal: 2 }, pen: 20, rpm: 450, range: 1000 }],
+  ['c37', 'Cannon 37 mm', 'weapon', 2, 1, 250, 40, 10, { cost: { metal: 4 }, pen: 50, reload: 2.5, range: 1500 }],
+  ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
+  ['c105', 'Cannon 105 mm', 'weapon', 4, 1, 1300, 80, 10, { cost: { metal: 12 }, pen: 150, reload: 8, range: 2500 }],
+  ['how', 'Howitzer 150 mm', 'weapon', 4, 2, 2500, 100, 10, { cost: { metal: 18 }, pen: 40, reload: 12, range: 8000, he: true }],
+  ['smoke', 'Smoke launcher', 'weapon', 1, 1, 30, 15, 2, { cost: { metal: 1, fuel: 1 }, salvos: 3 }],
+  // Systems
+  ['radio', 'Radio', 'system', 1, 1, 50, 15, 2, { cost: { metal: 1, elec: 1 }, power: -1 }],
+  ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
+  ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
+  ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
+  // Logistics
+  ['fuel_s', 'Fuel tank 200 L', 'logistics', 1, 1, 220, 30, 3, { cost: { metal: 1 }, fuel: 200, fire: 0.35 }],
+  ['fuel_ss', 'Self-sealing tank 150 L', 'logistics', 1, 1, 210, 40, 3, { cost: { metal: 1, rubber: 2 }, fuel: 150, fire: 0.10 }],
+  ['ammo', 'Ammo rack', 'logistics', 1, 1, 250, 30, 3, { cost: { metal: 1 }, shells: 20, detonate: 0.40 }],
+  ['ammo_p', 'Protected ammo storage', 'logistics', 1, 1, 320, 50, 10, { cost: { metal: 2 }, shells: 20, detonate: 0.10 }],
+  ['cargo', 'Cargo bay', 'logistics', 2, 2, 200, 40, 3, { cost: { metal: 2, wood: 1 }, cargo: 2000 }],
+];
+
+const PARTS = {};
+for (const [id, name, cat, w, h, mass, hp, armor, extra] of PART_ROWS) {
+  PARTS[id] = Object.assign({ id, name, cat, w, h, mass, hp, armor, power: 0, rel: 0.998 }, extra);
+  if (WEAPON_STATS[id]) Object.assign(PARTS[id], WEAPON_STATS[id]);
+}
+
+// Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
+const TERRAIN = [
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
+];
+const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4;
+
+// ---------- templates (design/05 §8). Grid rows go top (y = 0) to bottom; front faces right.
+// cells: [partId, x, y]
+const TEMPLATES = {
+  scout: {
+    name: 'Scout car', w: 10, h: 5, soft: true,
+    cells: [
+      ['wheel_s', 1, 4], ['wheel_s', 3, 4], ['wheel_s', 6, 4], ['wheel_s', 8, 4],
+      ['plate', 0, 3], ['eng_s', 1, 2], ['crew2', 3, 2], ['fuel_s', 5, 3], ['radio', 5, 2],
+      ['plate', 6, 3], ['plate', 7, 3], ['plate', 8, 3], ['arm20', 6, 2], ['arm20', 7, 2], ['slope40', 8, 2],
+      ['hmg', 4, 1], ['optics', 3, 1],
+    ],
+  },
+  mgcar: {
+    name: 'Machine-gun car', w: 10, h: 5, soft: true,
+    cells: [
+      ['wheel_s', 1, 4], ['wheel_s', 3, 4], ['wheel_s', 6, 4], ['wheel_s', 8, 4],
+      ['plate', 0, 3], ['eng_s', 1, 2], ['crew2', 3, 2], ['fuel_s', 5, 3], ['plate', 5, 2],
+      ['plate', 6, 3], ['plate', 7, 3], ['plate', 8, 3], ['plate', 6, 2], ['plate', 7, 2], ['slope40', 8, 2],
+      ['mg', 4, 1],
+    ],
+  },
+  light: {
+    name: 'Light tank', w: 12, h: 6,
+    cells: [
+      ['track', 2, 5], ['track', 4, 5], ['track', 6, 5], ['track', 8, 5],
+      ['arm20', 1, 3], ['arm20', 1, 4], ['eng_m', 2, 3], ['crew2', 5, 3], ['fuel_s', 7, 3], ['ammo', 7, 4],
+      ['arm20', 8, 3], ['arm20', 8, 4], ['slope40', 9, 3], ['arm20', 9, 4], ['mg', 10, 4],
+      ['turret', 4, 2], ['radio', 3, 1], ['arm20', 4, 1], ['arm20', 5, 1], ['c37', 6, 1], ['optics', 5, 0],
+    ],
+  },
+  medium: {
+    name: 'Medium tank', w: 14, h: 7,
+    cells: [
+      ['track', 2, 6], ['track', 4, 6], ['track', 6, 6], ['track', 8, 6], ['track', 10, 6],
+      ['arm20', 1, 4], ['arm20', 1, 5], ['eng_m', 2, 4], ['fuel_s', 5, 4], ['fuel_s', 5, 5], ['crew2', 6, 4],
+      ['ammo', 8, 4], ['plate', 8, 5], ['arm40', 9, 4], ['arm40', 9, 5], ['arm40', 10, 4], ['arm40', 10, 5],
+      ['slope40', 11, 4], ['arm40', 11, 5], ['mg', 12, 5],
+      ['turret', 5, 3], ['arm20', 4, 1], ['arm20', 4, 2], ['crew2', 5, 1], ['arm40', 7, 1], ['arm40', 7, 2],
+      ['c75', 8, 2], ['optics', 6, 0], ['radio', 4, 0],
+    ],
+  },
+  assault: {
+    name: 'Assault gun', w: 13, h: 5,
+    cells: [
+      ['track', 1, 4], ['track', 3, 4], ['track', 5, 4], ['track', 7, 4], ['track', 9, 4],
+      ['arm20', 0, 2], ['arm20', 0, 3], ['eng_m', 1, 2], ['ammo', 4, 2], ['fuel_s', 4, 3], ['crew2', 5, 2],
+      ['arm40', 7, 2], ['arm40', 7, 3], ['slope40', 8, 2], ['arm80', 8, 3], ['slope40', 9, 2], ['arm80', 9, 3],
+      ['arm40', 5, 1], ['arm40', 6, 1], ['arm40', 7, 1], ['c105', 8, 1], ['optics', 6, 0],
+    ],
+  },
+  truck: {
+    name: 'Supply truck', w: 11, h: 5, soft: true,
+    cells: [
+      ['wheel_l', 1, 3], ['wheel_l', 5, 3], ['wheel_l', 8, 3],
+      ['timber', 0, 2], ['timber', 1, 2], ['timber', 2, 2], ['timber', 3, 2], ['timber', 4, 2], ['timber', 5, 2],
+      ['timber', 6, 2], ['timber', 7, 2], ['timber', 8, 2], ['timber', 9, 2], ['timber', 10, 2],
+      ['cargo', 1, 0], ['cargo', 3, 0], ['fuel_s', 5, 1], ['timber', 5, 0], ['crew2', 6, 0], ['eng_s', 8, 0],
+    ],
+  },
+};
+
+// ---------- battle setups for Part 1b (the ladder's full levelConfig arrives in Part 1c)
+// enemies: [template, count, behaviour]; behaviour: 'parked' | 'convoy' | 'attack'
+const BATTLES = [
+  { name: 'Farmland', goal: 'Destroy the trucks', seed: 101, length: 420, hills: 0.15, rough: 0.2, mud: 0, forest: 0, gaps: 0,
+    enemies: [['truck', 3, 'parked']], holdFire: true },
+  { name: 'Supply road', goal: 'Destroy the convoy', seed: 202, length: 460, hills: 0.25, rough: 0.3, mud: 0, forest: 1, gaps: 0,
+    enemies: [['truck', 2, 'convoy'], ['mgcar', 1, 'attack']] },
+  { name: 'Hills', goal: 'Destroy the enemy', seed: 303, length: 480, hills: 0.8, rough: 0.4, mud: 1, forest: 1, gaps: 0,
+    enemies: [['mgcar', 1, 'attack'], ['light', 1, 'attack']] },
+  { name: 'Armour', goal: 'Destroy the tanks', seed: 404, length: 520, hills: 0.5, rough: 0.4, mud: 2, forest: 1, gaps: 1,
+    enemies: [['light', 2, 'attack']] },
+];
+
+function battleConfig(level) {
+  const base = BATTLES[(level - 1) % BATTLES.length];
+  return Object.assign({ level, squad: ['medium', 'light', 'scout'] }, base, { seed: base.seed + (level - 1) * 7919 });
+}
+
+/* ---------- 08_design.js ---------- */
+/* ==== 08 DESIGN ==== */
+// Grid model, placement rules and derived numbers (design/01 §8, design/05 §7).
+// Design = { id, name, w, h, cells:[{p, x, y}] }; grid y = 0 is the top row.
+
+function designFromTemplate(id) {
+  const t = TEMPLATES[id];
+  return {
+    id,
+    name: t.name,
+    w: t.w,
+    h: t.h,
+    soft: !!t.soft,
+    mark: 1,
+    cells: t.cells.map(([p, x, y]) => ({ p, x, y })),
+  };
+}
+
+// Occupancy grid: index of the cell entry in design.cells, or -1.
+function occupancy(design, alive) {
+  const g = new Int16Array(design.w * design.h).fill(-1);
+  design.cells.forEach((c, i) => {
+    if (alive && !alive[i]) return;
+    const d = PARTS[c.p];
+    for (let yy = c.y; yy < c.y + d.h; yy++) {
+      for (let xx = c.x; xx < c.x + d.w; xx++) {
+        if (xx >= 0 && yy >= 0 && xx < design.w && yy < design.h) g[yy * design.w + xx] = i;
+      }
+    }
+  });
+  return g;
+}
+
+// Parts that touch along an edge are connected. Returns an array of neighbour lists.
+function adjacency(design, grid, alive) {
+  const n = design.cells.length;
+  const adj = Array.from({ length: n }, () => new Set());
+  const W = design.w, H = design.h;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const a = grid[y * W + x];
+      if (a < 0 || (alive && !alive[a])) continue;
+      if (x + 1 < W) { const b = grid[y * W + x + 1]; if (b >= 0 && b !== a) { adj[a].add(b); adj[b].add(a); } }
+      if (y + 1 < H) { const b = grid[(y + 1) * W + x]; if (b >= 0 && b !== a) { adj[a].add(b); adj[b].add(a); } }
+    }
+  }
+  return adj;
+}
+
+// Connected groups of parts (each an array of cell indices).
+function components(design, grid, alive) {
+  const adj = adjacency(design, grid, alive);
+  const seen = new Uint8Array(design.cells.length);
+  const groups = [];
+  for (let i = 0; i < design.cells.length; i++) {
+    if (seen[i] || (alive && !alive[i])) continue;
+    const group = [];
+    const stack = [i];
+    seen[i] = 1;
+    while (stack.length) {
+      const a = stack.pop();
+      group.push(a);
+      for (const b of adj[a]) if (!seen[b]) { seen[b] = 1; stack.push(b); }
+    }
+    groups.push(group);
+  }
+  return groups;
+}
+
+// Placement rules (design/01 §8.1). Messages state facts only.
+function validateDesign(design) {
+  const errors = [];
+  const W = design.w, H = design.h;
+  const count = new Int16Array(W * H);
+  let lowest = -1;
+  let crew = 0, needCrew = 1, engines = 0, loco = 0;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (!d) { errors.push(`Unknown part ${c.p}.`); continue; }
+    if (c.x < 0 || c.y < 0 || c.x + d.w > W || c.y + d.h > H) errors.push(`${d.name} is outside the grid.`);
+    for (let yy = c.y; yy < c.y + d.h; yy++) for (let xx = c.x; xx < c.x + d.w; xx++) {
+      if (xx >= 0 && yy >= 0 && xx < W && yy < H) count[yy * W + xx]++;
+    }
+    lowest = Math.max(lowest, c.y + d.h - 1);
+    if (d.crew) crew += d.crew;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto) needCrew++;
+    if (d.power > 0) engines++;
+    if (d.loco) loco++;
+  }
+  if (count.some((n) => n > 1)) errors.push('Two parts overlap.');
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
+  }
+  if (!loco) errors.push('No wheels or tracks.');
+  if (!engines) errors.push('No engine.');
+  if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
+  const groups = components(design, occupancy(design));
+  if (groups.length > 1) errors.push(`${groups.length - 1} part group(s) are not connected to the rest.`);
+  return { ok: errors.length === 0, errors };
+}
+
+// Derived numbers (design/01 §8.2, design/05 §7). Pure; `alive` optional.
+function statsOf(design, alive) {
+  let mass = 0, mx = 0, my = 0, power = 0, drawn = 0, contact = 0, cap = Infinity;
+  let wheels = 0, tracks = 0, minX = Infinity, maxX = -Infinity, top = 0, fuel = 0, shells = 0, crew = 0;
+  design.cells.forEach((c, i) => {
+    if (alive && !alive[i]) return;
+    const d = PARTS[c.p];
+    const cx = (c.x + d.w / 2) * CELL;
+    const cy = (design.h - c.y - d.h / 2) * CELL;
+    mass += d.mass;
+    mx += d.mass * cx;
+    my += d.mass * cy;
+    if (d.power > 0) power += d.power; else drawn -= d.power;
+    if (d.loco) {
+      contact += d.contact;
+      cap = Math.min(cap, d.cap);
+      if (d.loco === 'track') tracks++; else wheels++;
+      minX = Math.min(minX, c.x * CELL);
+      maxX = Math.max(maxX, (c.x + d.w) * CELL);
+    }
+    top = Math.max(top, (design.h - c.y) * CELL);
+    if (d.fuel) fuel += d.fuel;
+    if (d.shells) shells += d.shells;
+    if (d.crew) crew += d.crew;
+  });
+  const com = mass ? { x: mx / mass, y: my / mass } : { x: 0, y: 0 };
+  const loco = tracks && !wheels ? 'track' : 'wheel';
+  const pressure = contact ? (mass * GRAVITY) / contact / 1000 : Infinity;   // kPa
+  const base = maxX > minX ? maxX - minX : 0;
+  return {
+    mass,
+    com,
+    power,
+    drawn,
+    powerToWeight: mass ? power / (mass / 1000) : 0,   // kW per tonne
+    contact,
+    pressure,
+    loco,
+    cap: cap === Infinity ? 0 : cap,
+    tipAngle: com.y > 0 ? (Math.atan(base / 2 / com.y) * 180) / Math.PI : 0,
+    height: top,
+    fuel,
+    shells,
+    crew,
+  };
+}
+
+/* ---------- 09a_physics_terrain.js ---------- */
+/* ==== 09a PHYSICS: TERRAIN ==== */
+// Heightfield sampled every 0.5 m, with a material per sample (design/04 §6).
+// Generator: plains, hills, mud patches, forest, gaps (design/06 Part 1b).
+
+function makeTerrain(cfg) {
+  const rng = makeRng(cfg.seed);
+  const L = cfg.length;
+  const n = Math.round(L / CELL) + 1;
+  const h = new Float32Array(n);
+  const mat = new Uint8Array(n);
+  const trees = [];
+  const gaps = [];
+  const mudZones = [];
+  const forestZones = [];
+
+  // Value noise: random heights every `step` metres, smoothly interpolated.
+  const noise = (step, amp) => {
+    const k = Math.ceil(L / step) + 2;
+    const v = [];
+    for (let i = 0; i < k; i++) v.push(rng.range(-1, 1) * amp);
+    return (x) => {
+      const f = x / step;
+      const i = Math.floor(f);
+      const t = f - i;
+      const s = t * t * (3 - 2 * t);
+      return v[i] + (v[i + 1] - v[i]) * s;
+    };
+  };
+  const hillsA = noise(90, 10 * cfg.hills);
+  const hillsB = noise(37, 3.5 * cfg.hills);
+  const rough = noise(6, 0.35 * cfg.rough);
+  for (let i = 0; i < n; i++) {
+    const x = i * CELL;
+    // Keep the two start zones calmer so squads don't spawn on a cliff.
+    const edge = Math.min(1, Math.min(x - 10, L - 10 - x) / 60);
+    h[i] = (hillsA(x) + hillsB(x)) * clamp(0.35 + edge, 0.35, 1) + rough(x);
+  }
+
+  const free = (x0, x1) => x0 > 95 && x1 < L - 110 &&
+    !gaps.some((g) => x1 > g.x0 - 25 && x0 < g.x1 + 25) &&
+    !mudZones.some((z) => x1 > z.x0 - 10 && x0 < z.x1 + 10);
+
+  // Gaps: a trench with steep walls. Long vehicles bridge them; short ones fall in.
+  for (let k = 0, tries = 0; k < (cfg.gaps || 0) && tries < 50; tries++) {
+    const w = rng.range(3.2, 4.6);
+    const x0 = rng.range(110, L - 150);
+    if (!free(x0, x0 + w)) continue;
+    const i0 = Math.round(x0 / CELL);
+    const i1 = Math.round((x0 + w) / CELL);
+    const rim = Math.min(h[i0], h[i1]);
+    for (let i = i0 + 1; i < i1; i++) h[i] = rim - 3.2;
+    gaps.push({ x0: i0 * CELL, x1: i1 * CELL });
+    k++;
+  }
+  // Mud: soft, slightly sunken ground.
+  for (let k = 0, tries = 0; k < (cfg.mud || 0) && tries < 50; tries++) {
+    const w = rng.range(14, 26);
+    const x0 = rng.range(100, L - 130);
+    if (!free(x0, x0 + w)) continue;
+    const i0 = Math.round(x0 / CELL), i1 = Math.round((x0 + w) / CELL);
+    for (let i = i0; i <= i1; i++) {
+      const t = (i - i0) / (i1 - i0);
+      mat[i] = T_MUD;
+      h[i] -= 0.45 * Math.sin(t * Math.PI);
+    }
+    mudZones.push({ x0, x1: x0 + w });
+    k++;
+  }
+  // Forest: concealment and trees.
+  for (let k = 0, tries = 0; k < (cfg.forest || 0) && tries < 50; tries++) {
+    const w = rng.range(30, 50);
+    const x0 = rng.range(90, L - 120);
+    if (forestZones.some((z) => x0 + w > z.x0 - 10 && x0 < z.x1 + 10)) continue;
+    const i0 = Math.round(x0 / CELL), i1 = Math.round((x0 + w) / CELL);
+    for (let i = i0; i <= i1; i++) if (mat[i] === T_PLAINS) mat[i] = T_FOREST;
+    for (let x = x0 + 2; x < x0 + w - 2; x += rng.range(3.5, 7)) {
+      if (gaps.some((g) => x > g.x0 - 1 && x < g.x1 + 1)) continue;
+      trees.push({ x, h: rng.range(6, 10), r: rng.range(1.6, 2.6), alive: true, fall: 0, fallDir: 1, seed: rng.int(0, 1e6) });
+    }
+    forestZones.push({ x0, x1: x0 + w });
+    k++;
+  }
+
+  const T = {
+    length: L, n, h, mat, trees, gaps, mudZones, forestZones,
+    version: 0,          // bumped when craters change the ground
+    height(x) {
+      const f = clamp(x / CELL, 0, n - 1.001);
+      const i = Math.floor(f);
+      const t = f - i;
+      return h[i] + (h[i + 1] - h[i]) * t;
+    },
+    slope(x) { return (this.height(x + 0.25) - this.height(x - 0.25)) / 0.5; },
+    matAt(x) { return mat[clamp(Math.round(x / CELL), 0, n - 1)]; },
+    terrainAt(x) { return TERRAIN[this.matAt(x)]; },
+    inForest(x) { return this.matAt(x) === T_FOREST; },
+    // High-explosive craters carve the ground.
+    carve(x, r, depth) {
+      const i0 = Math.max(1, Math.floor((x - r) / CELL));
+      const i1 = Math.min(n - 2, Math.ceil((x + r) / CELL));
+      for (let i = i0; i <= i1; i++) {
+        const d = Math.abs(i * CELL - x) / r;
+        if (d < 1) h[i] -= depth * (1 - d * d);
+      }
+      this.version++;
+    },
+  };
+  return T;
+}
+
+/* ---------- 09b_physics_body.js ---------- */
+/* ==== 09b PHYSICS: VEHICLE BODIES ==== */
+// A vehicle is one rigid body made of its parts (design/01 §7.3, design/04 §6).
+// Wheels and track units are spring-damper contacts on the heightfield; engines
+// drive them. Mass, centre of mass, inertia, grip and resistance all come from
+// the parts, so tipping, stalling and bogging down emerge from the numbers.
+
+const DRIVE_EFF = { wheel: 0.85, track: 0.75 };
+const SUSPENSION_HZ = 2.2;       // natural frequency of the contact springs
+const SUSPENSION_DAMP = 0.7;     // damping ratio
+const PHYS_SUBSTEPS = 2;
+const REVERSE_CAP = 0.45;        // reverse speed as a share of the forward cap
+const LOW_GEAR_SPEED = 2.5;      // m/s: below this, drive force stops rising (lowest gear), design/05 §7.1
+
+let nextVehicleId = 1;
+
+function makeVehicle(design, side, x, dir, terrain) {
+  const V = {
+    id: nextVehicleId++,
+    design,
+    name: design.name,
+    side,                       // 0 = player (League), 1 = enemy (Directorate)
+    dir,                        // +1 faces right, −1 faces left
+    parts: design.cells.map((c) => {
+      const d = PARTS[c.p];
+      return { def: d, x: c.x, y: c.y, hp: d.hp, alive: true, burn: 0, scorch: 0 };
+    }),
+    alive: null,                // Uint8Array mirror of parts[i].alive
+    grid: null,
+    body: { x, y: 0, a: 0, vx: 0, vy: 0, w: 0, m: 1, I: 1 },
+    com: { x: 0, y: 0 },
+    contacts: [],
+    weapons: [],
+    throttle: 0,
+    speed: 0,
+    destroyed: false,           // knocked out or blown up
+    immobile: false,
+    canDrive: true,
+    crew: 0,
+    fuel: 0,
+    fuelMax: 0,
+    shells: 0,
+    shellsMax: 0,
+    hpMax: 0,
+    stuckT: 0,
+    bogNoteT: 0,
+    spotted: 0,                 // seconds left visible to the other side
+    revealT: 0,                 // muzzle flash reveals the shooter
+    lastHitT: -99,
+    dirty: true,                // sprite needs redrawing
+    ai: null,
+  };
+  V.alive = new Uint8Array(V.parts.length).fill(1);
+  for (const p of V.parts) V.hpMax += p.hp;
+  rebuildVehicle(V, true);
+  V.fuel = V.fuelMax;
+  V.shells = V.shellsMax;
+  // Rest on the ground: lowest contact touching the terrain.
+  const b = V.body;
+  b.x = x;
+  b.a = Math.atan(terrain.slope(x));
+  let low = Infinity;
+  for (const c of V.contacts) low = Math.min(low, c.ly - c.r);
+  b.y = terrain.height(x) - low / Math.cos(b.a) + 0.05;
+  return V;
+}
+
+// Local (body) coordinates of a grid-space point (metres from the grid's bottom-left).
+function gridToLocal(V, gx, gy, out) {
+  out.x = (gx - V.com.x) * V.dir;
+  out.y = gy - V.com.y;
+  return out;
+}
+
+function localToWorld(V, lx, ly, out) {
+  const b = V.body;
+  const c = Math.cos(b.a), s = Math.sin(b.a);
+  out.x = b.x + lx * c - ly * s;
+  out.y = b.y + lx * s + ly * c;
+  return out;
+}
+
+// World point -> grid space (metres, origin bottom-left of the grid, y up).
+function worldToGrid(V, wx, wy, out) {
+  const b = V.body;
+  const c = Math.cos(b.a), s = Math.sin(b.a);
+  const dx = wx - b.x, dy = wy - b.y;
+  const lx = dx * c + dy * s;
+  const ly = -dx * s + dy * c;
+  out.x = lx * V.dir + V.com.x;
+  out.y = ly + V.com.y;
+  return out;
+}
+
+// Recompute mass, centre of mass, inertia, contacts and weapons from the live parts.
+// Keeps the world position of the parts unchanged when the centre of mass moves.
+function rebuildVehicle(V, first) {
+  const D = V.design;
+  const st = statsOf(D, V.alive);
+  const b = V.body;
+  if (!first && st.mass > 0) {
+    const tmp = { x: 0, y: 0 };
+    gridToLocal(V, st.com.x, st.com.y, tmp);
+    localToWorld(V, tmp.x, tmp.y, tmp);
+    b.x = tmp.x; b.y = tmp.y;
+  }
+  V.com.x = st.com.x;
+  V.com.y = st.com.y;
+  V.stats = st;
+  b.m = Math.max(st.mass, 1);
+  V.grid = occupancy(D, V.alive);
+
+  let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
+  const contacts = [];
+  const weapons = [];
+  V.parts.forEach((p, i) => {
+    if (!p.alive) return;
+    const d = p.def;
+    const cx = (p.x + d.w / 2) * CELL;
+    const cy = (D.h - p.y - d.h / 2) * CELL;
+    const rx = cx - st.com.x, ry = cy - st.com.y;
+    I += d.mass * (rx * rx + ry * ry) + (d.mass * ((d.w * CELL) ** 2 + (d.h * CELL) ** 2)) / 12;
+    minX = Math.min(minX, p.x * CELL); maxX = Math.max(maxX, (p.x + d.w) * CELL);
+    minY = Math.min(minY, (D.h - p.y - d.h) * CELL); maxY = Math.max(maxY, (D.h - p.y) * CELL);
+    if (d.power > 0) engines += d.power;
+    if (d.crew) crew += d.crew;
+    if (d.fuel) fuelMax += d.fuel;
+    if (d.shells) shellsMax += d.shells;
+    if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.accuracy) fc = Math.max(fc, d.accuracy);
+    if (d.id === 'stab') stab = true;
+    if (d.id === 'smoke') smoke += d.salvos;
+    if (d.loco) {
+      loco++;
+      const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
+      for (const px of pts) contacts.push({ gx: px, gy: cy, r: d.radius, loco: d.loco, part: i, lx: 0, ly: 0, N: 0 });
+    }
+    if (d.cat === 'weapon' && d.id !== 'smoke') {
+      // Turret weapons sit on parts connected to the hull through a turret ring.
+      const old = V.weapons.find((w) => w.part === i);
+      weapons.push(old || {
+        part: i, def: d, reload: 0, angle: 0, burst: 0, gap: 0,
+        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
+      });
+    }
+  });
+  // Hull contacts: corners of the body, so tipped or wrecked vehicles still rest on the ground.
+  const hullPts = [[minX, minY + 0.3], [maxX, minY + 0.3], [(minX + maxX) / 2, minY + 0.3], [minX, maxY], [maxX, maxY], [(minX + maxX) / 2, maxY]];
+  for (const [gx, gy] of hullPts) contacts.push({ gx, gy, r: 0, loco: null, part: -1, lx: 0, ly: 0, N: 0 });
+  const tmp = { x: 0, y: 0 };
+  for (const c of contacts) { gridToLocal(V, c.gx, c.gy, tmp); c.lx = tmp.x; c.ly = tmp.y; }
+
+  // Turret weapons: a weapon whose part group, without the ring, sits above a live turret ring.
+  const ring = V.parts.findIndex((p) => p.alive && p.def.ring);
+  if (ring >= 0) {
+    const rp = V.parts[ring];
+    for (const w of weapons) w.turret = V.parts[w.part].y < rp.y;
+  }
+
+  b.I = Math.max(I, 1);
+  V.contacts = contacts;
+  V.weapons = weapons;
+  V.nLoco = Math.max(1, contacts.filter((c) => c.loco).length);
+  const K = b.m * (2 * Math.PI * SUSPENSION_HZ) ** 2;
+  V.k = K / Math.max(V.nLoco, 3);
+  V.c = (2 * SUSPENSION_DAMP * Math.sqrt(K * b.m)) / Math.max(V.nLoco, 3);
+  V.power = engines;
+  V.crew = crew;
+  V.canDrive = engines > 0 && crew > 0 && loco > 0;
+  V.immobile = !V.canDrive;
+  V.fuelMax = fuelMax;
+  V.fuel = Math.min(V.fuel, fuelMax);
+  V.shellsMax = Math.max(V.shellsMax, shellsMax);
+  V.spot = spot;
+  V.fc = fc;
+  V.stab = stab;
+  V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
+  V.bounds = { minX, maxX, minY, maxY };
+  V.len = maxX - minX;
+  V.height = maxY - minY;
+  V.radius = Math.hypot(V.len, V.height) / 2 + 0.5;
+  V.soft = V.parts.every((p) => !p.alive || p.def.armor <= 15);
+  V.dirty = true;
+}
+
+function stepVehicle(V, T, dt) {
+  const b = V.body;
+  const h = dt / PHYS_SUBSTEPS;
+  const st = V.stats;
+  const pf = clamp(st.pressure / 100, 0.3, 3);
+  const eff = DRIVE_EFF[st.loco] || 0.8;
+  const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
+  const hasFuel = V.fuelMax === 0 || V.fuel > 0;
+  const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
+  const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE;
+  const dragA = V.height * 2.5;
+  const throttle = V.canDrive ? V.throttle : 0;
+
+  for (let s = 0; s < PHYS_SUBSTEPS; s++) {
+    const ca = Math.cos(b.a), sa = Math.sin(b.a);
+    let fx = 0, fy = -b.m * GRAVITY, tq = 0;
+    let nGround = 0, sumMuN = 0;
+    // Normal forces.
+    for (const c of V.contacts) {
+      const rx = c.lx * ca - c.ly * sa;
+      const ry = c.lx * sa + c.ly * ca;
+      const px = b.x + rx, py = b.y + ry;
+      c.N = 0;
+      const pen = T.height(px) - (py - c.r);
+      if (pen <= 0) continue;
+      const sl = T.slope(px);
+      const inv = 1 / Math.sqrt(1 + sl * sl);
+      const nx = -sl * inv, ny = inv;
+      const vpx = b.vx - b.w * ry, vpy = b.vy + b.w * rx;
+      const vn = vpx * nx + vpy * ny;
+      const N = Math.max(0, V.k * Math.min(pen, 0.6) - V.c * vn);
+      c.N = N; c.rx = rx; c.ry = ry; c.nx = nx; c.ny = ny;
+      c.vt = vpx * ny - vpy * nx;          // along the tangent (ny, −nx)
+      c.ter = T.terrainAt(px);
+      fx += nx * N; fy += ny * N;
+      tq += rx * ny * N - ry * nx * N;
+      if (c.loco) { nGround++; sumMuN += c.ter.grip * N; }
+    }
+    // Drive force (design/05 §7.1): min(P ÷ v, μ × load), faded out at the speed cap.
+    const vAlong = b.vx * ca + b.vy * sa;
+    let drive = 0;
+    if (throttle !== 0 && nGround > 0) {
+      const sign = throttle > 0 ? 1 : -1;
+      const cap = capBase * (sign === V.dir ? 1 : REVERSE_CAP);
+      const fwd = vAlong * sign;
+      drive = Math.min(Peff / Math.max(Math.abs(vAlong), LOW_GEAR_SPEED), sumMuN) * Math.abs(throttle);
+      if (fwd > cap) drive = -Math.min(sumMuN * 0.4, (b.m * (fwd - cap)) / h);   // engine braking downhill
+      else if (fwd > cap - 0.6) drive *= (cap - fwd) / 0.6;
+      drive *= sign;
+    }
+    const mShare = b.m / Math.max(1, nGround);
+    for (const c of V.contacts) {
+      if (c.N <= 0) continue;
+      const tx = c.ny, ty = -c.nx;
+      let resist;
+      let Ft = 0;
+      if (c.loco) {
+        const ter = c.ter;
+        const crr = c.loco === 'track' ? 0.04 + ter.soft * 0.08 * pf : 0.015 + ter.soft * 0.25 * pf;
+        resist = crr * c.N;
+        Ft = sumMuN > 0 ? (drive * ter.grip * c.N) / sumMuN : 0;
+        // Brakes hold when there's no throttle, or when throttle opposes the motion.
+        if (throttle === 0 || (Math.abs(c.vt) > 0.3 && Math.sign(throttle) !== Math.sign(c.vt))) resist += ter.grip * c.N * 0.8;
+      } else {
+        resist = 0.55 * c.N;           // hull scraping along the ground
+      }
+      // Coulomb-style: resistance can stop a contact but never push it backwards.
+      let F;
+      if (Math.abs(c.vt) > 0.05) {
+        F = Ft - Math.sign(c.vt) * Math.min(resist, (Math.abs(c.vt) * mShare) / h + Math.abs(Ft));
+      } else if (Math.abs(Ft) <= resist) {
+        F = (-c.vt * mShare) / h * 0.5;
+      } else {
+        F = Ft - Math.sign(Ft) * resist;
+      }
+      fx += tx * F; fy += ty * F;
+      tq += c.rx * ty * F - c.ry * tx * F;
+    }
+    // Air drag.
+    const v2 = b.vx * b.vx + b.vy * b.vy;
+    if (v2 > 0.01) {
+      const v = Math.sqrt(v2);
+      const fd = 0.5 * 1.225 * 0.9 * dragA * v2;
+      fx -= (fd * b.vx) / v; fy -= (fd * b.vy) / v;
+    }
+    // Semi-implicit Euler.
+    b.vx += (fx / b.m) * h;
+    b.vy += (fy / b.m) * h;
+    b.w += (tq / b.I) * h;
+    b.w *= 0.998;
+    b.x += b.vx * h;
+    b.y += b.vy * h;
+    b.a += b.w * h;
+  }
+  // Keep inside the battlefield.
+  const lo = 3 + V.len / 2, hi = T.length - 3 - V.len / 2;
+  if (b.x < lo) { b.x = lo; if (b.vx < 0) b.vx = 0; }
+  if (b.x > hi) { b.x = hi; if (b.vx > 0) b.vx = 0; }
+  if (b.a > Math.PI) b.a -= Math.PI * 2;
+  if (b.a < -Math.PI) b.a += Math.PI * 2;
+  V.speed = b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
+  // Fuel: litres per hour at full load, from the live engines.
+  if (throttle !== 0 && V.fuelMax > 0) {
+    let use = 0;
+    for (const p of V.parts) if (p.alive && p.def.fuelUse) use += p.def.fuelUse;
+    V.fuel = Math.max(0, V.fuel - (use * Math.abs(throttle) * dt) / 3600 * 20);
+  }
+}
+
+// Soft push so vehicles don't drive through each other.
+function separateVehicles(list) {
+  for (let i = 0; i < list.length; i++) {
+    const A = list[i];
+    for (let j = i + 1; j < list.length; j++) {
+      const B = list[j];
+      const dx = B.body.x - A.body.x;
+      const need = (A.len + B.len) / 2 * 0.85;
+      if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;
+      const push = (need - Math.abs(dx)) / 2;
+      const s = dx >= 0 ? 1 : -1;
+      const ma = A.body.m, mb = B.body.m;
+      A.body.x -= s * push * (mb / (ma + mb)) * 2;
+      B.body.x += s * push * (ma / (ma + mb)) * 2;
+      const rel = (B.body.vx - A.body.vx) * s;
+      if (rel < 0) {
+        const vcm = (A.body.vx * ma + B.body.vx * mb) / (ma + mb);
+        A.body.vx = vcm; B.body.vx = vcm;
+      }
+    }
+  }
+}
+
+// ---------- debris: detached parts tumble, bounce and fade after 6 s (design/03 §4)
+const debris = makePool(() => ({ alive: false, x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, t: 0, img: null, iw: 0, ih: 0, r: 0.5 }), 48);
+
+function stepDebris(T, dt) {
+  debris.forEachAlive((d) => {
+    d.t += dt;
+    if (d.t > 6) { d.alive = false; return; }
+    d.vy -= GRAVITY * dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.a += d.w * dt;
+    const g = T.height(d.x);
+    if (d.y - d.r < g) {
+      d.y = g + d.r;
+      if (d.vy < 0) d.vy = -d.vy * 0.3;
+      d.vx *= 0.7;
+      d.w *= 0.6;
+    }
+  });
+}
+
+/* ---------- 10a_combat.js ---------- */
+/* ==== 10a COMBAT ==== */
+// Projectiles, ballistics, grid raycast, penetration, ricochet, per-part damage
+// and part effects (design/01 §7.4, design/05 §3, design/04 §6).
+
+const MAX_PROJECTILES = 300;
+const RICOCHET_ANGLE = 70;          // degrees from the surface normal
+const MG_RANGE_BONUS = 1;
+
+const shells = makePool(() => ({
+  alive: false, x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, sx: 0, sy: 0, t: 0,
+  side: 0, shooter: null, def: null, pen: 0, dmg: 0, mg: false, he: false, ignore: null, ignoreT: 0,
+}), MAX_PROJECTILES);
+
+// Battlefield range of a weapon (design sheet range × distance scale).
+const weaponRange = (d) => d.range * BATTLE_DISTANCE_SCALE;
+
+// Penetration at a battlefield distance (design/05 §3), using the nominal sheet range.
+function penAt(d, worldDist) {
+  const r = worldDist / BATTLE_DISTANCE_SCALE;
+  if (d.auto) return d.pen * Math.max(0.2, 1 - 0.25 * (r / 500));
+  if (d.he) return d.pen;
+  return d.pen * Math.max(0.5, 1 - (0.12 * (r - 500)) / 500);
+}
+
+// Barrel pivot and muzzle in world space.
+const _p = { x: 0, y: 0 };
+function weaponPivot(V, w, out) {
+  gridToLocal(V, w.pivotGx, w.pivotGy, out);
+  return localToWorld(V, out.x, out.y, out);
+}
+function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+
+// World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
+function weaponArc(V, w) {
+  const d = w.def;
+  return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
+}
+
+// Elevation (degrees) of world angle `ang` relative to the body, facing `face` (+1 right, −1 left).
+function elevationOf(V, ang, face) {
+  const base = face > 0 ? V.body.a : V.body.a + Math.PI;
+  let e = face > 0 ? ang - base : base - ang;
+  while (e > Math.PI) e -= Math.PI * 2;
+  while (e < -Math.PI) e += Math.PI * 2;
+  return (e * 180) / Math.PI;
+}
+function angleFromElevation(V, elevDeg, face) {
+  const e = (elevDeg * Math.PI) / 180;
+  return face > 0 ? V.body.a + e : V.body.a + Math.PI - e;
+}
+
+// Low-angle ballistic solution; returns the world angle or NaN when out of reach.
+function ballisticAngle(x, y, tx, ty, v, high) {
+  const dx = tx - x, dy = ty - y;
+  const ax = Math.max(0.01, Math.abs(dx));
+  const v2 = v * v;
+  const disc = v2 * v2 - GRAVITY * (GRAVITY * ax * ax + 2 * dy * v2);
+  if (disc < 0) return NaN;
+  const up = Math.atan((v2 + (high ? 1 : -1) * Math.sqrt(disc)) / (GRAVITY * ax));
+  return dx >= 0 ? up : Math.PI - up;
+}
+
+// Work out where weapon w must point to hit (tx, ty). Returns {ok, angle, face, reason}.
+function aimWeapon(V, w, tx, ty, out) {
+  const d = w.def;
+  weaponPivot(V, w, _p);
+  const face = tx >= _p.x ? 1 : -1;
+  out.face = face;
+  out.ok = false;
+  out.reason = '';
+  if (!w.turret && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
+  let ang = d.auto ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect);
+  if (Number.isNaN(ang)) { ang = angleFromElevation(V, 35, face); out.reason = 'Out of range'; }
+  const arc = weaponArc(V, w);
+  const el = elevationOf(V, ang, face);
+  const cl = clamp(el, arc.lo, arc.hi);
+  out.angle = angleFromElevation(V, cl, face);
+  out.ok = !out.reason && Math.abs(cl - el) < 0.5;
+  if (!out.reason && !out.ok) out.reason = 'Out of arc';
+  return out;
+}
+
+// Gaussian-ish error from the seeded battle RNG (sum of three uniforms).
+function gauss(rng) { return (rng.next() + rng.next() + rng.next() - 1.5) * 1.15; }
+
+// Fire weapon w of V along world angle `ang`. spreadMul scales the aiming error.
+function fireWeapon(B, V, w, ang, spreadMul) {
+  const d = w.def;
+  if (!d.auto) {
+    if (V.shells <= 0) return false;
+    V.shells--;
+  }
+  let spread = d.spread / V.fc;
+  const moving = Math.abs(V.speed) > 0.4;
+  if (moving) spread *= V.stab ? 1.6 : 2.5;
+  spread *= spreadMul;
+  const a = ang + (gauss(B.rng) * spread * Math.PI) / 180;
+  weaponPivot(V, w, _p);
+  const L = barrelLength(d);
+  const mx = _p.x + Math.cos(a) * L, my = _p.y + Math.sin(a) * L;
+  const s = shells.take();
+  s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
+  s.vx = Math.cos(a) * d.vel + V.body.vx;
+  s.vy = Math.sin(a) * d.vel + V.body.vy;
+  s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
+  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25;
+  // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
+  if (!d.auto) {
+    const J = d.cal * d.cal * 0.9;
+    const jx = -Math.cos(a) * J, jy = -Math.sin(a) * J;
+    const b = V.body;
+    b.vx += jx / b.m; b.vy += jy / b.m;
+    b.w += ((_p.x - b.x) * jy - (_p.y - b.y) * jx) / b.I;
+    w.kick = 1;
+  }
+  V.revealT = d.auto ? 1.5 : 4;
+  if (V.side === 1 && B.stats) B.stats.enemyShots++;
+  const pan = B.panOf ? B.panOf(mx) : 0;
+  if (d.auto) {
+    if ((w.burst & 1) === 0) audio.sfx('tick', pan, 1.2);
+  } else {
+    audio.sfx('cannon', pan, d.cal / 75);
+    fxMuzzle(B, mx, my, a, d.cal);
+    if (V === B.me) { haptic('fire'); B.trauma = Math.min(1, B.trauma + d.cal / 400); }
+  }
+  return true;
+}
+
+// ---------- grid raycast (DDA) through a vehicle's cells
+// Walks cells from (x0, y0) to (x1, y1) in grid cell units (y up). cb(index, axis) returns true to stop.
+function traceGrid(V, x0, y0, x1, y1, cb) {
+  const W = V.design.w, H = V.design.h;
+  const dx = x1 - x0, dy = y1 - y0;
+  let t0 = 0, t1 = 1, axis = 'x';
+  // Slab clip against the grid box.
+  for (const [p, dp, max, ax] of [[x0, dx, W, 'x'], [y0, dy, H, 'y']]) {
+    if (Math.abs(dp) < 1e-9) { if (p < 0 || p >= max) return false; continue; }
+    let ta = (0 - p) / dp, tb = (max - p) / dp;
+    if (ta > tb) { const t = ta; ta = tb; tb = t; }
+    if (ta > t0) { t0 = ta; axis = ax; }
+    t1 = Math.min(t1, tb);
+  }
+  if (t0 > t1) return false;
+  const sx = x0 + dx * t0, sy = y0 + dy * t0;
+  let cx = clamp(Math.floor(sx + (dx > 0 ? 1e-7 : -1e-7)), 0, W - 1);
+  let cy = clamp(Math.floor(sy + (dy > 0 ? 1e-7 : -1e-7)), 0, H - 1);
+  const stepX = dx > 0 ? 1 : -1, stepY = dy > 0 ? 1 : -1;
+  const tdx = Math.abs(dx) > 1e-9 ? Math.abs(1 / dx) : Infinity;
+  const tdy = Math.abs(dy) > 1e-9 ? Math.abs(1 / dy) : Infinity;
+  let tmx = Math.abs(dx) > 1e-9 ? ((dx > 0 ? cx + 1 : cx) - x0) / dx : Infinity;
+  let tmy = Math.abs(dy) > 1e-9 ? ((dy > 0 ? cy + 1 : cy) - y0) / dy : Infinity;
+  for (let guard = 0; guard < 200; guard++) {
+    const row = H - 1 - cy;
+    const idx = V.grid[row * W + cx];
+    if (idx >= 0 && cb(idx, axis, cx, cy)) return true;
+    if (tmx < tmy) { if (tmx > t1) break; cx += stepX; tmx += tdx; axis = 'x'; }
+    else { if (tmy > t1) break; cy += stepY; tmy += tdy; axis = 'y'; }
+    if (cx < 0 || cy < 0 || cx >= W || cy >= H) break;
+  }
+  return false;
+}
+
+const _g0 = { x: 0, y: 0 }, _g1 = { x: 0, y: 0 };
+
+// Resolve a shell against vehicle V along its current step. Returns true if the shell is used up.
+function shellVsVehicle(B, s, V) {
+  const len = V.radius * 2.2;
+  const sp = Math.hypot(s.vx, s.vy) || 1;
+  worldToGrid(V, s.px, s.py, _g0);
+  worldToGrid(V, s.px + (s.vx / sp) * (len + Math.hypot(s.x - s.px, s.y - s.py)), s.py + (s.vy / sp) * (len + Math.hypot(s.x - s.px, s.y - s.py)), _g1);
+  const gx0 = _g0.x / CELL, gy0 = _g0.y / CELL, gx1 = _g1.x / CELL, gy1 = _g1.y / CELL;
+  // Only a hit if the first occupied cell lies within this step's travel.
+  const stepLen = Math.hypot(s.x - s.px, s.y - s.py) / CELL;
+  const total = Math.hypot(gx1 - gx0, gy1 - gy0) || 1;
+  let firstT = -1;
+  traceGrid(V, gx0, gy0, gx1, gy1, (idx, axis, cx, cy) => {
+    firstT = Math.hypot(cx + 0.5 - gx0, cy + 0.5 - gy0) - 0.75;
+    return true;
+  });
+  if (firstT < 0 || firstT > stepLen + 0.5) return false;
+
+  const ddx = (gx1 - gx0) / total, ddy = (gy1 - gy0) / total;
+  const travelled = Math.hypot(s.x - s.sx, s.y - s.sy);
+  let pen = s.he ? s.def.pen : penAt(s.def, travelled);
+  let dmg = s.dmg;
+  let last = -1, first = true, penetrated = false, exitCell = null, used = false;
+  let hitName = '';
+  let hx = 0, hy = 0;
+  traceGrid(V, gx0, gy0, gx1, gy1, (idx, axis, cx, cy) => {
+    exitCell = [cx, cy];
+    if (idx === last) return false;
+    last = idx;
+    const part = V.parts[idx];
+    if (!part.alive) return false;
+    const d = part.def;
+    // Surface normal of the face entered, in grid space.
+    let nx = axis === 'x' ? -Math.sign(ddx) : 0;
+    let ny = axis === 'y' ? -Math.sign(ddy) : 0;
+    if (d.sloped && ddx * 0.7071 + ddy * 0.7071 < 0) { nx = 0.7071; ny = 0.7071; }
+    const cos = Math.max(0.05, Math.abs(ddx * nx + ddy * ny));
+    const eff = d.armor / cos;
+    if (first) {
+      first = false;
+      hx = cx; hy = cy;
+      const angle = (Math.acos(Math.min(1, cos)) * 180) / Math.PI;
+      if (!s.he && !s.mg && d.armor >= 8 && angle > RICOCHET_ANGLE) {
+        ricochet(B, s, V, cx, cy, nx, ny);
+        used = true;
+        return true;
+      }
+      if (s.he) {
+        used = true;
+        return true;       // HE bursts on the surface
+      }
+    }
+    if (pen >= eff) {
+      pen -= eff;
+      if (!penetrated) { penetrated = true; hitName = d.name; }
+      damagePart(B, V, idx, dmg, s.shooter);
+      dmg *= 0.65;
+      if (dmg < 4 || pen <= 1) { used = true; return true; }
+      return false;
+    }
+    // Stopped by armour.
+    damagePart(B, V, idx, dmg * (s.mg ? 0.02 : 0.08), s.shooter);
+    if (!penetrated && !s.mg) {
+      stoppedAt(B, V, cx, cy, s);
+    }
+    used = true;
+    return true;
+  });
+  const hitWorld = gridCellToWorld(V, hx, hy);
+  if (s.he) {
+    explode(B, hitWorld.x, hitWorld.y, s.def.heDmg || s.dmg, s.def.heRadius || 3, s.shooter);
+    return true;
+  }
+  if (penetrated && s.def.burst && !V.destroyed) {
+    // Bursting charge inside the vehicle: damages the parts around the first penetration.
+    const cx = hx, cy = hy;
+    V.parts.forEach((p, i) => {
+      if (!p.alive) return;
+      const px = p.x + p.def.w / 2, py = V.design.h - p.y - p.def.h / 2;
+      const dd = Math.hypot(px - (cx + 0.5), py - (cy + 0.5)) * CELL;
+      if (dd < s.def.burstR) damagePart(B, V, i, s.def.burst * (1 - dd / s.def.burstR), s.shooter);
+    });
+  }
+  if (penetrated) {
+    if (!s.mg) {
+      if (s.shooter === B.me || V === B.me) floatText(`Penetrated · ${hitName}`, hitWorld.x, hitWorld.y + 1.5, false);
+      fxSparks(B, hitWorld.x, hitWorld.y, Math.atan2(s.vy, s.vx), 10);
+      audio.sfx('clunk', B.panOf(hitWorld.x), 1);
+      if (s.shooter && s.shooter.side === 0) B.stats.pens++;
+    } else if (B.rng.next() < 0.3) {
+      fxSparks(B, hitWorld.x, hitWorld.y, Math.atan2(s.vy, s.vx), 2);
+    }
+  }
+  V.lastHitT = B.time;
+  if (V === B.me) { haptic('hit'); B.trauma = Math.min(1, B.trauma + 0.25); }
+  if (!used && exitCell) {
+    // Over-penetration: the shell leaves the far side and keeps flying.
+    s.ignore = V; s.ignoreT = 0.3; s.dmg = dmg;
+    return false;
+  }
+  return true;
+}
+
+function gridCellToWorld(V, cx, cy) {
+  const o = { x: 0, y: 0 };
+  gridToLocal(V, (cx + 0.5) * CELL, (cy + 0.5) * CELL, o);
+  return localToWorld(V, o.x, o.y, o);
+}
+
+function ricochet(B, s, V, cx, cy, nx, ny) {
+  const p = gridCellToWorld(V, cx, cy);
+  // Reflect the velocity about the surface normal (turned into world space).
+  const ang = V.body.a;
+  const wnx = nx * V.dir * Math.cos(ang) - ny * Math.sin(ang);
+  const wny = nx * V.dir * Math.sin(ang) + ny * Math.cos(ang);
+  const vn = s.vx * wnx + s.vy * wny;
+  s.vx = (s.vx - 2 * vn * wnx) * 0.55;
+  s.vy = (s.vy - 2 * vn * wny) * 0.55;
+  s.x = p.x + wnx * 0.4; s.y = p.y + wny * 0.4;
+  s.px = s.x; s.py = s.y;
+  s.ignore = V; s.ignoreT = 0.5;
+  s.dmg *= 0.3;
+  if (s.shooter === B.me || V === B.me) floatText('Ricochet', p.x, p.y + 1.5, false);
+  fxSparks(B, p.x, p.y, Math.atan2(s.vy, s.vx), 7);
+  audio.sfx('ricochet', B.panOf(p.x));
+  if (V === B.me) B.stats.ricochetsTaken++;
+}
+
+function stoppedAt(B, V, cx, cy, s) {
+  const p = gridCellToWorld(V, cx, cy);
+  if (s.shooter === B.me || V === B.me) floatText('No penetration', p.x, p.y + 1.5, false);
+  fxSparks(B, p.x, p.y, B.rng.range(0, 6.28), 4);
+  audio.sfx('clunk', B.panOf(p.x), 0.6);
+}
+
+// ---------- damage
+function damagePart(B, V, idx, dmg, source) {
+  const p = V.parts[idx];
+  if (!p.alive || dmg <= 0) return;
+  p.hp -= dmg;
+  p.scorch = Math.min(1, p.scorch + dmg / p.def.hp);
+  V.dirty = true;
+  if (p.hp <= 0) destroyPart(B, V, idx, source);
+  else if (!V.destroyed) checkVehicleState(B, V, source);
+}
+
+function destroyPart(B, V, idx, source) {
+  const p = V.parts[idx];
+  if (!p.alive) return;
+  p.alive = false;
+  V.alive[idx] = 0;
+  const d = p.def;
+  const at = gridCellToWorld(V, p.x + d.w / 2 - 0.5, V.design.h - p.y - d.h / 2 - 0.5);
+  spawnDebris(B, V, [idx], at, 5);
+  audio.sfx('crunch', B.panOf(at.x));
+  if (V === B.me) haptic('part');
+  // Part effects (design/01 §7.4).
+  if (d.detonate && B.rng.next() < d.detonate) {
+    rebuildVehicle(V);
+    detonate(B, V, source);
+    return;
+  }
+  if (d.fire && B.rng.next() < d.fire) {
+    V.fires = V.fires || [];
+    V.fires.push({ gx: (p.x + d.w / 2) * CELL, gy: (V.design.h - p.y - d.h / 2) * CELL, t: 12 });
+    floatText('Fire', at.x, at.y + 2, true);
+  }
+  if (d.power > 0 && d.cat === 'mobility') floatText('Engine destroyed', at.x, at.y + 2.5, false);
+  else if (d.cat === 'weapon') floatText(`${d.name} silenced`, at.x, at.y + 2.5, false);
+  else if (d.ring) floatText('Turret ring jammed', at.x, at.y + 2.5, false);
+
+  // Parts no longer connected to the main body fall off (turret toss, lost wheels).
+  const groups = components(V.design, occupancy(V.design, V.alive), V.alive);
+  if (groups.length > 1) {
+    const score = (g) => g.reduce((s, i) => s + (V.parts[i].def.crew ? 1e6 : 0) + (V.parts[i].def.loco ? 1e4 : 0) + V.parts[i].def.mass, 0);
+    groups.sort((a, b) => score(b) - score(a));
+    for (let k = 1; k < groups.length; k++) {
+      for (const i of groups[k]) { V.parts[i].alive = false; V.alive[i] = 0; }
+      const g = groups[k];
+      const c = V.parts[g[0]];
+      spawnDebris(B, V, g, gridCellToWorld(V, c.x, V.design.h - c.y - 1), 7);
+    }
+  }
+  rebuildVehicle(V);
+  checkVehicleState(B, V, source);
+}
+
+function checkVehicleState(B, V, source) {
+  if (V.destroyed) return;
+  let hp = 0;
+  for (const p of V.parts) if (p.alive) hp += p.hp;
+  if (V.crew <= 0 || V.parts.every((p) => !p.alive || p.def.cat === 'mobility')) {
+    knockOut(B, V, source, 'Knocked out');
+  } else if (hp < V.hpMax * 0.3) {
+    knockOut(B, V, source, 'Wrecked');
+  } else if (V.immobile && !V.wasImmobile) {
+    V.wasImmobile = true;
+    floatText('Immobilised', V.body.x, V.body.y + V.height, false);
+  }
+}
+
+function knockOut(B, V, source, label) {
+  if (V.destroyed) return;
+  V.destroyed = true;
+  V.throttle = 0;
+  V.canDrive = false;
+  B.hitStop = 0.05;
+  fxExplosion(B, V.body.x, V.body.y + 0.5, 1.2);
+  fxSmokeColumn(B, V);
+  audio.sfx('boom', B.panOf(V.body.x));
+  B.trauma = Math.min(1, B.trauma + 0.35);
+  floatText(label, V.body.x, V.body.y + V.height + 1, true);
+  if (V.side === 0) haptic('lost');
+  if (B.onDestroyed) B.onDestroyed(V, source);
+}
+
+// Ammo detonation: the vehicle comes apart.
+function detonate(B, V, source) {
+  const alive = [];
+  V.parts.forEach((p, i) => { if (p.alive) alive.push(i); });
+  for (const i of alive) {
+    if (B.rng.next() < 0.55 || V.parts[i].def.ring || V.parts[i].y < 3) {
+      V.parts[i].alive = false; V.alive[i] = 0;
+      const c = V.parts[i];
+      spawnDebris(B, V, [i], gridCellToWorld(V, c.x, V.design.h - c.y - 1), 11);
+    }
+  }
+  rebuildVehicle(V);
+  fxExplosion(B, V.body.x, V.body.y + 1, 2.2);
+  audio.sfx('boom', B.panOf(V.body.x), 1.6);
+  knockOut(B, V, source, 'Ammo detonated');
+}
+
+// High-explosive burst: damage falls off with distance; heavy armour shrugs most of it off.
+function explode(B, x, y, dmg, radius, source) {
+  fxExplosion(B, x, y, radius / 3);
+  audio.sfx('boom', B.panOf(x), 0.7 + radius / 8);
+  const gy = B.T.height(x);
+  if (y - gy < radius * 0.6) B.T.carve(x, radius * 0.6, 0.35 + radius * 0.06);
+  const tmp = { x: 0, y: 0 };
+  for (const V of B.units) {
+    if (Math.hypot(V.body.x - x, V.body.y - y) > radius + V.radius) continue;
+    V.parts.forEach((p, i) => {
+      if (!p.alive) return;
+      gridToLocal(V, (p.x + p.def.w / 2) * CELL, (V.design.h - p.y - p.def.h / 2) * CELL, tmp);
+      localToWorld(V, tmp.x, tmp.y, tmp);
+      const dd = Math.hypot(tmp.x - x, tmp.y - y);
+      if (dd >= radius) return;
+      const armourCut = p.def.armor > 20 ? 20 / p.def.armor : 1;
+      damagePart(B, V, i, dmg * (1 - dd / radius) * armourCut, source);
+    });
+  }
+  // Trees near the blast fall.
+  for (const tr of B.T.trees) if (tr.alive && Math.abs(tr.x - x) < radius * 0.7) breakTree(B, tr, tr.x > x ? 1 : -1);
+}
+
+function breakTree(B, tr, dir) {
+  tr.alive = false;
+  tr.fallDir = dir;
+  fxDirt(B, tr.x, B.T.height(tr.x) + 0.5, 6);
+  audio.sfx('crunch', B.panOf(tr.x), 0.6);
+}
+
+// Detach a group of parts as a tumbling debris body.
+function spawnDebris(B, V, idxs, at, kick) {
+  const dd = debris.take();
+  const img = renderPartsSprite(V, idxs);
+  dd.img = img.canvas; dd.iw = img.w; dd.ih = img.h;
+  dd.x = at.x; dd.y = at.y; dd.a = V.body.a;
+  dd.vx = V.body.vx + B.rng.range(-kick, kick) * 0.6;
+  dd.vy = V.body.vy + B.rng.range(kick * 0.4, kick);
+  dd.w = B.rng.range(-5, 5);
+  dd.t = 0;
+  dd.r = Math.max(img.w, img.h) * 0.25;
+  dd.dir = V.dir;
+}
+
+// ---------- projectile update
+function stepShells(B, dt) {
+  const T = B.T;
+  shells.forEachAlive((s) => {
+    s.px = s.x; s.py = s.y;
+    s.t += dt;
+    if (!s.mg) s.vy -= GRAVITY * dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
+    const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
+    if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
+    // Vehicles.
+    for (const V of B.units) {
+      if (V === s.ignore) continue;
+      if (V.side === s.side && !V.destroyed) continue;       // no friendly fire on live allies
+      const b = V.body;
+      // Distance from the vehicle centre to this step's segment.
+      const ex = s.x - s.px, ey = s.y - s.py;
+      const l2 = ex * ex + ey * ey || 1;
+      const t = clamp(((b.x - s.px) * ex + (b.y - s.py) * ey) / l2, 0, 1);
+      if (Math.hypot(s.px + ex * t - b.x, s.py + ey * t - b.y) > V.radius) continue;
+      if (shellVsVehicle(B, s, V)) { s.alive = false; return; }
+    }
+    // Trees stop machine-gun rounds and sometimes shells.
+    // Ground.
+    const gh = T.height(s.x);
+    if (s.y <= gh) {
+      s.alive = false;
+      if (s.he) explode(B, s.x, gh, s.def.heDmg || s.dmg, s.def.heRadius || 3, s.shooter);
+      else fxDirt(B, s.x, gh, s.mg ? 1 : 5);
+      if (!s.mg && !s.he) audio.sfx('thud', B.panOf(s.x), 0.8);
+    }
+  });
+}
+
+/* ---------- 10b_effects.js ---------- */
+/* ==== 10b EFFECTS ==== */
+// The joy layer (design/03 §5): muzzle flashes, sparks, dirt, explosions, smoke,
+// fire, shockwave rings. Particles are pooled and capped by the quality setting.
+
+const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6;
+
+const particles = makePool(() => ({
+  alive: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 1, size: 1, grow: 0, g: 0, shade: 0,
+}), 300);
+
+// Smoke screens block spotting for 20 s (design/05 smoke launcher).
+const smokeScreens = makePool(() => ({ alive: false, x: 0, y: 0, r: 0, t: 0 }), 12);
+// Smoke columns from wrecks: at most 3 at once.
+const smokeColumns = makePool(() => ({ alive: false, V: null, t: 0, acc: 0 }), 3);
+
+let particleCount = 0;
+function particleCap() { return (QUALITY[save.settings.quality] || QUALITY.High).particles; }
+
+function spawnParticle(kind, x, y, vx, vy, life, size) {
+  if (particleCount >= particleCap()) return null;
+  const p = particles.take();
+  p.kind = kind; p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.t = 0; p.life = life; p.size = size;
+  p.grow = 0; p.g = 0; p.shade = 0;
+  return p;
+}
+
+function fxMuzzle(B, x, y, ang, cal) {
+  const k = cal / 75;
+  const f = spawnParticle(FX_FLASH, x, y, 0, 0, 0.07, 1.4 * k + 0.4);
+  if (f) f.shade = ang;
+  for (let i = 0; i < 3 + k * 3; i++) {
+    const a = ang + B.rng.range(-0.5, 0.5);
+    const sp = B.rng.range(1, 4) * (0.6 + k);
+    const p = spawnParticle(FX_SMOKE, x, y, Math.cos(a) * sp, Math.sin(a) * sp + 0.5, B.rng.range(0.9, 1.6), 0.5 + k * 0.4);
+    if (p) { p.grow = 1.2; p.shade = 0.55; }
+  }
+}
+
+function fxSparks(B, x, y, ang, n) {
+  for (let i = 0; i < n; i++) {
+    const a = ang + B.rng.range(-0.8, 0.8);
+    const sp = B.rng.range(6, 16);
+    const p = spawnParticle(FX_SPARK, x, y, Math.cos(a) * sp, Math.sin(a) * sp, B.rng.range(0.15, 0.35), 1);
+    if (p) p.g = 1;
+  }
+  spawnParticle(FX_FLASH, x, y, 0, 0, 0.05, 0.8);
+}
+
+function fxDirt(B, x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const p = spawnParticle(FX_DIRT, x, y, B.rng.range(-3, 3), B.rng.range(2, 7), B.rng.range(0.6, 1.1), B.rng.range(0.12, 0.3));
+    if (p) p.g = 1;
+  }
+  const s = spawnParticle(FX_SMOKE, x, y + 0.3, 0, 0.6, 1.2, 0.6 + n * 0.05);
+  if (s) { s.grow = 1; s.shade = 0.35; }
+}
+
+function fxExplosion(B, x, y, size) {
+  spawnParticle(FX_FLASH, x, y, 0, 0, 0.09, 2.5 * size);
+  const ring = spawnParticle(FX_RING, x, y, 0, 0, 0.35, 0.5);
+  if (ring) ring.grow = 7 * size;
+  for (let i = 0; i < 6 * size + 4; i++) {
+    const a = B.rng.range(0.2, Math.PI - 0.2);
+    const sp = B.rng.range(2, 6) * size;
+    const f = spawnParticle(FX_FIRE, x, y, Math.cos(a) * sp, Math.sin(a) * sp, B.rng.range(0.35, 0.7), 0.6 * size + 0.3);
+    if (f) f.grow = 0.8;
+  }
+  for (let i = 0; i < 5 * size + 3; i++) {
+    const s = spawnParticle(FX_SMOKE, x + B.rng.range(-1, 1) * size, y + B.rng.range(0, 1) * size,
+      B.rng.range(-1, 1), B.rng.range(0.5, 2), B.rng.range(1.5, 2.8), 0.8 * size + 0.4);
+    if (s) { s.grow = 1.3; s.shade = 0.25; }
+  }
+  fxDirt(B, x, B.T.height(x) + 0.2, Math.round(4 + size * 4));
+}
+
+function fxSmokeColumn(B, V) {
+  let n = 0;
+  smokeColumns.forEachAlive(() => n++);
+  if (n >= 3) {
+    // Recycle the oldest column.
+    let oldest = null;
+    smokeColumns.forEachAlive((c) => { if (!oldest || c.t > oldest.t) oldest = c; });
+    if (oldest) oldest.alive = false;
+  }
+  const c = smokeColumns.take();
+  c.V = V; c.t = 0; c.acc = 0;
+}
+
+function fxSmokeScreen(B, x, y) {
+  const s = smokeScreens.take();
+  s.x = x; s.y = y; s.r = 5; s.t = 0;
+  for (let i = 0; i < 10; i++) {
+    const p = spawnParticle(FX_SMOKE, x + B.rng.range(-4, 4), y + B.rng.range(0, 3), B.rng.range(-0.6, 0.6), B.rng.range(0.1, 0.5), B.rng.range(6, 9), B.rng.range(1.5, 2.6));
+    if (p) { p.grow = 0.25; p.shade = 0.75; }
+  }
+}
+
+function stepEffects(B, dt) {
+  particleCount = 0;
+  particles.forEachAlive((p) => {
+    p.t += dt;
+    if (p.t >= p.life) { p.alive = false; return; }
+    particleCount++;
+    if (p.g) p.vy -= GRAVITY * dt * p.g;
+    if (p.kind === FX_SMOKE) { p.vx *= 0.98; p.vy = p.vy * 0.98 + 0.25 * dt; }
+    if (p.kind === FX_FIRE) { p.vx *= 0.9; p.vy = p.vy * 0.9 + 3 * dt; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.size += p.grow * dt;
+    if (p.kind === FX_DIRT && p.y < B.T.height(p.x)) p.alive = false;
+  });
+  smokeScreens.forEachAlive((s) => {
+    s.t += dt;
+    s.r = Math.min(9, s.r + dt * 2);
+    if (s.t > 20) s.alive = false;
+  });
+  smokeColumns.forEachAlive((c) => {
+    c.t += dt;
+    if (c.t > 25) { c.alive = false; return; }
+    c.acc += dt;
+    if (c.acc > 0.18) {
+      c.acc = 0;
+      const b = c.V.body;
+      const p = spawnParticle(FX_SMOKE, b.x + B.rng.range(-0.6, 0.6), b.y + c.V.height * 0.5, B.rng.range(-0.3, 0.3) + 0.4, B.rng.range(1.2, 2), 5, 0.8);
+      if (p) { p.grow = 0.6; p.shade = 0.15; }
+      if (c.t < 8 && B.rng.next() < 0.6) {
+        const f = spawnParticle(FX_FIRE, b.x + B.rng.range(-0.8, 0.8), b.y + c.V.height * 0.3, 0, 1.2, 0.5, 0.5);
+        if (f) f.grow = 0.4;
+      }
+    }
+  });
+}
+
+// Is the straight line between two points blocked by a smoke screen?
+function smokeBlocks(ax, ay, bx, by) {
+  let blocked = false;
+  smokeScreens.forEachAlive((s) => {
+    if (blocked) return;
+    const ex = bx - ax, ey = by - ay;
+    const l2 = ex * ex + ey * ey || 1;
+    const t = clamp(((s.x - ax) * ex + (s.y - ay) * ey) / l2, 0, 1);
+    if (Math.hypot(ax + ex * t - s.x, ay + ey * t - s.y) < s.r) blocked = true;
+  });
+  return blocked;
+}
+
+// Screen shake: trauma model, shake = trauma², capped at 8 px; off with reduced motion.
+function shakeOffset(B, out) {
+  const s = save.settings.reducedMotion ? 0 : B.trauma * B.trauma * 8;
+  out.x = s ? Math.sin(B.time * 71) * s : 0;
+  out.y = s ? Math.cos(B.time * 53) * s : 0;
+  return out;
+}
+
+/* ---------- 11_ai.js ---------- */
+/* ==== 11 AI ==== */
+// Spotting, squad orders, enemy tactics and automatic weapons (design/01 §7.2, §7.4).
+
+const SPOT_BASE = 95;              // battlefield metres a crew can see without optics
+const SPOT_INTERVAL = 0.25;
+const TURRET_SWING = 1.0;          // seconds to swing a turret to the other side
+const ELEVATION_RATE = 40;         // degrees per second
+const _aim = { ok: false, angle: 0, face: 1, reason: '' };
+
+function spotRange(B, O, V) {
+  let r = SPOT_BASE * O.spot;
+  if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
+  if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
+  return r;
+}
+
+// Every 0.25 s: who can each side see? Wrecks stay visible once seen.
+function updateSpotting(B) {
+  for (const V of B.units) {
+    if (V.destroyed && V.seen) continue;
+    let seen = false;
+    for (const O of B.units) {
+      if (O.side === V.side || O.destroyed || O.crew <= 0) continue;
+      const d = Math.abs(O.body.x - V.body.x);
+      if (d > spotRange(B, O, V)) continue;
+      if (smokeBlocks(O.body.x, O.body.y + O.height, V.body.x, V.body.y + V.height * 0.5)) continue;
+      seen = true;
+      break;
+    }
+    V.seen = seen || (V.destroyed && V.seen);
+    if (seen) { V.lastSeenX = V.body.x; V.everSeen = true; }
+  }
+}
+
+function nearestTarget(B, V, maxRange, filter) {
+  let best = null, bd = Infinity;
+  for (const U of B.units) {
+    if (U.side === V.side || U.destroyed || !U.seen) continue;
+    if (filter && !filter(U)) continue;
+    const d = Math.abs(U.body.x - V.body.x);
+    if (d < bd && d <= maxRange) { bd = d; best = U; }
+  }
+  return best;
+}
+
+function mainWeapon(V) {
+  let best = null;
+  for (const w of V.weapons) if (!w.def.auto && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
+  return best;
+}
+
+// Target point on a vehicle: a little above its centre of mass.
+function aimPoint(U, out) {
+  out.x = U.body.x;
+  out.y = U.body.y + U.height * 0.15;
+  return out;
+}
+
+// Turn the barrel toward `angle` (world) at the elevation rate; handles swinging sides.
+function trainWeapon(V, w, angle, face, dt) {
+  if (w.face === undefined) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); w.swing = 0; }
+  if (face !== w.face) {
+    if (!w.turret) return false;
+    w.face = face;
+    w.swing = TURRET_SWING;
+  }
+  if (w.swing > 0) { w.swing -= dt; w.angle = angleFromElevation(V, 0, w.face); return false; }
+  const cur = elevationOf(V, w.angle, w.face);
+  const want = elevationOf(V, angle, w.face);
+  const step = ELEVATION_RATE * dt;
+  const next = Math.abs(want - cur) <= step ? want : cur + Math.sign(want - cur) * step;
+  w.angle = angleFromElevation(V, next, w.face);
+  return Math.abs(want - next) < 0.6;
+}
+
+// Reloading, automatic weapons and (for AI) the main gun.
+function runWeapons(B, V, dt, aiControlled) {
+  const loaderPenalty = V.crew < 3 ? 1.6 : 1;
+  const tmp = { x: 0, y: 0 };
+  for (const w of V.weapons) {
+    if (!V.parts[w.part].alive) continue;
+    const d = w.def;
+    if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
+    if (w.reload > 0) w.reload -= dt;
+    if (d.auto) {
+      // Machine guns fire by themselves at soft targets (AI guns at anything in range).
+      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? null : (U) => U.soft);
+      if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
+      aimPoint(T, tmp);
+      aimWeapon(V, w, tmp.x, tmp.y, _aim);
+      const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
+      if (!_aim.ok || !ready || w.reload > 0) continue;
+      fireWeapon(B, V, w, w.angle, aiControlled ? 1 / (V.ai ? V.ai.accuracy : 1) : 1);
+      w.burst++;
+      w.reload = 60 / d.rpm * 1.5;
+      if (w.burst >= d.burst) { w.burst = 0; w.reload = 1.4; }
+      continue;
+    }
+    if (!aiControlled) continue;
+    const tgt = V.ai && V.ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen) continue;
+    aimPoint(tgt, tmp);
+    aimWeapon(V, w, tmp.x, tmp.y, _aim);
+    const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
+    if (B.cfg.holdFire && V.side === 1) continue;
+    if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
+    if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) w.reload = d.reload * loaderPenalty;
+  }
+}
+
+// ---------- squad-mates (design/02 §3.4)
+function squadThink(B, V, dt) {
+  const me = B.me;
+  const ai = V.ai;
+  const slot = B.squad.indexOf(V) < B.squad.indexOf(me) ? B.squad.indexOf(V) + 1 : B.squad.indexOf(V);
+  const dir = 1;                      // the squad advances to the right
+  let goal = null;
+  if (ai.hold !== null) goal = ai.hold;
+  else if (B.order === 'Follow') goal = me.body.x - dir * 12 * slot;
+  else if (B.order === 'Escort') goal = me.body.x + dir * (slot === 1 ? 10 : -10);
+  else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
+  else if (B.order === 'Back') goal = me.body.x - dir * 30 * slot;
+  V.throttle = goal === null ? 0 : Math.abs(goal - V.body.x) < 2 ? 0 : clamp((goal - V.body.x) * 0.25, -1, 1);
+  // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
+  const mw = mainWeapon(V);
+  const range = mw ? weaponRange(mw.def) : 0;
+  let tgt = null;
+  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen) tgt = B.target;
+  else tgt = nearestTarget(B, V, range);
+  if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
+  if (ai.react > 0) ai.react -= dt;
+}
+
+// ---------- enemy tactics
+function enemyThink(B, V, dt) {
+  const ai = V.ai;
+  const mw = mainWeapon(V);
+  const range = mw ? weaponRange(mw.def) : V.weapons.length ? weaponRange(V.weapons[0].def) : 0;
+  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2));
+  if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
+  if (ai.react > 0) ai.react -= dt;
+  const x = V.body.x;
+  if (ai.mode === 'parked') {
+    V.throttle = 0;
+  } else if (ai.mode === 'convoy') {
+    // Drive between two points; run for the far edge once shot at.
+    if (B.time - V.lastHitT < 20) V.throttle = 0.8;
+    else {
+      if (x < ai.a) ai.leg = 1;
+      if (x > ai.b) ai.leg = -1;
+      V.throttle = 0.45 * ai.leg;
+    }
+  } else if (tgt) {
+    const d = Math.abs(tgt.body.x - x);
+    const want = range * 0.65;
+    const toward = Math.sign(tgt.body.x - x);
+    if (d > want + 8) V.throttle = 0.8 * toward;
+    else if (d < want - 15) V.throttle = -0.5 * toward;
+    else V.throttle = 0;
+  } else {
+    V.throttle = -0.5;                  // advance toward the player's side
+  }
+}
+
+function makeAI(mode, level) {
+  return {
+    mode,
+    target: null,
+    react: 0,
+    hold: null,
+    leg: -1,
+    a: 0, b: 0,
+    accuracy: clamp(0.45 + level * 0.03, 0.3, 0.7),
+    reaction: Math.max(0.35, 1.4 - level * 0.08),
+  };
+}
+
+// Messages about what the ground is doing (facts only).
+function mobilityNotes(B, V, dt) {
+  if (V.destroyed || !V.canDrive || V.throttle === 0) { V.stuckT = 0; return; }
+  if (Math.abs(V.speed) < 0.15) V.stuckT += dt; else V.stuckT = 0;
+  if (V.stuckT > 1.5 && B.time - V.bogNoteT > 6) {
+    V.bogNoteT = B.time;
+    const ter = B.T.terrainAt(V.body.x);
+    const slope = Math.abs(Math.atan(B.T.slope(V.body.x)) * 180 / Math.PI);
+    const text = ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
+    if (V.side === 0) floatText(text, V.body.x, V.body.y + V.height + 1, false);
+  }
+}
+
+/* ---------- 12_battle.js ---------- */
+/* ==== 12 BATTLE ==== */
+// Battlefield setup, battle state, player commands, objectives and results.
+
+function createBattle(level) {
+  const cfg = battleConfig(level);
+  const T = makeTerrain(cfg);
+  const B = {
+    cfg, T, level,
+    rng: makeRng((cfg.seed ^ 0x9e3779b9) >>> 0),
+    units: [], squad: [], me: null,
+    order: 'Follow',
+    target: null,
+    time: 0,
+    trauma: 0,
+    hitStop: 0,
+    spotT: 0,
+    result: null,
+    resultT: 0,
+    heat: 0,                 // recent combat near the camera, for music intensity
+    intensity: 0,
+    goalTotal: 0,
+    goalDone: 0,
+    stats: { shots: 0, pens: 0, kills: 0, lost: 0, ricochetsTaken: 0, enemyShots: 0 },
+    panOf: () => 0,
+    onDestroyed: null,
+  };
+  cfg.squad.forEach((t, i) => {
+    const V = makeVehicle(designFromTemplate(t), 0, 46 - i * 15, 1, T);
+    V.ai = makeAI('squad', level);
+    V.label = String(i + 1);
+    B.units.push(V);
+    B.squad.push(V);
+  });
+  B.me = B.squad[0];
+
+  // Enemies: parked trucks sit within the first stretch so level 1 is quick; others start far right.
+  let x = cfg.enemies[0][2] === 'parked' ? 125 : cfg.length - 45;
+  for (const [t, count, mode] of cfg.enemies) {
+    for (let k = 0; k < count; k++) {
+      const V = makeVehicle(designFromTemplate(t), 1, x, -1, T);
+      V.ai = makeAI(mode, level);
+      if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
+      B.units.push(V);
+      B.goalTotal++;
+      x += mode === 'parked' ? 22 : -18;
+    }
+    if (cfg.enemies[0][2] !== 'parked') x -= 10;
+  }
+
+  B.onDestroyed = (V) => {
+    if (V.side === 1) {
+      B.goalDone++;
+      B.stats.kills++;
+      if (B.target === V) B.target = null;
+      audio.sfx('objective', B.panOf(V.body.x));
+      B.heat = Math.min(3, B.heat + 1);
+    } else {
+      B.stats.lost++;
+      if (V === B.me) B.pendingSwap = 1.2;
+    }
+  };
+  updateSpotting(B);
+  return B;
+}
+
+function updateBattle(B, dt) {
+  if (B.hitStop > 0) { B.hitStop -= dt; return; }
+  B.time += dt;
+  B.spotT -= dt;
+  if (B.spotT <= 0) { B.spotT = SPOT_INTERVAL; updateSpotting(B); }
+
+  for (const V of B.units) {
+    if (V.destroyed) { V.throttle = 0; continue; }
+    if (V.revealT > 0) V.revealT -= dt;
+    if (V === B.me) {
+      if (V.ai.react > 0) V.ai.react -= dt;
+    } else if (V.side === 0) squadThink(B, V, dt);
+    else enemyThink(B, V, dt);
+    mobilityNotes(B, V, dt);
+  }
+  for (const V of B.units) stepVehicle(V, B.T, dt);
+  separateVehicles(B.units);
+
+  for (const V of B.units) {
+    // Burning parts damage their neighbours.
+    if (V.fires && V.fires.length) {
+      for (let i = V.fires.length - 1; i >= 0; i--) {
+        const f = V.fires[i];
+        f.t -= dt;
+        if (f.t <= 0) { V.fires.splice(i, 1); continue; }
+        V.parts.forEach((p, k) => {
+          if (!p.alive) return;
+          const cx = (p.x + p.def.w / 2) * CELL, cy = (V.design.h - p.y - p.def.h / 2) * CELL;
+          if (Math.hypot(cx - f.gx, cy - f.gy) < 1.3) damagePart(B, V, k, 7 * dt, null);
+        });
+        if (B.rng.next() < dt * 8) {
+          const o = { x: 0, y: 0 };
+          gridToLocal(V, f.gx, f.gy, o);
+          localToWorld(V, o.x, o.y, o);
+          const p = spawnParticle(FX_FIRE, o.x + B.rng.range(-0.3, 0.3), o.y, 0, 1.2, 0.45, 0.35);
+          if (p) p.grow = 0.5;
+        }
+      }
+    }
+    // Tall vehicles push over trees.
+    if (Math.abs(V.speed) > 0.8) {
+      for (const tr of B.T.trees) {
+        if (tr.alive && Math.abs(tr.x - V.body.x) < V.len / 2 && V.body.m > 3000) breakTree(B, tr, Math.sign(V.speed) || 1);
+      }
+    }
+    if (!V.destroyed) runWeapons(B, V, dt, V !== B.me);
+  }
+  stepShells(B, dt);
+  stepDebris(B.T, dt);
+  stepEffects(B, dt);
+  B.trauma = Math.max(0, B.trauma - dt * 0.9);
+
+  // Take over the next squad vehicle when yours is lost.
+  if (B.pendingSwap !== undefined) {
+    B.pendingSwap -= dt;
+    if (B.pendingSwap <= 0) {
+      delete B.pendingSwap;
+      const next = B.squad.find((V) => !V.destroyed);
+      if (next) takeVehicle(B, next);
+    }
+  }
+
+  // Music intensity: enemies nearby and recent kills (design/03 §6.3).
+  B.heat = Math.max(0, B.heat - dt * 0.05);
+  let near = 0;
+  for (const V of B.units) if (V.side === 1 && !V.destroyed && V.seen && Math.abs(V.body.x - B.me.body.x) < 200) near++;
+  const want = clamp(Math.floor(near * 0.8 + B.heat), 0, 3);
+  if (want !== B.intensity) { B.intensity = want; audio.setIntensity(want); }
+
+  // Objectives.
+  if (!B.result) {
+    if (B.goalDone >= B.goalTotal) { B.result = 'win'; B.resultT = 0; }
+    else if (B.squad.every((V) => V.destroyed)) { B.result = 'lost'; B.resultT = 0; }
+  } else {
+    B.resultT += dt;
+  }
+}
+
+// ---------- player commands
+function takeVehicle(B, V) {
+  if (V.destroyed || V === B.me) return false;
+  B.me.throttle = 0;
+  B.me = V;
+  V.ai.hold = null;
+  return true;
+}
+
+// Fire the main gun of the controlled vehicle at a world point (or the target).
+// Returns a short reason when it can't.
+function playerFire(B, tx, ty, manual) {
+  const V = B.me;
+  const w = mainWeapon(V);
+  if (!w) return 'No gun';
+  if (w.reload > 0) return 'Reloading';
+  if (V.shells <= 0) return 'Out of shells';
+  aimWeapon(V, w, tx, ty, _aim);
+  if (!_aim.ok) return _aim.reason || 'Out of arc';
+  if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
+  w.angle = _aim.angle;
+  if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
+  w.reload = w.def.reload * (V.crew < 3 ? 1.6 : 1);
+  B.stats.shots++;
+  B.heat = Math.min(3, B.heat + 0.2);
+  return '';
+}
+
+// Auto-aim target: the selected target, else the nearest spotted enemy in range, else straight ahead.
+function autoTarget(B) {
+  const V = B.me;
+  if (B.target && !B.target.destroyed && B.target.seen) return B.target;
+  const w = mainWeapon(V);
+  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200);
+}
+
+// Keep the controlled vehicle's gun pointed at its target (or at the aim point while aiming).
+function trainPlayerGun(B, dt, aimX, aimY) {
+  const V = B.me;
+  const w = mainWeapon(V);
+  if (!w || V.destroyed) return;
+  let tx = aimX, ty = aimY;
+  if (tx === undefined) {
+    const T = autoTarget(B);
+    if (T) { tx = T.body.x; ty = T.body.y + T.height * 0.15; }
+    else { tx = V.body.x + V.dir * 60; ty = B.T.height(V.body.x + V.dir * 60) + 1.5; }
+  }
+  aimWeapon(V, w, tx, ty, _aim);
+  trainWeapon(V, w, _aim.angle, _aim.face, dt);
+}
+
+// Smoke launcher: a screen in front of the vehicle.
+function playerSmoke(B) {
+  const V = B.me;
+  if (!V.smoke) return 'No smoke launcher';
+  V.smoke--;
+  const x = V.body.x + V.dir * 8;
+  fxSmokeScreen(B, x, B.T.height(x) + 1);
+  return '';
+}
+
+// Test-only helpers.
+
+
+/* ---------- 12b_battle_render.js ---------- */
+/* ==== 12b BATTLE RENDER ==== */
+// Vehicles are drawn from their part grids as detailed industrial modules
+// (design/03 §4, §1: HighFleet influence). Each vehicle is cached to an
+// offscreen canvas and redrawn only when its damage changes.
+
+const SPRITE_PAD = 2.2;          // metres of padding around a sprite (antennas, barrels)
+const FACTION_STEEL = ['#586a80', '#735f56'];
+const FACTION_MARK = ['#2E6DB4', '#C43C2C'];
+
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c) => clamp(Math.round(c * k), 0, 255);
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+function rivets(g, x, y, w, h, r, col) {
+  g.fillStyle = col;
+  const o = Math.max(1.5, r * 2);
+  for (const [px, py] of [[x + o, y + o], [x + w - o, y + o], [x + o, y + h - o], [x + w - o, y + h - o]]) {
+    g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.fill();
+  }
+}
+
+function bevel(g, x, y, w, h, base, k) {
+  g.fillStyle = base;
+  g.fillRect(x, y, w, h);
+  const b = Math.max(1, Math.min(w, h) * 0.12 * k);
+  g.fillStyle = 'rgba(255,255,255,0.12)';
+  g.fillRect(x, y, w, b);
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(x, y + h - b, w, b);
+  g.fillRect(x + w - b, y, b, h);
+}
+
+// Draw one part with its top-left at (x, y), cell size cs px.
+function drawPart(g, p, x, y, cs, side, seed) {
+  const d = p.def;
+  const w = d.w * cs, h = d.h * cs;
+  const steel = FACTION_STEEL[side];
+  const r = Math.max(0.8, cs * 0.05);
+  g.save();
+  switch (d.id) {
+    case 'frame':
+      g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
+      g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      g.beginPath(); g.moveTo(x + 1, y + 1); g.lineTo(x + w - 1, y + h - 1); g.moveTo(x + w - 1, y + 1); g.lineTo(x + 1, y + h - 1); g.stroke();
+      break;
+    case 'timber':
+      g.fillStyle = '#6b4f33'; g.fillRect(x, y, w, h);
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 3); g.lineTo(x + w, y + (h * k) / 3); g.stroke(); }
+      rivets(g, x, y, w, h, r * 0.8, '#2a2118');
+      break;
+    case 'plate':
+      bevel(g, x, y, w, h, steel, 1);
+      rivets(g, x, y, w, h, r, 'rgba(0,0,0,0.45)');
+      break;
+    case 'arm20': case 'arm40': case 'arm80': {
+      const k = d.id === 'arm20' ? 0.92 : d.id === 'arm40' ? 0.8 : 0.68;
+      bevel(g, x, y, w, h, shade(steel, k), 1.6);
+      rivets(g, x, y, w, h, r * 1.2, 'rgba(0,0,0,0.5)');
+      if (d.id === 'arm80') { g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1; g.strokeRect(x + cs * 0.18, y + cs * 0.18, w - cs * 0.36, h - cs * 0.36); }
+      break;
+    }
+    case 'slope40':
+      g.fillStyle = shade(steel, 0.8);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = Math.max(1, cs * 0.1);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y + h); g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(x + w * 0.3, y + h * 0.7, r, 0, Math.PI * 2); g.fill();
+      break;
+    case 'crew2':
+      bevel(g, x, y, w, h, shade(steel, 0.95), 1);
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = Math.max(1, cs * 0.08);
+      g.beginPath(); g.arc(x + w * 0.35, y + h * 0.3, cs * 0.28, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#12151a'; g.fillRect(x + w * 0.55, y + h * 0.28, w * 0.35, cs * 0.12);
+      g.fillStyle = 'rgba(255,178,62,0.5)'; g.fillRect(x + w * 0.58, y + h * 0.3, w * 0.1, cs * 0.06);
+      // Faction chevron (fictional marking).
+      g.fillStyle = FACTION_MARK[side];
+      g.beginPath();
+      g.moveTo(x + w * 0.3, y + h * 0.62); g.lineTo(x + w * 0.45, y + h * 0.78); g.lineTo(x + w * 0.6, y + h * 0.62);
+      g.lineTo(x + w * 0.6, y + h * 0.7); g.lineTo(x + w * 0.45, y + h * 0.86); g.lineTo(x + w * 0.3, y + h * 0.7); g.closePath(); g.fill();
+      rivets(g, x, y, w, h, r, 'rgba(0,0,0,0.45)');
+      break;
+    case 'turret':
+      g.fillStyle = '#23262c'; g.fillRect(x, y + h * 0.2, w, h * 0.6);
+      g.fillStyle = '#6f7582';
+      for (let k = 0; k < d.w * 2; k++) { g.beginPath(); g.arc(x + (k + 0.5) * (w / (d.w * 2)), y + h * 0.5, r, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'eng_s': case 'eng_m': case 'eng_h': {
+      bevel(g, x, y, w, h, shade(steel, 0.85), 1);
+      g.fillStyle = '#15181d'; g.fillRect(x + cs * 0.2, y + cs * 0.3, w - cs * 0.4, h - cs * 0.7);
+      g.strokeStyle = shade(steel, 0.7); g.lineWidth = Math.max(1, cs * 0.07);
+      for (let sx = x + cs * 0.35; sx < x + w - cs * 0.25; sx += cs * 0.22) { g.beginPath(); g.moveTo(sx, y + cs * 0.32); g.lineTo(sx, y + h - cs * 0.42); g.stroke(); }
+      // Exhaust stack with soot.
+      g.fillStyle = '#2b2d31'; g.fillRect(x + cs * 0.15, y - cs * 0.35, cs * 0.22, cs * 0.45);
+      g.fillStyle = 'rgba(20,20,20,0.5)'; g.beginPath(); g.arc(x + cs * 0.26, y - cs * 0.4, cs * 0.18, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'radiator':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.strokeStyle = '#15181d'; g.lineWidth = 1;
+      for (let k = 1; k < 5; k++) { g.beginPath(); g.moveTo(x + 2, y + (h * k) / 5); g.lineTo(x + w - 2, y + (h * k) / 5); g.stroke(); }
+      break;
+    case 'wheel_s': case 'wheel_l': {
+      const cx = x + w / 2, cy = y + h / 2, rr = Math.min(w, h) / 2;
+      g.fillStyle = '#1f2125'; g.beginPath(); g.arc(cx, cy, rr, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#474b54'; g.beginPath(); g.arc(cx, cy, rr * 0.62, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#8b919c'; g.beginPath(); g.arc(cx, cy, rr * 0.22, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#2b2e34';
+      for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2; g.beginPath(); g.arc(cx + Math.cos(a) * rr * 0.42, cy + Math.sin(a) * rr * 0.42, rr * 0.07, 0, Math.PI * 2); g.fill(); }
+      break;
+    }
+    case 'track': {
+      g.fillStyle = '#26282c';
+      roundRect(g, x, y + h * 0.05, w, h * 0.9, h * 0.45); g.fill();
+      g.fillStyle = '#3b3f47';
+      for (const f of [0.28, 0.72]) { g.beginPath(); g.arc(x + w * f, y + h / 2, h * 0.32, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = '#7c828d';
+      for (const f of [0.28, 0.72]) { g.beginPath(); g.arc(x + w * f, y + h / 2, h * 0.1, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = '#15171a'; g.lineWidth = 1;
+      for (let k = 0; k <= 6; k++) { const lx = x + (w * k) / 6; g.beginPath(); g.moveTo(lx, y + h * 0.05); g.lineTo(lx, y + h * 0.18); g.moveTo(lx, y + h * 0.82); g.lineTo(lx, y + h * 0.95); g.stroke(); }
+      break;
+    }
+    case 'mg': case 'hmg':
+      g.fillStyle = '#2c2f35'; g.fillRect(x + w * 0.15, y + h * 0.35, w * 0.7, h * 0.35);
+      g.fillStyle = '#4a5a3a'; g.fillRect(x + w * 0.2, y + h * 0.7, w * 0.35, h * 0.25);
+      break;
+    case 'c37': case 'c75': case 'c105': case 'how': {
+      // Mantlet and breech; the barrel is drawn live so it can elevate and recoil.
+      const mw = Math.min(w, cs * (d.id === 'c37' ? 0.9 : 1.2));
+      g.fillStyle = shade(steel, 0.75);
+      roundRect(g, x, y + h * 0.1, mw, h * 0.8, Math.min(mw, h) * 0.3); g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + mw * 0.55, y + h * 0.25, mw * 0.35, h * 0.5);
+      break;
+    }
+    case 'smoke':
+      g.fillStyle = '#2f3237';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.1 + k * 0.3), y + h * 0.2, w * 0.2, h * 0.7);
+      break;
+    case 'radio':
+      bevel(g, x, y, w, h, '#3f4a3a', 1);
+      g.fillStyle = '#b8c28a'; g.beginPath(); g.arc(x + w * 0.35, y + h * 0.45, cs * 0.1, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#1b1d21'; g.lineWidth = Math.max(1, cs * 0.05);
+      g.beginPath(); g.moveTo(x + w * 0.75, y + h * 0.2); g.lineTo(x + w * 0.55, y - cs * 3.2); g.stroke();
+      break;
+    case 'optics':
+      g.fillStyle = shade(steel, 0.7); g.fillRect(x + w * 0.2, y + h * 0.3, w * 0.6, h * 0.7);
+      g.fillStyle = 'rgba(159,211,255,0.85)'; g.fillRect(x + w * 0.55, y + h * 0.38, w * 0.22, h * 0.18);
+      break;
+    case 'fc': case 'stab':
+      bevel(g, x, y, w, h, '#3d4552', 1);
+      g.strokeStyle = '#c9d1dc'; g.lineWidth = 1;
+      g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.22, 0, Math.PI * 2); g.stroke();
+      break;
+    case 'fuel_s': case 'fuel_ss':
+      g.fillStyle = d.id === 'fuel_s' ? '#56613a' : '#4c5530';
+      roundRect(g, x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84, cs * 0.1); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + w * 0.2, y + h * 0.3); g.lineTo(x + w * 0.8, y + h * 0.8); g.moveTo(x + w * 0.8, y + h * 0.3); g.lineTo(x + w * 0.2, y + h * 0.8); g.stroke();
+      g.fillStyle = '#9aa06b'; g.fillRect(x + w * 0.6, y + h * 0.02, w * 0.2, h * 0.12);
+      break;
+    case 'ammo': case 'ammo_p':
+      bevel(g, x, y, w, h, d.id === 'ammo' ? '#5d5033' : shade(steel, 0.7), 1);
+      g.fillStyle = '#caa551';
+      for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w * (0.2 + k * 0.2), y + h * 0.35, cs * 0.07, 0, Math.PI * 2); g.fill(); }
+      if (d.id === 'ammo_p') { g.fillStyle = PAL.amber; g.fillRect(x + w * 0.1, y + h * 0.7, w * 0.8, h * 0.1); }
+      break;
+    case 'cargo':
+      g.fillStyle = '#7b7456';
+      roundRect(g, x, y + h * 0.05, w, h * 0.95, cs * 0.35); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.06);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x + (w * k) / 4, y + h * 0.1); g.lineTo(x + (w * k) / 4, y + h); g.stroke(); }
+      break;
+    default:
+      bevel(g, x, y, w, h, steel, 1);
+  }
+  // Damage: scorch and holes.
+  if (p.scorch > 0.05) {
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = `rgba(12,10,8,${Math.min(0.65, p.scorch * 0.7)})`;
+    g.fillRect(x, y, w, h);
+    g.globalCompositeOperation = 'source-over';
+    if (p.scorch > 0.3) {
+      const rng = makeRng(seed);
+      g.fillStyle = '#0b0c0e';
+      const n = p.scorch > 0.7 ? 3 : 1;
+      for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x + rng.range(0.2, 0.8) * w, y + rng.range(0.2, 0.8) * h, cs * rng.range(0.06, 0.12), 0, Math.PI * 2); g.fill(); }
+    }
+  }
+  g.strokeStyle = 'rgba(8,10,14,0.55)';
+  g.lineWidth = 1;
+  if (d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.restore();
+}
+
+// Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
+function paintParts(V, idxs, ppm, pad) {
+  const D = V.design;
+  const cs = CELL * ppm;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil((D.w * CELL + pad * 2) * ppm);
+  c.height = Math.ceil((D.h * CELL + pad * 2) * ppm);
+  const g = c.getContext('2d');
+  const o = pad * ppm;
+  // Structure first, then everything else, so fittings sit on top of plates.
+  const order = idxs.slice().sort((a, b) => (V.parts[a].def.cat === 'structure' ? 0 : 1) - (V.parts[b].def.cat === 'structure' ? 0 : 1));
+  for (const i of order) {
+    const p = V.parts[i];
+    drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
+  }
+  return c;
+}
+
+function vehicleSprite(V, S) {
+  const ppm = clamp(Math.round(S * 1.3 * layout.dpr), 10, 64);
+  if (!V.sprite || V.dirty || Math.abs(V.sprite.ppm - ppm) / V.sprite.ppm > 0.3) {
+    const idxs = [];
+    V.parts.forEach((p, i) => { if (p.alive) idxs.push(i); });
+    V.sprite = { canvas: paintParts(V, idxs, ppm, SPRITE_PAD), ppm };
+    V.dirty = false;
+  }
+  return V.sprite;
+}
+
+// Debris image for a group of parts: cropped to their bounds.
+function renderPartsSprite(V, idxs) {
+  const ppm = 24;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const i of idxs) {
+    const p = V.parts[i];
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x + p.def.w); y1 = Math.max(y1, p.y + p.def.h);
+  }
+  const cs = CELL * ppm;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil((x1 - x0) * cs));
+  c.height = Math.max(1, Math.ceil((y1 - y0) * cs));
+  const g = c.getContext('2d');
+  for (const i of idxs) {
+    const p = V.parts[i];
+    drawPart(g, Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), (p.x - x0) * cs, (p.y - y0) * cs, cs, V.side, i);
+  }
+  return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
+}
+
+// ---------- battle view
+const view = {
+  B: null, S: 10, cx: 0, cy: 0, horizon: 0, shake: { x: 0, y: 0 },
+  sx(wx) { return (wx - this.cx) * this.S + layout.w / 2 + this.shake.x; },
+  sy(wy) { return this.horizon - (wy - this.cy) * this.S + this.shake.y; },
+  wx(sx) { return (sx - layout.w / 2 - this.shake.x) / this.S + this.cx; },
+  wy(sy) { return (this.horizon + this.shake.y - sy) / this.S + this.cy; },
+};
+
+function drawVehicle(g, V) {
+  const S = view.S;
+  const spr = vehicleSprite(V, S);
+  const b = V.body;
+  const k = S / spr.ppm;
+  g.save();
+  g.translate(view.sx(b.x), view.sy(b.y));
+  g.rotate(-b.a);
+  g.scale(V.dir, 1);
+  const ox = -(V.com.x + SPRITE_PAD) * S;
+  const oy = -(V.design.h * CELL - V.com.y + SPRITE_PAD) * S;
+  if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
+  g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
+  g.filter = 'none';
+  g.restore();
+  // Barrels, drawn live.
+  const tmp = { x: 0, y: 0 };
+  for (const w of V.weapons) {
+    if (!V.parts[w.part].alive) continue;
+    const d = w.def;
+    weaponPivot(V, w, tmp);
+    const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
+    const kick = (w.kick || 0) * 0.35;
+    const L = barrelLength(d);
+    const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
+    const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
+    g.strokeStyle = V.destroyed ? '#26282c' : '#30343b';
+    g.lineCap = 'butt';
+    g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
+    g.beginPath(); g.moveTo(view.sx(x0), view.sy(y0)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
+    if (!d.auto && d.cal >= 75) {
+      g.lineWidth = Math.max(2.5, (0.1 + d.cal / 700) * S);
+      const bx = x1 - Math.cos(ang) * 0.3, by = y1 - Math.sin(ang) * 0.3;
+      g.beginPath(); g.moveTo(view.sx(bx), view.sy(by)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
+    }
+  }
+}
+
+function drawTerrain(g, B) {
+  const T = B.T;
+  const { w, h } = layout;
+  const S = view.S;
+  const x0 = Math.max(0, view.wx(-20));
+  const x1 = Math.min(T.length, view.wx(w + 20));
+  const step = Math.max(CELL, 3 / S);
+  // Ground fill: slightly lighter just under the surface, cached per screen size.
+  if (!view.grad || view.gradH !== h || view.gradTop !== Math.round(view.horizon)) {
+    view.grad = g.createLinearGradient(0, view.horizon - 60, 0, h);
+    view.grad.addColorStop(0, '#2B2F3A');
+    view.grad.addColorStop(0.5, PAL.ground);
+    view.grad.addColorStop(1, '#121318');
+    view.gradH = h;
+    view.gradTop = Math.round(view.horizon);
+  }
+  g.fillStyle = view.grad;
+  g.beginPath();
+  g.moveTo(view.sx(x0), h + 20);
+  for (let x = x0; x <= x1 + step; x += step) g.lineTo(view.sx(x), view.sy(T.height(x)));
+  g.lineTo(view.sx(Math.min(x1 + step, T.length)), h + 20);
+  g.closePath();
+  g.fill();
+  // Top soil, coloured by material, in runs.
+  g.lineWidth = Math.max(2, 0.5 * S);
+  g.lineJoin = 'round';
+  let x = x0;
+  while (x <= x1) {
+    const m = T.matAt(x);
+    g.strokeStyle = TERRAIN[m].color;
+    g.beginPath();
+    g.moveTo(view.sx(x), view.sy(T.height(x)) + g.lineWidth / 2);
+    while (x <= x1 && T.matAt(x) === m) { x += step; g.lineTo(view.sx(x), view.sy(T.height(x)) + g.lineWidth / 2); }
+    g.stroke();
+  }
+  g.strokeStyle = PAL.groundEdge;
+  g.lineWidth = 1.5;
+  g.beginPath();
+  for (let xx = x0; xx <= x1 + step; xx += step) {
+    const sx = view.sx(xx), sy = view.sy(T.height(xx));
+    if (xx === x0) g.moveTo(sx, sy); else g.lineTo(sx, sy);
+  }
+  g.stroke();
+  // Battlefield edges.
+  g.fillStyle = 'rgba(10,12,16,0.5)';
+  if (view.sx(0) > 0) g.fillRect(0, 0, view.sx(0), h);
+  if (view.sx(T.length) < w) g.fillRect(view.sx(T.length), 0, w - view.sx(T.length), h);
+}
+
+function drawTrees(g, B) {
+  const S = view.S;
+  for (const tr of B.T.trees) {
+    const sx = view.sx(tr.x);
+    if (sx < -tr.h * S || sx > layout.w + tr.h * S) continue;
+    const sy = view.sy(B.T.height(tr.x));
+    g.save();
+    g.translate(sx, sy);
+    if (!tr.alive) g.rotate(tr.fallDir * 1.35);
+    g.fillStyle = '#1b1f1c';
+    g.fillRect(-0.18 * S, -tr.h * 0.45 * S, 0.36 * S, tr.h * 0.45 * S);
+    g.fillStyle = '#18231d';
+    for (let k = 0; k < 3; k++) {
+      const by = -tr.h * (0.3 + k * 0.22) * S;
+      const rw = tr.r * (1 - k * 0.22) * S;
+      g.beginPath(); g.moveTo(-rw, by); g.lineTo(0, by - tr.h * 0.35 * S); g.lineTo(rw, by); g.closePath(); g.fill();
+    }
+    g.restore();
+  }
+}
+
+function drawShells(g) {
+  g.lineCap = 'round';
+  shells.forEachAlive((s) => {
+    const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
+    const bx = view.sx(s.x), by = view.sy(s.y);
+    if (!s.mg) {
+      g.strokeStyle = 'rgba(255,178,62,0.35)'; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+    }
+    g.strokeStyle = s.mg ? 'rgba(255,214,140,0.9)' : '#FFE2A8';
+    g.lineWidth = s.mg ? 1.2 : 2;
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+  });
+}
+
+function drawParticles(g) {
+  const S = view.S;
+  particles.forEachAlive((p) => {
+    const k = p.t / p.life;
+    const x = view.sx(p.x), y = view.sy(p.y);
+    switch (p.kind) {
+      case FX_FLASH:
+        g.globalAlpha = 1 - k;
+        g.fillStyle = '#FFE9B8';
+        g.beginPath(); g.arc(x, y, p.size * S * 0.6, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(255,178,62,0.6)';
+        g.beginPath(); g.arc(x, y, p.size * S, 0, Math.PI * 2); g.fill();
+        break;
+      case FX_SMOKE: {
+        const c = Math.round(60 + p.shade * 110);
+        g.globalAlpha = 0.55 * (1 - k);
+        g.fillStyle = `rgb(${c},${c},${c + 6})`;
+        g.beginPath(); g.arc(x, y, p.size * S * 0.5, 0, Math.PI * 2); g.fill();
+        break;
+      }
+      case FX_FIRE:
+        g.globalAlpha = 1 - k;
+        g.fillStyle = k < 0.4 ? '#FFD27A' : '#E0602D';
+        g.beginPath(); g.arc(x, y, p.size * S * 0.4 * (1 - k * 0.5), 0, Math.PI * 2); g.fill();
+        break;
+      case FX_SPARK:
+        g.globalAlpha = 1 - k;
+        g.strokeStyle = '#FFD27A'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x - p.vx * 0.02 * S, y + p.vy * 0.02 * S); g.stroke();
+        break;
+      case FX_DIRT:
+        g.globalAlpha = 1;
+        g.fillStyle = '#3a3026';
+        g.fillRect(x - p.size * S / 2, y - p.size * S / 2, p.size * S, p.size * S);
+        break;
+      case FX_RING:
+        g.globalAlpha = 0.6 * (1 - k);
+        g.strokeStyle = '#FFE9B8'; g.lineWidth = 2;
+        g.beginPath(); g.arc(x, y, p.size * S, 0, Math.PI * 2); g.stroke();
+        break;
+    }
+  });
+  g.globalAlpha = 1;
+}
+
+function drawDebris(g) {
+  const S = view.S;
+  debris.forEachAlive((d) => {
+    g.save();
+    g.globalAlpha = d.t > 5 ? 6 - d.t : 1;
+    g.translate(view.sx(d.x), view.sy(d.y));
+    g.rotate(-d.a);
+    g.scale(d.dir || 1, 1);
+    g.drawImage(d.img, (-d.iw / 2) * S, (-d.ih / 2) * S, d.iw * S, d.ih * S);
+    g.restore();
+  });
+}
+
+// Whole battlefield, back to front (design/04 §3).
+function renderBattle(g, B) {
+  drawBackground(g, view.cx * view.S * 0.25);
+  drawTrees(g, B);
+  drawTerrain(g, B);
+  for (const V of B.units) {
+    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen);
+    if (!visible) continue;
+    const sx = view.sx(V.body.x);
+    if (sx < -V.radius * 2 * view.S || sx > layout.w + V.radius * 2 * view.S) continue;
+    drawVehicle(g, V);
+  }
+  drawDebris(g);
+  drawShells(g);
+  drawParticles(g);
+}
+
+/* ---------- 16a_screens.js ---------- */
 /* ==== 16 SCREENS ==== */
-// Screen manager plus the Part 1a screens: title and the controls test range.
+// Screen manager, the title screen, and pause/settings/fullscreen helpers.
 // A screen may define: enter(arg), exit(), layout(), update(dt, simRunning),
 // render(g, nowMs), controls[], world{tap, doubleTap, longPress, pan, panEnd, pinch},
 // key(code, down), pausable, pauseOpts().
@@ -1747,14 +4104,14 @@ SCREENS.title = {
     pg.appendChild(el('div', 'menu-label', 'Proving Ground'));
     const pgRow = el('div', 'menu-row');
     if (p.continueLevel > 1) {
-      pgRow.appendChild(button(`Continue at level ${p.continueLevel}`, () => screens.go('range', p.continueLevel), 'btn btn-primary'));
+      pgRow.appendChild(button(`Continue at level ${p.continueLevel}`, () => screens.go('battle', p.continueLevel), 'btn btn-primary'));
     }
-    pgRow.appendChild(button('Play from level 1', () => screens.go('range', 1), p.continueLevel > 1 ? 'btn' : 'btn btn-primary'));
+    pgRow.appendChild(button('Play from level 1', () => screens.go('battle', 1), p.continueLevel > 1 ? 'btn' : 'btn btn-primary'));
     pg.appendChild(pgRow);
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
-    row2.appendChild(button('Drafting Office', () => ui.toast('The Drafting Office opens in a later update.')));
+    row2.appendChild(button('Workshop', () => ui.toast('The Workshop opens in the next update (Part 1c).')));
     row2.appendChild(button('Blueprints', () => ui.toast('No captured blueprints yet. Bosses start at level 10.')));
     row2.appendChild(button('Settings', () => ui.openSettings()));
     menu.appendChild(row2);
@@ -1771,663 +4128,6 @@ SCREENS.title = {
     g.fillRect(0, h * 0.9, w, h * 0.1);
     g.fillStyle = PAL.groundEdge;
     g.fillRect(0, h * 0.9, w, 2);
-  },
-};
-
-// ---------- Controls test range (stand-in for the battle until Part 1b)
-// A flat range with three placeholder vehicles and target boards, so every
-// thumb control, gesture and key can be tried and tested.
-const PX_PER_M = 10;            // at 360 px screen height; scales with the screen
-const RANGE_GRAVITY = 20;
-const SHELL_SPEED = 55;
-const RELOAD_TIME = 1.2;
-const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-
-function rangeGroundY(x) { return 1.2 * Math.sin(x * 0.035) + 0.5 * Math.sin(x * 0.11); }
-
-SCREENS.range = {
-  pausable: true,
-  level: 1,
-  cam: { x: 0, y: 4, zoom: 1, follow: true },
-  squad: [],
-  active: 0,
-  order: 'Follow',
-  targets: [],
-  target: -1,
-  hits: 0,
-  shots: 0,
-  reload: 0,
-  aim: null,          // {x, y} world point while manually aiming
-  drive: 0,
-  frozen: false,
-  simTime: 0,
-  tracers: makePool(() => ({ alive: false, x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, life: 0, rocket: false }), MAX_TRACERS),
-  puffs: makePool(() => ({ alive: false, x: 0, y: 0, r: 0, t: 0, life: 1 }), 60),
-  controls: [],
-  c: {},
-
-  enter(level) {
-    this.level = level || 1;
-    this.squad = [0, 1, 2].map((i) => ({ x: 10 - i * 9, v: 0, hold: null, flip: false }));
-    this.active = 0;
-    this.order = 'Follow';
-    this.targets = [55, 85, 120].map((x) => ({ x, hitT: -9 }));
-    this.target = -1;
-    this.hits = 0;
-    this.shots = 0;
-    this.reload = 0;
-    this.aim = null;
-    this.drive = 0;
-    this.frozen = false;
-    this.simTime = 0;
-    this.cam.x = this.squad[0].x + 12;
-    this.cam.y = 4;
-    this.cam.zoom = 1;
-    this.cam.follow = true;
-    this.tracers.forEachAlive((t) => { t.alive = false; });
-    this.puffs.forEachAlive((p) => { p.alive = false; });
-    this.buildControls();
-    audio.playTheme(null);
-    game.frozen = false;
-    ui.toast('Controls test range. Battles arrive in the next update.', 3500);
-  },
-
-  exit() { game.frozen = false; },
-
-  pauseOpts() {
-    return {
-      restartLabel: 'Restart',
-      restart: () => this.enter(this.level),
-      quit: () => screens.go('title'),
-    };
-  },
-
-  // ---------- controls
-  buildControls() {
-    const C = this.c;
-    const drivePress = () => { this.updateDrive(); };
-    C.left = makeControl('left', { glyph: 'left', down: drivePress, up: drivePress });
-    C.right = makeControl('right', { glyph: 'right', down: drivePress, up: drivePress });
-    C.upBtn = makeControl('up', { glyph: 'up', hidden: true });
-    C.downBtn = makeControl('down', { glyph: 'down', hidden: true });
-    C.fire = makeControl('fire', {
-      label: 'Fire',
-      down: (p) => { p.fireAim = false; },
-      move: (p) => this.fireDrag(p),
-      up: (p, cancelled) => this.fireUp(p, cancelled),
-    });
-    C.alt = makeControl('alt', { label: 'Alt', up: (p, x) => { if (!x) this.fireRocket(); } });
-    C.swap = makeControl('swap', { label: 'Swap', up: (p, x) => { if (!x) this.swap(); } });
-    C.special = makeControl('special', { label: 'Smoke', up: (p, x) => { if (!x) this.smoke(); } });
-    C.chips = ORDERS.map((o, i) => makeControl('order' + i, {
-      shape: 'rect', label: o, pad: 2, up: (p, x) => { if (!x) this.setOrder(o); },
-    }));
-    C.time = makeControl('time', { shape: 'rect', glyph: 'stop', pad: 4, up: (p, x) => { if (!x) this.toggleTime(); } });
-    C.pause = makeControl('pause', { shape: 'rect', glyph: 'pause', pad: 4, up: (p, x) => { if (!x) togglePause(); } });
-    C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
-    C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
-    C.cards = [0, 1, 2].map((i) => makeControl('card' + i, {
-      shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); },
-    }));
-    this.controls = [C.left, C.right, C.upBtn, C.downBtn, C.special, C.alt, C.swap, C.fire, ...C.chips,
-      C.recenter, ...C.cards, C.time, C.pause, C.settings];
-  },
-
-  layout() {
-    const C = this.c;
-    if (!C.fire) return;
-    const { w, h, safe } = layout;
-    const s = BTN_SCALE[save.settings.btnSize] || 1;
-    const L = save.settings.leftHanded;
-    const mx = (x) => (L ? w - x : x);   // mirror for left-handed
-
-    const top = safe.t;
-    const barH = 34;
-    // Top bar buttons, right side (44 px wide targets).
-    let bx = w - safe.r - 6;
-    for (const b of [C.settings, C.pause, C.time]) {
-      bx -= 44;
-      b.x = bx; b.y = top + 3; b.w = 42; b.h = 28;
-      bx -= 4;
-    }
-    // Squad cards, left side.
-    for (let i = 0; i < 3; i++) {
-      const cd = C.cards[i];
-      cd.x = safe.l + 6 + i * 50; cd.y = top + 3; cd.w = 46; cd.h = 28;
-    }
-
-    // Right thumb cluster.
-    const R = (FIRE_DIAMETER / 2) * s;
-    const r2 = 24 * s;
-    const edgeR = safe.r + 10;
-    const chipW = 72;
-    const fireX = w - edgeR - chipW - 6 - R;
-    const fireY = h - safe.b - 12 - R;
-    C.fire.x = mx(fireX); C.fire.y = fireY; C.fire.r = R;
-    C.alt.x = mx(fireX - R * 1.25); C.alt.y = fireY - R * 1.35; C.alt.r = r2;
-    C.special.x = mx(fireX - R * 1.95); C.special.y = fireY + R * 0.25; C.special.r = r2;
-    C.swap.x = mx(w - edgeR - chipW / 2); C.swap.y = fireY - R * 0.35; C.swap.r = Math.max(r2, 26 * s);
-
-    // Order chips: a column on the edge above Swap.
-    const chipTop = top + barH + 8;
-    const chipBottom = C.swap.y - C.swap.r - 8;
-    const gap = 4;
-    const chipH = clamp(Math.floor((chipBottom - chipTop - gap * 4) / 5), 24, 36);
-    for (let i = 0; i < 5; i++) {
-      const cp = C.chips[i];
-      cp.w = chipW; cp.h = chipH;
-      cp.x = L ? safe.l + 10 : w - edgeR - chipW;
-      cp.y = chipTop + i * (chipH + gap);
-    }
-
-    // Left thumb: drive pad.
-    const Rp = 34 * s;
-    const padY = h - safe.b - 14 - Rp;
-    const lx = safe.l + 18 + Rp;
-    C.left.x = mx(lx); C.left.y = padY; C.left.r = Rp;
-    C.right.x = mx(lx + Rp * 2 + 18); C.right.y = padY; C.right.r = Rp;
-    if (L) { const t = C.left.x; C.left.x = C.right.x; C.right.x = t; }
-
-    C.recenter.w = 92; C.recenter.h = 30;
-    C.recenter.x = w / 2 - 46; C.recenter.y = top + barH + 8;
-  },
-
-  // ---------- squad and orders
-  get me() { return this.squad[this.active]; },
-
-  updateDrive() {
-    const k = input.keys;
-    const l = this.c.left.pressCount > 0 || k.has('KeyA') || k.has('ArrowLeft');
-    const r = this.c.right.pressCount > 0 || k.has('KeyD') || k.has('ArrowRight');
-    this.c.left.held = k.has('KeyA') || k.has('ArrowLeft');
-    this.c.right.held = k.has('KeyD') || k.has('ArrowRight');
-    const before = this.drive;
-    this.drive = l && r ? 2 : l ? -1 : r ? 1 : 0;   // 2 = halt/brake
-    if (this.drive !== before && (this.drive === 1 || this.drive === -1)) audio.sfx('engineRev', this.panOf(this.me.x));
-  },
-
-  takeControl(i) {
-    if (i === this.active) return;
-    this.active = i;
-    this.me.hold = null;
-    this.cam.follow = true;
-    audio.sfx('swap');
-    haptic('tap');
-    floatText(`Vehicle ${i + 1}`, this.me.x, rangeGroundY(this.me.x) + 5);
-  },
-
-  swap() { this.takeControl((this.active + 1) % 3); },
-
-  setOrder(o) {
-    this.order = o;
-    for (const s of this.squad) s.hold = null;
-    audio.sfx('order');
-    haptic('tap');
-    floatText(o, this.me.x, rangeGroundY(this.me.x) + 5);
-  },
-
-  recenter() {
-    this.cam.follow = true;
-    audio.sfx('tap');
-  },
-
-  toggleTime() {
-    this.frozen = !this.frozen;
-    game.frozen = this.frozen;
-    this.c.time.glyph = this.frozen ? 'play' : 'stop';
-    this.c.time.glyphLines = null;
-    audio.sfx(this.frozen ? 'timeStop' : 'timeStart');
-    haptic('tap');
-  },
-
-  // ---------- weapons (placeholder ballistics; real combat is Part 1b)
-  muzzle(v) {
-    const dir = v.flip ? -1 : 1;
-    return { x: v.x + dir * 4.2, y: rangeGroundY(v.x) + 2.6, dir };
-  },
-
-  // Low-angle firing solution to hit (tx, ty) from (x, y); out of range fires at 45°.
-  solve(x, y, tx, ty, speed) {
-    const dx = tx - x;
-    const dy = ty - y;
-    const ax = Math.max(0.01, Math.abs(dx));
-    const v2 = speed * speed;
-    const disc = v2 * v2 - RANGE_GRAVITY * (RANGE_GRAVITY * ax * ax + 2 * dy * v2);
-    const ang = disc < 0 ? Math.PI / 4 : Math.atan((v2 - Math.sqrt(disc)) / (RANGE_GRAVITY * ax));
-    return { vx: Math.cos(ang) * speed * (dx < 0 ? -1 : 1), vy: Math.sin(ang) * speed };
-  },
-
-  fireDrag(p) {
-    const C = this.c.fire;
-    if (this.frozen) return;
-    const off = dist(p.x, p.y, C.x, C.y);
-    if (!p.fireAim && off > C.r * 0.6) p.fireAim = true;
-    if (!p.fireAim) return;
-    if (off < C.r * 0.8) { this.aim = null; return; }   // back on the button: cancel
-    const wx = this.toWorldX(p.x);
-    const wy = Math.max(this.toWorldY(p.y), rangeGroundY(wx));
-    this.aim = this.aim || { x: 0, y: 0 };
-    this.aim.x = wx; this.aim.y = wy;
-  },
-
-  fireUp(p, cancelled) {
-    const aim = this.aim;
-    this.aim = null;
-    if (cancelled || this.frozen) return;
-    if (p.fireAim) {
-      if (aim) this.fireShell(aim.x, aim.y);
-      else audio.sfx('back');
-      return;
-    }
-    this.fireAuto();
-  },
-
-  fireAuto() {
-    if (this.frozen) return;
-    const me = this.me;
-    let tx;
-    if (this.target >= 0) tx = this.targets[this.target].x;
-    else {
-      // Nearest board in front, else a point 40 m ahead.
-      const dir = me.flip ? -1 : 1;
-      tx = me.x + dir * 40;
-      let best = Infinity;
-      for (const t of this.targets) {
-        const d = (t.x - me.x) * dir;
-        if (d > 5 && d < best) { best = d; tx = t.x; }
-      }
-    }
-    this.fireShell(tx, rangeGroundY(tx) + 1.5);
-  },
-
-  fireShell(tx, ty) {
-    if (this.reload > 0) { audio.sfx('error'); return; }
-    const me = this.me;
-    me.flip = tx < me.x;
-    const m = this.muzzle(me);
-    const v = this.solve(m.x, m.y, tx, ty, SHELL_SPEED);
-    this.spawnTracer(m.x, m.y, v.vx, v.vy, false);
-    this.reload = RELOAD_TIME;
-    this.shots++;
-    audio.sfx('cannon', this.panOf(m.x), 1);
-    haptic('fire');
-    this.puff(m.x, m.y, 0.8);
-  },
-
-  fireRocket() {
-    if (this.frozen) return;
-    const me = this.me;
-    const m = this.muzzle(me);
-    this.spawnTracer(m.x, m.y + 0.5, m.dir * 70, 6, true);
-    audio.sfx('rocket', this.panOf(m.x));
-    haptic('fire');
-  },
-
-  smoke() {
-    if (this.frozen) return;
-    const me = this.me;
-    for (let i = 0; i < 6; i++) this.puff(me.x + (i - 2.5) * 1.6, rangeGroundY(me.x) + 1.5 + (i % 2), 2.2);
-    audio.sfx('smoke', this.panOf(me.x));
-    haptic('tap');
-  },
-
-  spawnTracer(x, y, vx, vy, rocket) {
-    const t = this.tracers.take();
-    t.x = t.px = x; t.y = t.py = y; t.vx = vx; t.vy = vy; t.life = 4; t.rocket = rocket;
-  },
-
-  puff(x, y, r) {
-    const p = this.puffs.take();
-    p.x = x; p.y = y; p.r = r; p.t = 0; p.life = 1.4 + r * 0.3;
-  },
-
-  panOf(wx) { return clamp((this.toScreenX(wx) / layout.w) * 2 - 1, -1, 1) * 0.8; },
-
-  // ---------- camera
-  scale() { return PX_PER_M * (layout.h / 360) * this.cam.zoom; },
-  toScreenX(wx) { return (wx - this.cam.x) * this.scale() + layout.w / 2; },
-  toScreenY(wy) { return layout.h * 0.62 - (wy - this.cam.y) * this.scale(); },
-  toWorldX(sx) { return (sx - layout.w / 2) / this.scale() + this.cam.x; },
-  toWorldY(sy) { return (layout.h * 0.62 - sy) / this.scale() + this.cam.y; },
-
-  world: {
-    tap(x, y) {
-      const R = SCREENS.range;
-      const wx = R.toWorldX(x);
-      const wy = R.toWorldY(y);
-      // Own vehicle: take control.
-      for (let i = 0; i < 3; i++) {
-        const v = R.squad[i];
-        if (Math.abs(wx - v.x) < 4 && wy > rangeGroundY(v.x) - 1 && wy < rangeGroundY(v.x) + 5) { R.takeControl(i); return; }
-      }
-      // Target board: set as target (tap again to clear).
-      for (let i = 0; i < R.targets.length; i++) {
-        const t = R.targets[i];
-        if (Math.abs(wx - t.x) < 3 && wy > rangeGroundY(t.x) - 1 && wy < rangeGroundY(t.x) + 6) {
-          R.target = R.target === i ? -1 : i;
-          audio.sfx(R.target === i ? 'toggleOn' : 'toggleOff');
-          haptic('tap');
-          if (R.target === i) floatText('Target', t.x, rangeGroundY(t.x) + 6.5, true);
-          return;
-        }
-      }
-    },
-    doubleTap() {
-      const R = SCREENS.range;
-      R.cam.zoom = 1;
-      audio.sfx('tap');
-    },
-    longPress(x) {
-      const R = SCREENS.range;
-      const wx = R.toWorldX(x);
-      for (let i = 0; i < 3; i++) if (i !== R.active) R.squad[i].hold = wx + (i - 1) * 6;
-      audio.sfx('order');
-      haptic('tap');
-      floatText('Move here', wx, rangeGroundY(wx) + 3);
-    },
-    pan(dx, dy) {
-      const R = SCREENS.range;
-      R.cam.follow = false;
-      R.cam.x -= dx / R.scale();
-      R.cam.y = clamp(R.cam.y + dy / R.scale(), -2, 30);
-    },
-    pinch(f, cx, cy) {
-      const R = SCREENS.range;
-      const bx = R.toWorldX(cx), by = R.toWorldY(cy);
-      R.cam.zoom = clamp(R.cam.zoom * f, ZOOM_MIN, ZOOM_MAX);
-      R.cam.x += bx - R.toWorldX(cx);
-      R.cam.y = clamp(R.cam.y + by - R.toWorldY(cy), -2, 30);
-    },
-  },
-
-  key(code, down) {
-    if (/^(KeyA|KeyD|ArrowLeft|ArrowRight)$/.test(code)) { this.updateDrive(); return; }
-    const hold = (c) => { c.held = down; if (!down) c.releasedAt = performance.now(); };
-    if (code === 'Space') { hold(this.c.fire); if (down) this.fireAuto(); return; }
-    if (code === 'KeyF') { hold(this.c.alt); if (down) this.fireRocket(); return; }
-    if (code === 'KeyE' || code === 'Tab') { hold(this.c.swap); if (down) this.swap(); return; }
-    if (code === 'KeyQ') { hold(this.c.special); if (down) this.smoke(); return; }
-    const n = /^Digit([1-5])$/.exec(code);
-    if (n) { const c = this.c.chips[+n[1] - 1]; hold(c); if (down) this.setOrder(ORDERS[+n[1] - 1]); return; }
-    if (!down) return;
-    if (code === 'KeyT') this.toggleTime();
-    else if (code === 'KeyC') this.recenter();
-  },
-
-  // ---------- simulation
-  update(dt, simRunning) {
-    if (simRunning && !this.frozen) this.step(dt);
-    this.updateCamera(dt);
-    updateFloaters(dt);
-    const C = this.c;
-    for (let i = 0; i < 5; i++) C.chips[i].lit = ORDERS[i] === this.order;
-    for (let i = 0; i < 3; i++) C.cards[i].lit = i === this.active;
-    C.recenter.hidden = this.cam.follow;
-    C.fire.disabled = this.frozen;
-    C.alt.disabled = this.frozen;
-    C.special.disabled = this.frozen;
-  },
-
-  step(dt) {
-    this.simTime += dt;
-    this.reload = Math.max(0, this.reload - dt);
-    const me = this.me;
-    // Controlled vehicle: simple kinematic drive (real physics arrive in Part 1b).
-    const accel = 9;
-    if (this.drive === 2) me.v *= Math.pow(0.02, dt);
-    else if (this.drive) { me.v += this.drive * accel * dt; me.flip = this.drive < 0; }
-    else me.v *= Math.pow(0.3, dt);
-    me.v = clamp(me.v, -8, 12);
-    // Squad-mates follow the order.
-    for (let i = 0; i < 3; i++) {
-      if (i === this.active) continue;
-      const v = this.squad[i];
-      const slot = i < this.active ? i + 1 : i;   // 1 or 2 behind
-      const dir = me.flip ? 1 : -1;
-      let goal = null;
-      if (v.hold !== null) goal = v.hold;
-      else if (this.order === 'Follow') goal = me.x + dir * 10 * slot;
-      else if (this.order === 'Escort') goal = me.x + dir * 5 * slot - dir * (slot === 2 ? 10 : 0);
-      else if (this.order === 'Attack') goal = this.target >= 0 ? this.targets[this.target].x - 25 - slot * 6 : me.x - dir * 8 * slot;
-      else if (this.order === 'Back') goal = me.x + dir * 25 * slot;
-      if (goal === null) v.v *= Math.pow(0.05, dt);
-      else {
-        const d = goal - v.x;
-        const want = clamp(d * 0.8, -9, 9);
-        v.v += clamp(want - v.v, -8 * dt, 8 * dt);
-        if (Math.abs(d) > 1) v.flip = d < 0;
-      }
-    }
-    for (const v of this.squad) v.x = clamp(v.x + v.v * dt, -60, 220);
-
-    // Tracers.
-    this.tracers.forEachAlive((t) => {
-      t.px = t.x; t.py = t.y;
-      if (!t.rocket) t.vy -= RANGE_GRAVITY * dt;
-      t.x += t.vx * dt;
-      t.y += t.vy * dt;
-      t.life -= dt;
-      for (const b of this.targets) {
-        const gy = rangeGroundY(b.x);
-        if (Math.abs(t.x - b.x) < 1.2 && t.y > gy && t.y < gy + 5) {
-          t.alive = false;
-          b.hitT = this.simTime;
-          this.hits++;
-          floatText(t.rocket ? 'Rocket hit' : 'Hit', b.x, gy + 6.5, true);
-          audio.sfx('clunk', this.panOf(b.x));
-          this.puff(t.x, t.y, 1);
-          return;
-        }
-      }
-      if (t.y < rangeGroundY(t.x) || t.life <= 0) {
-        t.alive = false;
-        this.puff(t.x, rangeGroundY(t.x) + 0.5, 1.2);
-        audio.sfx('tick', this.panOf(t.x), 1.5);
-      }
-    });
-    this.puffs.forEachAlive((p) => { p.t += dt; p.y += dt * 0.8; if (p.t > p.life) p.alive = false; });
-  },
-
-  updateCamera(dt) {
-    const cam = this.cam;
-    const idle = (performance.now() - input.lastWorldTouch) / 1000;
-    if (!cam.follow && save.settings.autoRecenter && idle > RECENTER_AFTER && input.world.length === 0) cam.follow = true;
-    if (cam.follow) {
-      const me = this.me;
-      const lead = me.flip ? -12 : 12;
-      const k = 1 - Math.pow(0.02, dt);
-      cam.x += (me.x + lead - cam.x) * k;
-      cam.y += (4 - cam.y) * k;
-    }
-  },
-
-  // ---------- drawing
-  render(g, nowMs) {
-    const { w, h, safe } = layout;
-    const S = this.scale();
-    drawBackground(g, this.cam.x * this.scale() * 0.25);
-
-    // Ground, drawn as one polygon across the screen.
-    const x0 = this.toWorldX(-10);
-    const x1 = this.toWorldX(w + 10);
-    const stepM = 8 / S;
-    g.fillStyle = PAL.ground;
-    g.beginPath();
-    g.moveTo(-10, h);
-    for (let x = x0; x <= x1 + stepM; x += stepM) g.lineTo(this.toScreenX(x), this.toScreenY(rangeGroundY(x)));
-    g.lineTo(w + 10, h);
-    g.closePath();
-    g.fill();
-    g.strokeStyle = PAL.groundEdge;
-    g.lineWidth = 2;
-    g.beginPath();
-    for (let x = x0; x <= x1 + stepM; x += stepM) {
-      const sx = this.toScreenX(x), sy = this.toScreenY(rangeGroundY(x));
-      if (x === x0) g.moveTo(sx, sy); else g.lineTo(sx, sy);
-    }
-    g.stroke();
-
-    // Distance posts every 10 m.
-    g.font = `400 12px ${FONT_UI}`;
-    g.textAlign = 'center';
-    g.textBaseline = 'top';
-    g.fillStyle = 'rgba(230,220,195,0.55)';
-    for (let m = Math.ceil(x0 / 10) * 10; m <= x1; m += 10) {
-      const sx = this.toScreenX(m), sy = this.toScreenY(rangeGroundY(m));
-      g.fillRect(sx - 1, sy - 8, 2, 8);
-      if (m % 20 === 0) g.fillText(m + ' m', sx, sy + 4);
-    }
-
-    // Target boards.
-    for (let i = 0; i < this.targets.length; i++) {
-      const t = this.targets[i];
-      const sx = this.toScreenX(t.x), sy = this.toScreenY(rangeGroundY(t.x));
-      const flash = clamp(1 - (this.simTime - t.hitT) / 0.25, 0, 1);
-      g.fillStyle = flash > 0 ? PAL.amber : PAL.directorate;
-      g.fillRect(sx - 0.4 * S, sy - 5 * S, 0.8 * S, 5 * S);
-      g.fillRect(sx - 1.4 * S, sy - 5 * S, 2.8 * S, 2.4 * S);
-      if (i === this.target) {
-        g.strokeStyle = PAL.amber;
-        g.lineWidth = 2;
-        g.beginPath();
-        g.arc(sx, sy - 3.8 * S, 2.4 * S, 0, Math.PI * 2);
-        g.stroke();
-      }
-    }
-
-    // Squad vehicles (placeholder silhouettes).
-    for (let i = 0; i < 3; i++) this.drawVehicle(g, this.squad[i], i === this.active, S);
-
-    // Smoke.
-    this.puffs.forEachAlive((p) => {
-      const k = p.t / p.life;
-      g.globalAlpha = 0.5 * (1 - k);
-      g.fillStyle = '#8b8a90';
-      g.beginPath();
-      g.arc(this.toScreenX(p.x), this.toScreenY(p.y), (p.r + k * p.r) * S * 0.6, 0, Math.PI * 2);
-      g.fill();
-    });
-    g.globalAlpha = 1;
-
-    // Tracers.
-    g.lineCap = 'round';
-    this.tracers.forEachAlive((t) => {
-      const ax = this.toScreenX(t.px), ay = this.toScreenY(t.py);
-      const bx = this.toScreenX(t.x), by = this.toScreenY(t.y);
-      g.strokeStyle = 'rgba(255,178,62,0.35)';
-      g.lineWidth = 5;
-      g.beginPath(); g.moveTo(ax - (bx - ax) * 2, ay - (by - ay) * 2); g.lineTo(bx, by); g.stroke();
-      g.strokeStyle = '#FFE2A8';
-      g.lineWidth = 2;
-      g.beginPath(); g.moveTo(ax - (bx - ax), ay - (by - ay)); g.lineTo(bx, by); g.stroke();
-    });
-
-    // Manual-aim trajectory preview.
-    if (this.aim && save.settings.aimAssist) {
-      const m = this.muzzle(this.me);
-      const v = this.solve(m.x, m.y, this.aim.x, this.aim.y, SHELL_SPEED);
-      g.fillStyle = 'rgba(255,178,62,0.85)';
-      let x = m.x, y = m.y, vx = v.vx, vy = v.vy;
-      for (let i = 0; i < 60; i++) {
-        const dt = 0.05;
-        vy -= RANGE_GRAVITY * dt; x += vx * dt; y += vy * dt;
-        if (y < rangeGroundY(x)) break;
-        if (i % 2 === 0) { g.beginPath(); g.arc(this.toScreenX(x), this.toScreenY(y), 2, 0, Math.PI * 2); g.fill(); }
-      }
-      g.strokeStyle = PAL.amber;
-      g.lineWidth = 1.5;
-      const ax = this.toScreenX(this.aim.x), ay = this.toScreenY(this.aim.y);
-      g.beginPath(); g.arc(ax, ay, 7, 0, Math.PI * 2); g.stroke();
-    }
-
-    drawFloaters(g, (x) => this.toScreenX(x), (y) => this.toScreenY(y));
-
-    // Time stopped banner.
-    if (this.frozen) {
-      g.fillStyle = 'rgba(19,70,107,0.18)';
-      g.fillRect(0, 0, w, h);
-      g.font = `700 16px ${FONT_UI}`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      const bw = 150;
-      drawAcetate(g, w / 2 - bw / 2, safe.t + 42, bw, 26);
-      g.fillStyle = PAL.linen;
-      g.fillText('Time stopped', w / 2, safe.t + 55);
-    }
-
-    this.drawHud(g, nowMs);
-  },
-
-  drawVehicle(g, v, active, S) {
-    const gy = rangeGroundY(v.x);
-    const slope = Math.atan((rangeGroundY(v.x + 1) - rangeGroundY(v.x - 1)) / 2);
-    const sx = this.toScreenX(v.x), sy = this.toScreenY(gy);
-    const dir = v.flip ? -1 : 1;
-    g.save();
-    g.translate(sx, sy);
-    g.rotate(-slope);
-    g.scale(dir, 1);
-    g.fillStyle = active ? PAL.league : '#23507f';
-    // Tracks and wheels.
-    g.fillRect(-3.4 * S, -1.1 * S, 6.8 * S, 1.1 * S);
-    // Hull.
-    g.beginPath();
-    g.moveTo(-3.6 * S, -1.1 * S);
-    g.lineTo(3.9 * S, -1.1 * S);
-    g.lineTo(3.2 * S, -2.2 * S);
-    g.lineTo(-3.4 * S, -2.2 * S);
-    g.closePath();
-    g.fill();
-    // Turret and barrel.
-    g.fillRect(-1.6 * S, -3.2 * S, 3 * S, 1.1 * S);
-    g.fillRect(1.2 * S, -2.9 * S, 3 * S, 0.35 * S);
-    g.fillStyle = 'rgba(0,0,0,0.35)';
-    for (let k = -2; k <= 2; k++) { g.beginPath(); g.arc(k * 1.4 * S, -0.5 * S, 0.45 * S, 0, Math.PI * 2); g.fill(); }
-    g.restore();
-    if (active) {
-      g.fillStyle = PAL.amber;
-      g.beginPath();
-      g.moveTo(sx - 5, sy - 3.9 * S - 10);
-      g.lineTo(sx + 5, sy - 3.9 * S - 10);
-      g.lineTo(sx, sy - 3.9 * S - 4);
-      g.closePath();
-      g.fill();
-    }
-  },
-
-  drawHud(g, nowMs) {
-    const { w, safe } = layout;
-    const C = this.c;
-    drawAcetate(g, 0, 0, w, safe.t + 34);
-    const ghost = controlsGhost(nowMs);
-    // Squad cards: silhouette plus a health bar.
-    for (let i = 0; i < 3; i++) {
-      const cd = C.cards[i];
-      drawControl(g, cd, nowMs, 1);
-      g.fillStyle = i === this.active ? PAL.league : 'rgba(230,220,195,0.6)';
-      g.fillRect(cd.x + 10, cd.y + 9, 22, 6);
-      g.fillRect(cd.x + 16, cd.y + 6, 9, 3);
-      g.fillStyle = PAL.good;
-      g.fillRect(cd.x + 8, cd.y + 19, 30, 3);
-      g.font = `700 12px ${FONT_UI}`;
-      g.textAlign = 'left';
-      g.textBaseline = 'middle';
-      g.fillStyle = PAL.linen;
-      g.fillText(String(i + 1), cd.x + 36, cd.y + 11);
-    }
-    // Objective text between the cards and the buttons.
-    const left = C.cards[2].x + C.cards[2].w + 12;
-    const right = C.time.x - 10;
-    g.font = `400 14px ${FONT_UI}`;
-    g.textAlign = 'left';
-    g.textBaseline = 'middle';
-    g.fillStyle = PAL.linen;
-    const txt = `Controls test · hits ${this.hits} of ${this.shots}`;
-    if (right - left > 80) g.fillText(txt, left, safe.t + 17, right - left);
-
-    for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
-    for (const c of [C.left, C.right, C.upBtn, C.downBtn, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
-    drawRing(g, C.fire, 1 - this.reload / RELOAD_TIME, ghost);
   },
 };
 
@@ -2485,6 +4185,526 @@ function enterFullscreen() {
     .catch(() => {});
 }
 
+/* ---------- 16b_screen_battle.js ---------- */
+/* ==== 16b SCREEN: BATTLE ==== */
+// The battle screen (design/02 §3): world full screen, top bar, drive pad,
+// action cluster, order chips, world gestures and keyboard.
+
+const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
+const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
+const DEFAULT_ZOOM = 0.75;
+const MIN_AUTO_ZOOM = 0.55;     // how far the follow camera may pull back to frame a target
+
+SCREENS.battle = {
+  pausable: true,
+  B: null,
+  level: 1,
+  cam: { x: 0, y: 0, zoom: DEFAULT_ZOOM, follow: true },
+  frozen: false,
+  aim: null,
+  drive: 0,
+  controls: [],
+  c: {},
+  resultShown: false,
+
+  enter(level) {
+    this.level = level || 1;
+    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters]) pool.forEachAlive((p) => { p.alive = false; });
+    const B = createBattle(this.level);
+    this.B = B;
+    view.B = B;
+    B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
+    this.cam.x = B.me.body.x + 25;
+    this.cam.y = B.me.body.y + 3;
+    this.cam.zoom = DEFAULT_ZOOM;
+    this.cam.follow = true;
+    this.cam.manual = false;
+    this.frozen = false;
+    game.frozen = false;
+    this.aim = null;
+    this.drive = 0;
+    this.resultShown = false;
+    this.buildControls();
+    this.layout();
+    audio.setIntensity(0);
+    audio.playTheme('battle');
+    ui.toast(`Level ${this.level} · ${B.cfg.name}: ${B.cfg.goal.toLowerCase()}.`, 3200);
+  },
+
+  exit() { game.frozen = false; this.B = null; },
+
+  pauseOpts() {
+    return {
+      restart: () => this.enter(this.level),
+      quit: () => screens.go('title'),
+    };
+  },
+
+  // ---------- controls
+  buildControls() {
+    const C = this.c;
+    const drive = () => this.updateDrive();
+    C.left = makeControl('left', { glyph: 'left', down: drive, up: drive });
+    C.right = makeControl('right', { glyph: 'right', down: drive, up: drive });
+    C.fire = makeControl('fire', {
+      label: 'Fire',
+      down: (p) => { p.fireAim = false; },
+      move: (p) => this.fireDrag(p),
+      up: (p, cancelled) => this.fireUp(p, cancelled),
+    });
+    C.alt = makeControl('alt', { label: 'Alt', hidden: true });
+    C.swap = makeControl('swap', { label: 'Swap', up: (p, x) => { if (!x) this.swap(); } });
+    C.special = makeControl('special', { label: 'Smoke', up: (p, x) => { if (!x) this.smoke(); } });
+    C.chips = ORDERS.map((o, i) => makeControl('order' + i, { shape: 'rect', label: o, pad: 2, up: (p, x) => { if (!x) this.setOrder(o); } }));
+    C.time = makeControl('time', { shape: 'rect', glyph: 'stop', pad: 4, up: (p, x) => { if (!x) this.toggleTime(); } });
+    C.pause = makeControl('pause', { shape: 'rect', glyph: 'pause', pad: 4, up: (p, x) => { if (!x) togglePause(); } });
+    C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
+    C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
+    C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
+    this.controls = [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+  },
+
+  layout() {
+    const C = this.c;
+    if (!C.fire) return;
+    const { w, h, safe } = layout;
+    const s = BTN_SCALE[save.settings.btnSize] || 1;
+    const L = save.settings.leftHanded;
+    const mx = (x) => (L ? w - x : x);
+    const top = safe.t;
+    const barH = 34;
+    let bx = w - safe.r - 6;
+    for (const b of [C.settings, C.pause, C.time]) { bx -= 44; b.x = bx; b.y = top + 3; b.w = 42; b.h = 28; bx -= 4; }
+    for (let i = 0; i < 3; i++) { const cd = C.cards[i]; cd.x = safe.l + 6 + i * 50; cd.y = top + 3; cd.w = 46; cd.h = 28; }
+    this.mini = { x: C.time.x - 10 - clamp(w * 0.18, 90, 200), y: top + 5, w: clamp(w * 0.18, 90, 200), h: 24 };
+
+    const R = (FIRE_DIAMETER / 2) * s;
+    const r2 = 24 * s;
+    const edgeR = safe.r + 10;
+    const chipW = 72;
+    const fireX = w - edgeR - chipW - 6 - R;
+    const fireY = h - safe.b - 12 - R;
+    C.fire.x = mx(fireX); C.fire.y = fireY; C.fire.r = R;
+    C.alt.x = mx(fireX - R * 1.25); C.alt.y = fireY - R * 1.35; C.alt.r = r2;
+    C.special.x = mx(fireX - R * 1.95); C.special.y = fireY + R * 0.25; C.special.r = r2;
+    C.swap.x = mx(w - edgeR - chipW / 2); C.swap.y = fireY - R * 0.35; C.swap.r = Math.max(r2, 26 * s);
+    const chipTop = top + barH + 8;
+    const chipBottom = C.swap.y - C.swap.r - 8;
+    const chipH = clamp(Math.floor((chipBottom - chipTop - 16) / 5), 24, 36);
+    for (let i = 0; i < 5; i++) {
+      const cp = C.chips[i];
+      cp.w = chipW; cp.h = chipH;
+      cp.x = L ? safe.l + 10 : w - edgeR - chipW;
+      cp.y = chipTop + i * (chipH + 4);
+    }
+    const Rp = 34 * s;
+    const padY = h - safe.b - 14 - Rp;
+    const lx = safe.l + 18 + Rp;
+    C.left.x = mx(lx); C.left.y = padY; C.left.r = Rp;
+    C.right.x = mx(lx + Rp * 2 + 18); C.right.y = padY; C.right.r = Rp;
+    if (L) { const t = C.left.x; C.left.x = C.right.x; C.right.x = t; }
+    C.recenter.w = 92; C.recenter.h = 30;
+    C.recenter.x = w / 2 - 46; C.recenter.y = top + barH + 8;
+  },
+
+  // ---------- commands
+  updateDrive() {
+    const k = input.keys;
+    const l = this.c.left.pressCount > 0 || k.has('KeyA') || k.has('ArrowLeft');
+    const r = this.c.right.pressCount > 0 || k.has('KeyD') || k.has('ArrowRight');
+    this.c.left.held = k.has('KeyA') || k.has('ArrowLeft');
+    this.c.right.held = k.has('KeyD') || k.has('ArrowRight');
+    const before = this.drive;
+    this.drive = l && r ? 0 : l ? -1 : r ? 1 : 0;      // both together = halt/brake
+    if (this.B && this.drive !== before && this.drive !== 0) audio.sfx('engineRev', this.B.panOf(this.B.me.body.x));
+  },
+
+  takeControl(i) {
+    const B = this.B;
+    const V = B.squad[i];
+    if (!V || V === B.me) return;
+    if (V.destroyed) { audio.sfx('error'); return; }
+    takeVehicle(B, V);
+    this.cam.follow = true;
+    audio.sfx('swap');
+    haptic('tap');
+    floatText(V.name, V.body.x, V.body.y + V.height + 1);
+  },
+
+  swap() {
+    const B = this.B;
+    const i = B.squad.indexOf(B.me);
+    for (let k = 1; k <= 3; k++) {
+      const V = B.squad[(i + k) % B.squad.length];
+      if (!V.destroyed && V !== B.me) { this.takeControl(B.squad.indexOf(V)); return; }
+    }
+    audio.sfx('error');
+  },
+
+  setOrder(o) {
+    const B = this.B;
+    B.order = o;
+    for (const V of B.squad) V.ai.hold = null;
+    audio.sfx('order');
+    haptic('tap');
+    floatText(o, B.me.body.x, B.me.body.y + B.me.height + 1);
+  },
+
+  recenter() { this.cam.follow = true; audio.sfx('tap'); },
+
+  toggleTime() {
+    this.frozen = !this.frozen;
+    game.frozen = this.frozen;
+    this.c.time.glyph = this.frozen ? 'play' : 'stop';
+    this.c.time.glyphLines = null;
+    audio.sfx(this.frozen ? 'timeStop' : 'timeStart');
+    haptic('tap');
+  },
+
+  say(reason) {
+    if (!reason) return;
+    audio.sfx('error');
+    const V = this.B.me;
+    floatText(reason, V.body.x, V.body.y + V.height + 1.5);
+  },
+
+  fireDrag(p) {
+    const C = this.c.fire;
+    if (this.frozen) return;
+    const off = dist(p.x, p.y, C.x, C.y);
+    if (!p.fireAim && off > C.r * 0.6) p.fireAim = true;
+    if (!p.fireAim) return;
+    if (off < C.r * 0.8) { this.aim = null; return; }    // back on the button cancels
+    const wx = view.wx(p.x);
+    this.aim = this.aim || { x: 0, y: 0 };
+    this.aim.x = wx;
+    this.aim.y = Math.max(view.wy(p.y), this.B.T.height(wx));
+  },
+
+  fireUp(p, cancelled) {
+    const aim = this.aim;
+    this.aim = null;
+    if (cancelled || this.frozen || this.B.me.destroyed) return;
+    if (p.fireAim) {
+      if (aim) this.say(playerFire(this.B, aim.x, aim.y, true));
+      else audio.sfx('back');
+      return;
+    }
+    this.fireAuto();
+  },
+
+  fireAuto() {
+    const B = this.B;
+    if (this.frozen || B.me.destroyed) return;
+    const T = autoTarget(B);
+    if (T) { this.say(playerFire(B, T.body.x, T.body.y + T.height * 0.15, false)); return; }
+    const x = B.me.body.x + B.me.dir * 60;
+    this.say(playerFire(B, x, B.T.height(x) + 1.5, false));
+  },
+
+  smoke() {
+    if (this.frozen || this.B.me.destroyed) return;
+    const r = playerSmoke(this.B);
+    if (r) this.say(r); else { audio.sfx('smoke', this.B.panOf(this.B.me.body.x)); haptic('tap'); }
+  },
+
+  // ---------- camera
+  // While following, the camera may pull back to frame the target, unless you pinched a zoom yourself.
+  scale() { return BASE_PX_PER_M * (layout.h / 360) * (this.cam.follow && !this.cam.manual ? Math.min(this.cam.zoom, this.cam.fit || 9) : this.cam.zoom); },
+
+  world: {
+    tap(x, y) {
+      const S = SCREENS.battle;
+      const B = S.B;
+      const wx = view.wx(x), wy = view.wy(y);
+      const hit = (V) => Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5;
+      for (let i = 0; i < B.squad.length; i++) if (!B.squad[i].destroyed && hit(B.squad[i])) { S.takeControl(i); return; }
+      for (const V of B.units) {
+        if (V.side !== 1 || V.destroyed || !V.seen || !hit(V)) continue;
+        B.target = B.target === V ? null : V;
+        audio.sfx(B.target ? 'toggleOn' : 'toggleOff');
+        haptic('tap');
+        if (B.target) floatText('Target', V.body.x, V.body.y + V.height + 1.5, true);
+        return;
+      }
+    },
+    doubleTap() { const c = SCREENS.battle.cam; c.zoom = DEFAULT_ZOOM; c.manual = false; audio.sfx('tap'); },
+    longPress(x) {
+      const S = SCREENS.battle;
+      const B = S.B;
+      const wx = clamp(view.wx(x), 5, B.T.length - 5);
+      let k = 0;
+      for (const V of B.squad) if (V !== B.me && !V.destroyed) { V.ai.hold = wx + (k++ ? -7 : 0); }
+      audio.sfx('order');
+      haptic('tap');
+      floatText('Move here', wx, B.T.height(wx) + 3);
+    },
+    pan(dx, dy) {
+      const S = SCREENS.battle;
+      S.cam.follow = false;
+      S.cam.x -= dx / S.scale();
+      S.cam.y += dy / S.scale();
+    },
+    pinch(f, cx, cy) {
+      const S = SCREENS.battle;
+      const bx = view.wx(cx);
+      const seen = S.scale() / (BASE_PX_PER_M * (layout.h / 360));
+      S.cam.follow = false;
+      S.cam.manual = true;
+      S.cam.zoom = clamp(seen * f, ZOOM_MIN * 0.7, ZOOM_MAX);
+      view.S = S.scale();
+      S.cam.x += bx - view.wx(cx);
+    },
+  },
+
+  key(code, down) {
+    if (/^(KeyA|KeyD|ArrowLeft|ArrowRight)$/.test(code)) { this.updateDrive(); return; }
+    const hold = (c) => { c.held = down; if (!down) c.releasedAt = performance.now(); };
+    if (code === 'Space') { hold(this.c.fire); if (down) this.fireAuto(); return; }
+    if (code === 'KeyE' || code === 'Tab') { hold(this.c.swap); if (down) this.swap(); return; }
+    if (code === 'KeyQ') { hold(this.c.special); if (down) this.smoke(); return; }
+    const n = /^Digit([1-5])$/.exec(code);
+    if (n) { const c = this.c.chips[+n[1] - 1]; hold(c); if (down) this.setOrder(ORDERS[+n[1] - 1]); return; }
+    if (!down) return;
+    if (code === 'KeyT') this.toggleTime();
+    else if (code === 'KeyC') this.recenter();
+  },
+
+  // ---------- update
+  update(dt, simRunning) {
+    const B = this.B;
+    if (!B) return;
+    B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    if (simRunning && !this.frozen) {
+      // Level clear: time slows to 30% for 0.6 s (design/03 §5).
+      const slow = B.result === 'win' && B.resultT < 0.6 ? 0.3 : 1;
+      updateBattle(B, dt * slow);
+      if (this.aim) trainPlayerGun(B, dt, this.aim.x, this.aim.y); else trainPlayerGun(B, dt);
+      updateFloaters(dt);
+    }
+    this.updateCamera(dt);
+    const C = this.c;
+    for (let i = 0; i < 5; i++) C.chips[i].lit = ORDERS[i] === B.order;
+    for (let i = 0; i < 3; i++) { C.cards[i].lit = B.squad[i] === B.me; C.cards[i].disabled = !B.squad[i] || B.squad[i].destroyed; }
+    C.recenter.hidden = this.cam.follow;
+    C.fire.disabled = this.frozen || B.me.destroyed;
+    C.special.disabled = this.frozen || !B.me.smoke;
+    C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
+    if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
+  },
+
+  updateCamera(dt) {
+    const cam = this.cam;
+    const B = this.B;
+    const idle = (performance.now() - input.lastWorldTouch) / 1000;
+    if (!cam.follow && save.settings.autoRecenter && idle > RECENTER_AFTER && input.world.length === 0) cam.follow = true;
+    // While following, pull back so your target (or the nearest spotted enemy) stays in view.
+    const me = B.me.body;
+    const T = autoTarget(B);
+    const base = BASE_PX_PER_M * (layout.h / 360);
+    let fit = 9;
+    let midX = me.x;
+    if (T && !B.me.destroyed) {
+      const span = Math.abs(T.body.x - me.x) + 26;
+      fit = Math.max(MIN_AUTO_ZOOM, (layout.w * 0.8) / span / base);
+      midX = (me.x + T.body.x) / 2;
+    }
+    cam.fit = cam.fit === undefined ? fit : cam.fit + (fit - cam.fit) * (1 - Math.pow(0.2, dt));
+    view.S = this.scale();
+    const viewW = layout.w / view.S;
+    if (cam.follow) {
+      const k = 1 - Math.pow(0.03, dt);
+      const wantX = T && !cam.manual && fit < cam.zoom ? midX : me.x + B.me.dir * viewW * 0.18;
+      cam.x += (wantX - cam.x) * k;
+      cam.y += (me.y + 2 - cam.y) * k;
+    }
+    cam.x = clamp(cam.x, viewW * 0.3, B.T.length - viewW * 0.3);
+    view.cx = cam.x;
+    view.cy = cam.y;
+    view.horizon = layout.h * 0.62;
+    shakeOffset(B, view.shake);
+  },
+
+  showResult() {
+    this.resultShown = true;
+    const B = this.B;
+    const win = B.result === 'win';
+    const p = save.profile;
+    if (win) {
+      haptic('clear');
+      audio.sfx('objective');
+      p.highestLevel = Math.max(p.highestLevel, this.level + 1);
+      p.continueLevel = this.level + 1;
+      save.touch('profile');
+    }
+    const c = ui.card('', 'card-result');
+    c.appendChild(el('div', 'stamp' + (win ? '' : ' stamp-red'), win ? 'OBJECTIVE COMPLETE' : 'SQUAD LOST'));
+    const facts = el('div', 'result-facts');
+    const secs = Math.round(B.time);
+    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+    row('Time', `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
+    row('Enemies destroyed', `${B.goalDone} of ${B.goalTotal}`);
+    row('Shots fired', B.stats.shots);
+    row('Penetrations', B.stats.pens);
+    row('Squad vehicles lost', B.stats.lost);
+    c.appendChild(facts);
+    const btns = el('div', 'card-row');
+    let close = null;
+    btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+    if (win) btns.appendChild(button('Next battle', () => { close(); this.enter(this.level + 1); }, 'btn btn-primary'));
+    else btns.appendChild(button('Retry', () => { close(); this.enter(this.level); }, 'btn btn-primary'));
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
+  // ---------- drawing
+  render(g, nowMs) {
+    const B = this.B;
+    if (!B) return;
+    renderBattle(g, B);
+    const S = view.S;
+    // Selected target bracket.
+    if (B.target && !B.target.destroyed && B.target.seen) {
+      const T = B.target;
+      const x = view.sx(T.body.x), y = view.sy(T.body.y + T.height * 0.4);
+      const r = Math.max(14, (T.len / 2 + 0.8) * S);
+      g.strokeStyle = PAL.amber; g.lineWidth = 2;
+      g.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        g.moveTo(x + sx * r, y + sy * r * 0.7 - sy * 6); g.lineTo(x + sx * r, y + sy * r * 0.7); g.lineTo(x + sx * r - sx * 6, y + sy * r * 0.7);
+      }
+      g.stroke();
+    }
+    // Your vehicle: small amber marker.
+    if (!B.me.destroyed) {
+      const x = view.sx(B.me.body.x), y = view.sy(B.me.body.y + B.me.height) - 8;
+      g.fillStyle = PAL.amber;
+      g.beginPath(); g.moveTo(x - 5, y - 6); g.lineTo(x + 5, y - 6); g.lineTo(x, y); g.closePath(); g.fill();
+    }
+    // Spotted enemies beyond the screen edge.
+    for (const V of B.units) {
+      if (V.side !== 1 || V.destroyed || !V.seen) continue;
+      const x = view.sx(V.body.x);
+      if (x > 0 && x < layout.w) continue;
+      const ex = x <= 0 ? layout.safe.l + 8 : layout.w - layout.safe.r - 8;
+      const ey = clamp(view.sy(V.body.y + 1), layout.safe.t + 60, layout.h * 0.55);
+      g.fillStyle = PAL.directorate;
+      g.beginPath();
+      if (x <= 0) { g.moveTo(ex, ey); g.lineTo(ex + 9, ey - 6); g.lineTo(ex + 9, ey + 6); }
+      else { g.moveTo(ex, ey); g.lineTo(ex - 9, ey - 6); g.lineTo(ex - 9, ey + 6); }
+      g.closePath(); g.fill();
+    }
+    // Manual-aim trajectory preview.
+    if (this.aim && save.settings.aimAssist && !B.me.destroyed) this.drawAimPreview(g);
+    drawFloaters(g, (x) => view.sx(x), (y) => view.sy(y));
+    if (this.frozen) {
+      const { w, h, safe } = layout;
+      g.fillStyle = 'rgba(19,70,107,0.18)';
+      g.fillRect(0, 0, w, h);
+      g.font = `700 16px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      drawAcetate(g, w / 2 - 75, safe.t + 42, 150, 26);
+      g.fillStyle = PAL.linen;
+      g.fillText('Time stopped', w / 2, safe.t + 55);
+    }
+    this.drawHud(g, nowMs);
+  },
+
+  drawAimPreview(g) {
+    const B = this.B;
+    const V = B.me;
+    const w = mainWeapon(V);
+    if (!w) return;
+    aimWeapon(V, w, this.aim.x, this.aim.y, _aim);
+    const tmp = { x: 0, y: 0 };
+    weaponPivot(V, w, tmp);
+    const L = barrelLength(w.def);
+    let x = tmp.x + Math.cos(_aim.angle) * L, y = tmp.y + Math.sin(_aim.angle) * L;
+    let vx = Math.cos(_aim.angle) * w.def.vel, vy = Math.sin(_aim.angle) * w.def.vel;
+    g.fillStyle = _aim.ok ? 'rgba(255,178,62,0.9)' : 'rgba(224,83,61,0.9)';
+    const dt = 0.03;
+    for (let i = 0; i < 160; i++) {
+      vy -= GRAVITY * dt; x += vx * dt; y += vy * dt;
+      if (y < B.T.height(x)) break;
+      if (i % 3 === 0) { g.beginPath(); g.arc(view.sx(x), view.sy(y), 2, 0, Math.PI * 2); g.fill(); }
+    }
+    g.strokeStyle = PAL.amber; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(view.sx(this.aim.x), view.sy(this.aim.y), 7, 0, Math.PI * 2); g.stroke();
+  },
+
+  drawHud(g, nowMs) {
+    const { w, safe } = layout;
+    const B = this.B;
+    const C = this.c;
+    drawAcetate(g, 0, 0, w, safe.t + 34);
+    const ghost = controlsGhost(nowMs);
+    // Squad cards: silhouette with health, fuel and ammo bars.
+    for (let i = 0; i < 3; i++) {
+      const cd = C.cards[i];
+      const V = B.squad[i];
+      if (!V) { cd.hidden = true; continue; }
+      drawControl(g, cd, nowMs, 1);
+      g.fillStyle = V.destroyed ? '#5b5e66' : V === B.me ? PAL.league : 'rgba(230,220,195,0.7)';
+      g.fillRect(cd.x + 7, cd.y + 7, 20, 5);
+      g.fillRect(cd.x + 12, cd.y + 4, 8, 3);
+      let hp = 0;
+      for (const p of V.parts) if (p.alive) hp += p.hp;
+      const bars = [[hp / V.hpMax, PAL.good], [V.fuelMax ? V.fuel / V.fuelMax : 0, PAL.warning], [V.shellsMax ? V.shells / V.shellsMax : 0, PAL.linen]];
+      bars.forEach(([f, col], k) => {
+        g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34, 2.5);
+        g.fillStyle = V.destroyed ? '#5b5e66' : col; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34 * clamp(f, 0, 1), 2.5);
+      });
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillStyle = PAL.linen;
+      g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
+    }
+    // Objective with a progress bar.
+    const left = C.cards[2].x + C.cards[2].w + 10;
+    const right = this.mini.x - 10;
+    if (right - left > 70) {
+      g.font = `400 14px ${FONT_UI}`;
+      g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillStyle = PAL.linen;
+      g.fillText(`${B.cfg.goal} ${B.goalDone}/${B.goalTotal}`, left, safe.t + 13, right - left);
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 24, right - left, 3);
+      g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 24, (right - left) * (B.goalDone / Math.max(1, B.goalTotal)), 3);
+    }
+    this.drawMinimap(g);
+    for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
+    for (const c of [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    const mw = mainWeapon(B.me);
+    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
+  },
+
+  // Minimap strip: terrain line, spotted units, camera window.
+  drawMinimap(g) {
+    const B = this.B;
+    const m = this.mini;
+    const T = B.T;
+    g.fillStyle = 'rgba(0,0,0,0.3)';
+    g.fillRect(m.x, m.y, m.w, m.h);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < T.n; i += 8) { lo = Math.min(lo, T.h[i]); hi = Math.max(hi, T.h[i]); }
+    const span = Math.max(4, hi - lo);
+    const X = (x) => m.x + (x / T.length) * m.w;
+    const Y = (y) => m.y + m.h - 4 - ((y - lo) / span) * (m.h - 10);
+    g.strokeStyle = 'rgba(230,220,195,0.55)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 0; i < T.n; i += 8) { const x = i * CELL; if (i === 0) g.moveTo(X(x), Y(T.h[i])); else g.lineTo(X(x), Y(T.h[i])); }
+    g.stroke();
+    for (const V of B.units) {
+      if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
+      g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;
+      g.fillRect(X(V.body.x) - 1.5, Y(V.body.y) - 4, 3, 3);
+    }
+    const vw = layout.w / view.S;
+    g.strokeStyle = 'rgba(230,220,195,0.8)';
+    g.strokeRect(X(view.cx - vw / 2), m.y + 1, (vw / T.length) * m.w, m.h - 2);
+  },
+};
+
 /* ---------- 17_main.js ---------- */
 /* ==== 17 MAIN ==== */
 // Boot, resize/orientation, the fixed-step loop, and pause on hide, blur and portrait.
@@ -2507,14 +4727,17 @@ function frame(now) {
   const simRunning = !game.paused && !game.hidden && !game.portrait;
   input.update(now);
   acc += dt;
+  
   let steps = 0;
-  while (acc >= SIM_STEP && steps < MAX_SIM_STEPS) {
+  let maxSteps = MAX_SIM_STEPS;
+  
+  while (acc >= SIM_STEP && steps < maxSteps) {
     if (simRunning) game.time += SIM_STEP;
     if (scr && scr.update) scr.update(SIM_STEP, simRunning);
     acc -= SIM_STEP;
     steps++;
   }
-  if (steps === MAX_SIM_STEPS) acc = 0;
+  if (steps === maxSteps) acc = 0;
   if (!game.hidden && scr && scr.render) {
     scr.render(ctx, now);
     if (save.settings.showFps) drawFps(dt);

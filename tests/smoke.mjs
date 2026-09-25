@@ -80,9 +80,10 @@ for (const vp of VIEWPORTS) {
     await wait(60);
   };
   const range = () => G(() => {
-    const R = window.__GAME__.SCREENS.range;
-    return { x: R.squad[R.active].x, shots: R.shots, active: R.active, order: R.order, zoom: R.cam.zoom,
-      follow: R.cam.follow, frozen: R.frozen, simTime: R.simTime, aim: !!R.aim, reload: R.reload };
+    const S = window.__GAME__.SCREENS.battle;
+    const B = S.B;
+    return { x: B.me.body.x, shots: B.stats.shots, active: B.squad.indexOf(B.me), order: B.order, zoom: S.cam.zoom,
+      follow: S.cam.follow, eff: S.scale() / (12 * window.__GAME__.layout.h / 360), frozen: S.frozen, simTime: B.time, aim: !!S.aim, result: B.result, level: S.level };
   });
   const tapButton = async (name, role = 'button') => {
     const b = page.getByRole(role, { name, exact: true });
@@ -121,6 +122,23 @@ for (const vp of VIEWPORTS) {
   } else {
     check(!info.rotateVisible, 'rotate card shown in landscape');
 
+    // ---------- 1b. Designs, physics and damage rules (once, on desktop)
+    if (!vp.mobile) {
+      const self = await G(() => window.__GAME__.selfCheck());
+      for (const [id, r] of Object.entries(self)) check(r.ok, `template ${id} breaks placement rules: ${r.errors.join(' ')}`);
+      const ph = await G(() => window.__GAME__.physicsCheck());
+      check(ph.weakValid && ph.tallValid, 'physics test designs are not valid');
+      check(ph.wheelsFlat.speed > ph.tracksFlat.speed + 2, `wheels not faster on flat ground (${ph.wheelsFlat.speed.toFixed(1)} vs ${ph.tracksFlat.speed.toFixed(1)} m/s)`);
+      check(ph.wheelsMud.x < 3 && ph.tracksMud.x > 50, `tracks did not beat wheels in mud (${ph.wheelsMud.x.toFixed(0)} m vs ${ph.tracksMud.x.toFixed(0)} m)`);
+      check(ph.normalHill.x > 60 && ph.weakHill.speed < 0.5 && ph.weakHill.x < 40, `underpowered design did not stall on the hill (${JSON.stringify(ph.weakHill)})`);
+      check(ph.tallSlope.tilt > 60 && ph.normalSlope.tilt < 20, `top-heavy tipping wrong (tall ${ph.tallSlope.tilt.toFixed(0)}°, normal ${ph.normalSlope.tilt.toFixed(0)}°)`);
+      const dm = await G(() => window.__GAME__.damageCheck());
+      for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
+      steps.push('templates, physics, damage');
+      await G(() => window.__GAME__.go('title'));
+      await wait(300);
+    }
+
     // ---------- 2. Settings: change a setting, look at each tab
     await tapButton('Settings');
     check(await page.locator('.card-settings').isVisible(), 'settings did not open');
@@ -137,9 +155,9 @@ for (const vp of VIEWPORTS) {
     check(!(await page.locator('.card-settings').count()), 'settings did not close');
     steps.push('settings');
 
-    // ---------- 3. Start the range
+    // ---------- 3. Start the battle
     await tapButton('Play from level 1');
-    check((await G(() => window.__GAME__.screens.name)) === 'range', 'Play did not open the range');
+    check((await G(() => window.__GAME__.screens.name)) === 'battle', 'Play did not open the battle');
     await wait(300);
 
     // ---------- 4. Both thumbs at once: hold drive right, tap Fire
@@ -169,22 +187,22 @@ for (const vp of VIEWPORTS) {
     steps.push('two thumbs');
 
     // ---------- 5. Manual aim: press Fire, drag into the world, release
-    await wait(1300);   // reload
+    await G(() => window.__GAME__.readyGuns());
     if (vp.mobile) {
       const f = await ctrl('fire');
       await touch('touchStart', [{ x: f.cx, y: f.cy, id: 3 }]);
       for (let i = 1; i <= 6; i++) {
-        await touch('touchMove', [{ x: f.cx - i * 40, y: f.cy - i * 25, id: 3 }]);
+        await touch('touchMove', [{ x: f.cx - i * 16, y: f.cy - i * 25, id: 3 }]);
         await wait(30);
       }
       check((await range()).aim, 'manual aim did not show a trajectory');
       await shot('4-manual-aim');
-      await touch('touchEnd', [{ x: f.cx - 240, y: f.cy - 150, id: 3 }]);
+      await touch('touchEnd', [{ x: f.cx - 96, y: f.cy - 150, id: 3 }]);
     } else {
       const f = await ctrl('fire');
       await page.mouse.move(f.cx, f.cy);
       await page.mouse.down();
-      await page.mouse.move(f.cx - 300, f.cy - 200, { steps: 6 });
+      await page.mouse.move(f.cx - 150, f.cy - 250, { steps: 6 });
       check((await range()).aim, 'manual aim did not show a trajectory');
       await shot('4-manual-aim');
       await page.mouse.up();
@@ -212,6 +230,7 @@ for (const vp of VIEWPORTS) {
     await tapCtrl('recenter');
     check((await range()).follow, 'recenter chip did not recenter');
 
+    const effBefore = (await range()).eff;
     if (vp.mobile) {
       await touch('touchStart', [{ x: mid.x - 30, y: mid.y, id: 5 }]);
       await touch('touchStart', [{ x: mid.x - 30, y: mid.y, id: 5 }, { x: mid.x + 30, y: mid.y, id: 6 }]);
@@ -220,8 +239,10 @@ for (const vp of VIEWPORTS) {
         await wait(20);
       }
       await touch('touchEnd', [{ x: mid.x - 90, y: mid.y, id: 5 }, { x: mid.x + 90, y: mid.y, id: 6 }]);
+      s = await range();
+      check(s.eff > effBefore * 1.2, `pinch did not zoom in (${effBefore.toFixed(2)} -> ${s.eff.toFixed(2)})`);
       // Edge guard: a drag starting 5 px from the left edge must not pan.
-      await G(() => { window.__GAME__.SCREENS.range.cam.follow = true; });
+      await G(() => { window.__GAME__.SCREENS.battle.cam.follow = true; });
       await touch('touchStart', [{ x: 5, y: mid.y, id: 7 }]);
       for (let i = 1; i <= 4; i++) await touch('touchMove', [{ x: 5 + i * 30, y: mid.y, id: 7 }]);
       await touch('touchEnd', [{ x: 125, y: mid.y, id: 7 }]);
@@ -230,9 +251,9 @@ for (const vp of VIEWPORTS) {
       await page.mouse.move(mid.x, mid.y);
       await page.mouse.wheel(0, -300);
       await wait(50);
+      s = await range();
+      check(s.eff > effBefore * 1.2, `wheel did not zoom in (${effBefore.toFixed(2)} -> ${s.eff.toFixed(2)})`);
     }
-    s = await range();
-    check(s.zoom > 1.2, `pinch/wheel did not zoom in (zoom ${s.zoom.toFixed(2)})`);
     steps.push('pan, pinch, edge guard');
 
     // ---------- 7. Start/Stop time: simulation freezes, orders still work
@@ -289,6 +310,50 @@ for (const vp of VIEWPORTS) {
       check(!(await G(() => window.__GAME__.state.paused)), 'Esc did not close the pause card');
     }
     steps.push('pause');
+
+    // ---------- 9b. Objective complete -> next battle; squad lost -> retry
+    await G(() => window.__GAME__.winBattle());
+    await page.locator('.card-result').waitFor({ timeout: 6000 });
+    check(await page.locator('.card-result').isVisible(), 'no result card after winning');
+    check(/OBJECTIVE COMPLETE/.test(await page.locator('.stamp').textContent()), 'win stamp missing');
+    await shot('8-objective-complete');
+    await tapButton('Next battle');
+    s = await range();
+    check(s.level === 2 && !s.result, `next battle did not start level 2 (level ${s.level})`);
+    await wait(600);
+    await shot('9-level-2');
+    await G(() => window.__GAME__.loseSquad());
+    await page.locator('.card-result').waitFor({ timeout: 6000 });
+    check(/SQUAD LOST/.test(await page.locator('.stamp').textContent().catch(() => '')), 'no squad-lost card');
+    await shot('10-squad-lost');
+    await tapButton('Retry');
+    s = await range();
+    check(s.level === 2 && !s.result, 'retry did not restart the level');
+    check(await G(() => window.__GAME__.sane()), 'physics produced NaN');
+    steps.push('win, lose, retry');
+
+    // ---------- 9c. Desktop autoplay: drive and fire until level 1 is won (time runs 4x)
+    if (!vp.mobile) {
+      await G(() => { window.__TEST__.timeScale = 4; window.__GAME__.go('battle', 1); });
+      await page.keyboard.down('KeyD');
+      let res = null;
+      for (let i = 0; i < 90 && !res; i++) {
+        await page.keyboard.press('Space');
+        await wait(250);
+        res = (await range()).result;
+        if (i === 12) await shot('11-autoplay');
+      }
+      await page.keyboard.up('KeyD');
+      const t = (await range()).simTime;
+      await G(() => { window.__TEST__.timeScale = 1; });
+      check(res === 'win', `autoplay did not clear level 1 (result ${res})`);
+      console.log(`     autoplay cleared level 1 in ${t.toFixed(0)} s of game time`);
+      await page.locator('.card-result').waitFor({ timeout: 6000 });
+      await tapButton('Title');
+      await tapButton('Continue at level 2');
+      check((await range()).level === 2, 'Continue did not start level 2');
+      steps.push('autoplay level 1, continue');
+    }
 
     // ---------- 10. Quit to title, reload: settings are kept
     await tapCtrl('pause');
