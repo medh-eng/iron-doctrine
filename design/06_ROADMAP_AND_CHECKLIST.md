@@ -8,7 +8,7 @@
 
 ### Sub-steps
 
-**1a. Engine core**
+**1a. Engine core** (done in v0.1.0, except the optional manifest)
 - boot, landscape layout, rotate card
 - input router and transparent thumb controls
 - audio engine, first sound effects, title music
@@ -40,9 +40,9 @@
 
 - [ ] A first-time player clears level 1 within about 30 s with only the two-line how-to.
 - [ ] Both thumbs work at once. FIRE tap auto-aims; FIRE press-and-drag aims manually with a trajectory preview. Swap and the order chips work.
-- [ ] Tap, drag and pinch on the world never steal a touch from the thumb controls.
+- [x] Tap, drag and pinch on the world never steal a touch from the thumb controls.
 - [ ] Start/Stop time freezes the battle while the camera and orders still work.
-- [ ] The Pause card works. The game pauses automatically in the background and in portrait.
+- [x] The Pause card works. The game pauses automatically in the background and in portrait.
 - [ ] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, an ammo rack can detonate.
 - [ ] These emerge from the numbers without special-case code:
   - a top-heavy design tips on a steep slope
@@ -198,3 +198,4 @@
 | Date | Version | Done | Known issues | Next |
 |---|---|---|---|---|
 | 2026-09-25 | 0.0.1 | Starter repo: build script, test build, smoke test at 5 viewports, placeholder title, GitHub Pages output in docs/ | Stencil font not embedded yet | Part 1a |
+| 2026-09-25 | 0.1.0 | Part 1a engine core. Saves with versions, migrations, backups, export/import and reset. Audio engine: buses, 24-voice cap, synth instruments, title march, UI and weapon/order/time sound effects, haptics. Pointer router with captured thumb controls, world tap/drag/pinch/long-press/double-tap, edge guard, keyboard. Acetate thumb controls with grease-pencil glyphs, size, opacity, ghost mode and left-handed mirror. Title with stencil logo, Settings (Audio, Controls, Display, Data), Pause card, toasts, auto-pause on background, blur and portrait. Controls test range standing in for the battle. Smoke test now drives all of this at 5 viewports. | Range vehicles are placeholders (kinematic, no damage). Optional home-screen manifest not done: it needs a second file next to index.html, so it waits for the producer's go-ahead. Alt long-press (cycle secondaries) waits for real secondary weapons. | Part 1b: terrain generator and vehicle physics |

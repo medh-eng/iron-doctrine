@@ -51,6 +51,7 @@ The game lives on a commander's war-room table:
 
 - **Display:** a stencil face, e.g. Saira Stencil One or Big Shoulders Stencil Display (both SIL Open Font License).
   - Get it from npm `@fontsource`, subset to Latin, and embed as base64 woff2 under 45 KB.
+  - **Chosen:** Saira Stencil One, subset to basic Latin: 10.8 KB (`src/assets/`, licence file beside it).
   - Use it only for the logo, stamps ("Objective complete", "Level 7") and hull numbers.
 - **Everything else:** system condensed sans.
   - `font-family: "Roboto Condensed", "sans-serif-condensed", "Arial Narrow", system-ui, sans-serif`
@@ -223,4 +224,4 @@ Every action has its own distinct sound.
 - Sounds pan by screen position and get quieter with distance from the camera.
 - At most 24 voices at once; the oldest quiet voice is stolen first.
 
-**Audio lifecycle:** unlock on the first tap. Suspend when the page is hidden; resume when it's visible again and not paused.
+**Audio lifecycle:** unlock on the first tap. Suspend when the page is hidden; resume when it's visible again. While the Pause card or Settings is open during play, music drops to 40% and UI sounds still play.

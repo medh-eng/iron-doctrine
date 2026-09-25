@@ -1,6 +1,6 @@
 {
   "name": "iron-doctrine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Iron Doctrine: a landscape mobile war campaign game. Builds to one self-contained HTML file.",
   "type": "module",

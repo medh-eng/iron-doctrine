@@ -1,7 +1,8 @@
 // Smoke test for the TEST build (run: npm test).
 // Loads build-test/index.html at each viewport, checks for console/page errors,
-// checks the rotate card, and saves screenshots to test-output/.
-// Extend per part with scripted play: level up, life lost, game over, pause, time stop...
+// drives the title, Settings, the controls test range (two thumbs at once, manual aim,
+// pinch, pan, edge guard, time stop, orders, swap), pause and auto-pause, saves,
+// reload and damaged-save recovery. Screenshots go to test-output/.
 //
 // Browser: `npx playwright install chromium`, or set CHROMIUM_PATH to any Chromium.
 
@@ -29,6 +30,7 @@ const VIEWPORTS = [
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 const problems = [];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
@@ -38,44 +40,289 @@ for (const vp of VIEWPORTS) {
     hasTouch: vp.mobile,
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(5000);
   const errors = [];
+  const steps = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  const check = (ok, msg) => { if (!ok) errors.push(msg); };
+  const shot = (step) => page.screenshot({ path: join(OUT, `${vp.name}-${step}.png`) });
+  const G = (fn, arg) => page.evaluate(fn, arg);
 
+  // ---------- touch helpers (CDP gives real multi-touch)
+  const cdp = vp.mobile ? await context.newCDPSession(page) : null;
+  const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  const ctrl = async (id) => (await G(() => window.__GAME__.controlRects())).find((c) => c.id === id);
+  const tapCtrl = async (id) => {
+    const c = await ctrl(id);
+    if (!c) { errors.push(`control ${id} not found`); return; }
+    if (vp.mobile) {
+      await touch('touchStart', [{ x: c.cx, y: c.cy, id: 9 }]);
+      await wait(40);
+      await touch('touchEnd', [{ x: c.cx, y: c.cy, id: 9 }]);
+    } else {
+      await page.mouse.click(c.cx, c.cy);
+    }
+    await wait(60);
+  };
+  const range = () => G(() => {
+    const R = window.__GAME__.SCREENS.range;
+    return { x: R.squad[R.active].x, shots: R.shots, active: R.active, order: R.order, zoom: R.cam.zoom,
+      follow: R.cam.follow, frozen: R.frozen, simTime: R.simTime, aim: !!R.aim, reload: R.reload };
+  });
+  const tapButton = async (name, role = 'button') => {
+    const b = page.getByRole(role, { name, exact: true });
+    if (vp.mobile) await b.tap(); else await b.click();
+    await wait(120);
+  };
+
+  try {
   await page.goto(pathToFileURL(PAGE).href);
   await page.waitForTimeout(700);
 
-  // First tap (unlocks audio in later builds).
-  if (!vp.portrait) {
-    if (vp.mobile) await page.touchscreen.tap(vp.width / 2, vp.height / 2);
-    else await page.mouse.click(vp.width / 2, vp.height / 2);
-    await page.waitForTimeout(400);
-  }
-
-  const info = await page.evaluate(() => {
+  // ---------- 1. Title
+  const info = await G(() => {
     const g = window.__GAME__;
-    const rotate = getComputedStyle(document.getElementById('rotate')).display !== 'none';
     return {
       hasGame: !!g,
       hasTest: !!window.__TEST__,
       frames: g ? g.state.frames : 0,
       portraitState: g ? g.state.portrait : null,
-      rotateVisible: rotate,
+      rotateVisible: getComputedStyle(document.getElementById('rotate')).display !== 'none',
+      title: !!document.querySelector('.title-screen .logo'),
+      stencil: document.fonts ? document.fonts.check('44px "Saira Stencil One"') : true,
     };
   });
+  check(info.hasGame, 'window.__GAME__ missing (test build not exposing state?)');
+  check(info.hasTest, 'window.__TEST__ missing (test hooks not injected?)');
+  check(info.frames >= 5, `only ${info.frames} frames rendered`);
+  check(info.title, 'title screen not shown');
+  check(info.stencil, 'stencil font not loaded');
+  await shot('1-title');
+  steps.push('title');
 
-  if (!info.hasGame) errors.push('window.__GAME__ missing (test build not exposing state?)');
-  if (!info.hasTest) errors.push('window.__TEST__ missing (test hooks not injected?)');
-  if (info.frames < 5) errors.push(`only ${info.frames} frames rendered`);
-  if (vp.portrait && !info.rotateVisible) errors.push('rotate card not shown in portrait');
-  if (!vp.portrait && info.rotateVisible) errors.push('rotate card shown in landscape');
-  if (vp.portrait && info.portraitState !== true) errors.push('game did not pause for portrait');
+  if (vp.portrait) {
+    check(info.rotateVisible, 'rotate card not shown in portrait');
+    check(info.portraitState === true, 'game did not pause for portrait');
+  } else {
+    check(!info.rotateVisible, 'rotate card shown in landscape');
 
-  await page.screenshot({ path: join(OUT, `${vp.name}.png`) });
+    // ---------- 2. Settings: change a setting, look at each tab
+    await tapButton('Settings');
+    check(await page.locator('.card-settings').isVisible(), 'settings did not open');
+    await page.locator('.switch[data-setting="music"]').click();
+    check((await G(() => window.__GAME__.save.settings.music)) === false, 'music toggle did not change the setting');
+    await shot('2-settings-audio');
+    await tapButton('Controls', 'tab');
+    await page.locator('.seg-btn[data-setting="btnSize"][data-value="L"]').click();
+    check((await G(() => window.__GAME__.save.settings.btnSize)) === 'L', 'button size did not change');
+    await shot('2-settings-controls');
+    await tapButton('Data', 'tab');
+    await shot('2-settings-data');
+    await tapButton('Done');
+    check(!(await page.locator('.card-settings').count()), 'settings did not close');
+    steps.push('settings');
+
+    // ---------- 3. Start the range
+    await tapButton('Play from level 1');
+    check((await G(() => window.__GAME__.screens.name)) === 'range', 'Play did not open the range');
+    await wait(300);
+
+    // ---------- 4. Both thumbs at once: hold drive right, tap Fire
+    const x0 = (await range()).x;
+    if (vp.mobile) {
+      const r = await ctrl('right');
+      const f = await ctrl('fire');
+      await touch('touchStart', [{ x: r.cx, y: r.cy, id: 1 }]);
+      await wait(300);
+      await touch('touchStart', [{ x: r.cx, y: r.cy, id: 1 }, { x: f.cx, y: f.cy, id: 2 }]);
+      await wait(60);
+      await touch('touchEnd', [{ x: f.cx, y: f.cy, id: 2 }]);
+      await wait(500);
+      await shot('3-drive-and-fire');
+      await touch('touchEnd', [{ x: r.cx, y: r.cy, id: 1 }]);
+    } else {
+      await page.keyboard.down('KeyD');
+      await wait(300);
+      await page.keyboard.press('Space');
+      await wait(500);
+      await shot('3-drive-and-fire');
+      await page.keyboard.up('KeyD');
+    }
+    let s = await range();
+    check(s.x > x0 + 1, `driving did not move the vehicle (${x0.toFixed(1)} -> ${s.x.toFixed(1)})`);
+    check(s.shots === 1, `fire while driving gave ${s.shots} shots, expected 1`);
+    steps.push('two thumbs');
+
+    // ---------- 5. Manual aim: press Fire, drag into the world, release
+    await wait(1300);   // reload
+    if (vp.mobile) {
+      const f = await ctrl('fire');
+      await touch('touchStart', [{ x: f.cx, y: f.cy, id: 3 }]);
+      for (let i = 1; i <= 6; i++) {
+        await touch('touchMove', [{ x: f.cx - i * 40, y: f.cy - i * 25, id: 3 }]);
+        await wait(30);
+      }
+      check((await range()).aim, 'manual aim did not show a trajectory');
+      await shot('4-manual-aim');
+      await touch('touchEnd', [{ x: f.cx - 240, y: f.cy - 150, id: 3 }]);
+    } else {
+      const f = await ctrl('fire');
+      await page.mouse.move(f.cx, f.cy);
+      await page.mouse.down();
+      await page.mouse.move(f.cx - 300, f.cy - 200, { steps: 6 });
+      check((await range()).aim, 'manual aim did not show a trajectory');
+      await shot('4-manual-aim');
+      await page.mouse.up();
+    }
+    await wait(100);
+    check((await range()).shots === 2, 'manual aim release did not fire');
+    steps.push('manual aim');
+
+    // ---------- 6. Pan, recenter chip, pinch zoom, edge guard
+    const mid = { x: vp.width * 0.45, y: vp.height * 0.45 };
+    if (vp.mobile) {
+      await touch('touchStart', [{ ...mid, id: 4 }]);
+      for (let i = 1; i <= 5; i++) { await touch('touchMove', [{ x: mid.x + i * 20, y: mid.y, id: 4 }]); await wait(20); }
+      await touch('touchEnd', [{ x: mid.x + 100, y: mid.y, id: 4 }]);
+    } else {
+      await page.mouse.move(mid.x, mid.y);
+      await page.mouse.down();
+      await page.mouse.move(mid.x + 100, mid.y, { steps: 5 });
+      await page.mouse.up();
+    }
+    s = await range();
+    check(!s.follow, 'dragging the world did not pan the camera');
+    check(!!(await ctrl('recenter')), 'recenter chip did not appear after panning');
+    await shot('5-panned');
+    await tapCtrl('recenter');
+    check((await range()).follow, 'recenter chip did not recenter');
+
+    if (vp.mobile) {
+      await touch('touchStart', [{ x: mid.x - 30, y: mid.y, id: 5 }]);
+      await touch('touchStart', [{ x: mid.x - 30, y: mid.y, id: 5 }, { x: mid.x + 30, y: mid.y, id: 6 }]);
+      for (let i = 1; i <= 5; i++) {
+        await touch('touchMove', [{ x: mid.x - 30 - i * 12, y: mid.y, id: 5 }, { x: mid.x + 30 + i * 12, y: mid.y, id: 6 }]);
+        await wait(20);
+      }
+      await touch('touchEnd', [{ x: mid.x - 90, y: mid.y, id: 5 }, { x: mid.x + 90, y: mid.y, id: 6 }]);
+      // Edge guard: a drag starting 5 px from the left edge must not pan.
+      await G(() => { window.__GAME__.SCREENS.range.cam.follow = true; });
+      await touch('touchStart', [{ x: 5, y: mid.y, id: 7 }]);
+      for (let i = 1; i <= 4; i++) await touch('touchMove', [{ x: 5 + i * 30, y: mid.y, id: 7 }]);
+      await touch('touchEnd', [{ x: 125, y: mid.y, id: 7 }]);
+      check((await range()).follow, 'a drag from the screen edge panned the world');
+    } else {
+      await page.mouse.move(mid.x, mid.y);
+      await page.mouse.wheel(0, -300);
+      await wait(50);
+    }
+    s = await range();
+    check(s.zoom > 1.2, `pinch/wheel did not zoom in (zoom ${s.zoom.toFixed(2)})`);
+    steps.push('pan, pinch, edge guard');
+
+    // ---------- 7. Start/Stop time: simulation freezes, orders still work
+    await tapCtrl('time');
+    const t0 = (await range()).simTime;
+    await tapCtrl('order2');
+    await wait(400);
+    s = await range();
+    check(s.frozen, 'time did not stop');
+    check(s.simTime === t0, 'simulation kept running while time was stopped');
+    check(s.order === 'Hold', `order chip while frozen gave ${s.order}`);
+    await shot('6-time-stopped');
+    await tapCtrl('time');
+    await wait(200);
+    s = await range();
+    check(!s.frozen && s.simTime > t0, 'time did not restart');
+    steps.push('time stop');
+
+    // ---------- 8. Swap
+    await tapCtrl('swap');
+    check((await range()).active === 1, 'swap did not change vehicle');
+    steps.push('swap');
+
+    // ---------- 8b. Left-handed layout mirrors the thumb controls
+    await G(() => window.__GAME__.setSetting('leftHanded', true));
+    await wait(250);
+    const fireL = await ctrl('fire');
+    const leftL = await ctrl('left');
+    check(fireL.cx < vp.width / 2 && leftL.cx > vp.width / 2, 'left-handed setting did not mirror the controls');
+    await shot('6b-left-handed');
+    await G(() => window.__GAME__.setSetting('leftHanded', false));
+    await wait(250);
+    steps.push('left-handed');
+
+    // ---------- 9. Pause card, resume, auto-pause on blur and when hidden
+    await tapCtrl('pause');
+    check(await page.locator('.card-pause').isVisible(), 'pause card did not open');
+    check(await G(() => window.__GAME__.state.paused), 'game not paused');
+    await shot('7-paused');
+    await tapButton('Resume');
+    check(!(await G(() => window.__GAME__.state.paused)), 'resume did not unpause');
+    await G(() => window.dispatchEvent(new Event('blur')));
+    check(await G(() => window.__GAME__.state.paused), 'losing focus did not pause');
+    await tapButton('Resume');
+    await G(() => window.__GAME__.setHidden(true));
+    check(await G(() => window.__GAME__.state.paused && window.__GAME__.state.hidden), 'going to the background did not pause');
+    await G(() => window.__GAME__.setHidden(false));
+    await tapButton('Resume');
+    // P key opens and closes the pause card on desktop.
+    if (!vp.mobile) {
+      await page.keyboard.press('KeyP');
+      check(await G(() => window.__GAME__.state.paused), 'P did not pause');
+      await page.keyboard.press('Escape');
+      check(!(await G(() => window.__GAME__.state.paused)), 'Esc did not close the pause card');
+    }
+    steps.push('pause');
+
+    // ---------- 10. Quit to title, reload: settings are kept
+    await tapCtrl('pause');
+    await tapButton('Quit to title');
+    check((await G(() => window.__GAME__.screens.name)) === 'title', 'quit did not return to title');
+    await G(() => window.__GAME__.flush());
+    await page.reload();
+    await page.waitForTimeout(500);
+    const kept = await G(() => ({ music: window.__GAME__.save.settings.music, size: window.__GAME__.save.settings.btnSize }));
+    check(kept.music === false && kept.size === 'L', `settings not kept after reload (${JSON.stringify(kept)})`);
+    steps.push('reload keeps settings');
+
+    // ---------- 11. Export / import round trip, then a damaged save
+    const round = await G(() => {
+      const sv = window.__GAME__.save;
+      sv.profile.bestScore = 4321;
+      const code = sv.exportCode();
+      sv.profile.bestScore = 0;
+      const res = sv.parseCode(code);
+      if (res.ok) res.apply();
+      const bad = sv.parseCode('not a code');
+      return { ok: res.ok, best: sv.profile.bestScore, badRejected: !bad.ok };
+    });
+    check(round.ok && round.best === 4321, 'export/import did not round-trip');
+    check(round.badRejected, 'a bad import code was accepted');
+
+    await G(() => localStorage.setItem('irondoctrine.profile', '{damaged'));
+    await page.reload();
+    await page.waitForTimeout(600);
+    const dmg = await G(() => ({
+      backup: localStorage.getItem('irondoctrine.backup.profile'),
+      toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' | '),
+      music: window.__GAME__.save.settings.music,
+    }));
+    check(dmg.backup === '{damaged', 'damaged save was not kept as a backup');
+    check(/couldn't be read/.test(dmg.toast), 'player was not told about the damaged save');
+    check(dmg.music === false, 'a damaged profile also reset settings');
+    await shot('8-damaged-save-notice');
+    steps.push('export/import, damaged save');
+  }
+  } catch (e) {
+    errors.push('stopped: ' + e.message.split('\n')[0]);
+    await shot('error').catch(() => {});
+  }
+
   await context.close();
-
   const status = errors.length ? 'FAIL' : 'ok';
-  console.log(`${status.padEnd(4)} ${vp.name}  frames=${info.frames}`);
+  console.log(`${status.padEnd(4)} ${vp.name}  [${steps.join(', ')}]`);
   for (const e of errors) { console.log('     ' + e); problems.push(`${vp.name}: ${e}`); }
 }
 

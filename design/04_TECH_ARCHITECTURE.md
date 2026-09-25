@@ -41,7 +41,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
 
 **Splitting large files:** when a file passes about 800 lines, split it with letter suffixes that keep the order, e.g. `09a_physics_body.js`, `09b_physics_terrain.js`.
 
-**Starter repo:** only `00`, `01` and `17` exist so far. Create the others as their part is built.
+**So far:** `00`–`06`, `16` and `17` exist (Part 1a). Create the others as their part is built. Until the battle arrives in Part 1b, `16_screens.js` holds a controls test range that stands in for it.
 
 ## 3. Rendering
 

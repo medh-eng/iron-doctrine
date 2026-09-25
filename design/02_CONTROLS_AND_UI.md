@@ -230,6 +230,8 @@ After 4 s without touching the world, the camera recenters on its own (this can 
 
 Glyphs are drawn as grease-pencil strokes: slightly wobbly, seeded so they don't shimmer.
 
+The opacity setting scales every value in the table: the default 30% gives exactly the values shown, 80% is about 2.7× stronger and 10% a third as strong. Outlines and glyphs also get a thin dark under-stroke, so they stay visible over bright skies as well as dark ground.
+
 ## 9. Keyboard and mouse (desktop)
 
 | Action | Input |
@@ -263,5 +265,5 @@ Vibration only runs when the Vibration setting is on.
 ## 11. Safe areas, fullscreen and orientation
 
 - `viewport-fit=cover`. Pad the HUD and controls by `env(safe-area-inset-*)` on all sides; in landscape the notch is on the left or right.
-- On the first tap from the title screen (if the Fullscreen setting is on): call `requestFullscreen()`, then `screen.orientation.lock('landscape')`. Ignore errors.
+- On the first tap from the title screen (if the Fullscreen setting is on): call `requestFullscreen()`, then `screen.orientation.lock('landscape')`. Ignore errors. This happens on touch devices only; on desktop the title's small full-screen button does it.
 - Desktop: letterbox to 16:9, at most 1280 px wide, centred.

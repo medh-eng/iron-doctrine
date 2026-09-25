@@ -42,3 +42,22 @@ function makePool(create, size) {
     forEachAlive(fn) { for (let i = 0; i < items.length; i++) if (items[i].alive) fn(items[i]); },
   };
 }
+
+const dist = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+// Tiny event bus for loose coupling between systems (e.g. settings changes).
+function makeBus() {
+  const map = new Map();
+  return {
+    on(name, fn) {
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(fn);
+    },
+    emit(name, arg) {
+      const list = map.get(name);
+      if (list) for (let i = 0; i < list.length; i++) list[i](arg);
+    },
+  };
+}
+const bus = makeBus();
