@@ -8,8 +8,8 @@ A landscape mobile war campaign game. You design every tank, ship and aircraft p
 
 | Folder or file | What it is |
 |---|---|
-| `docs/index.html` | The live game: one self-contained file. GitHub Pages publishes it. |
-| `src/` | Game source code. The build joins it into `docs/index.html`. |
+| `docs/` | The live game: `index.html` plus its script, styles, font, icons and home-screen manifest. GitHub Pages publishes this folder. |
+| `src/` | Game source code. The build turns it into the site in `docs/`. |
 | `design/` | Design bible: game design, controls, art and audio, tech, parts, roadmap and progress log. |
 | `tests/` | Automatic tests that play the game in a headless browser and take screenshots. |
 | `CLAUDE.md` | Standing instructions Claude Code reads at the start of every session. |

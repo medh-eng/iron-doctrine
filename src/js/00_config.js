@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.1.0';
+const GAME_VERSION = '0.1.1';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 1;
 const STORE_PREFIX = 'irondoctrine.';

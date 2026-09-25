@@ -6,10 +6,15 @@
   - `src/js/*.js`: one file per section
   - `src/styles.css`
   - `src/index.template.html`
-  - `src/assets/`: fonts and other assets, inlined at build time
-- **Build:** `node build.mjs` joins everything into ONE self-contained file, `docs/index.html`. It uses only Node built-ins.
-- **Publishing:** GitHub Pages serves `docs/index.html` from the `main` branch as the live game at `https://<username>.github.io/iron-doctrine/`.
-- **No network requests at runtime.** The build fails on any external URL, except the SVG namespace.
+  - `src/assets/`: fonts and other assets, copied as they are
+- **Build:** `node build.mjs` writes a small static site to `docs/`. It uses only Node built-ins.
+  - `index.html`: the page shell
+  - `game.js`: every `src/js/*.js` joined into one strict IIFE
+  - `game.css` and `assets/`
+  - `manifest.webmanifest`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` (icons are drawn in code by the build), so Chrome's "Add to Home screen" opens the game full screen and sideways
+  - `game.js` and `game.css` are linked with `?v=<GAME_VERSION>` so phones fetch the new version after an update
+- **Publishing:** GitHub Pages serves `docs/` from the `main` branch as the live game at `https://<username>.github.io/iron-doctrine/`.
+- **Nothing from other websites.** The build fails on any external URL, except the SVG namespace. (Until v0.1.0 the game was one self-contained HTML file; the producer lifted that rule in Part 1b.)
 - **Version constants** in `src/js/00_config.js`:
   - `GAME_VERSION`: semver. Minor version = part number (Part 1 = 0.1.x); patch = fixes.
   - `SAVE_VERSION`: an integer.
@@ -187,7 +192,7 @@ Every number is clamped to the caps in 01 §14.3.
 ## 10. Test harness
 
 **Test builds**
-- `node build.mjs --test` writes `build-test/index.html`. This build includes:
+- `node build.mjs --test` writes the site to `build-test/`. The smoke test serves it over a local web server, like GitHub Pages. This build includes:
   - the code between `/*TEST:BEGIN*/` and `/*TEST:END*/` markers, which the release build strips
   - `tests/test-hooks.js`, injected before the game script
 - The release build fails if `__TEST__`, `__GAME__` or any test marker remains.
@@ -223,11 +228,11 @@ Take a screenshot after each step.
 
 - `node build.mjs` runs `node --check` on the bundled script automatically.
 - **Playwright:** `npm install`, then `npx playwright install chromium`. If the browser download is blocked, point `CHROMIUM_PATH` at any installed Chromium.
-- **Font subsetting:** fonttools `pyftsubset` → woff2. Put the file in `src/assets/` and reference it as `url(assets/<file>.woff2)` in `styles.css`; the build inlines it as base64.
+- **Font subsetting:** fonttools `pyftsubset` → woff2. Put the file in `src/assets/` and reference it as `url(assets/<file>.woff2)` in `styles.css`; the build copies it to `docs/assets/`.
 
 ## 12. Publishing
 
-1. Bump `GAME_VERSION`, run `node build.mjs`, and commit `docs/index.html` together with the source changes.
+1. Bump `GAME_VERSION`, run `node build.mjs`, and commit `docs/` together with the source changes.
 2. Cloud sessions push a branch. The producer merges it into `main`.
 3. GitHub Pages (Settings → Pages → Deploy from a branch → `main` → `/docs`) updates the live link about a minute later.
 
@@ -235,6 +240,4 @@ Take a screenshot after each step.
 - localStorage works per device; wrap every call in try/catch.
 - Saves are exported as copyable text.
 
-**Optional home-screen app** (a Part 1a or Part 5 nice-to-have):
-- `docs/manifest.webmanifest` with `display: fullscreen` and `orientation: landscape`, plus PNG icons, so Chrome's "Add to Home screen" opens the game full screen and sideways.
-- The game itself must keep working without these files.
+**Home-screen app:** the manifest (`display: fullscreen`, `orientation: landscape`) and icons are built into `docs/` since v0.1.1.

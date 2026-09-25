@@ -15,10 +15,10 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
   - `06_ROADMAP_AND_CHECKLIST`: build steps, acceptance criteria, progress log
 - `src/`: game source.
   - `src/js/*.js` are joined in filename order into one strict IIFE.
-  - `src/styles.css`, `src/index.template.html`, and `src/assets/` (fonts are inlined as base64 at build time).
-- `build.mjs`: builds the single self-contained HTML file.
-  - `node build.mjs` writes the release build to `docs/index.html`. GitHub Pages serves this file as the live game.
-  - `node build.mjs --test` writes a test build to `build-test/index.html`, with test hooks included.
+  - `src/styles.css`, `src/index.template.html`, and `src/assets/` (fonts and other files, copied as they are).
+- `build.mjs`: builds the game as a small static site.
+  - `node build.mjs` writes the release build to `docs/` (`index.html`, `game.js`, `game.css`, `assets/`, the home-screen manifest and icons). GitHub Pages serves this folder as the live game.
+  - `node build.mjs --test` writes a test build to `build-test/`, with test hooks included.
 - `tests/`: `smoke.mjs` (Playwright) and `test-hooks.js`. Screenshots go to `test-output/`.
 
 ## Every session
@@ -36,7 +36,7 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
    - bump `GAME_VERSION` in `src/js/00_config.js`
    - run `node build.mjs`
    - tick the checkboxes in `design/06` and add a Progress log row
-   - commit `docs/index.html` together with the source changes
+   - commit `docs/` together with the source changes
 7. **Summary for the producer:**
    - what's new (3–5 lines)
    - how to try it on the phone once the branch is merged
@@ -45,7 +45,7 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
 
 ## Non-negotiables
 
-- **One file.** The output is one self-contained HTML file. All art is drawn in code; all audio comes from the Web Audio API. Fonts are system fonts or base64 in `src/assets/`. No network requests at runtime.
+- **Self-contained site.** The build output in `docs/` is everything the game needs. Several files are fine; nothing is loaded from other websites (the build fails on external URLs). All art is drawn in code; all audio comes from the Web Audio API. Fonts are system fonts or files in `src/assets/`.
 - **Landscape first.** Android Chrome is the main target, with a full-screen world. Portrait shows the rotate card and pauses the game. Desktop must work with mouse and keyboard.
 - **Screen edges.** Respect safe areas on all four sides. All text must be readable at 360 px screen height.
 - **Performance.** Target 60 fps on a mid-range Android phone:

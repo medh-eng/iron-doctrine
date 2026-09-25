@@ -7,18 +7,32 @@
 // Browser: `npx playwright install chromium`, or set CHROMIUM_PATH to any Chromium.
 
 import { chromium } from 'playwright';
-import { mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { join, dirname, extname, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGE = join(ROOT, 'build-test', 'index.html');
+const SITE = join(ROOT, 'build-test');
 const OUT = join(ROOT, 'test-output');
-if (!existsSync(PAGE)) {
+if (!existsSync(join(SITE, 'index.html'))) {
   console.error('build-test/index.html not found. Run: node build.mjs --test');
   process.exit(1);
 }
 mkdirSync(OUT, { recursive: true });
+
+// Serve build-test/ over http, like GitHub Pages does.
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png',
+  '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
+const server = createServer((req, res) => {
+  const path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^([/\\])+/, '') || 'index.html';
+  const file = join(SITE, path.endsWith('/') || path === '.' ? 'index.html' : path);
+  if (!file.startsWith(SITE) || !existsSync(file)) { res.writeHead(404); res.end(); return; }
+  res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream' });
+  res.end(readFileSync(file));
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const PAGE_URL = `http://127.0.0.1:${server.address().port}/`;
 
 const VIEWPORTS = [
   { name: 'phone-640x360', width: 640, height: 360, mobile: true },
@@ -77,7 +91,7 @@ for (const vp of VIEWPORTS) {
   };
 
   try {
-  await page.goto(pathToFileURL(PAGE).href);
+  await page.goto(PAGE_URL);
   await page.waitForTimeout(700);
 
   // ---------- 1. Title
@@ -327,6 +341,7 @@ for (const vp of VIEWPORTS) {
 }
 
 await browser.close();
+server.close();
 if (problems.length) {
   console.error(`\n${problems.length} problem(s). Screenshots in test-output/.`);
   process.exit(1);

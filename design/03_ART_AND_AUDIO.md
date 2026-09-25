@@ -50,7 +50,7 @@ The game lives on a commander's war-room table:
 ## 3. Type
 
 - **Display:** a stencil face, e.g. Saira Stencil One or Big Shoulders Stencil Display (both SIL Open Font License).
-  - Get it from npm `@fontsource`, subset to Latin, and embed as base64 woff2 under 45 KB.
+  - Get it from npm `@fontsource`, subset to Latin, and ship it as a woff2 file under 45 KB.
   - **Chosen:** Saira Stencil One, subset to basic Latin: 10.8 KB (`src/assets/`, licence file beside it).
   - Use it only for the logo, stamps ("Objective complete", "Level 7") and hull numbers.
 - **Everything else:** system condensed sans.
