@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1A1C24">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="Iron Doctrine: design your war machines, keep them supplied, and fight the battles yourself.">
+<title>Iron Doctrine</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<style>
+/* Iron Doctrine base styles. Palette and type follow design/03. */
+:root {
+  --linen: #E6DCC3;
+  --ink: #22303F;
+  --league: #2E6DB4;
+  --directorate: #C43C2C;
+  --amber: #FFB23E;
+  --cyanotype: #13466B;
+  --night: #1A1C24;
+  --acetate: rgba(18, 24, 32, 0.62);
+  --acetate-edge: rgba(230, 220, 195, 0.25);
+
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+
+  --font-ui: "Roboto Condensed", "sans-serif-condensed", "Arial Narrow", system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: #0d0e12;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--linen);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Canvas and UI layer are positioned by JS (full screen on phones, 16:9 letterbox on desktop). */
+#game {
+  position: fixed;
+  left: 0; top: 0;
+  width: 100vw; height: 100vh;
+  display: block;
+  background: var(--night);
+}
+
+#ui {
+  position: fixed;
+  left: 0; top: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+}
+#ui > * { pointer-events: auto; }
+
+/* Rotate card: portrait on touch devices */
+#rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--night);
+  color: var(--linen);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  text-align: center;
+  font-size: 16px;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate { display: flex; }
+}
+.rotate-phone {
+  width: 44px;
+  height: 76px;
+  border: 3px solid var(--linen);
+  border-radius: 9px;
+  position: relative;
+  animation: rotate-turn 2.4s ease-in-out infinite;
+}
+.rotate-phone::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: 5px;
+  width: 10px; height: 3px;
+  margin-left: -5px;
+  border-radius: 2px;
+  background: var(--amber);
+}
+@keyframes rotate-turn {
+  0%, 20% { transform: rotate(0deg); }
+  50%, 80% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rotate-phone { animation: none; transform: rotate(-90deg); }
+}
+
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Iron Doctrine game"></canvas>
+<div id="ui"></div>
+<div id="rotate" aria-live="polite">
+  <div class="rotate-phone" aria-hidden="true"></div>
+  <p>Turn your phone sideways to play.</p>
+</div>
+
+<script>
+(() => {
+'use strict';
+/* ---------- 00_config.js ---------- */
+/* ==== 00 CONFIG ==== */
+// Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
+const GAME_VERSION = '0.0.1';
+// Bump when the save format changes, and add a migration in 02_save.js.
+const SAVE_VERSION = 1;
+const STORE_PREFIX = 'irondoctrine.';
+
+// Rendering
+const MAX_DPR = 2;            // device pixel ratio cap (quality setting may lower it)
+const DESKTOP_MAX_W = 1280;   // desktop letterbox width limit (16:9)
+const SIM_STEP = 1 / 60;      // fixed simulation step in seconds
+const MAX_SIM_STEPS = 4;      // per frame; extra time is dropped when behind
+
+// Palette (design/03 §2)
+const PAL = {
+  linen: '#E6DCC3',
+  ink: '#22303F',
+  league: '#2E6DB4',
+  directorate: '#C43C2C',
+  amber: '#FFB23E',
+  cyanotype: '#13466B',
+  skyTop: '#2F2946',
+  sky2: '#8A4B5A',
+  sky3: '#D9855A',
+  horizon: '#F2C17A',
+  ridgeFar: '#3B3F52',
+  ridgeMid: '#2A2D3B',
+  ground: '#1A1C24',
+  groundEdge: '#4A4F63',
+};
+
+const FONT_UI = '"Roboto Condensed", "sans-serif-condensed", "Arial Narrow", system-ui, sans-serif';
+
+/* ---------- 01_util.js ---------- */
+/* ==== 01 UTIL ==== */
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+// Seeded RNG (mulberry32). All simulation randomness must come from one of these.
+function makeRng(seed) {
+  let s = seed >>> 0;
+  const next = () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return {
+    next,
+    range: (a, b) => a + (b - a) * next(),
+    int: (a, b) => Math.floor(a + (b - a + 1) * next()),
+    pick: (arr) => arr[Math.floor(next() * arr.length)],
+  };
+}
+
+// Simple object pool to avoid per-frame garbage.
+function makePool(create, size) {
+  const items = [];
+  for (let i = 0; i < size; i++) items.push(create());
+  let cursor = 0;
+  return {
+    items,
+    // Returns the next free item, or recycles the oldest if all are busy.
+    take() {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[(cursor + i) % items.length];
+        if (!it.alive) { cursor = (cursor + i + 1) % items.length; it.alive = true; return it; }
+      }
+      const it = items[cursor];
+      cursor = (cursor + 1) % items.length;
+      it.alive = true;
+      return it;
+    },
+    forEachAlive(fn) { for (let i = 0; i < items.length; i++) if (items[i].alive) fn(items[i]); },
+  };
+}
+
+/* ---------- 17_main.js ---------- */
+/* ==== 17 MAIN ==== */
+// Starter boot: layout, pixel ratio, fixed-step loop, pause on hide/portrait,
+// and a placeholder title scene. Part 1a replaces the scene with real screens.
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const uiLayer = document.getElementById('ui');
+const FINE_POINTER = window.matchMedia('(pointer: fine)');
+const PORTRAIT_TOUCH = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+
+const layout = { x: 0, y: 0, w: 1, h: 1, dpr: 1 };
+const state = { time: 0, paused: false, hidden: false, portrait: false, frames: 0 };
+const bg = { sky: null, far: null, mid: null, midW: 0 };
+
+function resize() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let w = vw;
+  let h = vh;
+  if (FINE_POINTER.matches) {
+    // Desktop: 16:9 letterbox, max 1280 wide, centred.
+    w = Math.min(vw, DESKTOP_MAX_W, Math.floor((vh * 16) / 9));
+    h = Math.min(vh, Math.floor((w * 9) / 16));
+  }
+  layout.w = w;
+  layout.h = h;
+  layout.x = Math.floor((vw - w) / 2);
+  layout.y = Math.floor((vh - h) / 2);
+  layout.dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+
+  for (const el of [canvas, uiLayer]) {
+    el.style.left = layout.x + 'px';
+    el.style.top = layout.y + 'px';
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+  }
+  canvas.width = Math.round(w * layout.dpr);
+  canvas.height = Math.round(h * layout.dpr);
+  ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+
+  state.portrait = PORTRAIT_TOUCH.matches;
+  buildBackground();
+}
+
+// Pre-render static layers once per resize (design/04 §3).
+function makeLayer(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * layout.dpr));
+  c.height = Math.max(1, Math.round(h * layout.dpr));
+  const g = c.getContext('2d');
+  g.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+  return { c, g };
+}
+
+function ridge(g, w, h, baseY, amp, seed, color) {
+  const rng = makeRng(seed);
+  const f1 = rng.range(0.004, 0.008);
+  const f2 = rng.range(0.012, 0.02);
+  const p1 = rng.range(0, 6.28);
+  const p2 = rng.range(0, 6.28);
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(0, h);
+  for (let x = 0; x <= w; x += 4) {
+    const y = baseY - amp * (0.6 * Math.sin(x * f1 + p1) + 0.4 * Math.sin(x * f2 + p2));
+    g.lineTo(x, y);
+  }
+  g.lineTo(w, h);
+  g.closePath();
+  g.fill();
+}
+
+function buildBackground() {
+  const { w, h } = layout;
+  const sky = makeLayer(w, h);
+  const grad = sky.g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, PAL.skyTop);
+  grad.addColorStop(0.45, PAL.sky2);
+  grad.addColorStop(0.72, PAL.sky3);
+  grad.addColorStop(0.9, PAL.horizon);
+  sky.g.fillStyle = grad;
+  sky.g.fillRect(0, 0, w, h);
+  ridge(sky.g, w, h, h * 0.74, h * 0.07, 11, PAL.ridgeFar);
+  bg.sky = sky.c;
+
+  // Mid ridge is twice as wide so it can drift and wrap seamlessly.
+  bg.midW = w * 2;
+  const mid = makeLayer(bg.midW, h);
+  ridge(mid.g, bg.midW, h, h * 0.84, h * 0.06, 29, PAL.ridgeMid);
+  bg.mid = mid.c;
+}
+
+function update(dt) {
+  state.time += dt;
+}
+
+function render() {
+  const { w, h } = layout;
+  ctx.drawImage(bg.sky, 0, 0, w, h);
+
+  // Drifting mid ridge (parallax placeholder).
+  const off = (state.time * 12) % (bg.midW / 2);
+  ctx.drawImage(bg.mid, -off, 0, bg.midW, h);
+
+  // Near ground band.
+  ctx.fillStyle = PAL.ground;
+  ctx.fillRect(0, h * 0.9, w, h * 0.1);
+  ctx.fillStyle = PAL.groundEdge;
+  ctx.fillRect(0, h * 0.9, w, 2);
+
+  // Title placeholder (the stencil font arrives in Part 1a).
+  const titleSize = clamp(Math.round(h * 0.13), 32, 76);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = Math.round(titleSize * 0.08) + 'px';
+  ctx.font = `800 ${titleSize}px ${FONT_UI}`;
+  ctx.fillStyle = PAL.linen;
+  ctx.fillText('IRON DOCTRINE', w / 2, h * 0.36);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+
+  ctx.font = `400 ${clamp(Math.round(h * 0.045), 14, 20)}px ${FONT_UI}`;
+  ctx.fillStyle = 'rgba(230, 220, 195, 0.9)';
+  ctx.fillText("No manual tells you how to win this war. You'll write your own.", w / 2, h * 0.36 + titleSize * 0.85);
+
+  ctx.font = `400 ${clamp(Math.round(h * 0.036), 12, 15)}px ${FONT_UI}`;
+  ctx.fillStyle = 'rgba(230, 220, 195, 0.7)';
+  ctx.fillText(`Starter build v${GAME_VERSION}. Part 1a is next.`, w / 2, h * 0.95);
+}
+
+let lastT = performance.now();
+let acc = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > 0.25) dt = 0.25;
+  const running = !state.paused && !state.hidden && !state.portrait;
+  if (running) {
+    acc += dt;
+    let steps = 0;
+    while (acc >= SIM_STEP && steps < MAX_SIM_STEPS) {
+      update(SIM_STEP);
+      acc -= SIM_STEP;
+      steps++;
+    }
+    if (steps === MAX_SIM_STEPS) acc = 0;
+  }
+  if (!state.hidden) render();
+  state.frames++;
+}
+
+let resizeTimer = 0;
+function scheduleResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 100);
+}
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
+document.addEventListener('visibilitychange', () => {
+  state.hidden = document.visibilityState === 'hidden';
+  lastT = performance.now();
+});
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+
+
+resize();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

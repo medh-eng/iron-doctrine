@@ -1,0 +1,15 @@
+{
+  "name": "iron-doctrine",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Iron Doctrine: a landscape mobile war campaign game. Builds to one self-contained HTML file.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:test": "node build.mjs --test",
+    "test": "node build.mjs --test && node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.50.0"
+  }
+}
