@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.1.3';
+const GAME_VERSION = '0.1.4';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -3091,7 +3091,7 @@ function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
 function weaponArc(V, w) {
   const d = w.def;
-  if (d.indirect) return { lo: 15, hi: 72, both: false };
+  if (d.indirect) return { lo: -5, hi: 80, both: false };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
 }
 
@@ -3131,6 +3131,8 @@ function aimWeapon(V, w, tx, ty, out) {
   let ang = d.auto ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect);
   if (Number.isNaN(ang)) { ang = angleFromElevation(V, 35, face); out.reason = 'Out of range'; }
   const arc = weaponArc(V, w);
+  // Howitzers lob when the high arc fits the mount, otherwise they fire the flat solution.
+  if (d.indirect && !out.reason && elevationOf(V, ang, face) > arc.hi) ang = ballisticAngle(_p.x, _p.y, tx, ty, d.vel, false);
   const el = elevationOf(V, ang, face);
   const cl = clamp(el, arc.lo, arc.hi);
   out.angle = angleFromElevation(V, cl, face);

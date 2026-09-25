@@ -150,6 +150,7 @@ window.__GAME__ = {
   art,
   artTest: () => { art.usePlaceholders = true; art.debug = true; art.init(); },
   damageCheck: () => damageCheck(),
+  howitzerCheck: () => howitzerCheck(),
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },
   loseSquad: () => { const B = SCREENS.battle.B; for (const V of B.squad) knockOut(B, V, null, 'Knocked out'); },

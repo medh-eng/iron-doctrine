@@ -366,6 +366,20 @@ function physicsCheck() {
   };
 }
 
+// Howitzer aim: a battery can reach targets from close range out to its full range.
+function howitzerCheck() {
+  const B = createBattle(7);
+  const H = B.units.find((u) => u.template === 'howitzer');
+  const w = mainWeapon(H);
+  const out = {};
+  for (const d of [40, 120, 250, 390]) {
+    const tx = H.body.x - d;
+    aimWeapon(H, w, tx, B.T.height(tx) + 1, _aim);
+    out[d] = _aim.ok;
+  }
+  return out;
+}
+
 // Part effects: engine, gun, turret ring, ammo detonation.
 function damageCheck() {
   const B = createBattle(4);

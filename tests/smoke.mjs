@@ -135,6 +135,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(ph.tallSlope.tilt > 60 && ph.normalSlope.tilt < 20, `top-heavy tipping wrong (tall ${ph.tallSlope.tilt.toFixed(0)}°, normal ${ph.normalSlope.tilt.toFixed(0)}°)`);
       const rnd = await G(() => window.__GAME__.randomCheck());
       check(rnd.every((r) => r.ok), `randomiser made an invalid design: ${JSON.stringify(rnd.find((r) => !r.ok))}`);
+      const hw = await G(() => window.__GAME__.howitzerCheck());
+      check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
       steps.push('templates, physics, damage');

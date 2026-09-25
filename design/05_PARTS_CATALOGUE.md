@@ -91,6 +91,8 @@ These are starting values. Tune them freely for feel and balance, but never show
 
 **Battle numbers per weapon** (in `07_data.js`): muzzle speed on the battlefield, damage per hit, aiming spread, and a small bursting charge that damages the parts around the first penetration (37 mm: 25 within 1 m; 75 mm: 55 within 1.6 m; 105 mm: 80 within 2 m).
 
+**Howitzer arc:** elevation −5° to 80°. It lobs (high arc) when that fits under 80°, otherwise it fires the flat arc, so it can also shoot directly at close range. (Until v0.1.4 the arc stopped at 72°, which is below every lob inside the gun's 400 m battle range, so howitzers never fired.)
+
 **Penetration over range**
 - Cannons: pen(r) = pen500 × (1 − 0.12 × (r − 500) / 500), never below 0.5 × pen500.
 - HEAT: no loss with range.
