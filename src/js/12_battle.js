@@ -39,13 +39,16 @@ function createBattle(level, opts = {}) {
   };
   // Each squad design deploys in its own layer: land vehicles on the left, ships at the
   // near edge of the sea. Ships stay in port on maps without sea.
+  // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
   let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
-  B.inPort = squad.filter((d) => domainOf(d) === 'naval' && T.seaX0 === undefined);
-  squad = squad.filter((d) => !B.inPort.includes(d));
-  if (!squad.length) squad = ['medium', 'light', 'scout'].map(designFromTemplate);
+  B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
+  B.loaned = !squad.length && cfg.fleet;
+  if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
   let landX = 46, seaX = T.seaX0 + 16;
   squad.forEach((d, i) => {
-    const naval = domainOf(d) === 'naval';
+    const naval = seaDomain(domainOf(d));
     const L = cropDesign(d).w * CELL;
     const x = naval ? seaX + L / 2 : landX;
     if (naval) seaX += L + 8; else landX -= 15;
@@ -111,7 +114,7 @@ function spawnEnemy(B, t, mode, x) {
   // Ships spawn at sea; land vehicles on land (Part 2a).
   const T = B.T;
   if (T.seaX0 !== undefined) {
-    if (domainOf(d) === 'naval') x = Math.max(x, T.seaX0 + 40);
+    if (seaDomain(domainOf(d))) x = Math.max(x, T.seaX0 + 40);
     else x = Math.min(x, T.seaX0 - 12);
   }
   const V = makeVehicle(d, 1, x, -1, B.T);
@@ -181,6 +184,7 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
@@ -216,6 +220,7 @@ function updateBattle(B, dt) {
     if (!V.destroyed) runWeapons(B, V, dt, V !== B.me || B.demo);
   }
   stepShells(B, dt);
+  stepUnderwater(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -283,8 +288,9 @@ function takeVehicle(B, V) {
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
   const w = mainWeapon(V);
-  if (!w) return 'No gun';
+  if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
+  if (gunUnderWater(B, V, w)) return 'Gun under water';
   if (V.shells <= 0) return 'Out of shells';
   aimWeapon(V, w, tx, ty, _aim);
   if (!_aim.ok) return _aim.reason || 'Out of arc';
@@ -433,6 +439,48 @@ function navalCheck() {
     open: run(open, 0, 40, [[6, 6]]),
     reverse: run(designFromTemplate('destroyer'), -1, 8),
   };
+}
+
+// Submarines (Part 2b): dive to the ordered depth and surface again; a torpedo holes and
+// floods a gunboat; a depth charge damages a submarine under the destroyer.
+function subCheck() {
+  const T = makeTerrain({ seed: 7, length: 520, hills: 0.2, rough: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 22 } });
+  const V = makeVehicle(designFromTemplate('sub'), 0, 200, 1, T);
+  const top = () => V.body.y + (V.bounds.maxY - V.com.y) - T.sea;
+  const run = (secs) => { for (let t = 0; t < secs; t += SIM_STEP) { subControl(V, T, SIM_STEP); stepVehicle(V, T, SIM_STEP); } };
+  const out = { valid: validateDesign(designFromTemplate('sub')).ok };
+  V.depthCmd = T.sea - 8;
+  run(25);
+  out.dived = { top: top(), com: V.body.y - T.sea, angle: (V.body.a * 180) / Math.PI, submerged: V.submerged };
+  V.depthCmd = null;
+  run(25);
+  out.surfaced = { top: top(), submerged: V.submerged };
+  // Weapons in a sea battle.
+  const B = createBattle(16);
+  const me = B.me;
+  const gb = B.units.find((u) => u.template === 'gunboat');
+  const water = (U) => U.parts.reduce((a, p) => a + (p.water || 0), 0);
+  const hp = (U) => U.parts.reduce((a, p) => a + (p.alive ? p.hp : 0), 0);
+  const hp0 = hp(gb);
+  me.body.x = gb.body.x - 80;
+  for (const U of B.squad) if (U !== me) U.body.x = Math.min(U.body.x, 90);
+  const tw = me.weapons.find((w) => w.def.secondary === 'torpedo');
+  tw.reload = 0; tw.rounds = 2;
+  torpedoes.forEachAlive((t) => { t.alive = false; });
+  launchTorpedo(B, me, tw, gb);
+  for (let t = 0; t < 12; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.torpedo = { hpLost: hp0 - hp(gb), water: water(gb), destroyed: gb.destroyed };
+  const sub = B.units.find((u) => u.template === 'sub' && !u.destroyed) || spawnEnemy(B, 'sub', 'fixed', 400);
+  sub.depthCmd = B.T.sea - 8;
+  for (let t = 0; t < 10; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  const hs = hp(sub);
+  me.body.x = sub.body.x;
+  const dc = me.weapons.find((w) => w.def.secondary === 'depth');
+  dc.reload = 0;
+  dropCharge(B, me, dc, sub.body.y);
+  for (let t = 0; t < 8; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.charge = { hpLost: hs - hp(sub), destroyed: sub.destroyed };
+  return out;
 }
 
 // Part effects: engine, gun, turret ring, ammo detonation.

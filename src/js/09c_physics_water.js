@@ -31,7 +31,7 @@ function buildWaterParts(V) {
   }
   V.compCache = null;
   if (!V.hull) { V.wcells = null; V.props = null; return; }
-  const wcells = [], props = [];
+  const wcells = [], props = [], ballast = [], engines = [];
   let thrusters = 0, n = 0;
   const tmp = { x: 0, y: 0 };
   V.parts.forEach((p, i) => {
@@ -53,9 +53,14 @@ function buildWaterParts(V) {
       props.push({ lx: tmp.x, ly: tmp.y, part: i });
     }
     if (d.thruster) thrusters++;
+    if (d.ballast) { ballast.push(i); if (p.bw === undefined) p.bw = 0; }
+    if (d.power > 0) engines.push(i);
   });
+  V.ballast = ballast.length ? ballast : null;
+  V.engineParts = engines;
   V.wcells = wcells;
   V.props = props;
+  V.buoyFull = wcells.reduce((sum, w) => sum + w.vol * 1000, 0);    // kg of water the live hull displaces fully under
   V.thrusters = thrusters;
   // Per-cell damping: a share of the critical damping of the whole hull.
   const k = (1000 * GRAVITY * V.hull.cellVol) / CELL;
@@ -77,19 +82,21 @@ function waterForces(V, T, ca, sa, throttle, h, out) {
       if (b.x + rx < T.seaX0) continue;
       const f = clamp((sea - (b.y + ry)) / CELL + 0.5, 0, 1);
       if (f <= 0) continue;
+      // Damping is strongest for cells cutting the surface (waves carry the energy away);
+      // cells deep under only feel ordinary drag.
       const vpy = b.vy + b.w * rx;
-      const Fy = 1000 * GRAVITY * w.vol * f - c * f * vpy;
+      const Fy = 1000 * GRAVITY * w.vol * f - c * 4 * f * (1 - f) * vpy - 125 * V.hull.beam * f * vpy * Math.abs(vpy);
       fy += Fy;
       tq += rx * Fy;
       sub += w.vol * f;
     }
-    // Water inside flooded parts weighs on them where they are.
+    // Water inside flooded parts and ballast tanks weighs on them where they are.
     for (let i = 0; i < V.parts.length; i++) {
       const p = V.parts[i];
-      if (!p.water || !p.alive) continue;
+      if (!(p.water || p.bw) || !p.alive) continue;
       const lx = ((p.x + p.def.w / 2) * CELL - V.com.x) * V.dir, ly = (V.design.h - p.y - p.def.h / 2) * CELL - V.com.y;
       const rx = lx * ca - ly * sa;
-      const F = p.water * GRAVITY;
+      const F = ((p.water || 0) + (p.bw || 0)) * GRAVITY;
       fy -= F;
       tq -= rx * F;
     }
@@ -106,12 +113,18 @@ function waterForces(V, T, ca, sa, throttle, h, out) {
       const px = b.x + p.lx * ca - p.ly * sa, py = b.y + p.lx * sa + p.ly * ca;
       if (px >= T.seaX0 && py < sea - 0.1) wet++;
     }
-    const avail = V.power >= V.stats.drawn ? 1 : V.power / Math.max(V.stats.drawn, 1);
-    const hasFuel = V.fuelMax === 0 || V.fuel > 0;
-    if (throttle !== 0 && wet && V.canDrive && hasFuel) {
+    // Submerged, only electric motors run (design/05 §2); on the surface everything does.
+    let power = V.power, fuelled = V.fuelMax === 0 || V.fuel > 0;
+    if (V.submerged) {
+      power = 0;
+      for (const i of V.engineParts) if (V.parts[i].alive && V.parts[i].def.electric) power += V.parts[i].def.power;
+      fuelled = true;
+    }
+    const avail = power >= V.stats.drawn ? 1 : power / Math.max(V.stats.drawn, 1);
+    if (throttle !== 0 && wet && V.canDrive && fuelled && power > 0) {
       const sign = throttle > 0 ? 1 : -1;
       const sm = V.speedMul || 1;
-      const P = V.power * 1000 * PROP_EFF * avail * sm * sm * sm * (wet / V.props.length);
+      const P = power * 1000 * PROP_EFF * avail * sm * sm * sm * (wet / V.props.length);
       let F = (P / Math.max(Math.abs(vAlong), 1.5)) * Math.abs(throttle);
       if (sign !== V.dir) F *= REVERSE_CAP;
       fx += ca * F * sign; fy += sa * F * sign;
@@ -208,6 +221,35 @@ function stepFlooding(B, V, dt) {
   }
 }
 
+// Submarines (design/01 §7.3): the ballast tanks trim to hold the depth order.
+// V.depthCmd = world height for the centre of mass, or null to surface (tanks blown).
+// Also works out V.submerged (the whole hull under water) for the engines and sensors.
+function subControl(V, T, dt) {
+  if (!V.hull || V.gone) return;
+  const b = V.body;
+  V.submerged = seaAt(T, b.x) && b.y + (V.bounds.maxY - V.com.y) * Math.cos(b.a) < T.sea - 0.05;
+  if (!V.ballast) return;
+  let cap = 0, now = 0, flood = 0;
+  for (const i of V.ballast) { const p = V.parts[i]; if (p.alive) { cap += p.def.ballast; now += p.bw; } }
+  for (const p of V.parts) if (p.alive && p.water) flood += p.water;
+  let want = 0;
+  if (V.depthCmd !== null && V.depthCmd !== undefined && !V.destroyed) {
+    // Level trim under water, plus a push toward the ordered depth, damped by the rate of climb.
+    const neutral = V.buoyFull - b.m - flood;
+    want = clamp(neutral + 1500 * (b.y - V.depthCmd) + 5000 * b.vy, 0, cap);
+  }
+  // Fore and aft tanks also trim the boat level: bow up takes water forward.
+  const step = BALLAST_RATE * dt;
+  const trim = V.depthCmd === null || V.depthCmd === undefined ? 0 : 3000 * b.a + 3000 * b.w;
+  for (const i of V.ballast) {
+    const p = V.parts[i];
+    if (!p.alive) continue;
+    const lx = ((p.x + p.def.w / 2) * CELL - V.com.x) * V.dir;
+    const target = clamp((cap ? (want * p.def.ballast) / cap : 0) + trim * lx, 0, p.def.ballast);
+    p.bw += clamp(target - p.bw, -step, step);
+  }
+}
+
 // Sinking and drowning: a ship whose highest point is under water has sunk; a capsized
 // ship is out; a land vehicle with its crew compartments under water is flooded.
 function waterChecks(B, V) {
@@ -222,7 +264,12 @@ function waterChecks(B, V) {
       localToWorld(V, tmp.x, tmp.y, tmp);
       top = Math.max(top, tmp.y);
     }
-    if (top < T.sea - 0.1) knockOut(B, V, V.lastHitBy, 'Sunk', true);
+    if (V.ballast) {
+      // A submarine is lost when, even with its tanks blown, it is too heavy to come up.
+      let flood = 0;
+      for (const p of V.parts) if (p.alive && p.water) flood += p.water;
+      if (top < T.sea && b.m + flood > V.buoyFull) knockOut(B, V, V.lastHitBy, 'Sunk', true);
+    } else if (top < T.sea - 0.1) knockOut(B, V, V.lastHitBy, 'Sunk', true);
     else if (Math.abs(b.a) > 1.35 && b.y < T.sea + 1) knockOut(B, V, V.lastHitBy, 'Capsized', true);
     return;
   }

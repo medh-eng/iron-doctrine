@@ -35,6 +35,12 @@ const FLOOD_RATE = 500;           // kg per second through each destroyed watert
 const HOLE_RATE = 350;            // kg per second through each shell hole below the waterline
 const THRUSTER_FORCE = 15000;     // N of extra stopping and reversing force per manoeuvre thruster
 
+// Submarines and underwater weapons (Part 2b). Battle numbers.
+const BALLAST_RATE = 1500;        // kg per second each ballast tank floods or blows
+const DIVE_RATE = 2;              // metres per second the depth order moves while ▲ or ▼ is held
+const TORPEDO = { speed: 16, dmg: 320, radius: 3.2, depthRate: 3 };
+const DEPTH_CHARGE = { sink: 3, dmg: 240, radius: 6, depth: 8 };
+
 // id: [name, category, w, h, mass, hp, armour, extras]
 const PART_ROWS = [
   // Structure
@@ -52,6 +58,7 @@ const PART_ROWS = [
   ['hull', 'Ship hull section', 'structure', 2, 2, 600, 150, 10, { cost: { metal: 4, wood: 1 }, sealed: 1, floods: true }],
   ['bow', 'Bow section', 'structure', 2, 2, 450, 130, 10, { cost: { metal: 3, wood: 1 }, sealed: 0.5, floods: true, bowShape: true }],
   ['keel', 'Keel', 'structure', 2, 1, 500, 120, 10, { cost: { metal: 3 }, sealed: 1, keel: true }],
+  ['phull', 'Pressure hull section', 'structure', 2, 2, 2200, 220, 25, { cost: { metal: 8 }, sealed: 1, floods: true }],
   ['bulk', 'Watertight bulkhead', 'structure', 1, 2, 200, 100, 10, { cost: { metal: 2 }, sealed: 1, bulkhead: true }],
   // Mobility
   ['eng_s', 'Petrol engine S', 'mobility', 2, 2, 450, 60, 5, { cost: { metal: 3 }, power: 110, heat: 12, fuelUse: 30, rel: 0.990 }],
@@ -59,6 +66,9 @@ const PART_ROWS = [
   ['eng_h', 'Diesel engine H', 'mobility', 4, 2, 1900, 120, 5, { cost: { metal: 12 }, power: 520, heat: 45, fuelUse: 95, rel: 0.992 }],
   ['marine', 'Marine diesel', 'mobility', 4, 3, 5000, 200, 10, { cost: { metal: 25 }, power: 1500, heat: 40, fuelUse: 300, rel: 0.995, sealed: 1, floods: true }],
   ['prop', 'Ship propeller', 'mobility', 1, 2, 300, 50, 10, { cost: { metal: 2 }, propeller: true }],
+  // Submarines (Part 2b). ballast = kg of water the tank can take in or blow out.
+  ['emotor', 'Electric motor + batteries', 'mobility', 2, 2, 1200, 70, 10, { cost: { metal: 6, elec: 3 }, power: 200, heat: 5, rel: 0.996, electric: true, sealed: 1, floods: true }],
+  ['ballast', 'Ballast tank', 'mobility', 2, 2, 300, 80, 10, { cost: { metal: 3 }, ballast: 4000, sealed: 1 }],
   ['thrust', 'Manoeuvre thruster', 'mobility', 1, 1, 150, 30, 5, { cost: { metal: 1, elec: 1 }, power: -40, heat: 5, thruster: true }],
   ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
   ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
@@ -71,6 +81,9 @@ const PART_ROWS = [
   ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
   ['c105', 'Cannon 105 mm', 'weapon', 4, 1, 1300, 80, 10, { cost: { metal: 12 }, pen: 150, reload: 8, range: 2500 }],
   ['ngun', 'Naval gun 120 mm, twin', 'weapon', 4, 3, 9000, 200, 25, { cost: { metal: 40 }, pen: 130, reload: 6, range: 9000 }],
+  // Secondary weapons (Part 2b): fired with Alt; rounds = torpedoes or charges carried.
+  ['torp', 'Torpedo tube', 'weapon', 3, 1, 900, 60, 10, { cost: { metal: 8, elec: 1 }, reload: 30, range: 4000, secondary: 'torpedo', rounds: 2, wet: true }],
+  ['dc', 'Depth-charge rack', 'weapon', 2, 1, 300, 40, 5, { cost: { metal: 2 }, reload: 4, range: 0, secondary: 'depth', rounds: 6 }],
   ['how', 'Howitzer 150 mm', 'weapon', 4, 2, 2500, 100, 10, { cost: { metal: 18 }, pen: 40, reload: 12, range: 8000, he: true }],
   ['smoke', 'Smoke launcher', 'weapon', 1, 1, 30, 15, 2, { cost: { metal: 1, fuel: 1 }, salvos: 3 }],
   // Systems
@@ -78,6 +91,7 @@ const PART_ROWS = [
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
   ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
+  ['sonar', 'Sonar', 'system', 2, 1, 300, 30, 5, { cost: { metal: 2, elec: 4 }, power: -10, sonar: 2000, wet: true }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
   ['fuel_s', 'Fuel tank 200 L', 'logistics', 1, 1, 220, 30, 3, { cost: { metal: 1 }, fuel: 200, fire: 0.35 }],
@@ -181,13 +195,29 @@ const TEMPLATES = {
       ['hull', 5, 9], ['hull', 7, 9], ['bulk', 9, 9], ['hull', 10, 9], ['hull', 12, 9], ['hull', 14, 9], ['plate', 16, 9], ['plate', 17, 9], ['plate', 18, 9], ['plate', 19, 9], ['bulk', 20, 9],
       ['hull', 21, 9], ['hull', 23, 9], ['hull', 25, 9], ['hull', 27, 9], ['hull', 29, 9], ['hull', 31, 9], ['bulk', 33, 9], ['hull', 34, 9], ['hull', 36, 9], ['hull', 38, 9], ['bow', 40, 9],
       // Aft gun.
-      ['turret', 8, 8], ['crew2', 8, 6], ['c75', 10, 7], ['plate', 5, 8], ['plate', 6, 8], ['plate', 7, 8], ['hmg', 5, 7],
+      ['turret', 8, 8], ['crew2', 8, 6], ['c75', 10, 7], ['dc', 5, 8], ['plate', 7, 8], ['hmg', 5, 7],
       // Funnel deck, bridge and fuel.
       ['plate', 11, 8], ['plate', 12, 8], ['plate', 13, 8], ['hmg', 14, 8], ['plate', 15, 8], ['eng_s', 16, 7], ['fuel_l', 18, 7],
       ['fuel_l', 20, 7], ['plate', 22, 8], ['plate', 23, 8], ['crew2', 24, 7], ['crew2', 24, 5], ['optics', 24, 4], ['radio', 25, 4], ['fc', 26, 6],
-      ['ammo_p', 26, 8], ['ammo_p', 27, 8], ['plate', 28, 8], ['plate', 29, 8], ['plate', 30, 8],
+      ['ammo_p', 26, 8], ['ammo_p', 27, 8], ['torp', 28, 8],
       // Forward twin 120 mm.
       ['turret', 31, 8], ['ngun', 31, 5], ['plate', 34, 8], ['plate', 35, 8], ['plate', 36, 8], ['hmg', 37, 8],
+      ['sonar', 39, 13],
+    ],
+  },
+  // Submarine (Part 2b): ballast tanks fore and aft, electric motor for running submerged,
+  // a diesel for the surface, a bow torpedo tube and a periscope on the sail.
+  sub: {
+    name: 'Submarine', w: 27, h: 8,
+    cells: [
+      ['prop', 3, 6],
+      ['keel', 5, 7], ['keel', 7, 7], ['keel', 9, 7], ['keel', 11, 7], ['keel', 13, 7], ['keel', 15, 7], ['keel', 17, 7], ['keel', 19, 7], ['keel', 21, 7], ['sonar', 23, 7],
+      ['ballast', 4, 5], ['emotor', 6, 5], ['phull', 8, 5], ['bulk', 10, 5], ['phull', 11, 5], ['ballast', 13, 5], ['phull', 15, 5], ['bulk', 17, 5],
+      ['phull', 18, 5], ['ballast', 20, 5], ['bow', 22, 5], ['torp', 24, 6],
+      // Upper deck; the 80 mm plates are trim weights.
+      ['arm80', 5, 4], ['arm80', 5, 3], ['ballast', 6, 3], ['phull', 8, 3], ['eng_m', 10, 3], ['arm80', 13, 3], ['fuel_s', 13, 4], ['crew2', 14, 3],
+      ['phull', 16, 3], ['phull', 18, 3], ['arm80', 20, 4], ['arm80', 21, 4],
+      ['optics', 14, 2], ['radio', 15, 2], ['arm80', 16, 2], ['arm80', 17, 2],
     ],
   },
   // Enemy-only fixed positions (no engine, so the placement rules don't apply).
@@ -234,11 +264,13 @@ const TEMPLATES = {
 };
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub'];
+// Fleet lent to the player on sea levels when the squad has no ships.
+const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Proving Ground ladder (design/01 §14)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -305,6 +337,10 @@ function levelConfig(level) {
       sea: { from: 300, depth: 14 },
       enemies: [['gunboat', 1, 'attack', 0], ['mgcar', 1, 'attack', 0], ['gunboat', 2, 'attack', 1]],
       how: 'Gunboats: hit them at the waterline. A holed hull floods until a bulkhead stops the water.' }),
+    16: () => Object.assign(c, { name: 'Submarine hunt', goal: { type: 'destroy', text: 'Clear the sea lane' }, hills: 0.2, length: 640, fleet: true,
+      sea: { from: 40, depth: 24 }, lifeBonus: false,
+      enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
+      how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
   };
@@ -366,6 +402,6 @@ function testDriveConfig(range = 'land') {
     hills: 0.7, rough: 0.3, mud: 2, forest: 1, gaps: 1, weather: 'clear', light: 'day',
     enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '', range,
   };
-  if (range === 'sea') Object.assign(c, { hills: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 14 } });
+  if (range === 'sea') Object.assign(c, { hills: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 20 } });
   return c;
 }

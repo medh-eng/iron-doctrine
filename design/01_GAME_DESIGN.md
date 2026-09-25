@@ -177,6 +177,7 @@ Platoons arrive as reinforcement waves whenever the on-screen unit cap allows.
 - Holed hull cells flood, so the ship lists and can sink.
 - As built in v0.2.0: watertight parts are the hull and bow sections, keel, bulkheads and the marine diesel. A shell that goes through a hull part below the waterline leaves a hole; a destroyed one is a wide breach. Water fills the compartment from the bottom up; bulkheads and the keel stop it. A ship whose highest point goes under, or that rolls past about 75°, is out ("Sunk", "Capsized"). A land vehicle whose crew compartments go under is "Flooded".
 - Side view: ships drive forward and reverse like ground vehicles; they don't turn around.
+- Submarines (v0.2.1): ▲ ▼ set a depth order; the ballast tanks hold it and keep the boat level. Submerged, only electric motors drive, and the boat is hidden from everything but sonar.
 - Submarines trim with ballast tanks.
 
 **Aircraft and helicopters**
@@ -462,6 +463,7 @@ One new idea every 2–3 levels:
 | 12 | Gaps and bridges: vehicle length matters |
 | 13 | Anti-tank guns in bunkers |
 | 14 | Coastal gunboats (Part 2a): the sea begins at 300 m; gunboats sail in and shell the shore |
+| 16 | Submarine hunt (Part 2b): a sea battle. Only ships and submarines deploy; with none in the squad, 2 Destroyers and a Gunboat are lent |
 | 15 | Night: sensors matter. +1 life |
 | 16+ | Mixes of earlier ideas with rising numbers; every 5th level is a named boss with a blueprint |
 

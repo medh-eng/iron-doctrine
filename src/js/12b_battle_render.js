@@ -33,7 +33,7 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
@@ -147,6 +147,44 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.fillStyle = '#6f5a30'; g.beginPath(); g.arc(x + w * 0.5, cy, cs * 0.1, 0, Math.PI * 2); g.fill();
       break;
     }
+    case 'phull':
+      bevel(g, x, y, w, h, shade(steel, 0.72), 1.5);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = Math.max(1, cs * 0.08);
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x, y + h * f); g.lineTo(x + w, y + h * f); g.stroke(); }
+      rivets(g, x, y, w, h, r * 1.2, 'rgba(0,0,0,0.5)');
+      break;
+    case 'ballast':
+      bevel(g, x, y, w, h, '#3c4a52', 1);
+      g.strokeStyle = 'rgba(160,200,220,0.5)'; g.lineWidth = Math.max(1, cs * 0.06);
+      g.strokeRect(x + cs * 0.25, y + cs * 0.25, w - cs * 0.5, h - cs * 0.5);
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.25 + k * 0.2), y + h - cs * 0.2, cs * 0.12, cs * 0.12);
+      break;
+    case 'emotor':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#1d2a38'; g.fillRect(x + cs * 0.2, y + cs * 0.2, w - cs * 0.4, h * 0.4);
+      g.fillStyle = PAL.amber; g.fillRect(x + cs * 0.3, y + cs * 0.3, cs * 0.15, cs * 0.2);
+      g.fillStyle = '#6a7a50';
+      for (let k = 0; k < 3; k++) g.fillRect(x + cs * (0.25 + k * 0.5), y + h * 0.62, cs * 0.35, h * 0.28);
+      break;
+    case 'torp':
+      g.fillStyle = shade(steel, 0.7);
+      roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.35); g.fill();
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w - h * 0.35, y + h * 0.5, h * 0.25, 0, Math.PI * 2); g.fill();
+      break;
+    case 'dc':
+      g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.75, w, h * 0.25);
+      g.fillStyle = '#3a3f47';
+      for (let k = 0; k < 3; k++) { g.fillRect(x + w * (0.05 + k * 0.32), y + h * 0.15, w * 0.26, h * 0.6); }
+      g.fillStyle = PAL.amber;
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.05 + k * 0.32), y + h * 0.4, w * 0.26, h * 0.08);
+      break;
+    case 'sonar':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.ellipse(x + w / 2, y + h * 0.5, w * 0.48, h * 0.42, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(159,211,255,0.7)'; g.lineWidth = 1;
+      for (const k of [0.15, 0.28]) { g.beginPath(); g.arc(x + w / 2, y + h * 0.5, w * k, -0.9, 0.9); g.stroke(); }
+      break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.28, 0, Math.PI * 2); g.fill();
@@ -355,7 +393,7 @@ function drawVehicle(g, V) {
   }
   // Barrels, drawn live.
   for (const w of V.weapons) {
-    if (!V.parts[w.part].alive) continue;
+    if (!V.parts[w.part].alive || w.def.secondary) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -508,6 +546,11 @@ function drawParticles(g) {
         g.fillStyle = '#DCEBF2';
         g.beginPath(); g.arc(x, y, Math.max(1, p.size * S * 0.5), 0, Math.PI * 2); g.fill();
         break;
+      case FX_BUBBLE:
+        g.globalAlpha = 0.6 * (1 - k);
+        g.strokeStyle = '#CFE6F0'; g.lineWidth = 1;
+        g.beginPath(); g.arc(x, y, Math.max(1, p.size * S), 0, Math.PI * 2); g.stroke();
+        break;
       case FX_RING:
         g.globalAlpha = 0.6 * (1 - k);
         g.strokeStyle = '#FFE9B8'; g.lineWidth = 2;
@@ -622,6 +665,7 @@ function renderBattle(g, B) {
     drawVehicle(g, V);
   }
   drawDebris(g);
+  drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
   drawParticles(g);

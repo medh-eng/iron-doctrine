@@ -141,11 +141,16 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(Math.abs(nv.holed.angle) > 3 && !nv.holed.sunk && nv.holed.wet.every((x) => x < 10), `holed ship did not list with the water held by a bulkhead (${JSON.stringify(nv.holed)})`);
       check(nv.open.sunk, `holed ship without bulkheads did not sink (${JSON.stringify(nv.open)})`);
       check(nv.base.dx > 40 && nv.reverse.dx < -3, `ships don't drive forward and back (${nv.base.dx.toFixed(0)} m, ${nv.reverse.dx.toFixed(0)} m)`);
+      const sb = await G(() => window.__GAME__.subCheck());
+      check(sb.valid && sb.dived.submerged && Math.abs(sb.dived.com + 8) < 1 && Math.abs(sb.dived.angle) < 5, `submarine did not dive to 8 m level (${JSON.stringify(sb.dived)})`);
+      check(!sb.surfaced.submerged && sb.surfaced.top > 0.5, `submarine did not surface (${JSON.stringify(sb.surfaced)})`);
+      check(sb.torpedo.water > 0 && sb.torpedo.hpLost > 200, `torpedo did not hole and flood the gunboat (${JSON.stringify(sb.torpedo)})`);
+      check(sb.charge.hpLost > 100, `depth charge did not damage the submarine (${JSON.stringify(sb.charge)})`);
       const hw = await G(() => window.__GAME__.howitzerCheck());
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('templates, physics, damage, ships');
+      steps.push('templates, physics, damage, ships, submarines');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }

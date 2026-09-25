@@ -30,6 +30,7 @@ These are starting values. Tune them freely for feel and balance, but never show
 | hull | Ship hull section | 2×2 | 600 | 150 | 10 | M4 W1 | Buoyancy below the waterline | P2 |
 | bow | Bow section | 2×2 | 450 | 130 | 10 | M3 W1 | Raked bow; watertight, displaces half its cells (added in 2a) | P2 |
 | keel | Keel | 2×1 | 500 | 120 | 10 | M3 | Lowers centre of mass; ships need one | P2 |
+| phull | Pressure hull section | 2×2 | 2200 | 220 | 25 | M8 | Heavy watertight hull for submarines (added in 2b) | P2 |
 | bulk | Watertight bulkhead | 1×2 | 200 | 100 | 10 | M2 | Stops flooding spreading | P2 |
 | wing | Wing section | 2×1 | 90 | 30 | 2 | M1 W1 | Lift area 6 m² | P2 |
 | tail | Tail unit | 2×2 | 60 | 30 | 2 | M1 W1 | Pitch stability; aircraft need one | P2 |
@@ -188,6 +189,11 @@ These are starting values. Tune them freely for feel and balance, but never show
 - **Flooding:** 0.5 t/s per destroyed watertight cell below the surface (scaled by how deep the cell is), plus 0.35 t/s (`HOLE_RATE`) per shell hole below the surface (up to 3 holes remembered per part). Only hull, bow and marine diesel parts take water; keels and bulkheads stop it. Water fills the lowest parts of the compartment first and weighs on them where they are, so the ship trims towards the flooded end.
 - **Manoeuvre thruster:** 15 kN each of extra stopping and reversing force.
 - **Naval gun, twin:** both barrels fire together; battle numbers muzzle 120 m/s, 150 damage, bursting charge 70 within 2.2 m. Recoil counts both barrels.
+- **Submarines (2b):** ballast tanks make a hull a submarine. Ballast to dive = full watertight displacement − mass; the tanks must hold at least that (the Drafting Office says so if they don't). Each tank floods or blows at 1.5 t/s (`BALLAST_RATE`). Depth keeping: tank water = level trim + 1.5 t per metre above the order + 5 t per m/s of climb, and fore/aft tanks trade water to hold the boat level. The whole hull under water = submerged: only electric motors drive, and the boat can't see except through a periscope (optics) above the water or by sonar. The ▲ ▼ order moves 2 m/s. A submarine is lost when, with its tanks blown, flood water still makes it heavier than its hull displaces. Submarine template: 31.7 t, reserve 30% surfaced, needs 13.3 t of its 16 t ballast; 29 km/h surfaced, 19 km/h submerged.
+- **Torpedo (battle numbers):** 16 m/s, runs its range (4 km sheet = 200 m), at the target's keel depth; bursts on contact for 320 damage within 3.2 m. 2 per tube, 30 s reload.
+- **Depth charge:** rolls off the stern, sinks at 3 m/s, bursts at the set depth (the submarine under you, else 8 m) or on contact: 240 damage within 6 m. 6 per rack, 4 s between drops.
+- **Sonar:** 2 km sheet = 100 m in battle; finds anything in the water, including submerged submarines.
+- **Heave damping** acts on cells cutting the surface; cells deep under feel quadratic drag only.
 - **Water and shells:** bullets stop at the surface; high explosive bursts on it; shells slow to 20% and stop 1.5 m down. Auto-aim at a floating ship aims 0.1 m below its waterline.
 
 ### 7.4 Aircraft

@@ -123,7 +123,7 @@ function rebuildVehicle(V, first) {
   V.grid = occupancy(D, V.alive);
 
   let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0;
   const contacts = [];
   const weapons = [];
   V.night = 0;
@@ -143,6 +143,7 @@ function rebuildVehicle(V, first) {
     if (d.spot) spot = Math.max(spot, d.spot);
     if (d.night) V.night = Math.max(V.night || 0, d.night);
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
+    if (d.sonar) sonar = Math.max(sonar, d.sonar * BATTLE_DISTANCE_SCALE);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
     if (d.propeller) loco++;
@@ -156,7 +157,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
+        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
       });
     }
   });
@@ -189,6 +190,7 @@ function rebuildVehicle(V, first) {
   V.shellsMax = Math.max(V.shellsMax, shellsMax);
   V.spot = spot;
   V.fc = fc;
+  V.sonar = sonar;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };

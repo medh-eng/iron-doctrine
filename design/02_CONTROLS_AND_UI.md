@@ -56,7 +56,9 @@ Translucent discs. ◀ and ▶ are large; ▲ and ▼ appear only for vehicles t
 | Submarine | Move | Depth |
 | Aircraft | ▶ throttle up; ◀ throttle down (hold at low speed to turn around) | Pitch |
 
-Pressing ◀ and ▶ together is the **halt/brake**. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
+Pressing ◀ and ▶ together is the **halt/brake**.
+
+As built (v0.2.1): ▲ ▼ sit above the middle of the pad, with the depth and the depth order written above them. For a submarine, holding ▼ moves the order down at 2 m/s and ▲ up; above the surfaced level the order becomes "surface" and the tanks are blown. Alt shows the secondary weapon and what is left ("Torp 2", "Charge 6"): torpedo at the target, or depth charges when a submarine is within 40 m. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
 
 ### 3.3 Right thumb: action cluster
 

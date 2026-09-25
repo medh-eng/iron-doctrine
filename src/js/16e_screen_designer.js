@@ -52,7 +52,8 @@ SCREENS.designer = {
   // Put a design into a class-sized grid, bottom-aligned.
   load(design, base, owned) {
     const d0 = cropDesign(design);
-    const cls = domainOf(d0) === 'naval' ? 'ship' : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
+    const dom = domainOf(d0);
+    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
     const C = CLASSES[cls];
     const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
     const ox = 1, oy = H - d0.h;
@@ -360,7 +361,7 @@ SCREENS.designer = {
     const st = rep.st;
     this.chips.textContent = '';
     const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
-    const naval = rep.domain === 'naval';
+    const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
     if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
@@ -386,6 +387,11 @@ SCREENS.designer = {
       row('Reserve buoyancy', `${Math.round(st.reserve * 100)}%`);
       row('Centre of buoyancy (B)', `${st.cob.x.toFixed(1)}, ${st.cob.y.toFixed(1)} m`);
       row('Centre of mass from B', `${Math.abs(st.com.x - st.cob.x).toFixed(2)} m ${st.com.x >= st.cob.x ? 'forward' : 'aft'}`);
+      if (rep.domain === 'sub') {
+        row('Ballast tanks hold', `${(st.ballastCap / 1000).toFixed(1)} t`);
+        row('Ballast to dive', `${(Math.max(0, st.diveNeed) / 1000).toFixed(1)} t`);
+        row('Electric power', `${st.electric} kW`);
+      }
     } else {
       row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
@@ -455,7 +461,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = cls === 'heavy' ? 'Heavy design' : cls === 'ship' ? 'Ship design' : 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -571,7 +577,7 @@ SCREENS.designer = {
     g.strokeStyle = BLUEPRINT.line;
     g.strokeRect(ox + 0.5, oy + 0.5, d.w * cs, d.h * cs);
     // Ground line under the bottom row (land designs).
-    if (!this.rep || this.rep.domain !== 'naval') {
+    if (!this.rep || !seaDomain(this.rep.domain)) {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
@@ -581,7 +587,7 @@ SCREENS.designer = {
       if (this.move && this.move.idx === i) continue;
       const c = d.cells[i];
       drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
+      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
         // Barrel preview at zero elevation.
         const P = PARTS[c.p];
         const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
@@ -630,7 +636,7 @@ SCREENS.designer = {
     const st = rep.st, d = this.st.d;
     const px = ox + (st.com.x / CELL) * cs;
     const py = oy + (d.h - st.com.y / CELL) * cs;
-    if (rep.domain === 'naval' && st.hull) {
+    if (seaDomain(rep.domain) && st.hull) {
       // Waterline across the grid, with the water below it tinted.
       const wy = oy + (d.h - st.waterline / CELL) * cs;
       g.fillStyle = 'rgba(127,211,255,0.12)';
@@ -680,6 +686,6 @@ SCREENS.designer = {
     g.font = `700 12px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
-    if (rep.domain !== 'naval') g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
+    if (!seaDomain(rep.domain)) g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
   },
 };

@@ -43,7 +43,8 @@ SCREENS.workshop = {
     top.appendChild(el('h2', 'ws-title', 'Workshop'));
     top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
     top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
-    top.appendChild(el('span', 'ws-fact', levelConfig(level).sea ? 'Map has sea' : 'No sea: ships stay in port'));
+    const lc = levelConfig(level);
+    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle: ships and submarines only' : lc.sea ? 'Map has sea' : 'No sea: ships stay in port'));
     r.appendChild(top);
 
     // Squad slots.
@@ -55,8 +56,8 @@ SCREENS.workshop = {
       card.appendChild(designThumb(o.design, 120, 44));
       card.appendChild(el('b', '', markName(o.design)));
       const st = statsOf(o.design);
-      const naval = domainOf(o.design) === 'naval';
-      card.appendChild(el('small', '', naval ? `Ship · ${(st.mass / 1000).toFixed(1)} t · reserve ${Math.round(st.reserve * 100)}% · cost ${costOf(o.design)}` : `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · cost ${costOf(o.design)}`));
+      const naval = seaDomain(domainOf(o.design));
+      card.appendChild(el('small', '', naval ? `${DOMAIN_NAMES[domainOf(o.design)]} · ${(st.mass / 1000).toFixed(1)} t · reserve ${Math.round(st.reserve * 100)}% · cost ${costOf(o.design)}` : `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · cost ${costOf(o.design)}`));
       card.addEventListener('click', () => { audio.sfx('tap'); this.slot = i; this.build(); });
       slots.appendChild(card);
     });
@@ -71,7 +72,7 @@ SCREENS.workshop = {
       pick.type = 'button';
       pick.appendChild(designThumb(o.design, 104, 38));
       pick.appendChild(el('b', '', markName(o.design)));
-      pick.appendChild(el('small', '', `${o.src}${domainOf(o.design) === 'naval' ? ' · ship' : ''} · cost ${costOf(o.design)}`));
+      pick.appendChild(el('small', '', `${o.src}${seaDomain(domainOf(o.design)) ? ` · ${DOMAIN_NAMES[domainOf(o.design)].toLowerCase()}` : ''} · cost ${costOf(o.design)}`));
       pick.addEventListener('click', () => {
         audio.sfx('order');
         p.squad[this.slot] = o.id;

@@ -574,6 +574,24 @@ const SFX = {
     const o = a.osc('sine', 120, t, t + 0.25, m);
     o.frequency.exponentialRampToValueAtTime(45, t + 0.2);
   },
+  // Torpedo launch: a compressed-air thump and a fading whine.
+  torpedo(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.0, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.005, 0.35, 0.25);
+    a.noiseSrc(t, t + 0.3, a.filter('lowpass', 600, 0, g));
+    const w = a.gain(out);
+    a.env(w.gain, t + 0.1, 0.1, 0.06, 0.8);
+    const o = a.osc('triangle', 520, t + 0.1, t + 1.0, w);
+    o.frequency.exponentialRampToValueAtTime(260, t + 1.0);
+  },
+  // Sonar contact: a single high ping with a long tail.
+  ping(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.4, 0.2, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.004, 0.16, 1.2);
+    a.osc('sine', 1560, t, t + 1.4, g);
+  },
   // Water pouring into a hull: low filtered rumble with bubbling.
   flood(a, t, pan, vel) {
     const out = a.voice(a.sfxBus, t, 1.2, 0.3, pan);
