@@ -47,12 +47,15 @@ function createBattle(level, opts = {}) {
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
   let landX = 46, seaX = T.seaX0 + 16;
+  let airX = 60;
   squad.forEach((d, i) => {
-    const naval = seaDomain(domainOf(d));
+    const dom = domainOf(d);
+    const naval = seaDomain(dom);
     const L = cropDesign(d).w * CELL;
-    const x = naval ? seaX + L / 2 : landX;
-    if (naval) seaX += L + 8; else landX -= 15;
+    const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
+    if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
     const V = makeVehicle(d, 0, x, 1, T);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -118,6 +121,7 @@ function spawnEnemy(B, t, mode, x) {
     else x = Math.min(x, T.seaX0 - 12);
   }
   const V = makeVehicle(d, 1, x, -1, B.T);
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
   V.template = t;
   V.speedMul = B.cfg.speedMul;
@@ -178,15 +182,18 @@ function updateBattle(B, dt) {
     if (V.escort) { /* escortThink runs below */ }
     else if (V === B.me && !B.demo) {
       if (V.ai.react > 0) V.ai.react -= dt;
-    } else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
+    } else if (V.flier) airThink(B, V, dt);
+    else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
     else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
+  for (const V of B.units) if (V.flier) airChecks(B, V);
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 
@@ -287,6 +294,7 @@ function takeVehicle(B, V) {
 // Returns a short reason when it can't.
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
+  if (V.flier) return fireForward(B, V);
   const w = mainWeapon(V);
   if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
@@ -308,7 +316,7 @@ function autoTarget(B) {
   const V = B.me;
   if (B.target && !B.target.destroyed && B.target.seen) return B.target;
   const w = mainWeapon(V);
-  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200);
+  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200, (U) => V.flier || !U.flier);
 }
 
 const _tp = { x: 0, y: 0 };
@@ -480,6 +488,58 @@ function subCheck() {
   dropCharge(B, me, dc, sub.body.y);
   for (let t = 0; t < 8; t += SIM_STEP) updateBattle(B, SIM_STEP);
   out.charge = { hpLost: hs - hp(sub), destroyed: sub.destroyed };
+  return out;
+}
+
+// Aircraft (design/06 Part 2 acceptance): a fighter holds level flight and loops round;
+// too little wing for its weight stalls and comes down; a helicopter lifts off, an overweight
+// one can't; a bomb dropped over a truck destroys it.
+function airCheck() {
+  const T = makeTerrain({ seed: 3, length: 900, hills: 0.1, rough: 0.1, mud: 0, forest: 0, gaps: 0 });
+  const run = (d, secs, setup, each) => {
+    const V = makeVehicle(d, 0, 100, 1, T);
+    setup(V);
+    let minAlt = Infinity, maxAlpha = 0, flipped = false;
+    for (let t = 0; t < secs; t += SIM_STEP) {
+      if (each) each(V, t);
+      flightControl(V, T, SIM_STEP);
+      stepVehicle(V, T, SIM_STEP);
+      if (V.dir < 0) flipped = true;
+      minAlt = Math.min(minAlt, V.body.y - T.height(V.body.x));
+      maxAlpha = Math.max(maxAlpha, Math.abs(((V.alpha || 0) * 180) / Math.PI));
+    }
+    return { alt: V.body.y - T.height(V.body.x), minAlt, maxAlpha, flipped };
+  };
+  const heavy = designFromTemplate('fighter');
+  heavy.cells = heavy.cells.filter((c) => !(c.p === 'wing' && c.x !== 8));
+  for (const x of [2, 3, 4, 5, 6, 7]) heavy.cells.push({ p: 'arm80', x, y: 2 });
+  const fatHeli = designFromTemplate('heli');
+  fatHeli.cells.push({ p: 'arm80', x: 9, y: 1 });
+  const out = {
+    valid: validateDesign(heavy).ok && validateDesign(fatHeli).ok,
+    level: run(designFromTemplate('fighter'), 20, (V) => launchFlier(V, T, 60)),
+    loop: run(designFromTemplate('fighter'), 12, (V) => { launchFlier(V, T, 60); V.throttle = 1; }, (V, t) => { V.pitchOrder = t > 2 && V.dir > 0 ? 1 : null; }),
+    stall: run(heavy, 40, (V) => { launchFlier(V, T, 60); V.throttle = 1; }),
+    heli: run(designFromTemplate('heli'), 10, () => {}, (V) => { V.altCmd = T.height(V.body.x) + 20; }),
+    fatHeli: run(fatHeli, 10, () => {}, (V) => { V.altCmd = T.height(V.body.x) + 20; }),
+  };
+  // A bomb from level flight at 40 m onto a parked truck.
+  const B = createBattle(1);
+  const truck = B.units.find((u) => u.side === 1);
+  const bomber = makeVehicle(designFromTemplate('bomber'), 0, truck.body.x - 90, 1, B.T);
+  launchFlier(bomber, B.T, 40);
+  bomber.ai = makeAI('squad', B.cfg);
+  bomber.ai.target = truck;
+  B.units.push(bomber);
+  B.revealAll = true;
+  truck.seen = true;
+  let dropped = 0;
+  for (let t = 0; t < 12 && !truck.destroyed; t += SIM_STEP) {
+    bomber.gammaCmd = 0;
+    for (const w of bomber.weapons) if (w.def.secondary === 'bomb' && Math.abs(bombImpactX(bomber, truck.body.y) - truck.body.x) < 2 && dropBomb(B, bomber, w)) dropped++;
+    updateBattle(B, SIM_STEP);
+  }
+  out.bomb = { dropped, destroyed: truck.destroyed };
   return out;
 }
 

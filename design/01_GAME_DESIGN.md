@@ -183,6 +183,7 @@ Platoons arrive as reinforcement waves whenever the on-screen unit cap allows.
 **Aircraft and helicopters**
 - Aircraft get lift from wing cells against their mass, and thrust against drag. They stall below minimum speed.
 - Helicopters get lift from the rotor against their mass.
+- As built in v0.2.2: aircraft squad members start in the air on any map (45 m up, helicopters 18 m). A design whose centre of mass is behind its centre of lift is unstable and can pitch up into a stall; the Drafting Office says so as a fact.
 
 **Destroyed parts** detach and fly off as debris. A tank can lose its turret and keep driving.
 
@@ -463,6 +464,7 @@ One new idea every 2–3 levels:
 | 12 | Gaps and bridges: vehicle length matters |
 | 13 | Anti-tank guns in bunkers |
 | 14 | Coastal gunboats (Part 2a): the sea begins at 300 m; gunboats sail in and shell the shore |
+| 17 | Air raid (Part 2c): fighters, then a bomber and a helicopter, with a light tank on the ground. Only heavy machine guns, autocannons and AA guns reach aircraft |
 | 16 | Submarine hunt (Part 2b): a sea battle. Only ships and submarines deploy; with none in the squad, 2 Destroyers and a Gunboat are lent |
 | 15 | Night: sensors matter. +1 life |
 | 16+ | Mixes of earlier ideas with rising numbers; every 5th level is a named boss with a blueprint |

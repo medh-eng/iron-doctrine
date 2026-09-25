@@ -20,6 +20,8 @@ function spotRange(B, O, V) {
   let r = SPOT_BASE * O.spot * sightFactor(B, O);
   if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
+  if (V.flier) r *= AIR_SPOT;
+  if (O.flier) r *= AIR_SIGHT;
   return r;
 }
 
@@ -87,7 +89,7 @@ function aimPoint(B, U, out) {
 function trainWeapon(V, w, angle, face, dt) {
   if (w.face === undefined) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); w.swing = 0; }
   if (face !== w.face) {
-    if (!w.turret) return false;
+    if (!w.turret && !weaponArc(V, w).both) return false;
     w.face = face;
     w.swing = TURRET_SWING;
   }
@@ -109,13 +111,14 @@ function runWeapons(B, V, dt, aiControlled) {
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
-    if (d.secondary) { if (aiControlled) aiSecondary(B, V, w); continue; }
+    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
     if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
-      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? null : (U) => U.soft);
+      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? (U) => !U.flier || d.aa : (U) => U.soft && (!U.flier || d.aa));
       if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
       aimPoint(B, T, tmp);
+      leadTarget(V, w, T, tmp);
       aimWeapon(V, w, tmp.x, tmp.y, _aim);
       const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
       if (!_aim.ok || !ready || w.reload > 0) continue;
@@ -161,8 +164,8 @@ function squadThink(B, V, dt) {
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
   const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen) tgt = B.target;
-  else tgt = nearestTarget(B, V, range);
+  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;
 }
@@ -171,7 +174,7 @@ function squadThink(B, V, dt) {
 function enemyThink(B, V, dt) {
   const ai = V.ai;
   const range = engageRange(V);
-  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2));
+  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2), (U) => canEngage(V, U));
   if (V.ballast) V.depthCmd = patrolDepth(B, V);
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;

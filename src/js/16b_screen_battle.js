@@ -3,6 +3,14 @@
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
+const TEST_RANGE_HOW = {
+  land: 'Mud, hills and a trench.',
+  sea: 'Open water off a beach.',
+  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
+  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
+};
+// The test range that suits a design's domain.
+const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
 const DEFAULT_ZOOM = 0.75;
 const MIN_AUTO_ZOOM = 0.55;     // how far the follow camera may pull back to frame a target
@@ -27,7 +35,7 @@ SCREENS.battle = {
     this.level = opts.level || 1;
     for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
-      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || (seaDomain(domainOf(opts.test)) ? 'sea' : 'land')) })
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
@@ -59,7 +67,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? (B.cfg.range === 'sea' ? 'Open water off a beach. Pause to go back to the Workshop.' : 'Mud, hills and a trench. Pause to go back to the Workshop.') : B.cfg.how;
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -337,7 +345,22 @@ SCREENS.battle = {
   update(dt, simRunning) {
     const B = this.B;
     if (!B) return;
-    B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    const me0 = B.me;
+    if (me0.flier) {
+      // Aircraft: ◀ ▶ throttle, ▲ ▼ pitch (let go: level flight). Helicopters: ◀ ▶ move, ▲ ▼ height.
+      if (!me0.destroyed && simRunning && !this.frozen) {
+        if (me0.domain === 'air') {
+          me0.throttle = clamp(me0.throttle + this.drive * dt * 0.6, 0, 1);
+          me0.pitchOrder = this.climb || null;
+          if (!this.climb) me0.gammaCmd = 0;
+        } else {
+          me0.moveCmd = this.drive;
+          const floor = B.T.height(me0.body.x) + 0.5;
+          const from = me0.altCmd === undefined || me0.altCmd === null ? me0.body.y : me0.altCmd;
+          if (this.climb) me0.altCmd = Math.max(floor, from + this.climb * CLIMB_RATE * dt);
+        }
+      }
+    } else B.me.throttle = B.me.destroyed ? 0 : this.drive;
     // Submarines: ▲ ▼ move the depth order; above the surfaced level it means "surface".
     const me = B.me;
     if (me.ballast && !me.destroyed && simRunning && !this.frozen && this.climb) {
@@ -370,7 +393,7 @@ SCREENS.battle = {
       if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
       C.alt.disabled = this.frozen || n === 0;
     }
-    C.up.hidden = C.down.hidden = !B.me.ballast;
+    C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -391,6 +414,14 @@ SCREENS.battle = {
       fit = Math.max(MIN_AUTO_ZOOM, (layout.w * 0.8) / span / base);
       midX = (me.x + T.body.x) / 2;
     }
+    // In the air, pull back far enough to keep the ground under you in view.
+    let midY = me.y + 2;
+    if (B.me.flier && !B.me.destroyed) {
+      const ground = Math.max(B.T.height(me.x), seaAt(B.T, me.x) ? B.T.sea : -Infinity);
+      const alt = me.y - ground;
+      fit = Math.min(fit, Math.max(0.5, (layout.h * 0.7) / (alt + 14) / base));
+      midY = (me.y + ground) / 2 + 2;
+    }
     cam.fit = cam.fit === undefined ? fit : cam.fit + (fit - cam.fit) * (1 - Math.pow(0.2, dt));
     view.S = this.scale();
     const viewW = layout.w / view.S;
@@ -398,7 +429,7 @@ SCREENS.battle = {
       const k = 1 - Math.pow(0.03, dt);
       const wantX = T && !cam.manual && fit < cam.zoom ? midX : me.x + B.me.dir * viewW * 0.18;
       cam.x += (wantX - cam.x) * k;
-      cam.y += (me.y + 2 - cam.y) * k;
+      cam.y += (midY - cam.y) * k;
     }
     cam.x = clamp(cam.x, viewW * 0.3, B.T.length - viewW * 0.3);
     view.cx = cam.x;
@@ -602,6 +633,22 @@ SCREENS.battle = {
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
     for (const c of [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    // Aircraft: throttle, height over the ground and a stall warning. Helicopters: height and order.
+    if (B.me.flier && !C.up.hidden) {
+      const me = B.me;
+      const ground = Math.max(B.T.height(me.body.x), seaAt(B.T, me.body.x) ? B.T.sea : -Infinity);
+      const alt = Math.round(me.body.y - ground);
+      const text = me.domain === 'air' ? `Throttle ${Math.round(me.throttle * 100)}% · height ${alt} m`
+        : `Height ${alt} m · order ${Math.round((me.altCmd === undefined || me.altCmd === null ? me.body.y : me.altCmd) - ground)} m`;
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = PAL.linen;
+      g.fillText(text, C.up.x, C.up.y - C.up.r - 4);
+      if (me.domain === 'air' && !me.destroyed && Math.abs((me.alpha || 0) * 180 / Math.PI) > STALL_DEG) {
+        g.fillStyle = PAL.danger; g.font = `700 16px ${FONT_UI}`;
+        g.fillText('STALL', C.up.x, C.up.y - C.up.r - 20);
+      }
+    }
     // Submarine depth: metres below the surface, and the order.
     if (B.me.ballast && !C.up.hidden) {
       const me = B.me;

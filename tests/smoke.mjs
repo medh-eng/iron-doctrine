@@ -146,11 +146,18 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(!sb.surfaced.submerged && sb.surfaced.top > 0.5, `submarine did not surface (${JSON.stringify(sb.surfaced)})`);
       check(sb.torpedo.water > 0 && sb.torpedo.hpLost > 200, `torpedo did not hole and flood the gunboat (${JSON.stringify(sb.torpedo)})`);
       check(sb.charge.hpLost > 100, `depth charge did not damage the submarine (${JSON.stringify(sb.charge)})`);
+      const ac = await G(() => window.__GAME__.airCheck());
+      check(ac.valid, 'air test designs are not valid');
+      check(ac.level.minAlt > 45 && Math.abs(ac.level.alt - 60) < 10, `fighter did not hold level flight (${JSON.stringify(ac.level)})`);
+      check(ac.loop.flipped, `fighter did not loop round (${JSON.stringify(ac.loop)})`);
+      check(ac.stall.maxAlpha > 12 && ac.stall.minAlt < 2, `aircraft with too little wing did not stall and come down (${JSON.stringify(ac.stall)})`);
+      check(ac.heli.alt > 15 && ac.fatHeli.alt < 2, `helicopter lift wrong (${JSON.stringify([ac.heli, ac.fatHeli])})`);
+      check(ac.bomb.destroyed, `bombs did not destroy the truck (${JSON.stringify(ac.bomb)})`);
       const hw = await G(() => window.__GAME__.howitzerCheck());
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('templates, physics, damage, ships, submarines');
+      steps.push('templates, physics, damage, ships, submarines, aircraft');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }
@@ -410,9 +417,33 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await shot('14b-sea-trial');
     await tapCtrl('pause');
     await tapButton('Back to the Workshop');
+    // Aircraft (Part 2c): the fighter on the blueprint (centre of lift), then a helicopter flown
+    // with the pad: ▲ climbs, ▶ moves.
+    await G(() => { const S = window.__GAME__.SCREENS.designer; S.load(window.__GAME__.designFromTemplate('fighter'), null, true); S.build(); });
+    await wait(300);
+    check(/T\/W/.test(await page.locator('.dz-top').textContent()), 'aircraft chips missing on the blueprint');
+    await shot('13c-designer-aircraft');
+    await G(() => { const S = window.__GAME__.SCREENS.designer; S.load(window.__GAME__.designFromTemplate('heli'), null, true); S.build(); });
+    await wait(200);
+    await tapButton('Test drive');
+    await wait(400);
+    const h0 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x, range: B.cfg.range }; });
+    const hold = async (id, ms) => {
+      const c = await ctrl(id);
+      if (!c) { errors.push(`control ${id} not shown`); return; }
+      if (vp.mobile) { await touch('touchStart', [{ x: c.cx, y: c.cy, id: 4 }]); await wait(ms); await touch('touchEnd', [{ x: c.cx, y: c.cy, id: 4 }]); }
+      else { await page.mouse.move(c.cx, c.cy); await page.mouse.down(); await wait(ms); await page.mouse.up(); }
+    };
+    await hold('up', 2500);
+    await hold('right', 2000);
+    const h1 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x }; });
+    check(h0.range === 'heli' && h1.y > h0.y + 5 && h1.x > h0.x + 2, `helicopter did not fly with the pad (${JSON.stringify([h0, h1])})`);
+    await shot('14c-test-flight');
+    await tapCtrl('pause');
+    await tapButton('Back to the Workshop');
     await G(() => window.__GAME__.ladder.resume());
     await wait(200);
-    steps.push('designer, Mk.II, test drive, sea trial');
+    steps.push('designer, Mk.II, test drive, sea trial, test flight');
 
     // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
     if (!vp.mobile) {

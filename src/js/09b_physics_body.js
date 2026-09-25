@@ -119,11 +119,12 @@ function rebuildVehicle(V, first) {
   V.com.x = st.com.x;
   V.com.y = st.com.y;
   V.stats = st;
-  b.m = Math.max(st.mass, 1);
+  b.m = Math.max(st.mass - (V.dropped || 0), 1);
+  if (V.domain === undefined) { V.domain = domainOf(D); V.flier = airDomain(V.domain); }
   V.grid = occupancy(D, V.alive);
 
   let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0, jets = 0;
   const contacts = [];
   const weapons = [];
   V.night = 0;
@@ -146,7 +147,8 @@ function rebuildVehicle(V, first) {
     if (d.sonar) sonar = Math.max(sonar, d.sonar * BATTLE_DISTANCE_SCALE);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
-    if (d.propeller) loco++;
+    if (d.propeller || d.airprop || d.jet || d.rotor) loco++;
+    if (d.jet) jets++;
     if (d.loco) {
       loco++;
       const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
@@ -183,7 +185,7 @@ function rebuildVehicle(V, first) {
   V.c = (2 * SUSPENSION_DAMP * Math.sqrt(K * b.m)) / Math.max(V.nLoco, 3);
   V.power = engines;
   V.crew = crew;
-  V.canDrive = engines > 0 && crew > 0 && loco > 0;
+  V.canDrive = (engines > 0 || jets > 0) && crew > 0 && loco > 0;
   V.immobile = !V.canDrive;
   V.fuelMax = fuelMax;
   V.fuel = Math.min(V.fuel, fuelMax);
@@ -200,6 +202,7 @@ function rebuildVehicle(V, first) {
   V.soft = V.parts.every((p) => !p.alive || p.def.armor <= 15);
   V.dirty = true;
   buildWaterParts(V);
+  buildAirParts(V);
 }
 
 const _wf = { fx: 0, fy: 0, tq: 0 };
@@ -289,9 +292,13 @@ function stepVehicle(V, T, dt) {
       waterForces(V, T, ca, sa, throttle, h, _wf);
       fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
     }
-    // Air drag.
+    // Aircraft and helicopters: lift, thrust and drag (09d). Everything else: air drag.
     const v2 = b.vx * b.vx + b.vy * b.vy;
-    if (v2 > 0.01) {
+    if (V.flier) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      airForces(V, T, ca, sa, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    } else if (v2 > 0.01) {
       const v = Math.sqrt(v2);
       const fd = 0.5 * 1.225 * 0.9 * dragA * v2;
       fx -= (fd * b.vx) / v; fy -= (fd * b.vy) / v;
@@ -307,6 +314,11 @@ function stepVehicle(V, T, dt) {
   }
   // Keep inside the battlefield.
   const lo = 3 + V.len / 2, hi = T.length - 3 - V.len / 2;
+  if (V.flier && ((b.x < lo && b.vx < 0) || (b.x > hi && b.vx > 0))) {
+    // Fliers turn back at the edge of the battlefield.
+    b.vx = -b.vx;
+    if (Math.sign(b.vx) !== V.dir) flipFlier(V);
+  }
   if (b.x < lo) { b.x = lo; if (b.vx < 0) b.vx = 0; }
   if (b.x > hi) { b.x = hi; if (b.vx > 0) b.vx = 0; }
   if (b.a > Math.PI) b.a -= Math.PI * 2;

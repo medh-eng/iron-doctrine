@@ -16,12 +16,15 @@ const BATTLE_SPEED_SCALE = 0.5;
 // cal = calibre in mm (recoil = cal² × 0.9 N·s), auto = automatic weapon.
 const WEAPON_STATS = {
   mg: { vel: 260, dmg: 6, spread: 1.4, cal: 8, auto: true, burst: 6 },
-  hmg: { vel: 250, dmg: 11, spread: 1.2, cal: 13, auto: true, burst: 5 },
+  hmg: { vel: 250, dmg: 11, spread: 1.2, cal: 13, auto: true, burst: 5, aa: true },
   // burst / burstR: the shell's small bursting charge after it penetrates (damage, radius in m).
   c37: { vel: 180, dmg: 45, spread: 0.55, cal: 37, shells: 40, burst: 25, burstR: 1.0 },
   c75: { vel: 165, dmg: 95, spread: 0.5, cal: 75, shells: 30, burst: 55, burstR: 1.6, heDmg: 70, heRadius: 3 },
   c105: { vel: 155, dmg: 150, spread: 0.45, cal: 105, shells: 20, burst: 80, burstR: 2.0, heDmg: 110, heRadius: 4 },
   how: { vel: 95, dmg: 180, spread: 0.9, cal: 150, shells: 12, heDmg: 180, heRadius: 6, indirect: true },
+  // Air-capable automatic guns (Part 2c): aa = can engage aircraft; flak = bursts near them.
+  ac20: { vel: 240, dmg: 16, spread: 1.0, cal: 20, auto: true, burst: 4, aa: true },
+  aa40: { vel: 200, dmg: 30, spread: 0.9, cal: 40, auto: true, burst: 3, aa: true, flak: true },
   // Naval gun, twin: two barrels fire together (Part 2a).
   ngun: { vel: 120, dmg: 150, spread: 0.45, cal: 120, shells: 30, burst: 70, burstR: 2.2, twin: true },
 };
@@ -40,6 +43,27 @@ const BALLAST_RATE = 1500;        // kg per second each ballast tank floods or b
 const DIVE_RATE = 2;              // metres per second the depth order moves while ▲ or ▼ is held
 const TORPEDO = { speed: 16, dmg: 320, radius: 3.2, depthRate: 3 };
 const DEPTH_CHARGE = { sink: 3, dmg: 240, radius: 6, depth: 8 };
+
+// Aircraft and helicopters (design/05 §7.4). Battles compress distance, so air speeds are
+// scaled by AIR_SPEED_SCALE: air density is raised by 1 ÷ scale² (lift and drag at the
+// scaled speed match the sheet) and propeller power is × scale.
+const AIR_SPEED_SCALE = 0.25;
+const AIR_SPOT = 2;               // aircraft are seen this many times further away
+const AIR_SIGHT = 1.5;            // and see this many times further
+const AIR_RHO = 1.225;
+const WING_AREA = 6;              // m² of lift per wing section
+const TAIL_AREA = 3;              // m² per tail unit (stabiliser and elevator)
+const CL_PER_DEG = 0.1, CL_MAX = 1.2, STALL_DEG = 12;
+const AIR_CD_WING = 0.01;         // parasite drag per m² of wing
+const AIR_CD_FRONT = 0.1;         // parasite drag per m² of frontal area (height × 1.2 m)
+const INDUCED_K = 0.06;           // induced drag: k × CL² × wing area
+const DRAG_RISE_SPEED = 230;      // m/s (sheet): above this, drag climbs steeply (near the speed of sound)
+const AIRPROP_EFF = 0.8;          // share of engine power an air propeller turns into thrust
+const ROTOR_LIFT = 25000;         // N per rotor at full power
+const ROTOR_POWER = 400;          // kW each rotor needs for full lift
+const HELI_CDA = 3;               // m² drag area of a helicopter
+const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
+const BOMB = { dmg: 200, radius: 5 };
 
 // id: [name, category, w, h, mass, hp, armour, extras]
 const PART_ROWS = [
@@ -70,6 +94,15 @@ const PART_ROWS = [
   ['emotor', 'Electric motor + batteries', 'mobility', 2, 2, 1200, 70, 10, { cost: { metal: 6, elec: 3 }, power: 200, heat: 5, rel: 0.996, electric: true, sealed: 1, floods: true }],
   ['ballast', 'Ballast tank', 'mobility', 2, 2, 300, 80, 10, { cost: { metal: 3 }, ballast: 4000, sealed: 1 }],
   ['thrust', 'Manoeuvre thruster', 'mobility', 1, 1, 150, 30, 5, { cost: { metal: 1, elec: 1 }, power: -40, heat: 5, thruster: true }],
+  // Aircraft (Part 2c). air = only works on aircraft and helicopters.
+  ['wing', 'Wing section', 'structure', 2, 1, 90, 30, 2, { cost: { metal: 1, wood: 1 }, lift: WING_AREA }],
+  ['tail', 'Tail unit', 'structure', 2, 2, 60, 30, 2, { cost: { metal: 1, wood: 1 }, tail: TAIL_AREA }],
+  ['aero', 'Aero piston engine', 'mobility', 2, 1, 600, 50, 5, { cost: { metal: 6, elec: 1 }, power: 900, heat: 40, fuelUse: 250, rel: 0.985, air: true }],
+  ['jet', 'Jet engine', 'mobility', 3, 1, 900, 70, 5, { cost: { metal: 10, elec: 4 }, jet: 25000, heat: 60, fuelUse: 900, rel: 0.970, air: true }],
+  ['turb', 'Gas turbine', 'mobility', 3, 2, 900, 80, 5, { cost: { metal: 8, elec: 3 }, power: 750, heat: 70, fuelUse: 220, rel: 0.980 }],
+  ['aprop', 'Air propeller', 'mobility', 1, 2, 80, 20, 2, { cost: { metal: 1, wood: 1 }, airprop: true }],
+  ['rotor', 'Rotor', 'mobility', 4, 1, 400, 50, 2, { cost: { metal: 4, elec: 1 }, rotor: true, rel: 0.985 }],
+  ['trotor', 'Tail rotor', 'mobility', 1, 1, 60, 20, 2, { cost: { metal: 1 }, trotor: true }],
   ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
   ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
   ['wheel_l', 'Off-road wheel', 'mobility', 2, 2, 200, 50, 5, { cost: { metal: 1, rubber: 3 }, loco: 'wheel', contact: 0.12, maxLoad: 5000, cap: 75, radius: 0.5 }],
@@ -77,6 +110,7 @@ const PART_ROWS = [
   // Weapons
   ['mg', 'Machine gun', 'weapon', 1, 1, 40, 20, 5, { cost: { metal: 1 }, pen: 8, rpm: 600, range: 600 }],
   ['hmg', 'Heavy machine gun', 'weapon', 1, 1, 80, 25, 5, { cost: { metal: 2 }, pen: 20, rpm: 450, range: 1000 }],
+  ['ac20', 'Autocannon 20 mm', 'weapon', 2, 1, 150, 35, 5, { cost: { metal: 3 }, pen: 35, rpm: 180, range: 1200 }],
   ['c37', 'Cannon 37 mm', 'weapon', 2, 1, 250, 40, 10, { cost: { metal: 4 }, pen: 50, reload: 2.5, range: 1500 }],
   ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
   ['c105', 'Cannon 105 mm', 'weapon', 4, 1, 1300, 80, 10, { cost: { metal: 12 }, pen: 150, reload: 8, range: 2500 }],
@@ -84,6 +118,8 @@ const PART_ROWS = [
   // Secondary weapons (Part 2b): fired with Alt; rounds = torpedoes or charges carried.
   ['torp', 'Torpedo tube', 'weapon', 3, 1, 900, 60, 10, { cost: { metal: 8, elec: 1 }, reload: 30, range: 4000, secondary: 'torpedo', rounds: 2, wet: true }],
   ['dc', 'Depth-charge rack', 'weapon', 2, 1, 300, 40, 5, { cost: { metal: 2 }, reload: 4, range: 0, secondary: 'depth', rounds: 6 }],
+  ['aa40', 'AA gun 40 mm', 'weapon', 3, 2, 1800, 80, 10, { cost: { metal: 10 }, pen: 60, rpm: 120, range: 3500 }],
+  ['bomb', 'Bomb rack', 'weapon', 2, 1, 1100, 30, 3, { cost: { metal: 2 }, range: 0, reload: 0.5, secondary: 'bomb', rounds: 4, bombMass: 250, air: true, pen: 60, heDmg: BOMB.dmg, heRadius: BOMB.radius }],
   ['how', 'Howitzer 150 mm', 'weapon', 4, 2, 2500, 100, 10, { cost: { metal: 18 }, pen: 40, reload: 12, range: 8000, he: true }],
   ['smoke', 'Smoke launcher', 'weapon', 1, 1, 30, 15, 2, { cost: { metal: 1, fuel: 1 }, salvos: 3 }],
   // Systems
@@ -220,6 +256,38 @@ const TEMPLATES = {
       ['optics', 14, 2], ['radio', 15, 2], ['arm80', 16, 2], ['arm80', 17, 2],
     ],
   },
+  // Aircraft (Part 2c). Nose on the right.
+  fighter: {
+    name: 'Fighter', w: 18, h: 6,
+    cells: [
+      ['tail', 0, 2],
+      ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3], ['fuel_ss', 6, 3], ['frame', 7, 3], ['frame', 8, 3],
+      ['frame', 9, 3], ['frame', 10, 3], ['frame', 11, 3], ['frame', 12, 3], ['frame', 13, 3],
+      ['aero', 14, 3], ['aprop', 16, 2],
+      ['crew2', 9, 1], ['radio', 8, 2], ['hmg', 12, 2], ['hmg', 13, 2],
+      ['wing', 6, 4], ['wing', 8, 4], ['wing', 10, 4],
+    ],
+  },
+  bomber: {
+    name: 'Bomber', w: 30, h: 7,
+    cells: [
+      ['tail', 0, 2],
+      ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3], ['frame', 6, 3], ['frame', 7, 3], ['fuel_s', 8, 3], ['fuel_s', 9, 3],
+      ['frame', 10, 3], ['frame', 11, 3], ['frame', 12, 3], ['frame', 13, 3], ['frame', 14, 3], ['frame', 15, 3], ['frame', 16, 3], ['frame', 17, 3],
+      ['aero', 18, 3], ['frame', 20, 3], ['frame', 21, 3], ['frame', 22, 3], ['frame', 23, 3], ['aero', 24, 3], ['aprop', 26, 2],
+      ['turret', 12, 2], ['crew2', 13, 0], ['hmg', 15, 1], ['crew2', 20, 1], ['optics', 22, 2],
+      ['wing', 10, 4], ['wing', 12, 4], ['wing', 14, 4], ['wing', 16, 4], ['wing', 18, 4],
+      ['bomb', 11, 5], ['bomb', 15, 5],
+    ],
+  },
+  heli: {
+    name: 'Scout helicopter', w: 12, h: 4,
+    cells: [
+      ['rotor', 5, 0], ['frame', 8, 1],
+      ['trotor', 0, 3], ['frame', 1, 3], ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3],
+      ['aero', 6, 2], ['fuel_ss', 6, 3], ['frame', 7, 3], ['crew2', 8, 2], ['optics', 10, 2], ['hmg', 10, 3],
+    ],
+  },
   // Enemy-only fixed positions (no engine, so the placement rules don't apply).
   bunker: {
     name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
@@ -264,13 +332,13 @@ const TEMPLATES = {
 };
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Proving Ground ladder (design/01 §14)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -341,6 +409,9 @@ function levelConfig(level) {
       sea: { from: 40, depth: 24 }, lifeBonus: false,
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
+    17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
   };
@@ -403,5 +474,6 @@ function testDriveConfig(range = 'land') {
     enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '', range,
   };
   if (range === 'sea') Object.assign(c, { hills: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 20 } });
+  if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
   return c;
 }

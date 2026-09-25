@@ -88,11 +88,11 @@
 - underwater layer; submarine template and randomiser; the Destroyer carries depth charges, a torpedo tube and sonar
 - ladder: level 16 "Submarine hunt", a sea battle with a lent fleet when the squad has no ships
 
-**2c. Aircraft and helicopters**
-- wings, tail, aero engine, jet, air propeller, rotor, tail rotor
-- lift, stall, thrust-to-weight; rotor lift against mass
-- sky layer, bombs, autocannon and AA guns; Fighter, Bomber, Scout helicopter templates
-- centre-of-lift and thrust-to-weight markers; air test range; the air attack ladder level
+**2c. Aircraft and helicopters** (done in v0.2.2)
+- wings, tail, aero engine, jet, gas turbine, air propeller, rotor, tail rotor
+- lift, stall, thrust-to-weight; rotor lift against mass; loops with a half roll to turn round
+- sky layer, bombs, 20 mm autocannon and 40 mm AA gun with flak; Fighter, Bomber, Scout helicopter templates
+- centre-of-lift marker and thrust-to-weight numbers; aircraft and helicopter randomisers; air test range; ladder level 17 "Air raid"
 
 **2d. Systems and constraints**
 - radar, ECM, sonar ranges; rocket pods, guided missiles, SAMs; missile hit rates
@@ -103,10 +103,10 @@
 
 - [x] Over-armoured ships sit low and slow down.
 - [x] A holed ship lists and can sink; bulkheads contain flooding.
-- [ ] An aircraft with too little wing stalls; a helicopter with too little power can't lift off.
+- [x] An aircraft with too little wing stalls; a helicopter with too little power can't lift off.
 - [ ] Radar, ECM and fire control measurably change missile hit rates.
-- [ ] Every domain can be driven with the drive pad.
-- [ ] The randomiser makes valid designs in every class.
+- [x] Every domain can be driven with the drive pad.
+- [x] The randomiser makes valid designs in every class.
 
 ## Part 3: The War Map (v0.3)
 
@@ -234,3 +234,4 @@
 | 2026-09-26 | 0.1.4 | Fix from the producer's play test: howitzers (fitted by the player or in enemy batteries) never fired. Their arc stopped at 72°, below every lob within their 400 m range, so shots were refused as out of arc and no impact warnings appeared. Arc is now −5° to 80°, with the flat arc used when the lob doesn't fit. Smoke test checks a battery can aim at 40, 120, 250 and 390 m. | None new | Part 2, or the first imported part art (frame) |
 | 2026-09-26 | 0.2.0 | Part 2a: ships. Nine ship parts (hull and bow sections, keel, bulkhead, marine diesel, propeller, manoeuvre thruster, twin 120 mm naval gun, 1000 L fuel tank). Each watertight cell below the surface pushes up with the water it displaces, so draft, trim and list come from where parts sit; propellers push, the hull drags on its submerged cross-section, so heavier ships sit lower and go slower. Shell holes and destroyed hull parts below the waterline let water in; it fills the compartment from the bottom until bulkheads stop it; ships list, sink or capsize. Sea layer in battles: coasts, translucent water, swell, splashes, shells slowed by water, sinking without a fireball. Drafting Office: ship grid (44×16), waterline and centre-of-buoyancy markers, draft, freeboard, reserve buoyancy, beam and sea speed; Gunboat and Destroyer templates; ship randomiser and scratch build. Sea trial on the test range. Squad ships deploy only on maps with sea. Ladder level 14 is now "Coastal gunboats"; some random levels from 16 have a coast with gunboats or a destroyer. Auto-aim goes for the waterline of ships. Fixed: a vehicle that lost every part broke the physics for everyone (NaN positions). | The coast level is hard for a squad that stays parked: a machine-gun car can sit under your gun's lowest angle. Ship hulls are blocky (bow section only). Ships don't turn around; they reverse. | Part 2b: submarines |
 | 2026-09-26 | 0.2.1 | Part 2b: submarines. Ballast tanks, electric motor with batteries, pressure hull section, torpedo tube, depth-charge rack and sonar. Ballast tanks flood or blow to hold the depth order, and trim fore and aft to keep the boat level; only electric motors drive under water. Torpedoes run straight at the target's keel depth and burst against the hull; depth charges roll off the stern and burst at the depth of the submarine below. Both use the ordinary blast, so holed parts flood. Sonar finds submerged submarines within 100 m (with a ping); a submerged boat sees only through a periscope above the water. Battle screen: ▲ ▼ appear for submarines with a depth readout; Alt (F) fires torpedoes or drops depth charges and shows what is left. Drafting Office: submarine numbers (ballast held, ballast to dive, electric power, surfaced and submerged speed); a design that can't dive is explained; submarine randomiser adds trim weights until it can. Submarine template; the Destroyer now has depth charges, a torpedo tube and sonar. Ladder level 16 "Submarine hunt": ships and submarines only, with a lent fleet (2 Destroyers and a Gunboat) if the squad has none. Enemies with no target now search where they last saw you. Heave damping now acts at the surface only, so boats move freely under water. | Batteries don't run down yet. A submarine that dives with holes in it can sink to the seabed and stay there. The sea hunt can stall if you sit in the shallows: enemy submarines won't come in. | Part 2c: aircraft and helicopters |
+| 2026-09-26 | 0.2.2 | Part 2c: aircraft and helicopters. Wing section, tail unit, aero engine, jet, gas turbine, air propeller, rotor, tail rotor, 20 mm autocannon, 40 mm AA gun, bomb rack. Flight: wing lift acts at the centre of lift from the airflow over the wing (0.1 per degree, stalling beyond 12°); the tail steadies the nose and carries the elevator; thrust from jets or engine power through air propellers, against drag that climbs steeply near the speed of sound. Battle air speeds are a quarter of the sheet's (denser air), so fights stay on screen. Controls: aircraft ◀ ▶ throttle, ▲ ▼ pitch, level flight when you let go, hold ▲ to loop and roll round; helicopters ◀ ▶ move, ▲ ▼ height; a readout with a STALL warning. Crashes, ditching, aircraft turning back at the battlefield edge. Only heavy machine guns, autocannons and AA guns engage aircraft (with lead); AA mounts swing round and up; 40 mm shells burst near aircraft. Bombs with a whistle; bombers release when the bomb would land on the target; fighters strafe and loop round; helicopters hover at a stand-off. Aircraft are seen from twice as far. Drafting Office: aircraft and helicopter grids (32×12), centre-of-lift marker, wing and tail area, stall speed, thrust at stall speed, thrust to weight, rotor lift; warnings when top speed is below stall speed, the centre of mass is behind the centre of lift, or rotor lift is below weight. Fighter, Bomber and Scout helicopter templates; aircraft and helicopter randomisers; air test range. Ladder level 17 "Air raid". | Aircraft parts are cheap in Requisition compared with tanks (catalogue costs); the ladder budget may need an air surcharge. Planes fly off screen during a loop at high zoom. Radar, ECM and missiles are still to come. Phone performance with many aircraft not yet measured. | Part 2d: sensors, missiles and constraints |

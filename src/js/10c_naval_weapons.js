@@ -71,7 +71,14 @@ function dropCharge(B, V, w, depth) {
 function playerSecondary(B) {
   const V = B.me;
   const list = V.weapons.filter((w) => w.def.secondary && V.parts[w.part].alive);
-  if (!list.length) return 'No torpedoes or depth charges';
+  if (!list.length) return 'No secondary weapon';
+  const bomb = list.find((w) => w.def.secondary === 'bomb' && w.rounds > 0) || list.find((w) => w.def.secondary === 'bomb');
+  if (bomb) {
+    if (bomb.rounds <= 0) return 'Out of bombs';
+    if (bomb.reload > 0) return 'Reloading';
+    dropBomb(B, V, bomb);
+    return '';
+  }
   const tgt = autoTarget(B);
   const sub = nearestTarget(B, V, 40, (U) => !!U.ballast);
   const dc = list.find((w) => w.def.secondary === 'depth' && w.rounds > 0);

@@ -58,6 +58,8 @@ Translucent discs. ◀ and ▶ are large; ▲ and ▼ appear only for vehicles t
 
 Pressing ◀ and ▶ together is the **halt/brake**.
 
+As built (v0.2.2), aircraft: ◀ ▶ change the throttle (±60% a second); ▲ ▼ are the elevator, and letting go holds level flight; holding ▲ loops the aircraft, which rolls level facing the other way at the top (this replaces "hold ◀ at low speed to turn around"). Fire shoots every gun fixed along the nose; Alt drops a bomb. The readout shows throttle and height, and STALL in red. Helicopters: ◀ ▶ move (the body tilts and turns to face the way it goes), ▲ ▼ move the height order.
+
 As built (v0.2.1): ▲ ▼ sit above the middle of the pad, with the depth and the depth order written above them. For a submarine, holding ▼ moves the order down at 2 m/s and ▲ up; above the surfaced level the order becomes "surface" and the tanks are blown. Alt shows the secondary weapon and what is left ("Torp 2", "Charge 6"): torpedo at the target, or depth charges when a submarine is within 40 m. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
 
 ### 3.3 Right thumb: action cluster

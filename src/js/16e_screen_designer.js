@@ -53,7 +53,7 @@ SCREENS.designer = {
   load(design, base, owned) {
     const d0 = cropDesign(design);
     const dom = domainOf(d0);
-    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
+    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : airDomain(dom) ? dom : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
     const C = CLASSES[cls];
     const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
     const ox = 1, oy = H - d0.h;
@@ -73,6 +73,7 @@ SCREENS.designer = {
     const C = CLASSES[cls];
     const cells = [];
     if (cls === 'ship') for (let x = 4; x < 20; x += 2) cells.push(['keel', x, C.h - 1]);
+    else if (cls === 'air') { for (let x = 4; x < 16; x++) cells.push(['frame', x, C.h - 5]); cells.push(['wing', 8, C.h - 4]); }
     else for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
     return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
   },
@@ -364,7 +365,10 @@ SCREENS.designer = {
     const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
+    const air = airDomain(rep.domain);
     if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
+    else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
     else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
     chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
@@ -392,6 +396,21 @@ SCREENS.designer = {
         row('Ballast to dive', `${(Math.max(0, st.diveNeed) / 1000).toFixed(1)} t`);
         row('Electric power', `${st.electric} kW`);
       }
+    } else if (rep.domain === 'air') {
+      row('Wing area', `${st.wingArea} m²`);
+      row('Tail area', `${st.tailArea} m²`);
+      row('Stall speed', `${Math.round(st.stallSpeed * 3.6)} km/h`);
+      if (st.jetThrust) row('Jet thrust', `${(st.jetThrust / 1000).toFixed(0)} kN`);
+      row('Thrust at stall speed', `${((st.thrustAtStall || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
+      if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
+      if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'heli') {
+      row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
+      row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift to weight', ((st.rotorLift || 0) / st.weight).toFixed(2));
     } else {
       row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
@@ -452,6 +471,7 @@ SCREENS.designer = {
     for (const cls of Object.keys(CLASSES)) col.appendChild(button(`Randomise (${CLASSES[cls].name.toLowerCase()})`, () => { close(); this.randomise(cls); }));
     col.appendChild(button('Scratch build (ground)', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
     col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -461,7 +481,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design' }[cls] || 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -577,7 +597,7 @@ SCREENS.designer = {
     g.strokeStyle = BLUEPRINT.line;
     g.strokeRect(ox + 0.5, oy + 0.5, d.w * cs, d.h * cs);
     // Ground line under the bottom row (land designs).
-    if (!this.rep || !seaDomain(this.rep.domain)) {
+    if (!this.rep || this.rep.domain === 'ground') {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
@@ -686,6 +706,16 @@ SCREENS.designer = {
     g.font = `700 12px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
-    if (!seaDomain(rep.domain)) g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
+    if (rep.domain === 'air' && st.col) {
+      // Centre of lift: a ring with an L.
+      const lx = ox + (st.col.x / CELL) * cs, ly = oy + (d.h - st.col.y / CELL) * cs;
+      g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+      g.beginPath(); g.arc(lx, ly, 6, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(lx, ly - 10); g.lineTo(lx, ly + 10); g.stroke();
+      g.fillStyle = BLUEPRINT.valid; g.textBaseline = 'top';
+      g.fillText('L', lx + 8, ly + 3);
+      g.textBaseline = 'middle';
+    }
+    if (rep.domain === 'ground') g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
   },
 };

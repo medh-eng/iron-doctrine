@@ -33,7 +33,7 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
@@ -184,6 +184,69 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.beginPath(); g.ellipse(x + w / 2, y + h * 0.5, w * 0.48, h * 0.42, 0, 0, Math.PI * 2); g.fill();
       g.strokeStyle = 'rgba(159,211,255,0.7)'; g.lineWidth = 1;
       for (const k of [0.15, 0.28]) { g.beginPath(); g.arc(x + w / 2, y + h * 0.5, w * k, -0.9, 0.9); g.stroke(); }
+      break;
+    // Aircraft parts (Part 2c).
+    case 'wing':
+      g.fillStyle = shade(steel, 0.95);
+      g.beginPath(); g.moveTo(x, y + h * 0.55); g.quadraticCurveTo(x + w * 0.2, y + h * 0.15, x + w * 0.55, y + h * 0.25);
+      g.lineTo(x + w, y + h * 0.55); g.lineTo(x + w, y + h * 0.7); g.lineTo(x, y + h * 0.7); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + w * 0.1, y + h * 0.62); g.lineTo(x + w * 0.95, y + h * 0.62); g.stroke();
+      break;
+    case 'tail':
+      g.fillStyle = shade(steel, 0.9);
+      g.beginPath(); g.moveTo(x + w * 0.1, y + h); g.lineTo(x + w * 0.2, y + h * 0.05); g.lineTo(x + w * 0.55, y + h * 0.05); g.lineTo(x + w, y + h); g.closePath(); g.fill();
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.25, y + h * 0.2, w * 0.25, h * 0.14);
+      g.fillStyle = shade(steel, 0.75); g.fillRect(x, y + h * 0.78, w, h * 0.12);
+      break;
+    case 'aero':
+      g.fillStyle = shade(steel, 0.8);
+      roundRect(g, x, y + h * 0.08, w, h * 0.84, h * 0.4); g.fill();
+      g.fillStyle = '#15181d';
+      for (let k = 0; k < 4; k++) g.fillRect(x + w * (0.15 + k * 0.2), y + h * 0.3, w * 0.08, h * 0.4);
+      g.fillStyle = 'rgba(20,20,20,0.5)'; g.fillRect(x + w * 0.05, y + h * 0.85, w * 0.3, h * 0.15);
+      break;
+    case 'jet':
+      g.fillStyle = shade(steel, 0.75);
+      g.beginPath(); g.moveTo(x, y + h * 0.3); g.lineTo(x + w * 0.85, y + h * 0.12); g.lineTo(x + w, y + h * 0.3); g.lineTo(x + w, y + h * 0.7); g.lineTo(x + w * 0.85, y + h * 0.88); g.lineTo(x, y + h * 0.7); g.closePath(); g.fill();
+      g.fillStyle = '#15181d'; g.fillRect(x, y + h * 0.35, w * 0.08, h * 0.3);
+      g.fillStyle = 'rgba(255,178,62,0.5)'; g.fillRect(x + w * 0.02, y + h * 0.42, w * 0.05, h * 0.16);
+      break;
+    case 'turb':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#7c828d'; g.lineWidth = 1;
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; g.beginPath(); g.moveTo(x + w * 0.3, y + h / 2); g.lineTo(x + w * 0.3 + Math.cos(a) * h * 0.28, y + h / 2 + Math.sin(a) * h * 0.28); g.stroke(); }
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.6, y + h * 0.3, w * 0.35, h * 0.4);
+      break;
+    case 'aprop':
+      g.fillStyle = '#5a5f68'; g.beginPath(); g.moveTo(x, y + h * 0.4); g.lineTo(x + w * 0.7, y + h * 0.45); g.lineTo(x + w * 0.7, y + h * 0.55); g.lineTo(x, y + h * 0.6); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(200,205,215,0.28)';
+      g.beginPath(); g.ellipse(x + w * 0.7, y + h / 2, w * 0.2, h * 0.5, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(40,42,48,0.7)'; g.lineWidth = Math.max(1, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.7, y + h * 0.05); g.lineTo(x + w * 0.7, y + h * 0.95); g.stroke();
+      break;
+    case 'rotor':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.fillStyle = 'rgba(200,205,215,0.25)';
+      g.beginPath(); g.ellipse(x + w / 2, y + h * 0.35, w * 0.62, h * 0.22, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.1);
+      g.beginPath(); g.moveTo(x - w * 0.1, y + h * 0.35); g.lineTo(x + w * 1.1, y + h * 0.35); g.stroke();
+      break;
+    case 'trotor':
+      g.fillStyle = 'rgba(200,205,215,0.3)'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.6, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1, cs * 0.08);
+      g.beginPath(); g.moveTo(x + w / 2, y - h * 0.05); g.lineTo(x + w / 2, y + h * 1.05); g.stroke();
+      break;
+    case 'bomb':
+      g.fillStyle = '#2b2d31'; g.fillRect(x, y, w, h * 0.2);
+      g.fillStyle = '#3d423a';
+      for (let k = 0; k < 2; k++) { g.beginPath(); g.ellipse(x + w * (0.27 + k * 0.46), y + h * 0.6, w * 0.2, h * 0.32, 0, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'ac20': case 'aa40':
+      g.fillStyle = shade(steel, 0.7);
+      roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
+      if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
       break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
@@ -494,8 +557,18 @@ function drawTrees(g, B) {
 function drawShells(g) {
   g.lineCap = 'round';
   shells.forEachAlive((s) => {
-    const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
     const bx = view.sx(s.x), by = view.sy(s.y);
+    if (s.def.secondary === 'bomb') {
+      // A falling bomb: body along its path, fins at the back.
+      const a = Math.atan2(-s.vy, s.vx), S = view.S;
+      g.save(); g.translate(bx, by); g.rotate(a);
+      g.fillStyle = '#2d3036';
+      g.beginPath(); g.ellipse(0, 0, 0.45 * S, 0.16 * S, 0, 0, Math.PI * 2); g.fill();
+      g.fillRect(-0.62 * S, -0.16 * S, 0.14 * S, 0.32 * S);
+      g.restore();
+      return;
+    }
+    const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
     if (!s.mg) {
       g.strokeStyle = 'rgba(255,178,62,0.35)'; g.lineWidth = 5;
       g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();

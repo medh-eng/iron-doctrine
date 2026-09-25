@@ -35,6 +35,10 @@ const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount 
 function weaponArc(V, w) {
   const d = w.def;
   if (d.indirect) return { lo: -5, hi: 80, both: false };
+  // Aircraft guns point along the nose; a helicopter's chin gun swings down; AA mounts swing
+  // round and up (Part 2c).
+  if (V.flier && !w.turret) return V.domain === 'heli' ? { lo: -50, hi: 12, both: false } : { lo: -4, hi: 4, both: false };
+  if (d.aa && !V.flier) return { lo: -5, hi: 85, both: true };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
 }
 
@@ -70,7 +74,7 @@ function aimWeapon(V, w, tx, ty, out) {
   out.face = face;
   out.ok = false;
   out.reason = '';
-  if (!w.turret && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
+  if (!w.turret && !weaponArc(V, w).both && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
   let ang = d.auto ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect);
   if (Number.isNaN(ang)) { ang = angleFromElevation(V, 35, face); out.reason = 'Out of range'; }
   const arc = weaponArc(V, w);
@@ -468,8 +472,9 @@ function stepShells(B, dt) {
     s.y += s.vy * dt;
     if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
     // Incoming artillery whistles for its last second and a half.
-    if (s.def.indirect && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
+    if ((s.def.indirect || s.def.secondary === 'bomb') && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
     const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
+    if (s.def.flak && (flakCheck(B, s) || s.t > maxT)) { if (s.t > maxT) flakBurst(B, s.x, s.y, s.shooter); s.alive = false; return; }
     if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
     // Vehicles.
     for (const V of B.units) {

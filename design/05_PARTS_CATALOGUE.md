@@ -204,6 +204,28 @@ These are starting values. Tune them freely for feel and balance, but never show
 - **Stall speed** = √(2 m g ÷ (1.225 × S × 1.2)).
 - **Helicopter:** maximum rotor lift = 25 kN per rotor at full power, which needs at least 400 kW available.
 
+**As built in 2c** (tuning data in `07_data.js`, physics in `09d_physics_air.js`):
+- Wing area 6 m² per wing section; lift acts at the centre of lift (the wing sections' centroid), from the airflow at that point. CL = 0.1 per degree to 1.2 at 12°; beyond, it falls by 0.07 per degree.
+- Tail unit: 3 m² with CL = 0.08 per degree (no stall), at the tails' centroid; the elevator adds up to ±25° at full ▲ or ▼. Aircraft need a tail and a jet or an air propeller.
+- Drag: 0.5 ρ v² × (0.01 × wing area + 0.1 × height × 1.2 m) × drag rise, plus induced drag 0.06 × CL² × wing area. Drag rise above 230 m/s: × (1 + ((v − 230) ÷ 30)²).
+- Thrust: jets 25 kN each at full throttle; engines with an air propeller: power × 0.8 ÷ max(v, 8 m/s).
+- Battle scale: air speeds × 0.25 (`AIR_SPEED_SCALE`): air density ÷ 0.25² and propeller power × 0.25, so lift, drag and thrust at the scaled speed match the sheet.
+- Autopilot: with no ▲ ▼ the elevator holds level flight (proportional, pitch-rate damping and a trim that builds up). Past the vertical in a loop the aircraft rolls level facing the other way.
+- Helicopter: rotor lift along the mast, the collective holds the height order (▲ ▼ move it 6 m/s); ◀ ▶ tilt the body 15°; drag area 3 m². Without a tail rotor the body spins.
+- A flier touching the ground faster than 7 m/s, or tilted beyond about 45°, crashes; one that comes down on the sea ditches.
+- Aircraft are seen from 2× as far and see 1.5× as far.
+- Autocannon 20 mm and AA gun 40 mm, heavy machine gun: can engage aircraft, aiming ahead of them; on the ground their mounts swing −5° to 85° both ways. 40 mm shells burst within 3 m of an aircraft (30 damage within 3 m) or at the end of their range.
+- Bomb rack: 4 × 250 kg bombs (each 200 damage within 5 m); dropping one takes 250 kg off the aircraft.
+- Fixed guns on aircraft point along the nose (±4°); a helicopter's chin gun swings −50° to 12°.
+
+**Aircraft templates:**
+
+| Template | Size | Build | Numbers |
+|---|---|---|---|
+| Fighter | 17×6 | frames, aero engine and propeller, 3 wing sections, tail, cockpit, 2 HMGs | 2.4 t, stall 152 km/h, top 502 km/h |
+| Bomber | 28×7 | 2 aero engines, 5 wing sections, 2 bomb racks, HMG turret | 6.5 t, stall 193 km/h |
+| Scout helicopter | 11×4 | rotor, tail rotor, aero engine, cabin, chin HMG | 2.1 t, rotor lift 25 kN vs weight 20.6 kN, 197 km/h |
+
 ### 7.5 Reliability
 
 - **Breakdown rate** per operating hour = Σ(1 − rel_i) × 0.5.
