@@ -105,6 +105,7 @@ const input = {
     if (!p.moved && dist(p.sx, p.sy, x, y) > TAP_MOVE_PX) {
       p.moved = true;
       p.lx = p.sx; p.ly = p.sy;   // include the slop so the pan doesn't jump
+      if (scr.world.panStart) scr.world.panStart(p.sx, p.sy);
     }
     if (p.moved && !p.long && scr.world.pan) scr.world.pan(x - p.lx, y - p.ly);
   },

@@ -13,13 +13,16 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
   - `04_TECH_ARCHITECTURE`: code structure, data, saves, tests
   - `05_PARTS_CATALOGUE`: parts, stats, physics formulas
   - `06_ROADMAP_AND_CHECKLIST`: build steps, acceptance criteria, progress log
+  - `07_ART_INTEGRATION`: the contract with the separate graphics project (part images, sizes, pivots, records)
 - `src/`: game source.
   - `src/js/*.js` are joined in filename order into one strict IIFE.
   - `src/styles.css`, `src/index.template.html`, and `src/assets/` (fonts and other files, copied as they are).
+  - `src/assets/parts/<partId>/`: imported part art with a JSON record each; the build validates them (design 07).
 - `build.mjs`: builds the game as a small static site.
   - `node build.mjs` writes the release build to `docs/` (`index.html`, `game.js`, `game.css`, `assets/`, the home-screen manifest and icons). GitHub Pages serves this folder as the live game.
   - `node build.mjs --test` writes a test build to `build-test/`, with test hooks included.
-- `tests/`: `smoke.mjs` (Playwright) and `test-hooks.js`. Screenshots go to `test-output/`.
+- `tests/`: `smoke.mjs` (Playwright), `perf.mjs` and `test-hooks.js`. Screenshots go to `test-output/`.
+- `tools/`: `png.mjs` (PNG writer/reader used by the build) and `make-art-placeholders.mjs`.
 
 ## Every session
 
@@ -45,7 +48,7 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
 
 ## Non-negotiables
 
-- **Self-contained site.** The build output in `docs/` is everything the game needs. Several files are fine; nothing is loaded from other websites (the build fails on external URLs). All art is drawn in code; all audio comes from the Web Audio API. Fonts are system fonts or files in `src/assets/`.
+- **Self-contained site.** The build output in `docs/` is everything the game needs. Several files are fine; nothing is loaded from other websites (the build fails on external URLs). Art is drawn in code, or imported as part images that follow design 07 (code drawing stays as the fallback); all audio comes from the Web Audio API. Fonts are system fonts or files in `src/assets/`.
 - **Landscape first.** Android Chrome is the main target, with a full-screen world. Portrait shows the rotate card and pauses the game. Desktop must work with mouse and keyboard.
 - **Screen edges.** Respect safe areas on all four sides. All text must be readable at 360 px screen height.
 - **Performance.** Target 60 fps on a mid-range Android phone:

@@ -147,7 +147,7 @@ After 4 s without touching the world, the camera recenters on its own (this can 
 +--------------------------------------------------------------------+
 ```
 
-- **Placing parts:** drag a part from the palette onto the grid. A ghost preview shows valid (light blue) or invalid (red); if invalid, a one-line reason appears.
+- **Placing parts:** drag a part from the palette onto the grid, or tap a part to pick it up and tap the grid to place it (its bottom-left cell goes where you tap). Long-press a placed part to delete it. A ghost preview shows valid (light blue) or invalid (red); if invalid, a one-line reason appears.
 - **Placed parts:** tap to select, then drag to move, or use Flip, Delete or Info.
 - **Grid view:** two-finger pinch zooms, two-finger drag pans.
 - **Thumb corners:** bottom left is Undo/Redo; bottom right is Test drive and Save. Save creates the next mark.
@@ -177,6 +177,10 @@ After 4 s without touching the world, the camera recenters on its own (this can 
 - Stamp animation and score breakdown.
 - Reward: blueprint or medal.
 - Next level, or Workshop.
+
+**Workshop** (between levels and from the title): the squad of 3 as cards (mass, kW/t, cost); a scrolling library of starting templates, your designs and captured blueprints (tap to put one in the selected slot, Edit to open it in the Drafting Office); Requisition held; the level budget used/allowed; New design; Start level N (refused with the fact when over budget).
+
+**Level start:** a two-line how-to under the top bar for 7 s: "Level N · name · goal" and one sentence about the new idea.
 
 **Life lost:** a short card with a Retry button.
 

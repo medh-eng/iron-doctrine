@@ -7,6 +7,7 @@ The game lives on a commander's war-room table:
 - **Campaign map:** a linen staff map marked in grease pencil.
 - **Overlays** (HUD, drawers, thumb controls): smoked acetate film with hand-drawn grease-pencil marks, so the world always shows through.
 - **Drafting Office / Workshop:** a cyanotype blueprint. In the style of HighFleet's designer, parts are drawn as detailed industrial modules (panel lines, rivets, pipes, hatches, engine grilles) rather than flat blocks, and the same drawings are used in battle, so a design looks like what it is. Damaged modules show holes, scorch and missing panels.
+- **Imported part art:** a separate graphics project paints detailed part images (HighFleet-style mechanical density, From the Depths-style colourful material separation). The contract for sizes, pivots and records is in `07_ART_INTEGRATION.md`; the code drawings remain as fallback.
 - **Battlefield:** the one bold element. Dark layered silhouettes against a dusk sky, lit by amber tracers, muzzle flashes and fire. Everything around it stays quiet and disciplined.
 
 ## 2. Palette

@@ -282,7 +282,7 @@ const ui = {
 
     // Reset (confirm twice)
     rows.push(row('Reset progress', button('Reset', () => {
-      this.confirm('Reset best score, levels, blueprints and medals? Settings are kept.', 'Reset', () => {
+      this.confirm('Reset best score, levels, Requisition, designs, blueprints and medals? Settings are kept.', 'Reset', () => {
         this.confirm("Are you sure? This can't be undone.", 'Yes, reset', () => {
           save.resetProgress();
           bus.emit('profile');

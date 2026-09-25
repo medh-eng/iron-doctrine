@@ -34,6 +34,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const PAGE_URL = `http://127.0.0.1:${server.address().port}/`;
 
+const ONLY = process.env.ONLY;
 const VIEWPORTS = [
   { name: 'phone-640x360', width: 640, height: 360, mobile: true },
   { name: 'phone-800x360', width: 800, height: 360, mobile: true },
@@ -46,7 +47,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 const problems = [];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-for (const vp of VIEWPORTS) {
+for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.mobile ? 2 : 1,
@@ -132,6 +133,8 @@ for (const vp of VIEWPORTS) {
       check(ph.wheelsMud.x < 3 && ph.tracksMud.x > 50, `tracks did not beat wheels in mud (${ph.wheelsMud.x.toFixed(0)} m vs ${ph.tracksMud.x.toFixed(0)} m)`);
       check(ph.normalHill.x > 60 && ph.weakHill.speed < 0.5 && ph.weakHill.x < 40, `underpowered design did not stall on the hill (${JSON.stringify(ph.weakHill)})`);
       check(ph.tallSlope.tilt > 60 && ph.normalSlope.tilt < 20, `top-heavy tipping wrong (tall ${ph.tallSlope.tilt.toFixed(0)}°, normal ${ph.normalSlope.tilt.toFixed(0)}°)`);
+      const rnd = await G(() => window.__GAME__.randomCheck());
+      check(rnd.every((r) => r.ok), `randomiser made an invalid design: ${JSON.stringify(rnd.find((r) => !r.ok))}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
       steps.push('templates, physics, damage');
@@ -311,30 +314,122 @@ for (const vp of VIEWPORTS) {
     }
     steps.push('pause');
 
-    // ---------- 9b. Objective complete -> next battle; squad lost -> retry
+    // ---------- 9b. Ladder: objective complete -> Workshop -> level 2; life lost -> retry; game over -> continue
+    const prof = () => G(() => { const p = window.__GAME__.save.profile; return { run: p.run, req: p.requisition, best: p.bestScore }; });
+    const before = await prof();
     await G(() => window.__GAME__.winBattle());
     await page.locator('.card-result').waitFor({ timeout: 6000 });
-    check(await page.locator('.card-result').isVisible(), 'no result card after winning');
     check(/OBJECTIVE COMPLETE/.test(await page.locator('.stamp').textContent()), 'win stamp missing');
     await shot('8-objective-complete');
-    await tapButton('Next battle');
+    let pr = await prof();
+    check(pr.run.level === 2 && pr.run.score > 0 && pr.req > before.req, `win did not advance the run (${JSON.stringify(pr)})`);
+    await tapButton('Workshop');
+    check(await page.locator('.workshop').isVisible(), 'Workshop did not open');
+    await shot('8b-workshop');
+    await tapButton('Start level 2');
     s = await range();
-    check(s.level === 2 && !s.result, `next battle did not start level 2 (level ${s.level})`);
+    check(s.level === 2 && !s.result, `Workshop did not start level 2 (level ${s.level})`);
     await wait(600);
     await shot('9-level-2');
     await G(() => window.__GAME__.loseSquad());
     await page.locator('.card-result').waitFor({ timeout: 6000 });
-    check(/SQUAD LOST/.test(await page.locator('.stamp').textContent().catch(() => '')), 'no squad-lost card');
-    await shot('10-squad-lost');
+    check(/LIFE LOST/.test(await page.locator('.stamp').textContent().catch(() => '')), 'no life-lost card');
+    check((await prof()).run.lives === 2, 'losing did not cost a life');
+    await shot('10-life-lost');
     await tapButton('Retry');
-    s = await range();
-    check(s.level === 2 && !s.result, 'retry did not restart the level');
+    for (let k = 0; k < 2; k++) {
+      await G(() => window.__GAME__.loseSquad());
+      await page.locator('.card-result').waitFor({ timeout: 6000 });
+      if (k === 0) await tapButton('Retry');
+    }
+    check(/GAME OVER/.test(await page.locator('.stamp').textContent().catch(() => '')), 'no game-over card at 0 lives');
+    await shot('10b-game-over');
+    await tapButton('Continue at level 2');
+    pr = await prof();
+    check(pr.run.active && pr.run.lives === 3 && pr.run.level === 2, `continue after game over wrong (${JSON.stringify(pr.run)})`);
+    check(pr.best > 0, 'best score not kept');
     check(await G(() => window.__GAME__.sane()), 'physics produced NaN');
-    steps.push('win, lose, retry');
+    steps.push('win, workshop, life lost, game over, continue');
+
+    // ---------- 9d. Drafting Office: invalid placement explained, valid placement, save Mk.II, test drive
+    await G(() => window.__GAME__.go('workshop'));
+    await page.locator('.ws-edit').first().click();
+    await page.locator('.dz-part[data-part="arm40"]').click();
+    const dz = await G(() => {
+      const S = window.__GAME__.SCREENS.designer;
+      let spot = null;
+      for (let y = 0; y < S.st.d.h && !spot; y++) for (let x = 0; x < S.st.d.w && !spot; x++) if (!S.placeCheck('arm40', x, y)) spot = { x, y };
+      return { ox: S.gridRect.ox, oy: S.gridRect.oy, cs: S.cs, spot, n: S.st.d.cells.length };
+    });
+    const tapAt = async (x, y) => { if (vp.mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await wait(120); };
+    await tapAt(dz.ox + dz.cs * 0.5, dz.oy + dz.cs * 0.5);
+    check(/touch the rest/.test(await page.locator('.dz-msg').textContent()), 'invalid placement not explained');
+    await shot('12-designer-invalid');
+    await tapAt(dz.ox + (dz.spot.x + 0.5) * dz.cs, dz.oy + (dz.spot.y + 0.5) * dz.cs);
+    const n2 = await G(() => window.__GAME__.SCREENS.designer.st.d.cells.length);
+    check(n2 === dz.n + 1, 'valid placement did not add the part');
+    await page.locator('.dz-part[data-part="arm40"]').click();     // put the brush down
+    await shot('13-designer-placed');
+    await tapButton('Save');
+    const saved = await G(() => window.__GAME__.save.designs.list.slice(-1)[0]);
+    check(saved && saved.mark === 2 && /Mk\.II/.test(saved.name) && saved.changelog.some((l) => /Armour 40/.test(l)), `save did not create Mk.II with a change log (${saved && saved.name})`);
+    await tapButton('Test drive');
+    check((await G(() => window.__GAME__.screens.name)) === 'battle' && (await G(() => window.__GAME__.battle().test)), 'test drive did not start');
+    await wait(500);
+    await shot('14-test-drive');
+    await tapCtrl('pause');
+    await tapButton('Back to the Workshop');
+    check((await G(() => window.__GAME__.screens.name)) === 'designer', 'test drive did not return to the designer');
+    await G(() => window.__GAME__.ladder.resume());
+    await wait(200);
+    steps.push('designer, Mk.II, test drive');
+
+    // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
+    if (!vp.mobile) {
+      await G(() => window.__GAME__.artTest());
+      await wait(400);
+      check(await G(() => !!window.__GAME__.art.get('c37') && !!window.__GAME__.art.get('frame') && !window.__GAME__.art.failed.length), 'placeholder art did not load');
+      await G(() => {
+        const d = window.__GAME__.ladder.squadDesigns()[1];
+        window.__GAME__.go('designer', { design: d, base: d, owned: true });
+        const S = window.__GAME__.SCREENS.designer;
+        const g = S.st.d.cells.find((c) => c.p === 'c37');
+        let spot = null;
+        for (let dy = -1; dy <= 1 && !spot; dy++) for (let dx = -1; dx <= 2 && !spot; dx++) if (!S.placeCheck('frame', g.x + dx, g.y + dy)) spot = { x: g.x + dx, y: g.y + dy };
+        if (spot) S.st.d.cells.push({ p: 'frame', x: spot.x, y: spot.y });
+        S.st.zoom = 1.6; S.layout(); S.refresh();
+      });
+      await wait(300);
+      await shot('art-1-designer');
+      await G(() => { const S = window.__GAME__.SCREENS.designer; S.testDrive(); });
+      await wait(600);
+      await G(() => { const S = window.__GAME__.SCREENS.battle; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = S.B.me.body.x; S.cam.y = S.B.me.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
+      await wait(300);
+      await shot('art-2-battle');
+      await G(() => { window.__GAME__.go('battle', { level: 4 }); const S = window.__GAME__.SCREENS.battle; const e = S.B.units.find((u) => u.side === 1); S.B.revealAll = true; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = e.body.x; S.cam.y = e.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
+      await wait(400);
+      await shot('art-3-enemy-mirrored');
+      await G(() => { const A = window.__GAME__.art; A.usePlaceholders = false; A.debug = false; A.init(); });
+      steps.push('art contract placeholders');
+    }
+
+    // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery
+    if (!vp.mobile) {
+      await G(() => window.__GAME__.ladder.start(10, true));
+      await wait(200);
+      await G(() => window.__GAME__.winBattle());
+      await page.locator('.card-result').waitFor({ timeout: 6000 });
+      check(/Blueprint captured/.test(await page.locator('.card-result').textContent()), 'boss blueprint not announced');
+      await G(() => window.__GAME__.go('blueprints'));
+      await wait(300);
+      check((await page.locator('.bp-card').count()) === 1, 'blueprint missing from the gallery');
+      await shot('15-blueprints');
+      steps.push('boss blueprint, gallery');
+    }
 
     // ---------- 9c. Desktop autoplay: drive and fire until level 1 is won (time runs 4x)
     if (!vp.mobile) {
-      await G(() => { window.__TEST__.timeScale = 4; window.__GAME__.go('battle', 1); });
+      await G(() => { window.__TEST__.timeScale = 4; window.__GAME__.save.profile.squad = []; window.__GAME__.ladder.start(1, true); });
       await page.keyboard.down('KeyD');
       let res = null;
       for (let i = 0; i < 90 && !res; i++) {
@@ -350,7 +445,8 @@ for (const vp of VIEWPORTS) {
       console.log(`     autoplay cleared level 1 in ${t.toFixed(0)} s of game time`);
       await page.locator('.card-result').waitFor({ timeout: 6000 });
       await tapButton('Title');
-      await tapButton('Continue at level 2');
+      await page.getByRole('button', { name: /^Continue at level 2/ }).click();
+      await wait(150);
       check((await range()).level === 2, 'Continue did not start level 2');
       steps.push('autoplay level 1, continue');
     }
@@ -391,6 +487,14 @@ for (const vp of VIEWPORTS) {
     check(dmg.backup === '{damaged', 'damaged save was not kept as a backup');
     check(/couldn't be read/.test(dmg.toast), 'player was not told about the damaged save');
     check(dmg.music === false, 'a damaged profile also reset settings');
+
+    // A save written by the previous version (v1) migrates: an unfinished ladder becomes a run to continue.
+    await G(() => localStorage.setItem('irondoctrine.profile', JSON.stringify({ v: 1, t: 1, data: { bestScore: 900, highestLevel: 4, continueLevel: 4, blueprints: [], medals: [] } })));
+    await page.reload();
+    await page.waitForTimeout(500);
+    const mig = await G(() => window.__GAME__.save.profile);
+    check(mig.bestScore === 900 && mig.run.active && mig.run.level === 4 && mig.run.lives === 3 && mig.requisition === 150, `v1 save did not migrate (${JSON.stringify(mig.run)})`);
+    check(/Continue at level 4/.test(await page.locator('.title-screen').textContent()), 'migrated run not offered on the title');
     await shot('8-damaged-save-notice');
     steps.push('export/import, damaged save');
   }

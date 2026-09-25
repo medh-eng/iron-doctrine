@@ -39,7 +39,9 @@ function drawPart(g, p, x, y, cs, side, seed) {
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
   g.save();
-  switch (d.id) {
+  if (drawPartArt(g, p, x, y, cs)) {
+    // Imported art: only the procedural damage overlay is added below.
+  } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
       g.strokeRect(x + 1, y + 1, w - 2, h - 2);
@@ -190,7 +192,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
   }
   g.strokeStyle = 'rgba(8,10,14,0.55)';
   g.lineWidth = 1;
-  if (d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (!art.get(d.id) && d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   g.restore();
 }
 
@@ -209,15 +211,23 @@ function paintParts(V, idxs, ppm, pad) {
     const p = V.parts[i];
     drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
   }
+  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
+  // still reads as enemy until faction paint masks arrive (design/07 §4).
+  if (V.side === 1) {
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(170,45,30,0.16)';
+    g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'source-over';
+  }
   return c;
 }
 
 function vehicleSprite(V, S) {
   const ppm = clamp(Math.round(S * 1.3 * layout.dpr), 10, 64);
-  if (!V.sprite || V.dirty || Math.abs(V.sprite.ppm - ppm) / V.sprite.ppm > 0.3) {
+  if (!V.sprite || V.dirty || V.sprite.artV !== art.version || Math.abs(V.sprite.ppm - ppm) / V.sprite.ppm > 0.3) {
     const idxs = [];
     V.parts.forEach((p, i) => { if (p.alive) idxs.push(i); });
-    V.sprite = { canvas: paintParts(V, idxs, ppm, SPRITE_PAD), ppm };
+    V.sprite = { canvas: paintParts(V, idxs, ppm, SPRITE_PAD), ppm, artV: art.version };
     V.dirty = false;
   }
   return V.sprite;
@@ -268,8 +278,16 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  // Barrels, drawn live.
   const tmp = { x: 0, y: 0 };
+  if (art.debug) {
+    for (const p of V.parts) {
+      if (!p.alive || !art.get(p.def.id)) continue;
+      gridToLocal(V, p.x * CELL, (V.design.h - p.y) * CELL, tmp);   // the image's origin pixel, mirrored with the vehicle
+      localToWorld(V, tmp.x, tmp.y, tmp);
+      drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
+    }
+  }
+  // Barrels, drawn live.
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
@@ -279,6 +297,11 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
+    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+      if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
+      continue;
+    }
+    if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
     g.strokeStyle = V.destroyed ? '#26282c' : '#30343b';
     g.lineCap = 'butt';
     g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
@@ -434,13 +457,61 @@ function drawDebris(g) {
   });
 }
 
+// Flags for the hold zone and the depot; red circles where artillery will land.
+function drawMarkers(g, B) {
+  const flag = (x, col) => {
+    const sx = view.sx(x), sy = view.sy(B.T.height(x));
+    g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 34, 2, 34);
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(sx + 1, sy - 34); g.lineTo(sx + 17, sy - 29); g.lineTo(sx + 1, sy - 24); g.closePath(); g.fill();
+  };
+  if (B.zone) {
+    const a = view.sx(B.zone.x0), b = view.sx(B.zone.x1);
+    g.fillStyle = 'rgba(255,178,62,0.08)';
+    g.fillRect(a, 0, b - a, layout.h);
+    flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
+  }
+  if (B.depot) flag(B.depot, PAL.league);
+  g.setLineDash([5, 4]);
+  g.lineWidth = 2;
+  for (const w of B.warnings) {
+    const sx = view.sx(w.x), sy = view.sy(B.T.height(w.x));
+    const r = Math.max(10, 6 * view.S) * (0.8 + 0.2 * Math.sin(B.time * 10));
+    g.strokeStyle = PAL.danger;
+    g.beginPath(); g.ellipse(sx, sy, r, r * 0.35, 0, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = PAL.danger; g.font = `700 14px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+    g.fillText('!', sx, sy - r * 0.4);
+  }
+  g.setLineDash([]);
+}
+
+// Rain streaks, dusk and night (design/03 §4 weather), in screen space.
+function drawWeather(g, B) {
+  const { w, h } = layout;
+  if (B.cfg.light === 'dusk') { g.fillStyle = 'rgba(40,20,50,0.25)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.light === 'night') { g.fillStyle = 'rgba(6,9,22,0.55)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.weather === 'rain') {
+    g.strokeStyle = 'rgba(200,210,230,0.28)';
+    g.lineWidth = 1;
+    g.beginPath();
+    const t = B.time;
+    for (let i = 0; i < 90; i++) {
+      const x = ((i * 97.3 + t * 60) % (w + 40)) - 20;
+      const y = ((i * 57.1 + t * 520) % (h + 40)) - 20;
+      g.moveTo(x, y); g.lineTo(x - 4, y + 14);
+    }
+    g.stroke();
+  }
+}
+
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
   drawBackground(g, view.cx * view.S * 0.25);
   drawTrees(g, B);
   drawTerrain(g, B);
+  drawMarkers(g, B);
   for (const V of B.units) {
-    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen);
+    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen) || B.revealAll;
     if (!visible) continue;
     const sx = view.sx(V.body.x);
     if (sx < -V.radius * 2 * view.S || sx > layout.w + V.radius * 2 * view.S) continue;
@@ -449,4 +520,5 @@ function renderBattle(g, B) {
   drawDebris(g);
   drawShells(g);
   drawParticles(g);
+  drawWeather(g, B);
 }

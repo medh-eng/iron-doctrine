@@ -1,0 +1,37 @@
+{
+  "artId": "part.c37.placeholder",
+  "part": "c37",
+  "variant": "placeholder",
+  "revision": "r000",
+  "status": "placeholder",
+  "pxPerCell": 64,
+  "footprint": [
+    2,
+    1
+  ],
+  "canvas": [
+    144,
+    80
+  ],
+  "origin": [
+    8,
+    8
+  ],
+  "file": "c37_placeholder_r000.png",
+  "barrel": {
+    "file": "c37_placeholder_barrel_r000.png",
+    "canvas": [
+      261,
+      24
+    ],
+    "pivot": [
+      12,
+      12
+    ],
+    "muzzle": [
+      249,
+      12
+    ]
+  },
+  "note": "Contract test: magenta footprint, black cross = grid origin, amber = barrel pivot, cyan ring = muzzle."
+}

@@ -485,6 +485,15 @@ These keep high levels possible:
   Floating text shows every bonus as it happens.
 - **Saved:** best score, highest level (continue from it), blueprints, medals, settings.
 
+**Numbers as built in Part 1c** (tuning data in `07_data.js`):
+- Kill points: truck 100, machine-gun car and scout 150, light tank 300, medium 450, assault gun 500, howitzer 350, bunker 400, boss 1500. Kills within 4 s chain a combo: points × combo count.
+- Critical hit: +50 when your side destroys an enemy's engine, gun, crew compartment or ammunition.
+- Level clear: 200 + 50 × level; no losses +300; time bonus 5 points per second under 60 + 5 × level seconds.
+- Requisition earned = level score ÷ 10. New players start with 150.
+- Squad budget per level = 200 + 12 × level cost points (the starting squad costs 211).
+- Saving a design costs the part-price difference from the design you started from (a template, one of your designs or a blueprint); a randomised or scratch design costs its full part price.
+- Losing the squad (or the escorted truck) costs a life and retries the level; at 0 lives it is game over, and "Continue at level N" starts a new run there with 3 lives and score 0.
+
 ## 15. Collection and rewards
 
 - **Blueprints gallery** (on the title screen): captured enemy designs, from ladder bosses and from wrecks recovered in the campaign.
