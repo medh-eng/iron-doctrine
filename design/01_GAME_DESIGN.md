@@ -217,9 +217,11 @@ Platoons arrive as reinforcement waves whenever the on-screen unit cap allows.
 | Crew compartment | Crew casualties: slower reloads, then vehicle abandoned |
 | Hull below waterline | Flooding |
 
-**Accuracy** = weapon base × fire control × crew skill × stationary bonus × visibility. The player can also aim manually for a precise shot.
+**Knocked out:** a vehicle is out of the fight when its crew compartments are gone, when only locomotion is left, when its ammunition detonates, or when its parts are down to 30% of their total HP ("Wrecked").
 
-**Spotting:** you can only target what someone sees. Sensors, height, weather, night, smoke and forest concealment all matter.
+**Accuracy** = weapon base × fire control × crew skill × stationary bonus × visibility. The player can also aim manually for a precise shot (spread × 0.6).
+
+**Spotting:** you can only target what someone sees. Sensors, height, weather, night, smoke and forest concealment all matter. In Part 1b: a crew sees 95 m (× 1.4 with optics), halved against a target in forest; smoke screens block the line of sight; firing reveals the shooter for a few seconds. Unseen enemies are not drawn and can't be targeted; a red arrow at the screen edge points to spotted enemies off screen.
 
 ### 7.5 Ending a battle
 
@@ -303,6 +305,26 @@ Warnings state facts only, e.g. "Power drawn exceeds power produced by 40 kW." N
 Base parts are available from the start. More come from:
 - research at workshops (costs electronics and time)
 - reverse-engineering captured enemy wrecks
+
+### 8.6 The Workshop (HighFleet influence)
+
+The producer asked for a workshop where vehicles, ships and planes are customised and upgraded, taking HighFleet's parts, balancing and graphics as the model. The Workshop is the Drafting Office plus refits of existing units, reachable between ladder levels, from the title and at campaign workshops, repair depots and shipyards.
+
+**What we take from HighFleet**
+- **Every part is a physical module with a price in weight.** Armour, guns, engines, fuel and ammo all add mass, and the machine visibly pays for it: it sits lower, climbs slower, accelerates slower, burns more fuel.
+- **Balance is shown, not scored.** Live markers on the blueprint: centre of mass, centre of lift (aircraft), waterline and centre of buoyancy (ships), contact base and tip angle (ground). An unbalanced design visibly leans in the preview before it ever reaches a battle.
+- **Thrust or power against weight is the headline number.** The top strip always shows mass, power-to-weight (ground), thrust-to-weight (air), reserve buoyancy (ships), top speed, fuel range and cost, as raw numbers.
+- **Damage is per module and stays.** A refit replaces destroyed or damaged modules; what isn't repaired stays damaged.
+- **Parts are bought, not levelled.** Upgrading means fitting a better part (37 mm → 75 mm, 20 mm → 40 mm plate, petrol S → diesel M), paid in resources (campaign) or Requisition (ladder). There are no stat sliders or upgrade levels (pillar 1).
+- **Supply of parts varies.** In the campaign, each workshop stocks the parts its region can make; rare parts come from research and captured wrecks (§8.5).
+
+**Refit flow**
+1. Pick a unit (or a design) and open it on the blueprint.
+2. Drag parts on and off. Each change shows its mass, cost and time delta, and the markers move.
+3. Test drive or test flight on the range (§4 Test Range).
+4. Confirm: the unit is refitted to the next mark. It costs the parts' price difference plus labour time (§8.4).
+
+**Domains:** ground vehicles in Part 1c; ships, submarines, aircraft and helicopters in Part 2, with the same screen.
 
 ## 9. Logistics
 

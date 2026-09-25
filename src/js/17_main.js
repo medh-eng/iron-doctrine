@@ -19,14 +19,21 @@ function frame(now) {
   const simRunning = !game.paused && !game.hidden && !game.portrait;
   input.update(now);
   acc += dt;
+  /*TEST:BEGIN*/
+  if (window.__TEST__ && window.__TEST__.timeScale > 1) acc += dt * (window.__TEST__.timeScale - 1);
+  /*TEST:END*/
   let steps = 0;
-  while (acc >= SIM_STEP && steps < MAX_SIM_STEPS) {
+  let maxSteps = MAX_SIM_STEPS;
+  /*TEST:BEGIN*/
+  if (window.__TEST__ && window.__TEST__.timeScale > 1) maxSteps = MAX_SIM_STEPS * window.__TEST__.timeScale;
+  /*TEST:END*/
+  while (acc >= SIM_STEP && steps < maxSteps) {
     if (simRunning) game.time += SIM_STEP;
     if (scr && scr.update) scr.update(SIM_STEP, simRunning);
     acc -= SIM_STEP;
     steps++;
   }
-  if (steps === MAX_SIM_STEPS) acc = 0;
+  if (steps === maxSteps) acc = 0;
   if (!game.hidden && scr && scr.render) {
     scr.render(ctx, now);
     if (save.settings.showFps) drawFps(dt);
@@ -134,6 +141,15 @@ window.__GAME__ = {
   setSetting: (k, v) => save.setSetting(k, v),
   flush: () => save.flush(),
   setHidden,
+  battle: () => SCREENS.battle.B,
+  selfCheck: () => battleSelfCheck(),
+  physicsCheck: () => physicsCheck(),
+  damageCheck: () => damageCheck(),
+  // Forced events for scripted play.
+  winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },
+  loseSquad: () => { const B = SCREENS.battle.B; for (const V of B.squad) knockOut(B, V, null, 'Knocked out'); },
+  readyGuns: () => { const B = SCREENS.battle.B; for (const w of B.me.weapons) w.reload = 0; },
+  sane: () => { const B = SCREENS.battle.B; return B.units.every((V) => Number.isFinite(V.body.x + V.body.y + V.body.a + V.body.vx + V.body.w)); },
   controlRects: () => (screens.cur && screens.cur.controls ? screens.cur.controls : []).filter((c) => !c.hidden)
     .map((c) => ({ id: c.id, shape: c.shape, x: c.x, y: c.y, r: c.r, w: c.w, h: c.h, cx: c.shape === 'circle' ? c.x : c.x + c.w / 2, cy: c.shape === 'circle' ? c.y : c.y + c.h / 2 })),
 };

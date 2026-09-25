@@ -17,7 +17,7 @@
 - extend the test harness (the starter repo already has the build, test build, smoke test and screenshots)
 - optional: web app manifest and icons, so the home-screen app opens full screen and sideways
 
-**1b. Battle core**
+**1b. Battle core** (done in v0.1.2)
 - terrain heightfield and generator: plains, hills, mud, forest, gaps
 - vehicle physics from part grids
 - projectiles, penetration, per-part damage, debris
@@ -32,19 +32,19 @@
 - lives, score, combos
 - level-clear celebration, life lost, game over
 - workshop between levels
-- Drafting Office v1: ~30 ground parts marked P1 in 05, 5 templates, randomise, scratch build, stats drawer, test drive, marks
+- Workshop / Drafting Office v1 (HighFleet-style, 01 §8.6): ~30 ground parts marked P1 in 05, 5 templates, randomise, scratch build, stats drawer, balance markers, test drive, marks, refits by fitting better parts
 - blueprint gallery and medals
 - AI-vs-AI demo battle behind the title
 
 ### Acceptance
 
 - [ ] A first-time player clears level 1 within about 30 s with only the two-line how-to.
-- [ ] Both thumbs work at once. FIRE tap auto-aims; FIRE press-and-drag aims manually with a trajectory preview. Swap and the order chips work.
+- [x] Both thumbs work at once. FIRE tap auto-aims; FIRE press-and-drag aims manually with a trajectory preview. Swap and the order chips work.
 - [x] Tap, drag and pinch on the world never steal a touch from the thumb controls.
-- [ ] Start/Stop time freezes the battle while the camera and orders still work.
+- [x] Start/Stop time freezes the battle while the camera and orders still work.
 - [x] The Pause card works. The game pauses automatically in the background and in portrait.
-- [ ] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, an ammo rack can detonate.
-- [ ] These emerge from the numbers without special-case code:
+- [x] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, an ammo rack can detonate.
+- [x] These emerge from the numbers without special-case code:
   - a top-heavy design tips on a steep slope
   - an underpowered design stalls on a hill
   - tracks beat wheels in mud
@@ -62,6 +62,7 @@
 ### Scope
 
 - The full parts catalogue from 05: naval, submarine, air, helicopter, systems and logistics parts.
+- The Workshop (01 §8.6) extended to ships, submarines, aircraft and helicopters: waterline, centre of lift and thrust-to-weight markers.
 - Live constraints: power, heat, reliability, crew, cost.
 - Physics for buoyancy, flooding, lift, stall and rotors.
 - Sky, sea and underwater layers in battles.
@@ -200,3 +201,4 @@
 | 2026-09-25 | 0.0.1 | Starter repo: build script, test build, smoke test at 5 viewports, placeholder title, GitHub Pages output in docs/ | Stencil font not embedded yet | Part 1a |
 | 2026-09-25 | 0.1.0 | Part 1a engine core. Saves with versions, migrations, backups, export/import and reset. Audio engine: buses, 24-voice cap, synth instruments, title march, UI and weapon/order/time sound effects, haptics. Pointer router with captured thumb controls, world tap/drag/pinch/long-press/double-tap, edge guard, keyboard. Acetate thumb controls with grease-pencil glyphs, size, opacity, ghost mode and left-handed mirror. Title with stencil logo, Settings (Audio, Controls, Display, Data), Pause card, toasts, auto-pause on background, blur and portrait. Controls test range standing in for the battle. Smoke test now drives all of this at 5 viewports. | Range vehicles are placeholders (kinematic, no damage). Optional home-screen manifest not done: it needs a second file next to index.html, so it waits for the producer's go-ahead. Alt long-press (cycle secondaries) waits for real secondary weapons. | Part 1b: terrain generator and vehicle physics |
 | 2026-09-25 | 0.1.1 | One-file rule lifted by the producer. The build now writes a small static site to docs/: index.html, game.js, game.css, the font file, a home-screen manifest (full screen, landscape) and icons drawn by the build. Smoke test serves the site over a local web server. | None new | Part 1b |
+| 2026-09-25 | 0.1.2 | Part 1b battle core. Terrain generator (plains, hills, mud, forest with breakable trees, gaps) on a 0.5 m heightfield with HE craters. Vehicles are rigid bodies built from their part grids: mass, centre of mass, inertia, spring-damper wheel and track contacts, drive force from engine power and grip, rolling resistance from softness and ground pressure, engine braking, recoil. Shells traced cell by cell through the part grid: armour vs penetration by angle, ricochets past 70°, bursting charges, over-penetration; per-part damage with scorch and holes, parts and cut-off groups detach as tumbling debris; engine, gun, turret ring, fuel fire and ammo detonation effects. Spotting with optics, forest concealment, smoke screens and muzzle reveal. Squad of 3 with the five orders, long-press move, swap; enemy AI (parked, convoy, attack) with reaction time and accuracy. Effects: muzzle flash, sparks, dirt, explosions with shockwave, smoke columns, hit-stop, shake. Battle music in D minor with 4 intensity layers. Start/Stop time. HUD: squad cards with health/fuel/ammo, objective bar, minimap, off-screen enemy arrows, target bracket, follow camera that frames the target. Battle results card. 6 templates drawn as detailed HighFleet-style modules. Four battle setups cycle as levels until the ladder arrives. Title button renamed Workshop; Workshop design written up (01 §8.6). Tests: templates valid; wheels faster on flat, tracks beat wheels in mud, underpowered stalls on a hill, top-heavy tips on a slope, part effects; win/lose/retry; desktop autoplay clears level 1 in about 20 s. | Enemies don't retreat or use cover yet. No infantry, howitzer or bunkers yet (ladder levels 7 and 13). Level clear has the slow-motion and stamp but not yet confetti or the fanfare. A few small per-frame allocations remain in effects and drawing (game work is about 0.5 ms per frame on the headless probe). Template masses come out lighter than the rough targets in 05 §8 (medium tank 9.5 t, not 18 t); the numbers are what the parts add up to. | Part 1c: ladder, score and lives, then the Workshop / Drafting Office v1 |

@@ -69,7 +69,8 @@ Pressing ◀ and ▶ together is the **halt/brake**. When stopped, a small cross
   - Long-press: cycle secondary weapons.
   - Machine guns and AA guns fire automatically.
 - **Swap:** take control of the next squad vehicle.
-- **Special:** a context action, such as smoke, deploy stabiliser spades, drop cargo, field repair, or emergency surface/dive.
+- **Special:** a context action, such as smoke, deploy stabiliser spades, drop cargo, field repair, or emergency surface/dive. In Part 1 it fires the smoke launcher, and is hidden when no squad vehicle has one.
+- Alt is hidden while the controlled vehicle has no secondary weapon.
 
 ### 3.4 Order chips
 
@@ -85,8 +86,10 @@ In campaign battles an extra **Command** chip opens a radial menu of force order
 | Tap own vehicle | Take control (if in your squad) or select its platoon to see its orders |
 | Long-press ground | Squad-mates move there and hold |
 | One-finger drag on empty world | Pan the camera; it stops following your vehicle and a Recenter chip appears |
-| Pinch | Zoom 0.5×–2× |
+| Pinch | Zoom 0.35×–2× |
 | Double-tap | Reset zoom |
+
+**Follow camera:** while it follows your vehicle, the camera pulls back (down to 0.55×) to keep your target or the nearest spotted enemy in view. A pinch sets your own zoom, which the camera keeps until you double-tap.
 
 After 4 s without touching the world, the camera recenters on its own (this can be turned off in Settings).
 

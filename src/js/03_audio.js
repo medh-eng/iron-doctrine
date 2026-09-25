@@ -286,6 +286,10 @@ const audio = {
     }
   },
 
+  // Battle music intensity 0..3 (design/03 §6.3).
+  intensity: 0,
+  setIntensity(n) { this.intensity = clamp(n, 0, 3); },
+
   // ---------- sound effects (design/03 §7)
   sfx(name, pan = 0, vel = 1) {
     if (!this.ctx || this.ctx.state !== 'running' || !save.settings.sound) return;
@@ -296,6 +300,54 @@ const audio = {
 
 // Themes: step(a, i, t, sd, rng) is called once per 16th note.
 const THEMES = {
+  // Battle: D natural minor, 100 bpm at intensity 0 rising to 132 at 3. Layers:
+  // 0 snare ostinato + string drone; 1 + bass drum + string ostinato; 2 + brass motif; 3 + full brass + timpani rolls.
+  battle: {
+    bpm: 100,
+    seed: 100,
+    roots: [38, 34, 36, 33],            // Dm, Bb, C, Am (one per bar)
+    thirds: [3, 4, 4, 3],
+    motifs: [
+      [[0, 62, 3], [3, 65, 1], [4, 69, 4], [8, 67, 2], [10, 65, 2], [12, 64, 4]],
+      [[0, 69, 2], [2, 67, 2], [4, 65, 2], [6, 64, 2], [8, 62, 6], [14, 60, 2]],
+      [[0, 62, 2], [2, 62, 2], [4, 65, 4], [8, 70, 4], [12, 69, 4]],
+    ],
+    motif: null,
+    step(a, i, t, sd, rng) {
+      const lvl = a.intensity;
+      this.bpm = 100 + lvl * 10.67;
+      const bus = a.musicBus;
+      const bar = Math.floor(i / 16) % 4;
+      const s = i % 16;
+      const root = this.roots[bar];
+      if (s === 0 && bar === 0) this.motif = rng.pick(this.motifs);
+      // Snare ostinato with accents.
+      if (s % 2 === 0) a.snare(bus, t, s % 8 === 4 ? 0.34 : 0.13);
+      else if (lvl >= 2 && rng.next() < 0.25) a.snare(bus, t, 0.08);
+      // String drone: root and fifth, a bar long.
+      if (s === 0) {
+        a.strings(bus, t, midiToHz(root), sd * 16, 0.9);
+        a.strings(bus, t, midiToHz(root + 7), sd * 16, 0.7);
+      }
+      if (lvl >= 1) {
+        if (s === 0 || s === 8 || (s === 11 && rng.next() < 0.5)) a.kick(bus, t, 0.7);
+        if (s % 2 === 0) {
+          const n = s % 4 === 0 ? root + 12 : root + 12 + (s % 8 === 2 ? this.thirds[bar] : 7);
+          a.strings(bus, t, midiToHz(n), sd * 1.6, 0.55);
+        }
+      }
+      if (lvl >= 2 && this.motif && (bar === 1 || bar === 3)) {
+        for (const n of this.motif) if (n[0] === s) a.brass(bus, t, midiToHz(n[1]), n[2] * sd * 0.9, 0.8);
+      }
+      if (lvl >= 3) {
+        if (s === 0 || s === 6 || s === 12) {
+          a.brass(bus, t, midiToHz(root + 24), sd * 1.5, 0.6);
+          a.brass(bus, t, midiToHz(root + 24 + this.thirds[bar]), sd * 1.5, 0.5);
+        }
+        if (bar === 3 && s >= 12) { a.timpani(bus, t, midiToHz(root + 12), 0.4); a.timpani(bus, t + sd / 2, midiToHz(root + 12), 0.3); }
+      }
+    },
+  },
   // Title: slow march, 84 bpm, D Dorian. Strings, snare ruffs, brass motif.
   title: {
     bpm: 84,
@@ -471,6 +523,54 @@ const SFX = {
   timeStart(a, t, pan) {
     SFX.clunk(a, t, pan);
     for (let k = 0; k < 3; k++) SFX.tick(a, t + 0.18 + k * 0.2, pan, 1 - k * 0.2);
+  },
+  // Ricochet ping: 2.4 kHz sine with a fast pitch bend.
+  ricochet(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 0.35, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.22, 0.3);
+    const o = a.osc('sine', 2400, t, t + 0.35, g);
+    o.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+  },
+  // Part destroyed: metallic crunch.
+  crunch(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.3, 0.5, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.45 * vel, 0.22);
+    a.noiseSrc(t, t + 0.3, a.filter('bandpass', 900, 1.5, g));
+    const m = a.gain(out);
+    a.env(m.gain, t, 0.001, 0.2 * vel, 0.15);
+    const o = a.osc('square', 180, t, t + 0.2, a.filter('lowpass', 1400, 0, m));
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.15);
+  },
+  // Explosions: noise plus low sine with a long tail.
+  boom(a, t, pan, vel) {
+    const k = clamp(vel, 0.5, 2);
+    const out = a.voice(a.sfxBus, t, 1.4 * k, 1, pan);
+    const n = a.gain(out);
+    a.env(n.gain, t, 0.004, 0.9, 0.9 * k);
+    const f = a.filter('lowpass', 1600, 0, n);
+    f.frequency.exponentialRampToValueAtTime(160, t + 0.9 * k);
+    a.noiseSrc(t, t + 1.4 * k, f);
+    const b = a.gain(out);
+    a.env(b.gain, t, 0.005, 1, 0.8 * k);
+    const o = a.osc('sine', 70, t, t + 1.2 * k, b);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.8 * k);
+  },
+  thud(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.25, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.3 * vel, 0.18);
+    a.noiseSrc(t, t + 0.25, a.filter('lowpass', 500, 0, g));
+  },
+  // Objective progress tick.
+  objective(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 0.3, 0.25, pan);
+    for (const [dt, f] of [[0, 880], [0.09, 1320]]) {
+      const g = a.gain(out);
+      a.env(g.gain, t + dt, 0.003, 0.2, 0.12);
+      a.osc('triangle', f, t + dt, t + dt + 0.2, g);
+    }
   },
   engineRev(a, t, pan) {
     const out = a.voice(a.sfxBus, t, 0.5, 0.25, pan);

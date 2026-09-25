@@ -87,6 +87,10 @@ These are starting values. Tune them freely for feel and balance, but never show
 | aa40 | AA gun 40 mm | 3×2 | 1800 | 80 | 60 | 120/min | 3500 | M10 | Flak bursts | P2 |
 | smoke | Smoke launcher | 1×1 | 30 | 15 | n/a | 3 salvos | 60 | M1 F1 | Blocks spotting for 20 s | P1 |
 
+**Battle distance scale:** battles compress distance so fights happen on screen. 1 km on this sheet is 50 m on the battlefield (`BATTLE_DISTANCE_SCALE` = 0.05): a 75 mm gun reaches 100 m, a machine gun 30 m. Penetration fall-off uses the sheet distance (battlefield distance ÷ 0.05).
+
+**Battle numbers per weapon** (in `07_data.js`): muzzle speed on the battlefield, damage per hit, aiming spread, and a small bursting charge that damages the parts around the first penetration (37 mm: 25 within 1 m; 75 mm: 55 within 1.6 m; 105 mm: 80 within 2 m).
+
 **Penetration over range**
 - Cannons: pen(r) = pen500 × (1 − 0.12 × (r − 500) / 500), never below 0.5 × pen500.
 - HEAT: no loss with range.
@@ -155,10 +159,10 @@ These are starting values. Tune them freely for feel and balance, but never show
 4. **Effective power** P_eff = engine kW × 1000 × drivetrain efficiency × power availability.
    - Drivetrain efficiency: wheels 0.85, tracks 0.75.
    - Power availability: 1 if the power budget is met, otherwise produced ÷ drawn.
-5. **Drive force** = min(P_eff ÷ max(v, 1 m/s), μ × normal load on driven contacts).
+5. **Drive force** = min(P_eff ÷ max(v, 2.5 m/s), μ × normal load on driven contacts). 2.5 m/s is the lowest-gear speed: below it the pull stops rising, so an underpowered design really stalls on a steep hill (it was 1 m/s, which let everything crawl up anything).
 6. **Resistance** = crr × m × g + m × g × sin(slope) + 0.5 × 1.225 × 0.9 × A × v².
    - A = vehicle height (m) × 2.5 m assumed width.
-7. **Speed caps:** top speed is capped by the locomotion cap. All battle speeds are multiplied by `BATTLE_TIME_SCALE` (default 1.0; tune for feel).
+7. **Speed caps:** top speed is capped by the locomotion cap. In battle the caps are multiplied by `BATTLE_SPEED_SCALE` (0.5). Above the cap the engine brakes, so vehicles don't run away downhill. Reverse is capped at 45% of forward.
 8. **Bogged down:** if rolling resistance at v = 0 on flat ground exceeds the drive force, the vehicle is stuck and floating text reads "Bogged down".
 
 ### 7.2 Stability
