@@ -52,16 +52,19 @@ SCREENS.title = {
     const pg = el('div', 'menu-group');
     pg.appendChild(el('div', 'menu-label', 'Proving Ground'));
     const pgRow = el('div', 'menu-row');
-    if (p.continueLevel > 1) {
-      pgRow.appendChild(button(`Continue at level ${p.continueLevel}`, () => screens.go('battle', p.continueLevel), 'btn btn-primary'));
+    const run = p.run;
+    const contLevel = run.active ? run.level : p.continueLevel;
+    if (contLevel > 1) {
+      const label = run.active ? `Continue at level ${contLevel} · ${run.lives} ${run.lives === 1 ? 'life' : 'lives'}` : `Continue at level ${contLevel}`;
+      pgRow.appendChild(button(label, () => ladder.resume(), 'btn btn-primary'));
     }
-    pgRow.appendChild(button('Play from level 1', () => screens.go('battle', 1), p.continueLevel > 1 ? 'btn' : 'btn btn-primary'));
+    pgRow.appendChild(button('Play from level 1', () => ladder.start(1, true), contLevel > 1 ? 'btn' : 'btn btn-primary'));
     pg.appendChild(pgRow);
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
-    row2.appendChild(button('Workshop', () => ui.toast('The Workshop opens in the next update (Part 1c).')));
-    row2.appendChild(button('Blueprints', () => ui.toast('No captured blueprints yet. Bosses start at level 10.')));
+    row2.appendChild(button('Workshop', () => screens.go('workshop')));
+    row2.appendChild(button('Blueprints', () => screens.go('blueprints')));
     row2.appendChild(button('Settings', () => ui.openSettings()));
     menu.appendChild(row2);
     r.appendChild(menu);

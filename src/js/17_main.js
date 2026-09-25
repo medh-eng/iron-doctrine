@@ -144,6 +144,8 @@ window.__GAME__ = {
   battle: () => SCREENS.battle.B,
   selfCheck: () => battleSelfCheck(),
   physicsCheck: () => physicsCheck(),
+  randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of ['light', 'heavy']) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
+  ladder,
   damageCheck: () => damageCheck(),
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },

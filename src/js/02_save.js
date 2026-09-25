@@ -26,11 +26,27 @@ const store = {
 // Migrations: MIGRATIONS[key][v] turns version v data into version v+1 data.
 // Add one whenever SAVE_VERSION goes up. Example for a future v2:
 //   MIGRATIONS.profile[1] = (d) => ({ ...d, newField: 0 });
-const MIGRATIONS = { settings: {}, profile: {} };
+const MIGRATIONS = {
+  settings: {
+    1: (d) => d,
+  },
+  profile: {
+    // v1 -> v2: the ladder run, Requisition, squad and stats arrive. An unfinished v1
+    // ladder (continueLevel > 1) becomes a run to continue with 3 lives.
+    1: (d) => Object.assign({}, d, {
+      run: { active: (d.continueLevel || 1) > 1, level: d.continueLevel || 1, lives: 3, score: 0 },
+      requisition: 150,
+      squad: [],
+      stats: { battles: 0, kills: 0, cleared: Math.max(0, (d.highestLevel || 1) - 1) },
+    }),
+  },
+  designs: {},
+};
 
 const SAVE_KEYS = {
   settings: DEFAULT_SETTINGS,
   profile: DEFAULT_PROFILE,
+  designs: DEFAULT_DESIGNS,
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -65,6 +81,7 @@ function migrate(key, v, data) {
 const save = {
   settings: clone(DEFAULT_SETTINGS),
   profile: clone(DEFAULT_PROFILE),
+  designs: clone(DEFAULT_DESIGNS),
   notices: [],          // messages for the player, shown as toasts at boot
   firstRun: false,
   dirty: new Set(),
@@ -125,7 +142,7 @@ const save = {
 
   // Export: JSON -> base64 text the player can copy.
   exportCode() {
-    const payload = { game: 'irondoctrine', v: SAVE_VERSION, t: Date.now(), settings: this.settings, profile: this.profile };
+    const payload = { game: 'irondoctrine', v: SAVE_VERSION, t: Date.now(), settings: this.settings, profile: this.profile, designs: this.designs };
     const bytes = new TextEncoder().encode(JSON.stringify(payload));
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -142,13 +159,15 @@ const save = {
       if (!p || p.game !== 'irondoctrine') return { ok: false, error: "That code isn't an Iron Doctrine save." };
       const settings = mergeDefaults(DEFAULT_SETTINGS, migrate('settings', p.v, p.settings));
       const profile = mergeDefaults(DEFAULT_PROFILE, migrate('profile', p.v, p.profile));
+      const designs = mergeDefaults(DEFAULT_DESIGNS, p.designs ? migrate('designs', p.v, p.designs) : null);
       return {
         ok: true,
         summary: `Best score ${profile.bestScore}, highest level ${profile.highestLevel}.`,
         apply: () => {
           this.settings = settings;
           this.profile = profile;
-          this.dirty.add('settings'); this.dirty.add('profile');
+          this.designs = designs;
+          this.dirty.add('settings'); this.dirty.add('profile'); this.dirty.add('designs');
           this.flush();
           bus.emit('settings', '*');
         },
@@ -160,7 +179,9 @@ const save = {
 
   resetProgress() {
     this.profile = clone(DEFAULT_PROFILE);
+    this.designs = clone(DEFAULT_DESIGNS);
     this.touch('profile');
+    this.touch('designs');
     this.flush();
   },
 };

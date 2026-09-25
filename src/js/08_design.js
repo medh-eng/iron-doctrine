@@ -87,6 +87,13 @@ function validateDesign(design) {
     if (d.loco) loco++;
   }
   if (count.some((n) => n > 1)) errors.push('Two parts overlap.');
+  // Track segments need a run of 3 or more side by side (design/05 §2).
+  const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
+  for (let i = 0, run = 1; i < runs.length; i++) {
+    if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
+    if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
+    run = 1;
+  }
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
@@ -144,4 +151,184 @@ function statsOf(design, alive) {
     shells,
     crew,
   };
+}
+
+// ---------- Drafting Office numbers (design/01 §8.2, design/05 §7). Design-sheet units, not battle units.
+const CLASSES = { light: { name: 'Light ground', w: 16, h: 8 }, heavy: { name: 'Heavy ground', w: 28, h: 12 } };
+
+function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
+function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
+
+// Top speed (km/h) on a terrain: where drive force meets rolling resistance and drag.
+function topSpeed(st, ter) {
+  if (!st.power || !st.contact || !st.mass) return 0;
+  const pf = clamp(st.pressure / 100, 0.3, 3);
+  const crr = st.loco === 'track' ? 0.04 + ter.soft * 0.08 * pf : 0.015 + ter.soft * 0.25 * pf;
+  const m = st.mass, g = GRAVITY;
+  const P = st.power * 1000 * (DRIVE_EFF[st.loco] || 0.8) * (st.power >= st.drawn ? 1 : st.power / Math.max(1, st.drawn));
+  if (ter.grip * m * g <= crr * m * g || P / 2.5 <= crr * m * g) return 0;       // bogged down
+  const A = st.height * 2.5;
+  let v = 1;
+  for (let i = 0; i < 60; i++) {
+    const res = crr * m * g + 0.5 * 1.225 * 0.9 * A * v * v;
+    const drive = Math.min(P / Math.max(v, 2.5), ter.grip * m * g);
+    v = clamp(v + (drive - res) / (m * 0.5), 0, 200);
+  }
+  return Math.min(v * 3.6, st.cap);
+}
+
+// Steepest slope (degrees) the design can start up on plains.
+function climbLimit(st) {
+  if (!st.power || !st.mass) return 0;
+  const ter = TERRAIN[T_PLAINS];
+  const pf = clamp(st.pressure / 100, 0.3, 3);
+  const crr = st.loco === 'track' ? 0.04 + ter.soft * 0.08 * pf : 0.015 + ter.soft * 0.25 * pf;
+  const P = st.power * 1000 * (DRIVE_EFF[st.loco] || 0.8);
+  let best = 0;
+  for (let deg = 0; deg <= 60; deg++) {
+    const a = (deg * Math.PI) / 180;
+    const need = st.mass * GRAVITY * (Math.sin(a) + crr * Math.cos(a));
+    const have = Math.min(P / 2.5, ter.grip * st.mass * GRAVITY * Math.cos(a));
+    if (have >= need) best = deg;
+  }
+  return best;
+}
+
+// Armour (mm) met first from the front, rear and top, through the design's middle.
+function armourFacings(design) {
+  const g = occupancy(design);
+  const W = design.w, H = design.h;
+  const at = (x, y) => { const i = g[y * W + x]; return i >= 0 ? PARTS[design.cells[i].p] : null; };
+  const rows = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = at(x, y); if (d && !d.loco) { rows.push(y); break; } }
+  const firstIn = (xs, y) => { for (const x of xs) { const d = at(x, y); if (d) return d.armor; } return 0; };
+  const xsF = [...Array(W).keys()].reverse(), xsR = [...Array(W).keys()];
+  const front = rows.length ? Math.min(...rows.map((y) => firstIn(xsF, y))) : 0;
+  const rear = rows.length ? Math.min(...rows.map((y) => firstIn(xsR, y))) : 0;
+  let top = Infinity;
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) { const d = at(x, y); if (d) { if (!d.loco) top = Math.min(top, d.armor); break; } }
+  return { front, rear, top: top === Infinity ? 0 : top };
+}
+
+// Everything the stats drawer shows, plus factual warnings.
+function designReport(design) {
+  const st = statsOf(design);
+  const v = validateDesign(design);
+  const speeds = {};
+  for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
+  let load = 0;
+  const weapons = [];
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d.maxLoad) load += d.maxLoad;
+    if (d.cat === 'weapon' && d.id !== 'smoke') weapons.push(d);
+  }
+  const warnings = [];
+  if (st.drawn > st.power) warnings.push(`Power drawn exceeds power produced by ${st.drawn - st.power} kW.`);
+  if (load && st.mass > load) warnings.push(`Mass ${(st.mass / 1000).toFixed(1)} t on running gear rated ${(load / 1000).toFixed(1)} t.`);
+  if (!weapons.some((d) => !d.auto)) warnings.push('No main gun fitted.');
+  if (speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  return {
+    st, valid: v, speeds, weapons, warnings,
+    climb: climbLimit(st),
+    armour: armourFacings(design),
+    cost: costOf(design),
+  };
+}
+
+// Change log between two designs: part counts and mass.
+function changeLog(before, after) {
+  const count = (d) => { const m = {}; for (const c of d.cells) m[c.p] = (m[c.p] || 0) + 1; return m; };
+  const a = count(before), b = count(after);
+  const lines = [];
+  for (const id of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const n = (b[id] || 0) - (a[id] || 0);
+    if (n) lines.push(`${n > 0 ? '+' : '−'}${Math.abs(n)} ${PARTS[id].name}`);
+  }
+  const dm = (statsOf(after).mass - statsOf(before).mass) / 1000;
+  if (Math.abs(dm) >= 0.05) lines.push(`Mass ${dm > 0 ? '+' : '−'}${Math.abs(dm).toFixed(1)} t`);
+  return lines;
+}
+
+// Trim empty rows and columns (saved designs are stored tight).
+function cropDesign(design) {
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y);
+    x1 = Math.max(x1, c.x + d.w); y1 = Math.max(y1, c.y + d.h);
+  }
+  if (x1 < 0) return Object.assign({}, design, { w: 1, h: 1, cells: [] });
+  return Object.assign({}, design, { w: x1 - x0, h: y1 - y0, cells: design.cells.map((c) => ({ p: c.p, x: c.x - x0, y: c.y - y0 })) });
+}
+
+// Randomise (design/01 §8.3): a valid design for a class, seeded. Re-rolls until valid.
+function randomDesign(seed, cls) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
+    if (validateDesign(d).ok) return d;
+  }
+  return designFromTemplate('light');
+}
+
+function tryRandomDesign(rng, cls) {
+  const C = CLASSES[cls];
+  const heavy = cls === 'heavy';
+  const cells = [];
+  const W = C.w, H = C.h;
+  const grid = new Int8Array(W * H);
+  const put = (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+  const tracks = rng.next() < (heavy ? 0.85 : 0.6);
+  const span = heavy ? rng.int(14, 22) : rng.int(8, 13);
+  const x0 = 1;
+  let hullBottom;               // lowest hull row
+  if (tracks) {
+    for (let x = x0; x + 2 <= x0 + span; x += 2) put('track', x, H - 1);
+    hullBottom = H - 2;
+  } else {
+    const big = rng.next() < 0.5;
+    const wd = big ? 'wheel_l' : 'wheel_s';
+    const ww = PARTS[wd].w;
+    const n = rng.int(3, Math.max(3, Math.floor(span / (ww + 1))));
+    for (let k = 0; k < n; k++) put(wd, x0 + Math.round((k * (span - ww)) / Math.max(1, n - 1)), H - PARTS[wd].h);
+    hullBottom = H - PARTS[wd].h - 1;
+  }
+  const hullTop = hullBottom - 1;
+  const grade = rng.pick(heavy ? ['arm40', 'arm80', 'arm40'] : ['plate', 'arm20', 'arm20', 'arm40']);
+  // Engine at the rear, crew in the middle, stores beside them.
+  const eng = heavy ? rng.pick(['eng_m', 'eng_h', 'eng_h']) : rng.pick(['eng_s', 'eng_m', 'eng_m']);
+  put(eng, x0, hullTop);
+  let x = x0 + PARTS[eng].w;
+  put('crew2', x, hullTop); x += 2;
+  put(rng.pick(['fuel_s', 'fuel_ss']), x, hullTop);
+  put(rng.pick(['ammo', 'ammo_p']), x, hullBottom);
+  x += 1;
+  for (; x < x0 + span; x++) { put(x === x0 + span - 1 ? 'slope40' : grade, x, hullTop); put(grade, x, hullBottom); }
+  if (rng.next() < 0.6) put('mg', x0 + span, hullBottom);
+  // Turret or casemate gun.
+  const gun = heavy ? rng.pick(['c75', 'c105', 'c105']) : rng.pick(['c37', 'c37', 'c75']);
+  const mid = x0 + Math.floor(span / 2) - 1;
+  if (rng.next() < 0.7) {
+    put('turret', mid, hullTop - 1);
+    put('crew2', mid, hullTop - 3);
+    put(grade, mid + 2, hullTop - 2);
+    put(gun, mid + 3, hullTop - 2);
+    put(grade, mid - 1, hullTop - 2);
+    if (rng.next() < 0.7) put('optics', mid + 1, hullTop - 4);
+    if (rng.next() < 0.5) put('radio', mid, hullTop - 4);
+  } else {
+    put('crew2', mid, hullTop - 2);
+    put(gun, mid + 2, hullTop - 2);
+    if (rng.next() < 0.6) put('optics', mid, hullTop - 3);
+  }
+  if (rng.next() < 0.4) put(rng.pick(['fc', 'stab', 'nsight', 'smoke']), x0 + 1, hullTop - 1);
+  if (rng.next() < 0.5) put('radiator', x0, hullTop - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
 }

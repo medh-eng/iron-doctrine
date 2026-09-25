@@ -55,6 +55,7 @@ const PART_ROWS = [
   // Systems
   ['radio', 'Radio', 'system', 1, 1, 50, 15, 2, { cost: { metal: 1, elec: 1 }, power: -1 }],
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
+  ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
@@ -131,6 +132,38 @@ const TEMPLATES = {
       ['arm40', 5, 1], ['arm40', 6, 1], ['arm40', 7, 1], ['c105', 8, 1], ['optics', 6, 0],
     ],
   },
+  // Enemy-only fixed positions (no engine, so the placement rules don't apply).
+  bunker: {
+    name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
+    cells: [
+      ['arm80', 0, 0], ['arm80', 1, 0], ['arm80', 2, 0], ['arm80', 3, 0], ['arm80', 4, 0],
+      ['arm80', 0, 1], ['crew2', 1, 1], ['arm40', 3, 1], ['arm40', 4, 1], ['c75', 5, 1],
+      ['arm80', 0, 2], ['ammo_p', 3, 2], ['plate', 4, 2], ['arm80', 5, 2], ['arm80', 6, 2], ['slope40', 7, 2],
+      ['arm80', 0, 3], ['arm80', 1, 3], ['arm80', 2, 3], ['arm80', 3, 3], ['arm80', 4, 3], ['arm80', 5, 3], ['arm80', 6, 3], ['arm80', 7, 3],
+    ],
+  },
+  howitzer: {
+    name: 'Howitzer battery', w: 10, h: 5, fixed: true,
+    cells: [
+      ['wheel_l', 1, 3], ['wheel_l', 6, 3],
+      ['frame', 0, 2], ['frame', 1, 2], ['frame', 2, 2], ['frame', 3, 2], ['frame', 4, 2], ['frame', 5, 2], ['frame', 6, 2], ['frame', 7, 2], ['frame', 8, 2], ['frame', 9, 2],
+      ['crew2', 1, 0], ['ammo', 3, 1], ['how', 4, 0], ['frame', 8, 1],
+    ],
+  },
+  behemoth: {
+    name: 'Behemoth heavy tank', w: 17, h: 8,
+    cells: [
+      ['track', 1, 7], ['track', 3, 7], ['track', 5, 7], ['track', 7, 7], ['track', 9, 7], ['track', 11, 7], ['track', 13, 7], ['track', 15, 7],
+      ['arm80', 0, 5], ['arm80', 0, 6], ['eng_h', 1, 5], ['fuel_ss', 5, 5], ['fuel_ss', 5, 6], ['ammo_p', 6, 5], ['ammo_p', 6, 6], ['crew2', 7, 5],
+      ['fc', 9, 5], ['ammo_p', 9, 6], ['stab', 10, 5], ['plate', 10, 6],
+      ['arm80', 11, 5], ['arm80', 12, 5], ['arm80', 13, 5], ['arm80', 14, 5], ['arm80', 15, 5], ['slope40', 16, 5],
+      ['arm80', 11, 6], ['arm80', 12, 6], ['arm80', 13, 6], ['arm80', 14, 6], ['arm80', 15, 6], ['arm80', 16, 6],
+      ['arm80', 0, 4], ['arm80', 1, 4], ['arm80', 2, 4], ['arm80', 3, 4], ['arm80', 4, 4], ['arm80', 5, 4],
+      ['turret', 6, 4], ['arm80', 9, 4], ['arm80', 10, 4], ['arm80', 11, 4], ['arm80', 12, 4], ['arm80', 13, 4], ['arm80', 14, 4], ['slope40', 15, 4],
+      ['arm80', 5, 3], ['crew2', 6, 2], ['arm80', 8, 3], ['c105', 9, 3], ['arm80', 5, 2], ['arm80', 8, 2], ['mg', 9, 2],
+      ['arm80', 5, 1], ['arm80', 6, 1], ['arm80', 7, 1], ['arm80', 8, 1], ['optics', 6, 0], ['radio', 7, 0],
+    ],
+  },
   truck: {
     name: 'Supply truck', w: 11, h: 5, soft: true,
     cells: [
@@ -142,20 +175,125 @@ const TEMPLATES = {
   },
 };
 
-// ---------- battle setups for Part 1b (the ladder's full levelConfig arrives in Part 1c)
-// enemies: [template, count, behaviour]; behaviour: 'parked' | 'convoy' | 'attack'
-const BATTLES = [
-  { name: 'Farmland', goal: 'Destroy the trucks', seed: 101, length: 420, hills: 0.15, rough: 0.2, mud: 0, forest: 0, gaps: 0,
-    enemies: [['truck', 3, 'parked']], holdFire: true },
-  { name: 'Supply road', goal: 'Destroy the convoy', seed: 202, length: 460, hills: 0.25, rough: 0.3, mud: 0, forest: 1, gaps: 0,
-    enemies: [['truck', 2, 'convoy'], ['mgcar', 1, 'attack']] },
-  { name: 'Hills', goal: 'Destroy the enemy', seed: 303, length: 480, hills: 0.8, rough: 0.4, mud: 1, forest: 1, gaps: 0,
-    enemies: [['mgcar', 1, 'attack'], ['light', 1, 'attack']] },
-  { name: 'Armour', goal: 'Destroy the tanks', seed: 404, length: 520, hills: 0.5, rough: 0.4, mud: 2, forest: 1, gaps: 1,
-    enemies: [['light', 2, 'attack']] },
+// ---------- the Proving Ground ladder (design/01 §14)
+// Enemy value for scoring (points per kill).
+const ENEMY_VALUE = { truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+
+// Caps that keep high levels possible (design/01 §14.3).
+const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
+const LIVES_START = 3;
+const LIVES_MAX = 5;
+const COMBO_WINDOW = 4;          // seconds between kills to keep a combo going
+
+// Boss names for every 5th level from 15 on (fictional).
+const BOSS_NAMES = ['Warden', 'Anvil', 'Colossus', 'Bastion', 'Leviathan', 'Rampart', 'Juggernaut', 'Citadel'];
+
+// levelConfig(level) → everything a battle needs. Every number is clamped to the caps.
+// enemies: [template, count, mode, wave]; mode: parked | convoy | attack | fixed
+function levelConfig(level) {
+  const L = Math.max(1, Math.floor(level));
+  const c = {
+    level: L,
+    name: 'Proving Ground',
+    goal: { type: 'destroy', text: 'Destroy the enemy' },
+    seed: 1009 + L * 7919,
+    length: 460,
+    hills: 0.3, rough: 0.3, mud: 0, forest: 0, gaps: 0,
+    weather: 'clear', light: 'day',
+    enemies: [],
+    wave: 18,                 // seconds between waves
+    holdFire: false,
+    boss: null,
+    lifeBonus: L % 5 === 0,
+    accuracy: 0.45 + L * 0.02,
+    reaction: 1.4 - L * 0.06,
+    speedMul: 1 + Math.max(0, L - 10) * 0.02,
+    budget: 200 + L * 12,
+    how: '',
+  };
+  const intro = {
+    1: () => Object.assign(c, { name: 'Farmland', goal: { type: 'destroy', text: 'Destroy the trucks' }, hills: 0.1, rough: 0.15,
+      enemies: [['truck', 3, 'parked', 0]], holdFire: true, length: 420,
+      how: 'Hold ▶ to drive. Tap Fire to shoot the nearest truck.' }),
+    2: () => Object.assign(c, { name: 'Supply road', goal: { type: 'destroy', text: 'Destroy the convoy' }, forest: 1,
+      enemies: [['truck', 2, 'convoy', 0], ['mgcar', 1, 'attack', 0]], how: 'The machine-gun car shoots back. Your own machine guns fire by themselves.' }),
+    3: () => Object.assign(c, { name: 'Hills', hills: 0.8, rough: 0.4, mud: 1, forest: 1,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 0]], how: 'Hills: stop on a crest to fire; moving spoils your aim.' }),
+    4: () => Object.assign(c, { name: 'Armour', goal: { type: 'destroy', text: 'Destroy the tanks' }, hills: 0.5, mud: 1, forest: 1,
+      enemies: [['light', 2, 'attack', 0]], how: 'Armour: shells glance off steep angles. Side and rear plates are thinner.' }),
+    5: () => Object.assign(c, { name: 'The ridge', goal: { type: 'hold', text: 'Hold the ridge', time: 60 }, hills: 0.6, forest: 1,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 1], ['light', 1, 'attack', 2]], wave: 16,
+      how: 'Keep a vehicle inside the flags for 60 s.' }),
+    6: () => Object.assign(c, { name: 'Mud flats', mud: 4, hills: 0.3,
+      enemies: [['mgcar', 2, 'attack', 0], ['light', 1, 'attack', 0]], how: 'Mud: wheels sink, tracks keep going.' }),
+    7: () => Object.assign(c, { name: 'Under the guns', hills: 0.5, forest: 1,
+      enemies: [['howitzer', 1, 'fixed', 0], ['light', 2, 'attack', 0]], how: 'Enemy artillery: a red circle marks where each shell will land. Keep moving.' }),
+    8: () => Object.assign(c, { name: 'Supply run', goal: { type: 'escort', text: 'Escort the truck to the depot' }, hills: 0.4, forest: 1, length: 520,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 0], ['mgcar', 1, 'attack', 1]], how: 'Your supply truck drives to the depot flag. Keep it alive.' }),
+    9: () => Object.assign(c, { name: 'Forest', forest: 4, hills: 0.4,
+      enemies: [['light', 2, 'attack', 0], ['mgcar', 1, 'attack', 0]], how: 'Forest hides vehicles: you only see what is close. So do they.' }),
+    10: () => Object.assign(c, { name: 'The Behemoth', goal: { type: 'destroy', text: 'Destroy the Behemoth' }, hills: 0.4, length: 520,
+      enemies: [['behemoth', 1, 'attack', 0], ['light', 1, 'attack', 0]], boss: 'behemoth', how: 'Boss: heavy armour. Aim for the sides and the rear.' }),
+    11: () => Object.assign(c, { name: 'Rain at dusk', weather: 'rain', light: 'dusk', forest: 2, mud: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 1]], how: 'Rain and dusk: everyone sees less far.' }),
+    12: () => Object.assign(c, { name: 'Gaps', gaps: 3, hills: 0.4,
+      enemies: [['light', 2, 'attack', 0], ['mgcar', 2, 'attack', 1]], how: 'Trenches: long vehicles bridge them; short ones fall in.' }),
+    13: () => Object.assign(c, { name: 'Bunker line', hills: 0.4,
+      enemies: [['bunker', 2, 'fixed', 0], ['light', 1, 'attack', 0]], how: 'Anti-tank guns in bunkers: thick front armour, fixed arc.' }),
+    14: () => Object.assign(c, { name: 'Crossroads', mud: 2, forest: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 1], ['mgcar', 2, 'attack', 1]] }),
+    15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
+  };
+  if (intro[L]) intro[L]();
+  else {
+    // 16+: mixes of earlier ideas with rising numbers; every 5th level is a named boss.
+    const rng = makeRng(c.seed);
+    const n = L - 15;
+    Object.assign(c, {
+      name: `Sector ${L}`,
+      hills: rng.range(0.2, 0.9), rough: rng.range(0.2, 0.6), mud: rng.int(0, 3), forest: rng.int(0, 3), gaps: rng.int(0, 2),
+      weather: rng.next() < 0.25 ? 'rain' : 'clear',
+      light: rng.pick(['day', 'day', 'dusk', 'night']),
+      length: 480 + Math.min(200, n * 8),
+    });
+    const pool = ['mgcar', 'light', 'light', 'medium', 'medium', 'assault'];
+    const waves = Math.min(4, 1 + Math.floor(n / 4));
+    for (let w = 0; w < waves; w++) c.enemies.push([rng.pick(pool), 1 + rng.int(0, Math.min(3, 1 + Math.floor(n / 6))), 'attack', w]);
+    if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
+    if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
+    if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    if (L % 5 === 0) {
+      c.boss = 'behemoth';
+      c.bossName = `${BOSS_NAMES[(L / 5 - 3) % BOSS_NAMES.length]} (level ${L})`;
+      c.goal = { type: 'destroy', text: `Destroy the ${BOSS_NAMES[(L / 5 - 3) % BOSS_NAMES.length]}` };
+      c.enemies.unshift(['behemoth', 1, 'attack', 0]);
+    }
+  }
+  // Caps (design/01 §14.3).
+  c.accuracy = Math.min(LADDER_CAPS.accuracy, c.accuracy);
+  c.reaction = Math.max(LADDER_CAPS.reaction, c.reaction);
+  c.speedMul = Math.min(LADDER_CAPS.speedMul, c.speedMul);
+  c.wave = Math.max(LADDER_CAPS.waveGap, c.wave);
+  return c;
+}
+
+// Medals (design/01 §15): feats, stated as facts.
+const MEDALS = [
+  { id: 'ricochet', name: 'Survived a ricochet', how: 'Win a battle after a shell glanced off your vehicle.' },
+  { id: 'combo5', name: 'Five-kill combo', how: 'Destroy 5 enemies with no more than 4 s between kills.' },
+  { id: 'noloss', name: 'No losses', how: 'Win a battle without losing a squad vehicle.' },
+  { id: 'slope40', name: 'Climbed a 40° slope', how: 'Drive up ground steeper than 40°.' },
+  { id: 'crit5', name: 'Five critical hits', how: 'Destroy 5 engines, guns, crew or ammo racks in one battle.' },
+  { id: 'boss', name: 'Boss destroyed', how: 'Destroy a boss.' },
+  { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Proving Ground.' },
 ];
 
-function battleConfig(level) {
-  const base = BATTLES[(level - 1) % BATTLES.length];
-  return Object.assign({ level, squad: ['medium', 'light', 'scout'] }, base, { seed: base.seed + (level - 1) * 7919 });
+// Test drive ground (Workshop): flat start, a hill, mud, a trench, forest; no enemies.
+function testDriveConfig() {
+  return {
+    level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
+    hills: 0.7, rough: 0.3, mud: 2, forest: 1, gaps: 1, weather: 'clear', light: 'day',
+    enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '',
+  };
 }

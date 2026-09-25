@@ -434,13 +434,61 @@ function drawDebris(g) {
   });
 }
 
+// Flags for the hold zone and the depot; red circles where artillery will land.
+function drawMarkers(g, B) {
+  const flag = (x, col) => {
+    const sx = view.sx(x), sy = view.sy(B.T.height(x));
+    g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 34, 2, 34);
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(sx + 1, sy - 34); g.lineTo(sx + 17, sy - 29); g.lineTo(sx + 1, sy - 24); g.closePath(); g.fill();
+  };
+  if (B.zone) {
+    const a = view.sx(B.zone.x0), b = view.sx(B.zone.x1);
+    g.fillStyle = 'rgba(255,178,62,0.08)';
+    g.fillRect(a, 0, b - a, layout.h);
+    flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
+  }
+  if (B.depot) flag(B.depot, PAL.league);
+  g.setLineDash([5, 4]);
+  g.lineWidth = 2;
+  for (const w of B.warnings) {
+    const sx = view.sx(w.x), sy = view.sy(B.T.height(w.x));
+    const r = Math.max(10, 6 * view.S) * (0.8 + 0.2 * Math.sin(B.time * 10));
+    g.strokeStyle = PAL.danger;
+    g.beginPath(); g.ellipse(sx, sy, r, r * 0.35, 0, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = PAL.danger; g.font = `700 14px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+    g.fillText('!', sx, sy - r * 0.4);
+  }
+  g.setLineDash([]);
+}
+
+// Rain streaks, dusk and night (design/03 §4 weather), in screen space.
+function drawWeather(g, B) {
+  const { w, h } = layout;
+  if (B.cfg.light === 'dusk') { g.fillStyle = 'rgba(40,20,50,0.25)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.light === 'night') { g.fillStyle = 'rgba(6,9,22,0.55)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.weather === 'rain') {
+    g.strokeStyle = 'rgba(200,210,230,0.28)';
+    g.lineWidth = 1;
+    g.beginPath();
+    const t = B.time;
+    for (let i = 0; i < 90; i++) {
+      const x = ((i * 97.3 + t * 60) % (w + 40)) - 20;
+      const y = ((i * 57.1 + t * 520) % (h + 40)) - 20;
+      g.moveTo(x, y); g.lineTo(x - 4, y + 14);
+    }
+    g.stroke();
+  }
+}
+
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
   drawBackground(g, view.cx * view.S * 0.25);
   drawTrees(g, B);
   drawTerrain(g, B);
+  drawMarkers(g, B);
   for (const V of B.units) {
-    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen);
+    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen) || B.revealAll;
     if (!visible) continue;
     const sx = view.sx(V.body.x);
     if (sx < -V.radius * 2 * view.S || sx > layout.w + V.radius * 2 * view.S) continue;
@@ -449,4 +497,5 @@ function renderBattle(g, B) {
   drawDebris(g);
   drawShells(g);
   drawParticles(g);
+  drawWeather(g, B);
 }

@@ -572,6 +572,51 @@ const SFX = {
       a.osc('triangle', f, t + dt, t + dt + 0.2, g);
     }
   },
+  // Combo ding: pitch rises with the combo.
+  combo(a, t, pan, n) {
+    const out = a.voice(a.sfxBus, t, 0.4, 0.25, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.22, 0.35);
+    a.osc('triangle', midiToHz(76 + Math.min(12, (n - 1) * 2)), t, t + 0.4, g);
+  },
+  // Incoming artillery: descending whistle.
+  whistle(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.5, 0.3, pan);
+    const g = a.gain(out);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.3);
+    g.gain.linearRampToValueAtTime(0.0001, t + 1.45);
+    const o = a.osc('sine', 1800, t, t + 1.5, g);
+    o.frequency.exponentialRampToValueAtTime(500, t + 1.45);
+  },
+  // Victory: 4-bar bugle fanfare in D major, snare roll and a cymbal (design/03 §6.3).
+  fanfare(a, t) {
+    const bpm = 120, q = 60 / bpm;
+    const notes = [[0, 62, 0.5], [0.5, 66, 0.5], [1, 69, 1], [2, 74, 1.5], [3.5, 69, 0.5],
+      [4, 71, 1], [5, 69, 0.5], [5.5, 66, 0.5], [6, 74, 2], [8, 69, 0.75], [8.75, 71, 0.25], [9, 74, 1], [10, 78, 1], [11, 74, 1], [12, 74, 3]];
+    for (const [b, m, d] of notes) a.bugle(a.sfxBus, t + b * q, midiToHz(m), d * q * 0.92, 1);
+    for (let i = 0; i < 16; i++) a.snare(a.sfxBus, t + 11 * q + i * q / 8, 0.12 + i * 0.015);
+    a.cymbal(a.sfxBus, t + 12 * q, 1);
+    a.timpani(a.sfxBus, t + 12 * q, midiToHz(38), 0.7);
+  },
+  // Defeat / life lost: a 2-bar descending minor brass phrase.
+  lifeLost(a, t) {
+    const q = 60 / 84;
+    const notes = [[0, 62, 1], [1, 60, 1], [2, 58, 1], [3, 57, 1], [4, 55, 3.5]];
+    for (const [b, m, d] of notes) a.brass(a.sfxBus, t + b * q, midiToHz(m), d * q * 0.9, 0.9);
+    a.timpani(a.sfxBus, t + 4 * q, midiToHz(43), 0.6);
+  },
+  // Medal or blueprint: sparkly arpeggio plus a bugle call.
+  medal(a, t) {
+    [74, 78, 81, 86, 90].forEach((m, i) => {
+      const out = a.voice(a.sfxBus, t + i * 0.07, 0.5, 0.2, 0);
+      const g = a.gain(out);
+      a.env(g.gain, t + i * 0.07, 0.002, 0.16, 0.4);
+      a.osc('sine', midiToHz(m), t + i * 0.07, t + i * 0.07 + 0.5, g);
+    });
+    a.bugle(a.sfxBus, t + 0.4, midiToHz(74), 0.3, 0.8);
+    a.bugle(a.sfxBus, t + 0.72, midiToHz(81), 0.6, 0.8);
+  },
   engineRev(a, t, pan) {
     const out = a.voice(a.sfxBus, t, 0.5, 0.25, pan);
     const g = a.gain(out);

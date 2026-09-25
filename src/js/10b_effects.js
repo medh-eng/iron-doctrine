@@ -151,3 +151,38 @@ function shakeOffset(B, out) {
   out.y = s ? Math.cos(B.time * 53) * s : 0;
   return out;
 }
+
+// ---------- level-clear confetti: 80 paper scraps in linen, blue and amber (screen space)
+const CONFETTI_COLORS = ['#E6DCC3', '#2E6DB4', '#FFB23E'];
+const confetti = makePool(() => ({ alive: false, x: 0, y: 0, vx: 0, vy: 0, a: 0, w: 0, c: 0, t: 0 }), 80);
+
+function spawnConfetti() {
+  const rng = makeRng(Math.floor(performance.now()));
+  for (let i = 0; i < 80; i++) {
+    const p = confetti.take();
+    p.x = rng.range(0, layout.w); p.y = rng.range(-layout.h * 0.5, -10);
+    p.vx = rng.range(-30, 30); p.vy = rng.range(40, 110);
+    p.a = rng.range(0, 6.28); p.w = rng.range(-6, 6); p.c = i % 3; p.t = 0;
+  }
+}
+
+function stepConfetti(dt) {
+  confetti.forEachAlive((p) => {
+    p.t += dt;
+    p.x += p.vx * dt + Math.sin(p.t * 3 + p.a) * 20 * dt;
+    p.y += p.vy * dt;
+    p.a += p.w * dt;
+    if (p.y > layout.h + 20 || p.t > 6) p.alive = false;
+  });
+}
+
+function drawConfetti(g) {
+  confetti.forEachAlive((p) => {
+    g.save();
+    g.translate(p.x, p.y);
+    g.rotate(p.a);
+    g.fillStyle = CONFETTI_COLORS[p.c];
+    g.fillRect(-4, -2.5 * Math.abs(Math.cos(p.t * 5)) - 0.5, 8, 5 * Math.abs(Math.cos(p.t * 5)) + 1);
+    g.restore();
+  });
+}

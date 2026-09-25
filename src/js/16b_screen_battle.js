@@ -19,10 +19,15 @@ SCREENS.battle = {
   c: {},
   resultShown: false,
 
-  enter(level) {
-    this.level = level || 1;
-    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters]) pool.forEachAlive((p) => { p.alive = false; });
-    const B = createBattle(this.level);
+  // arg: a level number, or { level } for the ladder, or { test: design } for a test drive.
+  enter(arg) {
+    const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
+    this.opts = opts;
+    this.level = opts.level || 1;
+    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    const B = opts.test
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig() })
+      : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
     B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
@@ -40,14 +45,35 @@ SCREENS.battle = {
     this.layout();
     audio.setIntensity(0);
     audio.playTheme('battle');
-    ui.toast(`Level ${this.level} · ${B.cfg.name}: ${B.cfg.goal.toLowerCase()}.`, 3200);
+    this.showHowTo();
   },
 
-  exit() { game.frozen = false; this.B = null; },
+  // Two-line how-to at the start of each level (design/06 acceptance: level 1 with only this).
+  showHowTo() {
+    const B = this.B;
+    if (this.howEl) this.howEl.remove();
+    const box = el('div', 'howto');
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    const how = B.test ? 'Mud, hills and a trench. Pause to go back to the Workshop.' : B.cfg.how;
+    if (how) box.appendChild(el('div', 'howto-2', how));
+    uiLayer.insertBefore(box, ui.toastBox);
+    uiLayer.classList.add('has-howto');
+    this.howEl = box;
+    setTimeout(() => box.classList.add('out'), 6500);
+    setTimeout(() => { if (box.isConnected) box.remove(); uiLayer.classList.remove('has-howto'); }, 7000);
+  },
+
+  exit() {
+    game.frozen = false;
+    this.B = null;
+    if (this.howEl) { this.howEl.remove(); this.howEl = null; }
+    uiLayer.classList.remove('has-howto');
+  },
 
   pauseOpts() {
+    if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
-      restart: () => this.enter(this.level),
+      restart: () => this.enter(this.opts),
       quit: () => screens.go('title'),
     };
   },
@@ -303,6 +329,7 @@ SCREENS.battle = {
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
+    stepConfetti(dt);
   },
 
   updateCamera(dt) {
@@ -341,30 +368,55 @@ SCREENS.battle = {
     this.resultShown = true;
     const B = this.B;
     const win = B.result === 'win';
-    const p = save.profile;
-    if (win) {
-      haptic('clear');
-      audio.sfx('objective');
-      p.highestLevel = Math.max(p.highestLevel, this.level + 1);
-      p.continueLevel = this.level + 1;
-      save.touch('profile');
-    }
+    audio.playTheme(null);
     const c = ui.card('', 'card-result');
-    c.appendChild(el('div', 'stamp' + (win ? '' : ' stamp-red'), win ? 'OBJECTIVE COMPLETE' : 'SQUAD LOST'));
     const facts = el('div', 'result-facts');
-    const secs = Math.round(B.time);
-    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
-    row('Time', `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
-    row('Enemies destroyed', `${B.goalDone} of ${B.goalTotal}`);
-    row('Shots fired', B.stats.shots);
-    row('Penetrations', B.stats.pens);
-    row('Squad vehicles lost', B.stats.lost);
-    c.appendChild(facts);
+    const row = (k, v, cls) => { const r = el('div', 'fact' + (cls ? ' ' + cls : '')); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
     const btns = el('div', 'card-row');
     let close = null;
-    btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
-    if (win) btns.appendChild(button('Next battle', () => { close(); this.enter(this.level + 1); }, 'btn btn-primary'));
-    else btns.appendChild(button('Retry', () => { close(); this.enter(this.level); }, 'btn btn-primary'));
+    const secs = Math.round(B.time);
+    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    if (win) {
+      const res = ladder.onWin(B);
+      haptic('clear');
+      audio.sfx('fanfare');
+      spawnConfetti();
+      c.appendChild(el('div', 'stamp', 'OBJECTIVE COMPLETE'));
+      for (const [k, v] of res.bonus.rows) row(k, `+${v}`);
+      row('Score this run', save.profile.run.score, 'fact-total');
+      row('Requisition earned', `+${res.earned}`);
+      row('Time', time);
+      c.appendChild(facts);
+      for (const r of res.rewards) c.appendChild(el('div', 'reward', r));
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+      btns.appendChild(button('Workshop', () => { close(); screens.go('workshop'); }));
+      btns.appendChild(button(`Level ${this.level + 1}`, () => { close(); ladder.start(this.level + 1, false); }, 'btn btn-primary'));
+    } else {
+      const res = ladder.onLose(B);
+      audio.sfx('lifeLost');
+      haptic('lost');
+      const p = save.profile;
+      if (res.over) {
+        c.appendChild(el('div', 'stamp stamp-red', 'GAME OVER'));
+        row('Score', p.run.score);
+        row('Level reached', this.level);
+        row('Best score', p.bestScore);
+        c.appendChild(facts);
+        btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+        btns.appendChild(button('Play from level 1', () => { close(); ladder.start(1, true); }));
+        btns.appendChild(button(`Continue at level ${this.level}`, () => { close(); ladder.start(this.level, true); }, 'btn btn-primary'));
+      } else {
+        c.appendChild(el('div', 'stamp stamp-red', 'LIFE LOST'));
+        if (B.lostReason) c.appendChild(el('p', 'card-text', B.lostReason));
+        row('Lives left', p.run.lives);
+        row('Enemies destroyed', `${B.goalDone} of ${B.goalTotal}`);
+        row('Time', time);
+        c.appendChild(facts);
+        btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+        btns.appendChild(button('Workshop', () => { close(); screens.go('workshop'); }));
+        btns.appendChild(button('Retry', () => { close(); ladder.start(this.level, false); }, 'btn btn-primary'));
+      }
+    }
     c.appendChild(btns);
     close = ui.open(c);
   },
@@ -420,6 +472,7 @@ SCREENS.battle = {
       g.fillText('Time stopped', w / 2, safe.t + 55);
     }
     this.drawHud(g, nowMs);
+    drawConfetti(g);
   },
 
   drawAimPreview(g) {
@@ -475,12 +528,33 @@ SCREENS.battle = {
     const left = C.cards[2].x + C.cards[2].w + 10;
     const right = this.mini.x - 10;
     if (right - left > 70) {
-      g.font = `400 14px ${FONT_UI}`;
+      const goal = B.cfg.goal;
+      let text, f;
+      if (B.test) { text = `Test drive · ${Math.round(B.me.body.x)} m`; f = B.me.body.x / B.T.length; }
+      else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
+      else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
+      else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
+      g.font = `400 13px ${FONT_UI}`;
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
-      g.fillText(`${B.cfg.goal} ${B.goalDone}/${B.goalTotal}`, left, safe.t + 13, right - left);
-      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 24, right - left, 3);
-      g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 24, (right - left) * (B.goalDone / Math.max(1, B.goalTotal)), 3);
+      g.fillText(text, left, safe.t + 9, right - left);
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
+      g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
+      if (!B.test) {
+        // Level, score and lives (dog tags).
+        const run = save.profile.run;
+        g.font = `700 12px ${FONT_UI}`;
+        g.fillStyle = PAL.linen;
+        const sc = `L${this.level}  ${(run.score + B.score).toLocaleString('en-US')}`;
+        g.fillText(sc, left, safe.t + 27);
+        let tx = left + g.measureText(sc).width + 8;
+        for (let i = 0; i < run.lives && tx + 8 < right; i++, tx += 10) {
+          g.fillStyle = '#b9b3a2';
+          roundRect(g, tx, safe.t + 22, 7, 10, 2); g.fill();
+          g.fillStyle = '#4b4a45';
+          g.beginPath(); g.arc(tx + 3.5, safe.t + 24.5, 1, 0, Math.PI * 2); g.fill();
+        }
+      }
     }
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);

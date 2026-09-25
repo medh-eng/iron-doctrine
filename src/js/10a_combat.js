@@ -33,6 +33,7 @@ function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
 function weaponArc(V, w) {
   const d = w.def;
+  if (d.indirect) return { lo: 15, hi: 72, both: false };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
 }
 
@@ -103,7 +104,7 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   s.vx = Math.cos(a) * d.vel + V.body.vx;
   s.vy = Math.sin(a) * d.vel + V.body.vy;
   s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
-  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25;
+  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false;
   // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
   if (!d.auto) {
     const J = d.cal * d.cal * 0.9;
@@ -315,6 +316,7 @@ function destroyPart(B, V, idx, source) {
   const d = p.def;
   const at = gridCellToWorld(V, p.x + d.w / 2 - 0.5, V.design.h - p.y - d.h / 2 - 0.5);
   spawnDebris(B, V, [idx], at, 5);
+  if (source && source.side === 0) scoreCritical(B, V, p, at);
   audio.sfx('crunch', B.panOf(at.x));
   if (V === B.me) haptic('part');
   // Part effects (design/01 §7.4).
@@ -448,6 +450,8 @@ function stepShells(B, dt) {
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
+    // Incoming artillery whistles for its last second and a half.
+    if (s.def.indirect && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
     const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
     if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
     // Vehicles.

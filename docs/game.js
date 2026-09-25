@@ -5,7 +5,7 @@
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
 const GAME_VERSION = '0.1.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
 
 // Rendering
@@ -61,9 +61,16 @@ const DEFAULT_PROFILE = {
   bestScore: 0,
   highestLevel: 1,
   continueLevel: 1,
-  blueprints: [],
-  medals: [],
+  blueprints: [],          // captured boss design ids
+  medals: [],              // medal ids
+  run: { active: false, level: 1, lives: 3, score: 0 },   // the ladder run in progress (v2)
+  requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
+  squad: [],               // design ids fielded in the ladder (v2)
+  stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
 };
+
+// Saved designs (v2). Stored under irondoctrine.designs.
+const DEFAULT_DESIGNS = { list: [] };
 
 // Graphics quality (design/02 §7)
 const QUALITY = {
@@ -202,11 +209,27 @@ const store = {
 // Migrations: MIGRATIONS[key][v] turns version v data into version v+1 data.
 // Add one whenever SAVE_VERSION goes up. Example for a future v2:
 //   MIGRATIONS.profile[1] = (d) => ({ ...d, newField: 0 });
-const MIGRATIONS = { settings: {}, profile: {} };
+const MIGRATIONS = {
+  settings: {
+    1: (d) => d,
+  },
+  profile: {
+    // v1 -> v2: the ladder run, Requisition, squad and stats arrive. An unfinished v1
+    // ladder (continueLevel > 1) becomes a run to continue with 3 lives.
+    1: (d) => Object.assign({}, d, {
+      run: { active: (d.continueLevel || 1) > 1, level: d.continueLevel || 1, lives: 3, score: 0 },
+      requisition: 150,
+      squad: [],
+      stats: { battles: 0, kills: 0, cleared: Math.max(0, (d.highestLevel || 1) - 1) },
+    }),
+  },
+  designs: {},
+};
 
 const SAVE_KEYS = {
   settings: DEFAULT_SETTINGS,
   profile: DEFAULT_PROFILE,
+  designs: DEFAULT_DESIGNS,
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -241,6 +264,7 @@ function migrate(key, v, data) {
 const save = {
   settings: clone(DEFAULT_SETTINGS),
   profile: clone(DEFAULT_PROFILE),
+  designs: clone(DEFAULT_DESIGNS),
   notices: [],          // messages for the player, shown as toasts at boot
   firstRun: false,
   dirty: new Set(),
@@ -301,7 +325,7 @@ const save = {
 
   // Export: JSON -> base64 text the player can copy.
   exportCode() {
-    const payload = { game: 'irondoctrine', v: SAVE_VERSION, t: Date.now(), settings: this.settings, profile: this.profile };
+    const payload = { game: 'irondoctrine', v: SAVE_VERSION, t: Date.now(), settings: this.settings, profile: this.profile, designs: this.designs };
     const bytes = new TextEncoder().encode(JSON.stringify(payload));
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -318,13 +342,15 @@ const save = {
       if (!p || p.game !== 'irondoctrine') return { ok: false, error: "That code isn't an Iron Doctrine save." };
       const settings = mergeDefaults(DEFAULT_SETTINGS, migrate('settings', p.v, p.settings));
       const profile = mergeDefaults(DEFAULT_PROFILE, migrate('profile', p.v, p.profile));
+      const designs = mergeDefaults(DEFAULT_DESIGNS, p.designs ? migrate('designs', p.v, p.designs) : null);
       return {
         ok: true,
         summary: `Best score ${profile.bestScore}, highest level ${profile.highestLevel}.`,
         apply: () => {
           this.settings = settings;
           this.profile = profile;
-          this.dirty.add('settings'); this.dirty.add('profile');
+          this.designs = designs;
+          this.dirty.add('settings'); this.dirty.add('profile'); this.dirty.add('designs');
           this.flush();
           bus.emit('settings', '*');
         },
@@ -336,7 +362,9 @@ const save = {
 
   resetProgress() {
     this.profile = clone(DEFAULT_PROFILE);
+    this.designs = clone(DEFAULT_DESIGNS);
     this.touch('profile');
+    this.touch('designs');
     this.flush();
   },
 };
@@ -916,6 +944,51 @@ const SFX = {
       a.osc('triangle', f, t + dt, t + dt + 0.2, g);
     }
   },
+  // Combo ding: pitch rises with the combo.
+  combo(a, t, pan, n) {
+    const out = a.voice(a.sfxBus, t, 0.4, 0.25, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.22, 0.35);
+    a.osc('triangle', midiToHz(76 + Math.min(12, (n - 1) * 2)), t, t + 0.4, g);
+  },
+  // Incoming artillery: descending whistle.
+  whistle(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.5, 0.3, pan);
+    const g = a.gain(out);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.3);
+    g.gain.linearRampToValueAtTime(0.0001, t + 1.45);
+    const o = a.osc('sine', 1800, t, t + 1.5, g);
+    o.frequency.exponentialRampToValueAtTime(500, t + 1.45);
+  },
+  // Victory: 4-bar bugle fanfare in D major, snare roll and a cymbal (design/03 §6.3).
+  fanfare(a, t) {
+    const bpm = 120, q = 60 / bpm;
+    const notes = [[0, 62, 0.5], [0.5, 66, 0.5], [1, 69, 1], [2, 74, 1.5], [3.5, 69, 0.5],
+      [4, 71, 1], [5, 69, 0.5], [5.5, 66, 0.5], [6, 74, 2], [8, 69, 0.75], [8.75, 71, 0.25], [9, 74, 1], [10, 78, 1], [11, 74, 1], [12, 74, 3]];
+    for (const [b, m, d] of notes) a.bugle(a.sfxBus, t + b * q, midiToHz(m), d * q * 0.92, 1);
+    for (let i = 0; i < 16; i++) a.snare(a.sfxBus, t + 11 * q + i * q / 8, 0.12 + i * 0.015);
+    a.cymbal(a.sfxBus, t + 12 * q, 1);
+    a.timpani(a.sfxBus, t + 12 * q, midiToHz(38), 0.7);
+  },
+  // Defeat / life lost: a 2-bar descending minor brass phrase.
+  lifeLost(a, t) {
+    const q = 60 / 84;
+    const notes = [[0, 62, 1], [1, 60, 1], [2, 58, 1], [3, 57, 1], [4, 55, 3.5]];
+    for (const [b, m, d] of notes) a.brass(a.sfxBus, t + b * q, midiToHz(m), d * q * 0.9, 0.9);
+    a.timpani(a.sfxBus, t + 4 * q, midiToHz(43), 0.6);
+  },
+  // Medal or blueprint: sparkly arpeggio plus a bugle call.
+  medal(a, t) {
+    [74, 78, 81, 86, 90].forEach((m, i) => {
+      const out = a.voice(a.sfxBus, t + i * 0.07, 0.5, 0.2, 0);
+      const g = a.gain(out);
+      a.env(g.gain, t + i * 0.07, 0.002, 0.16, 0.4);
+      a.osc('sine', midiToHz(m), t + i * 0.07, t + i * 0.07 + 0.5, g);
+    });
+    a.bugle(a.sfxBus, t + 0.4, midiToHz(74), 0.3, 0.8);
+    a.bugle(a.sfxBus, t + 0.72, midiToHz(81), 0.6, 0.8);
+  },
   engineRev(a, t, pan) {
     const out = a.voice(a.sfxBus, t, 0.5, 0.25, pan);
     const g = a.gain(out);
@@ -1040,6 +1113,7 @@ const input = {
     if (!p.moved && dist(p.sx, p.sy, x, y) > TAP_MOVE_PX) {
       p.moved = true;
       p.lx = p.sx; p.ly = p.sy;   // include the slop so the pan doesn't jump
+      if (scr.world.panStart) scr.world.panStart(p.sx, p.sy);
     }
     if (p.moved && !p.long && scr.world.pan) scr.world.pan(x - p.lx, y - p.ly);
   },
@@ -1743,7 +1817,7 @@ const ui = {
 
     // Reset (confirm twice)
     rows.push(row('Reset progress', button('Reset', () => {
-      this.confirm('Reset best score, levels, blueprints and medals? Settings are kept.', 'Reset', () => {
+      this.confirm('Reset best score, levels, Requisition, designs, blueprints and medals? Settings are kept.', 'Reset', () => {
         this.confirm("Are you sure? This can't be undone.", 'Yes, reset', () => {
           save.resetProgress();
           bus.emit('profile');
@@ -1858,6 +1932,7 @@ const PART_ROWS = [
   // Systems
   ['radio', 'Radio', 'system', 1, 1, 50, 15, 2, { cost: { metal: 1, elec: 1 }, power: -1 }],
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
+  ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
@@ -1934,6 +2009,38 @@ const TEMPLATES = {
       ['arm40', 5, 1], ['arm40', 6, 1], ['arm40', 7, 1], ['c105', 8, 1], ['optics', 6, 0],
     ],
   },
+  // Enemy-only fixed positions (no engine, so the placement rules don't apply).
+  bunker: {
+    name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
+    cells: [
+      ['arm80', 0, 0], ['arm80', 1, 0], ['arm80', 2, 0], ['arm80', 3, 0], ['arm80', 4, 0],
+      ['arm80', 0, 1], ['crew2', 1, 1], ['arm40', 3, 1], ['arm40', 4, 1], ['c75', 5, 1],
+      ['arm80', 0, 2], ['ammo_p', 3, 2], ['plate', 4, 2], ['arm80', 5, 2], ['arm80', 6, 2], ['slope40', 7, 2],
+      ['arm80', 0, 3], ['arm80', 1, 3], ['arm80', 2, 3], ['arm80', 3, 3], ['arm80', 4, 3], ['arm80', 5, 3], ['arm80', 6, 3], ['arm80', 7, 3],
+    ],
+  },
+  howitzer: {
+    name: 'Howitzer battery', w: 10, h: 5, fixed: true,
+    cells: [
+      ['wheel_l', 1, 3], ['wheel_l', 6, 3],
+      ['frame', 0, 2], ['frame', 1, 2], ['frame', 2, 2], ['frame', 3, 2], ['frame', 4, 2], ['frame', 5, 2], ['frame', 6, 2], ['frame', 7, 2], ['frame', 8, 2], ['frame', 9, 2],
+      ['crew2', 1, 0], ['ammo', 3, 1], ['how', 4, 0], ['frame', 8, 1],
+    ],
+  },
+  behemoth: {
+    name: 'Behemoth heavy tank', w: 17, h: 8,
+    cells: [
+      ['track', 1, 7], ['track', 3, 7], ['track', 5, 7], ['track', 7, 7], ['track', 9, 7], ['track', 11, 7], ['track', 13, 7], ['track', 15, 7],
+      ['arm80', 0, 5], ['arm80', 0, 6], ['eng_h', 1, 5], ['fuel_ss', 5, 5], ['fuel_ss', 5, 6], ['ammo_p', 6, 5], ['ammo_p', 6, 6], ['crew2', 7, 5],
+      ['fc', 9, 5], ['ammo_p', 9, 6], ['stab', 10, 5], ['plate', 10, 6],
+      ['arm80', 11, 5], ['arm80', 12, 5], ['arm80', 13, 5], ['arm80', 14, 5], ['arm80', 15, 5], ['slope40', 16, 5],
+      ['arm80', 11, 6], ['arm80', 12, 6], ['arm80', 13, 6], ['arm80', 14, 6], ['arm80', 15, 6], ['arm80', 16, 6],
+      ['arm80', 0, 4], ['arm80', 1, 4], ['arm80', 2, 4], ['arm80', 3, 4], ['arm80', 4, 4], ['arm80', 5, 4],
+      ['turret', 6, 4], ['arm80', 9, 4], ['arm80', 10, 4], ['arm80', 11, 4], ['arm80', 12, 4], ['arm80', 13, 4], ['arm80', 14, 4], ['slope40', 15, 4],
+      ['arm80', 5, 3], ['crew2', 6, 2], ['arm80', 8, 3], ['c105', 9, 3], ['arm80', 5, 2], ['arm80', 8, 2], ['mg', 9, 2],
+      ['arm80', 5, 1], ['arm80', 6, 1], ['arm80', 7, 1], ['arm80', 8, 1], ['optics', 6, 0], ['radio', 7, 0],
+    ],
+  },
   truck: {
     name: 'Supply truck', w: 11, h: 5, soft: true,
     cells: [
@@ -1945,22 +2052,127 @@ const TEMPLATES = {
   },
 };
 
-// ---------- battle setups for Part 1b (the ladder's full levelConfig arrives in Part 1c)
-// enemies: [template, count, behaviour]; behaviour: 'parked' | 'convoy' | 'attack'
-const BATTLES = [
-  { name: 'Farmland', goal: 'Destroy the trucks', seed: 101, length: 420, hills: 0.15, rough: 0.2, mud: 0, forest: 0, gaps: 0,
-    enemies: [['truck', 3, 'parked']], holdFire: true },
-  { name: 'Supply road', goal: 'Destroy the convoy', seed: 202, length: 460, hills: 0.25, rough: 0.3, mud: 0, forest: 1, gaps: 0,
-    enemies: [['truck', 2, 'convoy'], ['mgcar', 1, 'attack']] },
-  { name: 'Hills', goal: 'Destroy the enemy', seed: 303, length: 480, hills: 0.8, rough: 0.4, mud: 1, forest: 1, gaps: 0,
-    enemies: [['mgcar', 1, 'attack'], ['light', 1, 'attack']] },
-  { name: 'Armour', goal: 'Destroy the tanks', seed: 404, length: 520, hills: 0.5, rough: 0.4, mud: 2, forest: 1, gaps: 1,
-    enemies: [['light', 2, 'attack']] },
+// ---------- the Proving Ground ladder (design/01 §14)
+// Enemy value for scoring (points per kill).
+const ENEMY_VALUE = { truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+
+// Caps that keep high levels possible (design/01 §14.3).
+const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
+const LIVES_START = 3;
+const LIVES_MAX = 5;
+const COMBO_WINDOW = 4;          // seconds between kills to keep a combo going
+
+// Boss names for every 5th level from 15 on (fictional).
+const BOSS_NAMES = ['Warden', 'Anvil', 'Colossus', 'Bastion', 'Leviathan', 'Rampart', 'Juggernaut', 'Citadel'];
+
+// levelConfig(level) → everything a battle needs. Every number is clamped to the caps.
+// enemies: [template, count, mode, wave]; mode: parked | convoy | attack | fixed
+function levelConfig(level) {
+  const L = Math.max(1, Math.floor(level));
+  const c = {
+    level: L,
+    name: 'Proving Ground',
+    goal: { type: 'destroy', text: 'Destroy the enemy' },
+    seed: 1009 + L * 7919,
+    length: 460,
+    hills: 0.3, rough: 0.3, mud: 0, forest: 0, gaps: 0,
+    weather: 'clear', light: 'day',
+    enemies: [],
+    wave: 18,                 // seconds between waves
+    holdFire: false,
+    boss: null,
+    lifeBonus: L % 5 === 0,
+    accuracy: 0.45 + L * 0.02,
+    reaction: 1.4 - L * 0.06,
+    speedMul: 1 + Math.max(0, L - 10) * 0.02,
+    budget: 200 + L * 12,
+    how: '',
+  };
+  const intro = {
+    1: () => Object.assign(c, { name: 'Farmland', goal: { type: 'destroy', text: 'Destroy the trucks' }, hills: 0.1, rough: 0.15,
+      enemies: [['truck', 3, 'parked', 0]], holdFire: true, length: 420,
+      how: 'Hold ▶ to drive. Tap Fire to shoot the nearest truck.' }),
+    2: () => Object.assign(c, { name: 'Supply road', goal: { type: 'destroy', text: 'Destroy the convoy' }, forest: 1,
+      enemies: [['truck', 2, 'convoy', 0], ['mgcar', 1, 'attack', 0]], how: 'The machine-gun car shoots back. Your own machine guns fire by themselves.' }),
+    3: () => Object.assign(c, { name: 'Hills', hills: 0.8, rough: 0.4, mud: 1, forest: 1,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 0]], how: 'Hills: stop on a crest to fire; moving spoils your aim.' }),
+    4: () => Object.assign(c, { name: 'Armour', goal: { type: 'destroy', text: 'Destroy the tanks' }, hills: 0.5, mud: 1, forest: 1,
+      enemies: [['light', 2, 'attack', 0]], how: 'Armour: shells glance off steep angles. Side and rear plates are thinner.' }),
+    5: () => Object.assign(c, { name: 'The ridge', goal: { type: 'hold', text: 'Hold the ridge', time: 60 }, hills: 0.6, forest: 1,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 1], ['light', 1, 'attack', 2]], wave: 16,
+      how: 'Keep a vehicle inside the flags for 60 s.' }),
+    6: () => Object.assign(c, { name: 'Mud flats', mud: 4, hills: 0.3,
+      enemies: [['mgcar', 2, 'attack', 0], ['light', 1, 'attack', 0]], how: 'Mud: wheels sink, tracks keep going.' }),
+    7: () => Object.assign(c, { name: 'Under the guns', hills: 0.5, forest: 1,
+      enemies: [['howitzer', 1, 'fixed', 0], ['light', 2, 'attack', 0]], how: 'Enemy artillery: a red circle marks where each shell will land. Keep moving.' }),
+    8: () => Object.assign(c, { name: 'Supply run', goal: { type: 'escort', text: 'Escort the truck to the depot' }, hills: 0.4, forest: 1, length: 520,
+      enemies: [['mgcar', 1, 'attack', 0], ['light', 1, 'attack', 0], ['mgcar', 1, 'attack', 1]], how: 'Your supply truck drives to the depot flag. Keep it alive.' }),
+    9: () => Object.assign(c, { name: 'Forest', forest: 4, hills: 0.4,
+      enemies: [['light', 2, 'attack', 0], ['mgcar', 1, 'attack', 0]], how: 'Forest hides vehicles: you only see what is close. So do they.' }),
+    10: () => Object.assign(c, { name: 'The Behemoth', goal: { type: 'destroy', text: 'Destroy the Behemoth' }, hills: 0.4, length: 520,
+      enemies: [['behemoth', 1, 'attack', 0], ['light', 1, 'attack', 0]], boss: 'behemoth', how: 'Boss: heavy armour. Aim for the sides and the rear.' }),
+    11: () => Object.assign(c, { name: 'Rain at dusk', weather: 'rain', light: 'dusk', forest: 2, mud: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 1]], how: 'Rain and dusk: everyone sees less far.' }),
+    12: () => Object.assign(c, { name: 'Gaps', gaps: 3, hills: 0.4,
+      enemies: [['light', 2, 'attack', 0], ['mgcar', 2, 'attack', 1]], how: 'Trenches: long vehicles bridge them; short ones fall in.' }),
+    13: () => Object.assign(c, { name: 'Bunker line', hills: 0.4,
+      enemies: [['bunker', 2, 'fixed', 0], ['light', 1, 'attack', 0]], how: 'Anti-tank guns in bunkers: thick front armour, fixed arc.' }),
+    14: () => Object.assign(c, { name: 'Crossroads', mud: 2, forest: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 1], ['mgcar', 2, 'attack', 1]] }),
+    15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
+      enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
+  };
+  if (intro[L]) intro[L]();
+  else {
+    // 16+: mixes of earlier ideas with rising numbers; every 5th level is a named boss.
+    const rng = makeRng(c.seed);
+    const n = L - 15;
+    Object.assign(c, {
+      name: `Sector ${L}`,
+      hills: rng.range(0.2, 0.9), rough: rng.range(0.2, 0.6), mud: rng.int(0, 3), forest: rng.int(0, 3), gaps: rng.int(0, 2),
+      weather: rng.next() < 0.25 ? 'rain' : 'clear',
+      light: rng.pick(['day', 'day', 'dusk', 'night']),
+      length: 480 + Math.min(200, n * 8),
+    });
+    const pool = ['mgcar', 'light', 'light', 'medium', 'medium', 'assault'];
+    const waves = Math.min(4, 1 + Math.floor(n / 4));
+    for (let w = 0; w < waves; w++) c.enemies.push([rng.pick(pool), 1 + rng.int(0, Math.min(3, 1 + Math.floor(n / 6))), 'attack', w]);
+    if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
+    if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
+    if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    if (L % 5 === 0) {
+      c.boss = 'behemoth';
+      c.bossName = `${BOSS_NAMES[(L / 5 - 3) % BOSS_NAMES.length]} (level ${L})`;
+      c.goal = { type: 'destroy', text: `Destroy the ${BOSS_NAMES[(L / 5 - 3) % BOSS_NAMES.length]}` };
+      c.enemies.unshift(['behemoth', 1, 'attack', 0]);
+    }
+  }
+  // Caps (design/01 §14.3).
+  c.accuracy = Math.min(LADDER_CAPS.accuracy, c.accuracy);
+  c.reaction = Math.max(LADDER_CAPS.reaction, c.reaction);
+  c.speedMul = Math.min(LADDER_CAPS.speedMul, c.speedMul);
+  c.wave = Math.max(LADDER_CAPS.waveGap, c.wave);
+  return c;
+}
+
+// Medals (design/01 §15): feats, stated as facts.
+const MEDALS = [
+  { id: 'ricochet', name: 'Survived a ricochet', how: 'Win a battle after a shell glanced off your vehicle.' },
+  { id: 'combo5', name: 'Five-kill combo', how: 'Destroy 5 enemies with no more than 4 s between kills.' },
+  { id: 'noloss', name: 'No losses', how: 'Win a battle without losing a squad vehicle.' },
+  { id: 'slope40', name: 'Climbed a 40° slope', how: 'Drive up ground steeper than 40°.' },
+  { id: 'crit5', name: 'Five critical hits', how: 'Destroy 5 engines, guns, crew or ammo racks in one battle.' },
+  { id: 'boss', name: 'Boss destroyed', how: 'Destroy a boss.' },
+  { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Proving Ground.' },
 ];
 
-function battleConfig(level) {
-  const base = BATTLES[(level - 1) % BATTLES.length];
-  return Object.assign({ level, squad: ['medium', 'light', 'scout'] }, base, { seed: base.seed + (level - 1) * 7919 });
+// Test drive ground (Workshop): flat start, a hill, mud, a trench, forest; no enemies.
+function testDriveConfig() {
+  return {
+    level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
+    hills: 0.7, rough: 0.3, mud: 2, forest: 1, gaps: 1, weather: 'clear', light: 'day',
+    enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '',
+  };
 }
 
 /* ---------- 08_design.js ---------- */
@@ -2053,6 +2265,13 @@ function validateDesign(design) {
     if (d.loco) loco++;
   }
   if (count.some((n) => n > 1)) errors.push('Two parts overlap.');
+  // Track segments need a run of 3 or more side by side (design/05 §2).
+  const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
+  for (let i = 0, run = 1; i < runs.length; i++) {
+    if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
+    if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
+    run = 1;
+  }
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
@@ -2110,6 +2329,186 @@ function statsOf(design, alive) {
     shells,
     crew,
   };
+}
+
+// ---------- Drafting Office numbers (design/01 §8.2, design/05 §7). Design-sheet units, not battle units.
+const CLASSES = { light: { name: 'Light ground', w: 16, h: 8 }, heavy: { name: 'Heavy ground', w: 28, h: 12 } };
+
+function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
+function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
+
+// Top speed (km/h) on a terrain: where drive force meets rolling resistance and drag.
+function topSpeed(st, ter) {
+  if (!st.power || !st.contact || !st.mass) return 0;
+  const pf = clamp(st.pressure / 100, 0.3, 3);
+  const crr = st.loco === 'track' ? 0.04 + ter.soft * 0.08 * pf : 0.015 + ter.soft * 0.25 * pf;
+  const m = st.mass, g = GRAVITY;
+  const P = st.power * 1000 * (DRIVE_EFF[st.loco] || 0.8) * (st.power >= st.drawn ? 1 : st.power / Math.max(1, st.drawn));
+  if (ter.grip * m * g <= crr * m * g || P / 2.5 <= crr * m * g) return 0;       // bogged down
+  const A = st.height * 2.5;
+  let v = 1;
+  for (let i = 0; i < 60; i++) {
+    const res = crr * m * g + 0.5 * 1.225 * 0.9 * A * v * v;
+    const drive = Math.min(P / Math.max(v, 2.5), ter.grip * m * g);
+    v = clamp(v + (drive - res) / (m * 0.5), 0, 200);
+  }
+  return Math.min(v * 3.6, st.cap);
+}
+
+// Steepest slope (degrees) the design can start up on plains.
+function climbLimit(st) {
+  if (!st.power || !st.mass) return 0;
+  const ter = TERRAIN[T_PLAINS];
+  const pf = clamp(st.pressure / 100, 0.3, 3);
+  const crr = st.loco === 'track' ? 0.04 + ter.soft * 0.08 * pf : 0.015 + ter.soft * 0.25 * pf;
+  const P = st.power * 1000 * (DRIVE_EFF[st.loco] || 0.8);
+  let best = 0;
+  for (let deg = 0; deg <= 60; deg++) {
+    const a = (deg * Math.PI) / 180;
+    const need = st.mass * GRAVITY * (Math.sin(a) + crr * Math.cos(a));
+    const have = Math.min(P / 2.5, ter.grip * st.mass * GRAVITY * Math.cos(a));
+    if (have >= need) best = deg;
+  }
+  return best;
+}
+
+// Armour (mm) met first from the front, rear and top, through the design's middle.
+function armourFacings(design) {
+  const g = occupancy(design);
+  const W = design.w, H = design.h;
+  const at = (x, y) => { const i = g[y * W + x]; return i >= 0 ? PARTS[design.cells[i].p] : null; };
+  const rows = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = at(x, y); if (d && !d.loco) { rows.push(y); break; } }
+  const firstIn = (xs, y) => { for (const x of xs) { const d = at(x, y); if (d) return d.armor; } return 0; };
+  const xsF = [...Array(W).keys()].reverse(), xsR = [...Array(W).keys()];
+  const front = rows.length ? Math.min(...rows.map((y) => firstIn(xsF, y))) : 0;
+  const rear = rows.length ? Math.min(...rows.map((y) => firstIn(xsR, y))) : 0;
+  let top = Infinity;
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) { const d = at(x, y); if (d) { if (!d.loco) top = Math.min(top, d.armor); break; } }
+  return { front, rear, top: top === Infinity ? 0 : top };
+}
+
+// Everything the stats drawer shows, plus factual warnings.
+function designReport(design) {
+  const st = statsOf(design);
+  const v = validateDesign(design);
+  const speeds = {};
+  for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
+  let load = 0;
+  const weapons = [];
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d.maxLoad) load += d.maxLoad;
+    if (d.cat === 'weapon' && d.id !== 'smoke') weapons.push(d);
+  }
+  const warnings = [];
+  if (st.drawn > st.power) warnings.push(`Power drawn exceeds power produced by ${st.drawn - st.power} kW.`);
+  if (load && st.mass > load) warnings.push(`Mass ${(st.mass / 1000).toFixed(1)} t on running gear rated ${(load / 1000).toFixed(1)} t.`);
+  if (!weapons.some((d) => !d.auto)) warnings.push('No main gun fitted.');
+  if (speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  return {
+    st, valid: v, speeds, weapons, warnings,
+    climb: climbLimit(st),
+    armour: armourFacings(design),
+    cost: costOf(design),
+  };
+}
+
+// Change log between two designs: part counts and mass.
+function changeLog(before, after) {
+  const count = (d) => { const m = {}; for (const c of d.cells) m[c.p] = (m[c.p] || 0) + 1; return m; };
+  const a = count(before), b = count(after);
+  const lines = [];
+  for (const id of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const n = (b[id] || 0) - (a[id] || 0);
+    if (n) lines.push(`${n > 0 ? '+' : '−'}${Math.abs(n)} ${PARTS[id].name}`);
+  }
+  const dm = (statsOf(after).mass - statsOf(before).mass) / 1000;
+  if (Math.abs(dm) >= 0.05) lines.push(`Mass ${dm > 0 ? '+' : '−'}${Math.abs(dm).toFixed(1)} t`);
+  return lines;
+}
+
+// Trim empty rows and columns (saved designs are stored tight).
+function cropDesign(design) {
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y);
+    x1 = Math.max(x1, c.x + d.w); y1 = Math.max(y1, c.y + d.h);
+  }
+  if (x1 < 0) return Object.assign({}, design, { w: 1, h: 1, cells: [] });
+  return Object.assign({}, design, { w: x1 - x0, h: y1 - y0, cells: design.cells.map((c) => ({ p: c.p, x: c.x - x0, y: c.y - y0 })) });
+}
+
+// Randomise (design/01 §8.3): a valid design for a class, seeded. Re-rolls until valid.
+function randomDesign(seed, cls) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
+    if (validateDesign(d).ok) return d;
+  }
+  return designFromTemplate('light');
+}
+
+function tryRandomDesign(rng, cls) {
+  const C = CLASSES[cls];
+  const heavy = cls === 'heavy';
+  const cells = [];
+  const W = C.w, H = C.h;
+  const grid = new Int8Array(W * H);
+  const put = (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+  const tracks = rng.next() < (heavy ? 0.85 : 0.6);
+  const span = heavy ? rng.int(14, 22) : rng.int(8, 13);
+  const x0 = 1;
+  let hullBottom;               // lowest hull row
+  if (tracks) {
+    for (let x = x0; x + 2 <= x0 + span; x += 2) put('track', x, H - 1);
+    hullBottom = H - 2;
+  } else {
+    const big = rng.next() < 0.5;
+    const wd = big ? 'wheel_l' : 'wheel_s';
+    const ww = PARTS[wd].w;
+    const n = rng.int(3, Math.max(3, Math.floor(span / (ww + 1))));
+    for (let k = 0; k < n; k++) put(wd, x0 + Math.round((k * (span - ww)) / Math.max(1, n - 1)), H - PARTS[wd].h);
+    hullBottom = H - PARTS[wd].h - 1;
+  }
+  const hullTop = hullBottom - 1;
+  const grade = rng.pick(heavy ? ['arm40', 'arm80', 'arm40'] : ['plate', 'arm20', 'arm20', 'arm40']);
+  // Engine at the rear, crew in the middle, stores beside them.
+  const eng = heavy ? rng.pick(['eng_m', 'eng_h', 'eng_h']) : rng.pick(['eng_s', 'eng_m', 'eng_m']);
+  put(eng, x0, hullTop);
+  let x = x0 + PARTS[eng].w;
+  put('crew2', x, hullTop); x += 2;
+  put(rng.pick(['fuel_s', 'fuel_ss']), x, hullTop);
+  put(rng.pick(['ammo', 'ammo_p']), x, hullBottom);
+  x += 1;
+  for (; x < x0 + span; x++) { put(x === x0 + span - 1 ? 'slope40' : grade, x, hullTop); put(grade, x, hullBottom); }
+  if (rng.next() < 0.6) put('mg', x0 + span, hullBottom);
+  // Turret or casemate gun.
+  const gun = heavy ? rng.pick(['c75', 'c105', 'c105']) : rng.pick(['c37', 'c37', 'c75']);
+  const mid = x0 + Math.floor(span / 2) - 1;
+  if (rng.next() < 0.7) {
+    put('turret', mid, hullTop - 1);
+    put('crew2', mid, hullTop - 3);
+    put(grade, mid + 2, hullTop - 2);
+    put(gun, mid + 3, hullTop - 2);
+    put(grade, mid - 1, hullTop - 2);
+    if (rng.next() < 0.7) put('optics', mid + 1, hullTop - 4);
+    if (rng.next() < 0.5) put('radio', mid, hullTop - 4);
+  } else {
+    put('crew2', mid, hullTop - 2);
+    put(gun, mid + 2, hullTop - 2);
+    if (rng.next() < 0.6) put('optics', mid, hullTop - 3);
+  }
+  if (rng.next() < 0.4) put(rng.pick(['fc', 'stab', 'nsight', 'smoke']), x0 + 1, hullTop - 1);
+  if (rng.next() < 0.5) put('radiator', x0, hullTop - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
 }
 
 /* ---------- 09a_physics_terrain.js ---------- */
@@ -2339,6 +2738,7 @@ function rebuildVehicle(V, first) {
   let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
   const contacts = [];
   const weapons = [];
+  V.night = 0;
   V.parts.forEach((p, i) => {
     if (!p.alive) return;
     const d = p.def;
@@ -2353,6 +2753,7 @@ function rebuildVehicle(V, first) {
     if (d.fuel) fuelMax += d.fuel;
     if (d.shells) shellsMax += d.shells;
     if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.night) V.night = Math.max(V.night || 0, d.night);
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
@@ -2418,7 +2819,7 @@ function stepVehicle(V, T, dt) {
   const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
   const hasFuel = V.fuelMax === 0 || V.fuel > 0;
   const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
-  const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE;
+  const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE * (V.speedMul || 1);
   const dragA = V.height * 2.5;
   const throttle = V.canDrive ? V.throttle : 0;
 
@@ -2598,6 +2999,7 @@ function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
 function weaponArc(V, w) {
   const d = w.def;
+  if (d.indirect) return { lo: 15, hi: 72, both: false };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
 }
 
@@ -2668,7 +3070,7 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   s.vx = Math.cos(a) * d.vel + V.body.vx;
   s.vy = Math.sin(a) * d.vel + V.body.vy;
   s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
-  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25;
+  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false;
   // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
   if (!d.auto) {
     const J = d.cal * d.cal * 0.9;
@@ -2880,6 +3282,7 @@ function destroyPart(B, V, idx, source) {
   const d = p.def;
   const at = gridCellToWorld(V, p.x + d.w / 2 - 0.5, V.design.h - p.y - d.h / 2 - 0.5);
   spawnDebris(B, V, [idx], at, 5);
+  if (source && source.side === 0) scoreCritical(B, V, p, at);
   audio.sfx('crunch', B.panOf(at.x));
   if (V === B.me) haptic('part');
   // Part effects (design/01 §7.4).
@@ -3013,6 +3416,8 @@ function stepShells(B, dt) {
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
+    // Incoming artillery whistles for its last second and a half.
+    if (s.def.indirect && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
     const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
     if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
     // Vehicles.
@@ -3194,6 +3599,41 @@ function shakeOffset(B, out) {
   return out;
 }
 
+// ---------- level-clear confetti: 80 paper scraps in linen, blue and amber (screen space)
+const CONFETTI_COLORS = ['#E6DCC3', '#2E6DB4', '#FFB23E'];
+const confetti = makePool(() => ({ alive: false, x: 0, y: 0, vx: 0, vy: 0, a: 0, w: 0, c: 0, t: 0 }), 80);
+
+function spawnConfetti() {
+  const rng = makeRng(Math.floor(performance.now()));
+  for (let i = 0; i < 80; i++) {
+    const p = confetti.take();
+    p.x = rng.range(0, layout.w); p.y = rng.range(-layout.h * 0.5, -10);
+    p.vx = rng.range(-30, 30); p.vy = rng.range(40, 110);
+    p.a = rng.range(0, 6.28); p.w = rng.range(-6, 6); p.c = i % 3; p.t = 0;
+  }
+}
+
+function stepConfetti(dt) {
+  confetti.forEachAlive((p) => {
+    p.t += dt;
+    p.x += p.vx * dt + Math.sin(p.t * 3 + p.a) * 20 * dt;
+    p.y += p.vy * dt;
+    p.a += p.w * dt;
+    if (p.y > layout.h + 20 || p.t > 6) p.alive = false;
+  });
+}
+
+function drawConfetti(g) {
+  confetti.forEachAlive((p) => {
+    g.save();
+    g.translate(p.x, p.y);
+    g.rotate(p.a);
+    g.fillStyle = CONFETTI_COLORS[p.c];
+    g.fillRect(-4, -2.5 * Math.abs(Math.cos(p.t * 5)) - 0.5, 8, 5 * Math.abs(Math.cos(p.t * 5)) + 1);
+    g.restore();
+  });
+}
+
 /* ---------- 11_ai.js ---------- */
 /* ==== 11 AI ==== */
 // Spotting, squad orders, enemy tactics and automatic weapons (design/01 §7.2, §7.4).
@@ -3204,8 +3644,17 @@ const TURRET_SWING = 1.0;          // seconds to swing a turret to the other sid
 const ELEVATION_RATE = 40;         // degrees per second
 const _aim = { ok: false, angle: 0, face: 1, reason: '' };
 
+// Light and weather (design/01 §14.2): rain and dusk shorten sight; at night a night sight helps.
+function sightFactor(B, O) {
+  let k = 1;
+  if (B.cfg.weather === 'rain') k *= 0.75;
+  if (B.cfg.light === 'dusk') k *= 0.85;
+  if (B.cfg.light === 'night') k *= O.night || 0.4;
+  return k;
+}
+
 function spotRange(B, O, V) {
-  let r = SPOT_BASE * O.spot;
+  let r = SPOT_BASE * O.spot * sightFactor(B, O);
   if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
   return r;
@@ -3302,7 +3751,13 @@ function runWeapons(B, V, dt, aiControlled) {
     if (B.cfg.holdFire && V.side === 1) continue;
     if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
-    if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) w.reload = d.reload * loaderPenalty;
+    if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
+      w.reload = d.reload * loaderPenalty;
+      if (d.indirect && B.warnings) {
+        const vx = Math.abs(Math.cos(w.angle)) * d.vel;
+        B.warnings.push({ x: tmp.x, t: Math.abs(tmp.x - V.body.x) / Math.max(1, vx) });
+      }
+    }
   }
 }
 
@@ -3338,7 +3793,7 @@ function enemyThink(B, V, dt) {
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const x = V.body.x;
-  if (ai.mode === 'parked') {
+  if (ai.mode === 'parked' || ai.mode === 'fixed') {
     V.throttle = 0;
   } else if (ai.mode === 'convoy') {
     // Drive between two points; run for the far edge once shot at.
@@ -3356,11 +3811,17 @@ function enemyThink(B, V, dt) {
     else if (d < want - 15) V.throttle = -0.5 * toward;
     else V.throttle = 0;
   } else {
-    V.throttle = -0.5;                  // advance toward the player's side
+    V.throttle = 0.5 * V.dir;           // advance
   }
 }
 
-function makeAI(mode, level) {
+// The escort truck drives for the depot and waits while an enemy is close ahead.
+function escortThink(B, V) {
+  const ahead = B.units.some((U) => U.side !== V.side && !U.destroyed && U.seen && U.body.x > V.body.x && U.body.x - V.body.x < 45);
+  V.throttle = V.body.x >= B.depot ? 0 : ahead ? 0 : 0.5;
+}
+
+function makeAI(mode, cfg) {
   return {
     mode,
     target: null,
@@ -3368,8 +3829,8 @@ function makeAI(mode, level) {
     hold: null,
     leg: -1,
     a: 0, b: 0,
-    accuracy: clamp(0.45 + level * 0.03, 0.3, 0.7),
-    reaction: Math.max(0.35, 1.4 - level * 0.08),
+    accuracy: cfg ? cfg.accuracy : 0.6,
+    reaction: cfg ? cfg.reaction : 0.8,
   };
 }
 
@@ -3390,11 +3851,14 @@ function mobilityNotes(B, V, dt) {
 /* ==== 12 BATTLE ==== */
 // Battlefield setup, battle state, player commands, objectives and results.
 
-function createBattle(level) {
-  const cfg = battleConfig(level);
+// opts: { squad: [Design, …] (default: the three starting templates), test: true for a test drive, demo: true for the title }
+function createBattle(level, opts = {}) {
+  const cfg = opts.cfg || levelConfig(level);
   const T = makeTerrain(cfg);
   const B = {
     cfg, T, level,
+    test: !!opts.test,
+    demo: !!opts.demo,
     rng: makeRng((cfg.seed ^ 0x9e3779b9) >>> 0),
     units: [], squad: [], me: null,
     order: 'Follow',
@@ -3409,47 +3873,128 @@ function createBattle(level) {
     intensity: 0,
     goalTotal: 0,
     goalDone: 0,
-    stats: { shots: 0, pens: 0, kills: 0, lost: 0, ricochetsTaken: 0, enemyShots: 0 },
+    holdT: 0,
+    score: 0,                // points earned in this attempt
+    combo: 0,
+    lastKillT: -99,
+    bestCombo: 0,
+    warnings: [],            // artillery impact markers: {x, t}
+    pending: [],             // enemies waiting for their wave
+    escort: null,
+    depot: 0,
+    zone: null,
+    stats: { shots: 0, pens: 0, kills: 0, lost: 0, ricochetsTaken: 0, enemyShots: 0, crits: 0 },
     panOf: () => 0,
     onDestroyed: null,
   };
-  cfg.squad.forEach((t, i) => {
-    const V = makeVehicle(designFromTemplate(t), 0, 46 - i * 15, 1, T);
-    V.ai = makeAI('squad', level);
+  const squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  squad.forEach((d, i) => {
+    const V = makeVehicle(d, 0, 46 - i * 15, 1, T);
+    V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
     B.squad.push(V);
   });
   B.me = B.squad[0];
 
-  // Enemies: parked trucks sit within the first stretch so level 1 is quick; others start far right.
-  let x = cfg.enemies[0][2] === 'parked' ? 125 : cfg.length - 45;
-  for (const [t, count, mode] of cfg.enemies) {
-    for (let k = 0; k < count; k++) {
-      const V = makeVehicle(designFromTemplate(t), 1, x, -1, T);
-      V.ai = makeAI(mode, level);
-      if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
-      B.units.push(V);
-      B.goalTotal++;
-      x += mode === 'parked' ? 22 : -18;
-    }
-    if (cfg.enemies[0][2] !== 'parked') x -= 10;
+  // Goal set-up.
+  if (cfg.goal.type === 'escort') {
+    const V = makeVehicle(designFromTemplate('truck'), 0, 62, 1, T);
+    V.ai = makeAI('escort', cfg);
+    V.escort = true;
+    B.units.push(V);
+    B.escort = V;
+    B.depot = T.length - 40;
+  }
+  if (cfg.goal.type === 'hold') {
+    let best = T.length * 0.45, bh = -Infinity;
+    for (let x = T.length * 0.38; x < T.length * 0.62; x += 2) if (T.height(x) > bh) { bh = T.height(x); best = x; }
+    B.zone = { x0: best - 12, x1: best + 12 };
   }
 
-  B.onDestroyed = (V) => {
+  // Enemies: wave 0 now, later waves from the right edge every cfg.wave seconds.
+  let x = cfg.enemies[0] && cfg.enemies[0][2] === 'parked' ? 125 : T.length - 50;
+  let fixedX = T.length - 70;
+  for (const [t, count, mode, wave] of cfg.enemies) {
+    for (let k = 0; k < count; k++) {
+      B.goalTotal++;
+      if (wave > 0) { B.pending.push({ t, mode, at: wave * cfg.wave }); continue; }
+      let px;
+      if (t === 'howitzer') px = T.length - 14 - k * 12;
+      else if (mode === 'fixed') { px = fixedX; fixedX -= 45; }
+      else { px = x; x += mode === 'parked' ? 22 : -18; }
+      spawnEnemy(B, t, mode, px);
+    }
+  }
+  if (cfg.goal.type === 'destroy' && B.goalTotal === 0) B.goalTotal = 0;
+
+  B.onDestroyed = (V, source) => {
     if (V.side === 1) {
       B.goalDone++;
       B.stats.kills++;
       if (B.target === V) B.target = null;
       audio.sfx('objective', B.panOf(V.body.x));
       B.heat = Math.min(3, B.heat + 1);
+      if (!source || source.side === 0) scoreKill(B, V);
     } else {
+      if (V.escort) { if (!B.result) { B.result = 'lost'; B.resultT = 0; B.lostReason = 'The supply truck was destroyed.'; } return; }
       B.stats.lost++;
       if (V === B.me) B.pendingSwap = 1.2;
     }
   };
   updateSpotting(B);
   return B;
+}
+
+function spawnEnemy(B, t, mode, x) {
+  const d = designFromTemplate(t);
+  const V = makeVehicle(d, 1, x, -1, B.T);
+  V.ai = makeAI(mode, B.cfg);
+  V.template = t;
+  V.speedMul = B.cfg.speedMul;
+  if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
+  if (t === B.cfg.boss) { V.boss = true; V.name = B.cfg.bossName || d.name; }
+  B.units.push(V);
+  return V;
+}
+
+// Score (design/01 §14.4): kills, combos within 4 s, precision on critical parts.
+function scoreKill(B, V) {
+  if (B.test || B.demo) return;
+  const base = ENEMY_VALUE[V.template] || 200;
+  B.combo = B.time - B.lastKillT <= COMBO_WINDOW ? B.combo + 1 : 1;
+  B.lastKillT = B.time;
+  B.bestCombo = Math.max(B.bestCombo, B.combo);
+  const pts = base * B.combo;
+  B.score += pts;
+  floatText(`Destroyed +${pts}`, V.body.x, V.body.y + V.height + 2, true);
+  if (B.combo > 1) {
+    floatText(`×${B.combo} combo`, V.body.x, V.body.y + V.height + 3.6, true);
+    audio.sfx('combo', B.panOf(V.body.x), B.combo);
+  }
+}
+
+// A precise hit that destroys a critical part of an enemy.
+function scoreCritical(B, V, part, at) {
+  if (B.test || B.demo || V.side !== 1 || V.destroyed) return;
+  const d = part.def;
+  if (!(d.power > 0 || d.detonate || d.crew || (d.cat === 'weapon' && d.id !== 'smoke'))) return;
+  B.score += 50;
+  B.stats.crits++;
+  floatText(`Critical · ${d.name} +50`, at.x, at.y + 3, true);
+}
+
+// End-of-level bonuses (facts for the level-clear card).
+function levelBonuses(B) {
+  const par = 60 + B.level * 5;
+  const rows = [['Kills and combos', B.score]];
+  const clear = 200 + 50 * B.level;
+  rows.push(['Level clear', clear]);
+  if (B.stats.lost === 0) rows.push(['No losses', 300]);
+  const timeBonus = Math.max(0, Math.round((par - B.time) * 5));
+  if (timeBonus) rows.push([`Time under ${par} s`, timeBonus]);
+  const total = rows.reduce((s, r) => s + r[1], 0);
+  return { rows, total };
 }
 
 function updateBattle(B, dt) {
@@ -3461,13 +4006,16 @@ function updateBattle(B, dt) {
   for (const V of B.units) {
     if (V.destroyed) { V.throttle = 0; continue; }
     if (V.revealT > 0) V.revealT -= dt;
-    if (V === B.me) {
+    if (V.escort) { /* escortThink runs below */ }
+    else if (V === B.me && !B.demo) {
       if (V.ai.react > 0) V.ai.react -= dt;
-    } else if (V.side === 0) squadThink(B, V, dt);
+    } else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
+    else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
     mobilityNotes(B, V, dt);
   }
   for (const V of B.units) stepVehicle(V, B.T, dt);
+  if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 
   for (const V of B.units) {
@@ -3497,7 +4045,7 @@ function updateBattle(B, dt) {
         if (tr.alive && Math.abs(tr.x - V.body.x) < V.len / 2 && V.body.m > 3000) breakTree(B, tr, Math.sign(V.speed) || 1);
       }
     }
-    if (!V.destroyed) runWeapons(B, V, dt, V !== B.me);
+    if (!V.destroyed) runWeapons(B, V, dt, V !== B.me || B.demo);
   }
   stepShells(B, dt);
   stepDebris(B.T, dt);
@@ -3521,11 +4069,34 @@ function updateBattle(B, dt) {
   const want = clamp(Math.floor(near * 0.8 + B.heat), 0, 3);
   if (want !== B.intensity) { B.intensity = want; audio.setIntensity(want); }
 
+  // Waves: spawn at the right edge when their time comes and the on-screen cap allows.
+  if (B.pending.length) {
+    let alive = 0;
+    for (const V of B.units) if (V.side === 1 && !V.destroyed) alive++;
+    for (let i = 0; i < B.pending.length && alive < LADDER_CAPS.onScreen; i++) {
+      const p = B.pending[i];
+      if (B.time < p.at) continue;
+      spawnEnemy(B, p.t, p.mode, B.T.length - 30 - (i % 3) * 14);
+      B.pending.splice(i--, 1);
+      alive++;
+      if (!B.waveNoted || B.time - B.waveNoted > 3) { B.waveNoted = B.time; if (!B.demo) ui.toast('Enemy reinforcements arriving.', 2200); }
+    }
+  }
+  for (let i = B.warnings.length - 1; i >= 0; i--) { B.warnings[i].t -= dt; if (B.warnings[i].t <= 0) B.warnings.splice(i, 1); }
+  if (B.escort && !B.escort.destroyed) escortThink(B, B.escort);
+
   // Objectives.
-  if (!B.result) {
-    if (B.goalDone >= B.goalTotal) { B.result = 'win'; B.resultT = 0; }
-    else if (B.squad.every((V) => V.destroyed)) { B.result = 'lost'; B.resultT = 0; }
-  } else {
+  if (!B.result && !B.test) {
+    const g = B.cfg.goal;
+    if (g.type === 'hold' && B.zone) {
+      const inside = B.squad.some((V) => !V.destroyed && V.body.x >= B.zone.x0 && V.body.x <= B.zone.x1);
+      if (inside) B.holdT += dt;
+      if (B.holdT >= g.time) { B.result = 'win'; B.resultT = 0; }
+    }
+    if (g.type === 'escort' && B.escort && !B.escort.destroyed && B.escort.body.x >= B.depot - 1) { B.result = 'win'; B.resultT = 0; }
+    if (!B.result && B.goalDone >= B.goalTotal && B.goalTotal > 0 && !B.pending.length) { B.result = 'win'; B.resultT = 0; }
+    if (!B.result && B.squad.every((V) => V.destroyed)) { B.result = 'lost'; B.resultT = 0; }
+  } else if (B.result) {
     B.resultT += dt;
   }
 }
@@ -4031,13 +4602,61 @@ function drawDebris(g) {
   });
 }
 
+// Flags for the hold zone and the depot; red circles where artillery will land.
+function drawMarkers(g, B) {
+  const flag = (x, col) => {
+    const sx = view.sx(x), sy = view.sy(B.T.height(x));
+    g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 34, 2, 34);
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(sx + 1, sy - 34); g.lineTo(sx + 17, sy - 29); g.lineTo(sx + 1, sy - 24); g.closePath(); g.fill();
+  };
+  if (B.zone) {
+    const a = view.sx(B.zone.x0), b = view.sx(B.zone.x1);
+    g.fillStyle = 'rgba(255,178,62,0.08)';
+    g.fillRect(a, 0, b - a, layout.h);
+    flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
+  }
+  if (B.depot) flag(B.depot, PAL.league);
+  g.setLineDash([5, 4]);
+  g.lineWidth = 2;
+  for (const w of B.warnings) {
+    const sx = view.sx(w.x), sy = view.sy(B.T.height(w.x));
+    const r = Math.max(10, 6 * view.S) * (0.8 + 0.2 * Math.sin(B.time * 10));
+    g.strokeStyle = PAL.danger;
+    g.beginPath(); g.ellipse(sx, sy, r, r * 0.35, 0, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = PAL.danger; g.font = `700 14px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+    g.fillText('!', sx, sy - r * 0.4);
+  }
+  g.setLineDash([]);
+}
+
+// Rain streaks, dusk and night (design/03 §4 weather), in screen space.
+function drawWeather(g, B) {
+  const { w, h } = layout;
+  if (B.cfg.light === 'dusk') { g.fillStyle = 'rgba(40,20,50,0.25)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.light === 'night') { g.fillStyle = 'rgba(6,9,22,0.55)'; g.fillRect(0, 0, w, h); }
+  if (B.cfg.weather === 'rain') {
+    g.strokeStyle = 'rgba(200,210,230,0.28)';
+    g.lineWidth = 1;
+    g.beginPath();
+    const t = B.time;
+    for (let i = 0; i < 90; i++) {
+      const x = ((i * 97.3 + t * 60) % (w + 40)) - 20;
+      const y = ((i * 57.1 + t * 520) % (h + 40)) - 20;
+      g.moveTo(x, y); g.lineTo(x - 4, y + 14);
+    }
+    g.stroke();
+  }
+}
+
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
   drawBackground(g, view.cx * view.S * 0.25);
   drawTrees(g, B);
   drawTerrain(g, B);
+  drawMarkers(g, B);
   for (const V of B.units) {
-    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen);
+    const visible = V.side === 0 || V.seen || (V.destroyed && V.everSeen) || B.revealAll;
     if (!visible) continue;
     const sx = view.sx(V.body.x);
     if (sx < -V.radius * 2 * view.S || sx > layout.w + V.radius * 2 * view.S) continue;
@@ -4046,6 +4665,7 @@ function renderBattle(g, B) {
   drawDebris(g);
   drawShells(g);
   drawParticles(g);
+  drawWeather(g, B);
 }
 
 /* ---------- 16a_screens.js ---------- */
@@ -4103,16 +4723,19 @@ SCREENS.title = {
     const pg = el('div', 'menu-group');
     pg.appendChild(el('div', 'menu-label', 'Proving Ground'));
     const pgRow = el('div', 'menu-row');
-    if (p.continueLevel > 1) {
-      pgRow.appendChild(button(`Continue at level ${p.continueLevel}`, () => screens.go('battle', p.continueLevel), 'btn btn-primary'));
+    const run = p.run;
+    const contLevel = run.active ? run.level : p.continueLevel;
+    if (contLevel > 1) {
+      const label = run.active ? `Continue at level ${contLevel} · ${run.lives} ${run.lives === 1 ? 'life' : 'lives'}` : `Continue at level ${contLevel}`;
+      pgRow.appendChild(button(label, () => ladder.resume(), 'btn btn-primary'));
     }
-    pgRow.appendChild(button('Play from level 1', () => screens.go('battle', 1), p.continueLevel > 1 ? 'btn' : 'btn btn-primary'));
+    pgRow.appendChild(button('Play from level 1', () => ladder.start(1, true), contLevel > 1 ? 'btn' : 'btn btn-primary'));
     pg.appendChild(pgRow);
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
-    row2.appendChild(button('Workshop', () => ui.toast('The Workshop opens in the next update (Part 1c).')));
-    row2.appendChild(button('Blueprints', () => ui.toast('No captured blueprints yet. Bosses start at level 10.')));
+    row2.appendChild(button('Workshop', () => screens.go('workshop')));
+    row2.appendChild(button('Blueprints', () => screens.go('blueprints')));
     row2.appendChild(button('Settings', () => ui.openSettings()));
     menu.appendChild(row2);
     r.appendChild(menu);
@@ -4207,10 +4830,15 @@ SCREENS.battle = {
   c: {},
   resultShown: false,
 
-  enter(level) {
-    this.level = level || 1;
-    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters]) pool.forEachAlive((p) => { p.alive = false; });
-    const B = createBattle(this.level);
+  // arg: a level number, or { level } for the ladder, or { test: design } for a test drive.
+  enter(arg) {
+    const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
+    this.opts = opts;
+    this.level = opts.level || 1;
+    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    const B = opts.test
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig() })
+      : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
     B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
@@ -4228,14 +4856,35 @@ SCREENS.battle = {
     this.layout();
     audio.setIntensity(0);
     audio.playTheme('battle');
-    ui.toast(`Level ${this.level} · ${B.cfg.name}: ${B.cfg.goal.toLowerCase()}.`, 3200);
+    this.showHowTo();
   },
 
-  exit() { game.frozen = false; this.B = null; },
+  // Two-line how-to at the start of each level (design/06 acceptance: level 1 with only this).
+  showHowTo() {
+    const B = this.B;
+    if (this.howEl) this.howEl.remove();
+    const box = el('div', 'howto');
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    const how = B.test ? 'Mud, hills and a trench. Pause to go back to the Workshop.' : B.cfg.how;
+    if (how) box.appendChild(el('div', 'howto-2', how));
+    uiLayer.insertBefore(box, ui.toastBox);
+    uiLayer.classList.add('has-howto');
+    this.howEl = box;
+    setTimeout(() => box.classList.add('out'), 6500);
+    setTimeout(() => { if (box.isConnected) box.remove(); uiLayer.classList.remove('has-howto'); }, 7000);
+  },
+
+  exit() {
+    game.frozen = false;
+    this.B = null;
+    if (this.howEl) { this.howEl.remove(); this.howEl = null; }
+    uiLayer.classList.remove('has-howto');
+  },
 
   pauseOpts() {
+    if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
-      restart: () => this.enter(this.level),
+      restart: () => this.enter(this.opts),
       quit: () => screens.go('title'),
     };
   },
@@ -4491,6 +5140,7 @@ SCREENS.battle = {
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
+    stepConfetti(dt);
   },
 
   updateCamera(dt) {
@@ -4529,30 +5179,55 @@ SCREENS.battle = {
     this.resultShown = true;
     const B = this.B;
     const win = B.result === 'win';
-    const p = save.profile;
-    if (win) {
-      haptic('clear');
-      audio.sfx('objective');
-      p.highestLevel = Math.max(p.highestLevel, this.level + 1);
-      p.continueLevel = this.level + 1;
-      save.touch('profile');
-    }
+    audio.playTheme(null);
     const c = ui.card('', 'card-result');
-    c.appendChild(el('div', 'stamp' + (win ? '' : ' stamp-red'), win ? 'OBJECTIVE COMPLETE' : 'SQUAD LOST'));
     const facts = el('div', 'result-facts');
-    const secs = Math.round(B.time);
-    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
-    row('Time', `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
-    row('Enemies destroyed', `${B.goalDone} of ${B.goalTotal}`);
-    row('Shots fired', B.stats.shots);
-    row('Penetrations', B.stats.pens);
-    row('Squad vehicles lost', B.stats.lost);
-    c.appendChild(facts);
+    const row = (k, v, cls) => { const r = el('div', 'fact' + (cls ? ' ' + cls : '')); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
     const btns = el('div', 'card-row');
     let close = null;
-    btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
-    if (win) btns.appendChild(button('Next battle', () => { close(); this.enter(this.level + 1); }, 'btn btn-primary'));
-    else btns.appendChild(button('Retry', () => { close(); this.enter(this.level); }, 'btn btn-primary'));
+    const secs = Math.round(B.time);
+    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    if (win) {
+      const res = ladder.onWin(B);
+      haptic('clear');
+      audio.sfx('fanfare');
+      spawnConfetti();
+      c.appendChild(el('div', 'stamp', 'OBJECTIVE COMPLETE'));
+      for (const [k, v] of res.bonus.rows) row(k, `+${v}`);
+      row('Score this run', save.profile.run.score, 'fact-total');
+      row('Requisition earned', `+${res.earned}`);
+      row('Time', time);
+      c.appendChild(facts);
+      for (const r of res.rewards) c.appendChild(el('div', 'reward', r));
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+      btns.appendChild(button('Workshop', () => { close(); screens.go('workshop'); }));
+      btns.appendChild(button(`Level ${this.level + 1}`, () => { close(); ladder.start(this.level + 1, false); }, 'btn btn-primary'));
+    } else {
+      const res = ladder.onLose(B);
+      audio.sfx('lifeLost');
+      haptic('lost');
+      const p = save.profile;
+      if (res.over) {
+        c.appendChild(el('div', 'stamp stamp-red', 'GAME OVER'));
+        row('Score', p.run.score);
+        row('Level reached', this.level);
+        row('Best score', p.bestScore);
+        c.appendChild(facts);
+        btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+        btns.appendChild(button('Play from level 1', () => { close(); ladder.start(1, true); }));
+        btns.appendChild(button(`Continue at level ${this.level}`, () => { close(); ladder.start(this.level, true); }, 'btn btn-primary'));
+      } else {
+        c.appendChild(el('div', 'stamp stamp-red', 'LIFE LOST'));
+        if (B.lostReason) c.appendChild(el('p', 'card-text', B.lostReason));
+        row('Lives left', p.run.lives);
+        row('Enemies destroyed', `${B.goalDone} of ${B.goalTotal}`);
+        row('Time', time);
+        c.appendChild(facts);
+        btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+        btns.appendChild(button('Workshop', () => { close(); screens.go('workshop'); }));
+        btns.appendChild(button('Retry', () => { close(); ladder.start(this.level, false); }, 'btn btn-primary'));
+      }
+    }
     c.appendChild(btns);
     close = ui.open(c);
   },
@@ -4608,6 +5283,7 @@ SCREENS.battle = {
       g.fillText('Time stopped', w / 2, safe.t + 55);
     }
     this.drawHud(g, nowMs);
+    drawConfetti(g);
   },
 
   drawAimPreview(g) {
@@ -4663,12 +5339,33 @@ SCREENS.battle = {
     const left = C.cards[2].x + C.cards[2].w + 10;
     const right = this.mini.x - 10;
     if (right - left > 70) {
-      g.font = `400 14px ${FONT_UI}`;
+      const goal = B.cfg.goal;
+      let text, f;
+      if (B.test) { text = `Test drive · ${Math.round(B.me.body.x)} m`; f = B.me.body.x / B.T.length; }
+      else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
+      else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
+      else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
+      g.font = `400 13px ${FONT_UI}`;
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
-      g.fillText(`${B.cfg.goal} ${B.goalDone}/${B.goalTotal}`, left, safe.t + 13, right - left);
-      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 24, right - left, 3);
-      g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 24, (right - left) * (B.goalDone / Math.max(1, B.goalTotal)), 3);
+      g.fillText(text, left, safe.t + 9, right - left);
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
+      g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
+      if (!B.test) {
+        // Level, score and lives (dog tags).
+        const run = save.profile.run;
+        g.font = `700 12px ${FONT_UI}`;
+        g.fillStyle = PAL.linen;
+        const sc = `L${this.level}  ${(run.score + B.score).toLocaleString('en-US')}`;
+        g.fillText(sc, left, safe.t + 27);
+        let tx = left + g.measureText(sc).width + 8;
+        for (let i = 0; i < run.lives && tx + 8 < right; i++, tx += 10) {
+          g.fillStyle = '#b9b3a2';
+          roundRect(g, tx, safe.t + 22, 7, 10, 2); g.fill();
+          g.fillStyle = '#4b4a45';
+          g.beginPath(); g.arc(tx + 3.5, safe.t + 24.5, 1, 0, Math.PI * 2); g.fill();
+        }
+      }
     }
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
@@ -4703,6 +5400,916 @@ SCREENS.battle = {
     g.strokeStyle = 'rgba(230,220,195,0.8)';
     g.strokeRect(X(view.cx - vw / 2), m.y + 1, (vw / T.length) * m.w, m.h - 2);
   },
+};
+
+/* ---------- 16c_ladder.js ---------- */
+/* ==== 16c LADDER ==== */
+// The Proving Ground run: lives, score, continue, rewards (design/01 §14, §15).
+
+const ladder = {
+  get run() { return save.profile.run; },
+
+  // Start a run: fresh (level 1 or a continue after game over) or resume the one in progress.
+  start(level, fresh) {
+    const p = save.profile;
+    if (fresh || !p.run.active) p.run = { active: true, level, lives: LIVES_START, score: 0 };
+    p.run.level = level;
+    save.touch('profile');
+    screens.go('battle', { level });
+  },
+
+  resume() {
+    const p = save.profile;
+    if (p.run.active) this.start(p.run.level, false);
+    else this.start(p.continueLevel, true);
+  },
+
+  // The three designs fielded in the ladder (saved designs, falling back to the starting templates).
+  squadDesigns() {
+    const ids = save.profile.squad.length ? save.profile.squad : ['medium', 'light', 'scout'];
+    return ids.map((id) => findDesign(id) || designFromTemplate('light'));
+  },
+
+  onWin(B) {
+    const p = save.profile;
+    const bonus = levelBonuses(B);
+    const rewards = [];
+    p.run.score += bonus.total;
+    if (B.cfg.lifeBonus && p.run.lives < LIVES_MAX) { p.run.lives++; rewards.push('+1 life'); }
+    p.run.level = B.level + 1;
+    p.continueLevel = p.run.level;
+    p.highestLevel = Math.max(p.highestLevel, p.run.level);
+    const earned = Math.round(bonus.total / 10);
+    p.requisition += earned;
+    p.bestScore = Math.max(p.bestScore, p.run.score);
+    p.stats.battles++;
+    p.stats.cleared++;
+    p.stats.kills += B.stats.kills;
+    // Boss blueprint.
+    const boss = B.units.find((V) => V.boss && V.destroyed);
+    if (boss && !p.blueprints.some((b) => b.level === B.level)) {
+      p.blueprints.push({ id: boss.template, name: boss.name, level: B.level });
+      rewards.push(`Blueprint captured: ${boss.name}`);
+    }
+    for (const m of this.medalsFor(B, true)) rewards.push(`Medal: ${m.name}`);
+    save.touch('profile');
+    save.flush();
+    return { bonus, rewards, earned };
+  },
+
+  onLose(B) {
+    const p = save.profile;
+    p.run.lives--;
+    p.stats.battles++;
+    p.stats.kills += B.stats.kills;
+    for (const m of this.medalsFor(B, false)) ui.toast(`Medal: ${m.name}`, 3500);
+    const over = p.run.lives <= 0;
+    if (over) {
+      p.run.active = false;
+      p.continueLevel = B.level;
+      p.bestScore = Math.max(p.bestScore, p.run.score);
+    }
+    save.touch('profile');
+    save.flush();
+    return { over };
+  },
+
+  // Medals earned in this battle that weren't held yet.
+  medalsFor(B, won) {
+    const p = save.profile;
+    const got = [];
+    const give = (id) => {
+      if (p.medals.includes(id)) return;
+      p.medals.push(id);
+      got.push(MEDALS.find((m) => m.id === id));
+    };
+    if (won && B.stats.ricochetsTaken > 0) give('ricochet');
+    if (won && B.stats.lost === 0) give('noloss');
+    if (won && B.level >= 10) give('level10');
+    if (B.bestCombo >= 5) give('combo5');
+    if (B.stats.crits >= 5) give('crit5');
+    if (B.climbed40) give('slope40');
+    if (B.units.some((V) => V.boss && V.destroyed)) give('boss');
+    if (got.length) audio.sfx('medal');
+    return got;
+  },
+};
+
+// A saved design by id, or a template id, or a captured blueprint.
+function findDesign(id) {
+  const d = save.designs.list.find((x) => x.id === id);
+  if (d) return JSON.parse(JSON.stringify(d));
+  if (TEMPLATES[id]) return designFromTemplate(id);
+  return null;
+}
+
+/* ---------- 16d_screen_workshop.js ---------- */
+/* ==== 16d SCREEN: WORKSHOP ==== */
+// Between ladder levels (design/01 §14.4, §8.6): choose the squad of 3 within the
+// level budget, open designs in the Drafting Office, then start the next level.
+
+// Everything the player can field: starting templates, saved designs, captured blueprints.
+function designLibrary() {
+  const out = [];
+  for (const id of ['medium', 'light', 'scout', 'assault', 'truck']) out.push({ id, src: 'Starting template', design: Object.assign(designFromTemplate(id), { family: TEMPLATES[id].name, mark: 1 }) });
+  for (const d of save.designs.list) out.push({ id: d.id, src: 'Your design', design: JSON.parse(JSON.stringify(d)) });
+  for (const b of save.profile.blueprints) if (TEMPLATES[b.id] && !out.some((o) => o.id === b.id)) out.push({ id: b.id, src: `Blueprint · level ${b.level}`, design: Object.assign(designFromTemplate(b.id), { family: b.name, mark: 1 }) });
+  return out;
+}
+
+SCREENS.workshop = {
+  root: null,
+  slot: 0,
+
+  enter() {
+    if (!save.profile.squad.length) save.profile.squad = ['medium', 'light', 'scout'];
+    this.slot = 0;
+    this.build();
+    audio.playTheme('title');
+  },
+
+  exit() { if (this.root) this.root.remove(); this.root = null; },
+
+  level() { const r = save.profile.run; return r.active ? r.level : save.profile.continueLevel; },
+
+  build() {
+    if (this.root) this.root.remove();
+    const p = save.profile;
+    const lib = designLibrary();
+    const find = (id) => lib.find((o) => o.id === id);
+    const level = this.level();
+    const budget = levelConfig(level).budget;
+    const squad = p.squad.map((id) => find(id) || find('light'));
+    const used = squad.reduce((s, o) => s + costOf(o.design), 0);
+
+    const r = el('div', 'workshop');
+    this.root = r;
+    const top = el('div', 'ws-top');
+    top.appendChild(button('‹ Title', () => screens.go('title'), 'btn btn-small', 'back'));
+    top.appendChild(el('h2', 'ws-title', 'Workshop'));
+    top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
+    top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
+    r.appendChild(top);
+
+    // Squad slots.
+    const slots = el('div', 'ws-slots');
+    squad.forEach((o, i) => {
+      const card = el('button', 'ws-card ws-slot' + (i === this.slot ? ' on' : ''));
+      card.type = 'button';
+      card.appendChild(el('span', 'ws-num', String(i + 1)));
+      card.appendChild(designThumb(o.design, 120, 44));
+      card.appendChild(el('b', '', markName(o.design)));
+      const st = statsOf(o.design);
+      card.appendChild(el('small', '', `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · cost ${costOf(o.design)}`));
+      card.addEventListener('click', () => { audio.sfx('tap'); this.slot = i; this.build(); });
+      slots.appendChild(card);
+    });
+    r.appendChild(slots);
+
+    // Library: tap to put into the selected slot; Edit opens the Drafting Office.
+    r.appendChild(el('div', 'ws-label', `Designs · tap one to put it in slot ${this.slot + 1}`));
+    const list = el('div', 'ws-lib');
+    for (const o of lib) {
+      const card = el('div', 'ws-card ws-libcard');
+      const pick = el('button', 'ws-pick');
+      pick.type = 'button';
+      pick.appendChild(designThumb(o.design, 104, 38));
+      pick.appendChild(el('b', '', markName(o.design)));
+      pick.appendChild(el('small', '', `${o.src} · cost ${costOf(o.design)}`));
+      pick.addEventListener('click', () => {
+        audio.sfx('order');
+        p.squad[this.slot] = o.id;
+        save.touch('profile');
+        this.slot = (this.slot + 1) % 3;
+        this.build();
+      });
+      card.appendChild(pick);
+      card.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      list.appendChild(card);
+    }
+    r.appendChild(list);
+
+    const bottom = el('div', 'ws-bottom');
+    bottom.appendChild(button('New design', () => { SCREENS.designer.returnTo = 'workshop'; screens.go('designer'); }, 'btn btn-small'));
+    const go = button(`Start level ${level}`, () => {
+      if (used > budget) { audio.sfx('error'); ui.toast(`The squad costs ${used}; level ${level} allows ${budget}.`); return; }
+      ladder.resume();
+    }, 'btn btn-primary');
+    if (used > budget) go.classList.add('btn-disabled');
+    bottom.appendChild(go);
+    r.appendChild(bottom);
+    uiLayer.insertBefore(r, ui.toastBox);
+  },
+
+  edit(o) {
+    SCREENS.designer.returnTo = 'workshop';
+    screens.go('designer', { design: o.design, base: o.design, owned: true });
+  },
+
+  update() {},
+
+  render(g) {
+    const { w, h } = layout;
+    g.fillStyle = BLUEPRINT.bg;
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(42,106,146,0.6)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x < w; x += 24) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, h); }
+    for (let y = 0; y < h; y += 24) { g.moveTo(0, y + 0.5); g.lineTo(w, y + 0.5); }
+    g.stroke();
+  },
+};
+
+/* ---------- 16e_screen_designer.js ---------- */
+/* ==== 16e SCREEN: DRAFTING OFFICE ==== */
+// The Workshop's designer (design/02 §5, design/01 §8, §8.6): a cyanotype grid,
+// a parts palette, a numbers-only stats drawer, balance markers, undo/redo,
+// templates, randomise, scratch build, test drive and saving marks.
+
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+const markName = (d) => `${d.family || d.name} Mk.${ROMAN[d.mark || 1] || d.mark}`;
+const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
+const BLUEPRINT = { bg: '#13466B', grid: '#2A6A92', line: 'rgba(214,238,255,0.85)', valid: '#7FD3FF', invalid: '#FF6B5A' };
+
+// A thumbnail of a design, drawn with the battle part art.
+function designThumb(design, w, h) {
+  const c = document.createElement('canvas');
+  const dpr = layout.dpr;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  c.style.width = w + 'px'; c.style.height = h + 'px';
+  const d = cropDesign(design);
+  const V = { design: d, parts: d.cells.map((cl) => ({ def: PARTS[cl.p], x: cl.x, y: cl.y, hp: 1, alive: true, scorch: 0 })), side: 0, id: 1 };
+  const ppm = Math.max(4, Math.floor(Math.min((w * dpr) / (d.w * CELL), (h * dpr) / (d.h * CELL))));
+  const img = paintParts(V, V.parts.map((_, i) => i), ppm, 0);
+  const g = c.getContext('2d');
+  g.drawImage(img, (c.width - img.width) / 2, (c.height - img.height) / 2);
+  return c;
+}
+
+SCREENS.designer = {
+  root: null,
+  st: null,             // { d, cls, base, baseOwned, undo, redo, brush, sel, cat, zoom, panX, panY }
+  gridRect: { x: 0, y: 0, w: 1, h: 1 },
+  hover: null,          // {x, y} cell under the pointer while placing
+  move: null,           // {idx, dx, dy, x, y} while dragging a placed part
+  msg: '',
+  controls: [],
+
+  // arg: { design, base } to edit, { restore } to come back from a test drive, or nothing for a scratch build.
+  enter(arg = {}) {
+    if (arg.restore) this.st = arg.restore;
+    else this.load(arg.design || this.scratch(), arg.base || null, arg.owned !== false && !!arg.design);
+    this.build();
+    audio.playTheme(null);
+    // Desktop: show the ghost under the mouse while a part is picked up.
+    this.onHover = (e) => { if (e.pointerType === 'mouse') this.hoverAt(e.clientX - layout.x, e.clientY - layout.y); };
+    canvas.addEventListener('pointermove', this.onHover);
+  },
+
+  exit() {
+    if (this.root) this.root.remove();
+    this.root = null;
+    canvas.removeEventListener('pointermove', this.onHover);
+  },
+
+  // Put a design into a class-sized grid, bottom-aligned.
+  load(design, base, owned) {
+    const d0 = cropDesign(design);
+    const cls = d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
+    const C = CLASSES[cls];
+    const ox = 1, oy = C.h - d0.h;
+    this.st = {
+      cls,
+      d: { w: C.w, h: C.h, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
+      base: base || design,
+      baseOwned: owned,
+      undo: [], redo: [],
+      brush: null, sel: -1, cat: 'structure', zoom: 1, panX: 0, panY: 0,
+    };
+    this.msg = '';
+  },
+
+  scratch() {
+    const C = CLASSES.light;
+    const cells = [];
+    for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
+    return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
+  },
+
+  snapshot() { this.st.undo.push(JSON.stringify(this.st.d.cells)); if (this.st.undo.length > 60) this.st.undo.shift(); this.st.redo.length = 0; },
+
+  // Why a part can't go at (x, y), or '' if it can. ignore = index of a part being moved.
+  placeCheck(id, x, y, ignore = -1) {
+    const d = this.st.d, P = PARTS[id];
+    if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
+    let touches = false, others = 0;
+    for (let i = 0; i < d.cells.length; i++) {
+      if (i === ignore) continue;
+      others++;
+      const c = d.cells[i], Q = PARTS[c.p];
+      if (x < c.x + Q.w && x + P.w > c.x && y < c.y + Q.h && y + P.h > c.y) return `Overlaps the ${Q.name.toLowerCase()}.`;
+      const hTouch = (x === c.x + Q.w || x + P.w === c.x) && y < c.y + Q.h && y + P.h > c.y;
+      const vTouch = (y === c.y + Q.h || y + P.h === c.y) && x < c.x + Q.w && x + P.w > c.x;
+      if (hTouch || vTouch) touches = true;
+    }
+    if (P.loco && y + P.h !== d.h) return 'Wheels and tracks go on the bottom row.';
+    if (others && !touches) return 'Parts must touch the rest of the vehicle.';
+    return '';
+  },
+
+  place(id, x, y) {
+    const why = this.placeCheck(id, x, y);
+    if (why) { this.say(why, true); return false; }
+    this.snapshot();
+    this.st.d.cells.push({ p: id, x, y });
+    this.st.sel = -1;
+    audio.sfx('tap');
+    haptic('tap');
+    this.msg = '';
+    this.refresh();
+    return true;
+  },
+
+  remove(i) {
+    if (i < 0) return;
+    this.snapshot();
+    this.st.d.cells.splice(i, 1);
+    this.st.sel = -1;
+    audio.sfx('back');
+    this.refresh();
+  },
+
+  say(text, bad) {
+    this.msg = text;
+    if (bad) audio.sfx('error');
+    if (this.msgEl) { this.msgEl.textContent = text; this.msgEl.classList.toggle('bad', !!bad); }
+  },
+
+  cellAt(sx, sy) {
+    const r = this.gridRect, cs = this.cs;
+    return { x: Math.floor((sx - r.ox) / cs), y: Math.floor((sy - r.oy) / cs) };
+  },
+
+  partAt(cx, cy) {
+    const cells = this.st.d.cells;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const c = cells[i], P = PARTS[c.p];
+      if (cx >= c.x && cx < c.x + P.w && cy >= c.y && cy < c.y + P.h) return i;
+    }
+    return -1;
+  },
+
+  // Brush anchor: the part's bottom-left sits on the cell you touch.
+  anchor(id, cell) { return { x: cell.x, y: cell.y - PARTS[id].h + 1 }; },
+
+  world: {
+    tap(x, y) {
+      const S = SCREENS.designer;
+      const cell = S.cellAt(x, y);
+      if (S.st.brush) { const a = S.anchor(S.st.brush, cell); S.place(S.st.brush, a.x, a.y); return; }
+      const i = S.partAt(cell.x, cell.y);
+      S.st.sel = i === S.st.sel ? -1 : i;
+      if (i >= 0) { audio.sfx('tap'); S.say(`${PARTS[S.st.d.cells[i].p].name}. Drag to move it.`); }
+      S.refresh();
+    },
+    doubleTap() { const S = SCREENS.designer; S.st.zoom = 1; S.st.panX = S.st.panY = 0; S.layout(); },
+    longPress(x, y) {
+      const S = SCREENS.designer;
+      const c = S.cellAt(x, y);
+      const i = S.partAt(c.x, c.y);
+      if (i >= 0) S.remove(i);
+    },
+    panStart(x, y) {
+      const S = SCREENS.designer;
+      const c = S.cellAt(x, y);
+      const i = S.partAt(c.x, c.y);
+      if (i >= 0 && !S.st.brush) {
+        const cl = S.st.d.cells[i];
+        S.st.sel = i;
+        S.move = { idx: i, dx: c.x - cl.x, dy: c.y - cl.y, x: cl.x, y: cl.y, sx: x, sy: y };
+      }
+    },
+    pan(dx, dy) {
+      const S = SCREENS.designer;
+      if (S.move) {
+        S.move.sx += dx; S.move.sy += dy;
+        const c = S.cellAt(S.move.sx, S.move.sy);
+        S.move.x = c.x - S.move.dx; S.move.y = c.y - S.move.dy;
+        return;
+      }
+      S.st.panX += dx; S.st.panY += dy;
+      S.layout();
+    },
+    panEnd() {
+      const S = SCREENS.designer;
+      const m = S.move;
+      if (!m) return;
+      S.move = null;
+      const cl = S.st.d.cells[m.idx];
+      if (m.x === cl.x && m.y === cl.y) return;
+      const why = S.placeCheck(cl.p, m.x, m.y, m.idx);
+      if (why) { S.say(why, true); return; }
+      S.snapshot();
+      cl.x = m.x; cl.y = m.y;
+      audio.sfx('tap');
+      S.refresh();
+    },
+    pinch(f) {
+      const S = SCREENS.designer;
+      S.st.zoom = clamp(S.st.zoom * f, 0.6, 3);
+      S.layout();
+    },
+  },
+
+  key(code, down) {
+    if (!down) return;
+    if (code === 'Delete' || code === 'Backspace') this.remove(this.st.sel);
+    if ((code === 'KeyZ') && (input.keys.has('ControlLeft') || input.keys.has('MetaLeft'))) this.undo();
+  },
+
+  undo() {
+    const s = this.st;
+    if (!s.undo.length) { audio.sfx('error'); return; }
+    s.redo.push(JSON.stringify(s.d.cells));
+    s.d.cells = JSON.parse(s.undo.pop());
+    s.sel = -1;
+    audio.sfx('back');
+    this.refresh();
+  },
+
+  redo() {
+    const s = this.st;
+    if (!s.redo.length) { audio.sfx('error'); return; }
+    s.undo.push(JSON.stringify(s.d.cells));
+    s.d.cells = JSON.parse(s.redo.pop());
+    s.sel = -1;
+    audio.sfx('tap');
+    this.refresh();
+  },
+
+  // ---------- DOM
+  build() {
+    if (this.root) this.root.remove();
+    const r = el('div', 'designer');
+    this.root = r;
+    // Top strip.
+    const top = el('div', 'dz-top');
+    top.appendChild(button('‹ Back', () => this.back(), 'btn btn-small', 'back'));
+    this.nameBtn = button('', () => this.rename(), 'btn btn-small dz-name');
+    top.appendChild(this.nameBtn);
+    this.chips = el('div', 'dz-chips');
+    top.appendChild(this.chips);
+    top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
+    r.appendChild(top);
+    // Palette.
+    const pal = el('div', 'dz-palette');
+    this.palette = pal;
+    const tabs = el('div', 'dz-tabs');
+    for (const [cat, label] of PART_CATS) {
+      const t = el('button', 'dz-tab', label);
+      t.type = 'button';
+      t.dataset.cat = cat;
+      t.addEventListener('click', () => { this.st.cat = cat; audio.sfx('tap'); this.fillPalette(); });
+      tabs.appendChild(t);
+    }
+    pal.appendChild(tabs);
+    this.partList = el('div', 'dz-parts');
+    pal.appendChild(this.partList);
+    r.appendChild(pal);
+    // Stats drawer.
+    this.stats = el('div', 'dz-stats');
+    r.appendChild(this.stats);
+    // Bottom corners.
+    const bl = el('div', 'dz-bl');
+    bl.appendChild(button('Undo', () => this.undo(), 'btn btn-small'));
+    bl.appendChild(button('Redo', () => this.redo(), 'btn btn-small'));
+    this.delBtn = button('Delete', () => this.remove(this.st.sel), 'btn btn-small btn-warn');
+    bl.appendChild(this.delBtn);
+    r.appendChild(bl);
+    const br = el('div', 'dz-br');
+    this.testBtn = button('Test drive', () => this.testDrive(), 'btn btn-small');
+    this.saveBtn = button('Save', () => this.saveDesign(), 'btn btn-small btn-primary');
+    br.appendChild(this.testBtn);
+    br.appendChild(this.saveBtn);
+    r.appendChild(br);
+    this.msgEl = el('div', 'dz-msg');
+    r.appendChild(this.msgEl);
+    uiLayer.insertBefore(r, ui.toastBox);
+    this.fillPalette();
+    this.refresh();
+    requestAnimationFrame(() => this.layout());
+  },
+
+  fillPalette() {
+    const list = this.partList;
+    list.textContent = '';
+    for (const t of this.palette.querySelectorAll('.dz-tab')) t.setAttribute('aria-selected', String(t.dataset.cat === this.st.cat));
+    for (const P of Object.values(PARTS)) {
+      if (P.cat !== this.st.cat) continue;
+      const b = el('button', 'dz-part');
+      b.type = 'button';
+      b.dataset.part = P.id;
+      const icon = document.createElement('canvas');
+      icon.width = 64; icon.height = 32;
+      const g = icon.getContext('2d');
+      const cs = Math.min(64 / P.w, 32 / P.h) * 0.85;
+      drawPart(g, { def: P, scorch: 0 }, (64 - P.w * cs) / 2, (32 - P.h * cs) / 2 + (P.id === 'radio' ? 6 : 0), cs, 0, 1);
+      b.appendChild(icon);
+      const txt = el('span', 'dz-part-txt');
+      txt.appendChild(el('b', '', P.name));
+      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
+      b.appendChild(txt);
+      if (this.st.brush === P.id) b.classList.add('on');
+      // Tap to pick up the part as a brush; drag it straight onto the grid.
+      b.addEventListener('pointerdown', (e) => this.paletteDown(e, P.id, b));
+      list.appendChild(b);
+    }
+  },
+
+  paletteDown(e, id, btn) {
+    audio.unlock();
+    const startX = e.clientX, startY = e.clientY;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 12) { dragging = true; this.st.brush = id; }
+      if (dragging) this.hoverAt(ev.clientX - layout.x, ev.clientY - layout.y);
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (dragging) {
+        const x = ev.clientX - layout.x, y = ev.clientY - layout.y;
+        const R = this.gridRect;
+        if (x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h) {
+          const a = this.anchor(id, this.cellAt(x, y));
+          this.place(id, a.x, a.y);
+        }
+        this.st.brush = null;
+        this.hover = null;
+      } else {
+        this.st.brush = this.st.brush === id ? null : id;
+        this.st.sel = -1;
+        audio.sfx(this.st.brush ? 'toggleOn' : 'toggleOff');
+        this.say(this.st.brush ? `${PARTS[id].name}: tap the grid to place it. Tap it again to put it down.` : '');
+      }
+      this.fillPalette();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  },
+
+  hoverAt(x, y) {
+    const R = this.gridRect;
+    if (!this.st.brush || x < R.x || x > R.x + R.w || y < R.y || y > R.y + R.h) { this.hover = null; return; }
+    const a = this.anchor(this.st.brush, this.cellAt(x, y));
+    this.hover = a;
+    const why = this.placeCheck(this.st.brush, a.x, a.y);
+    this.say(why || `${PARTS[this.st.brush].name}: release to place.`, false);
+    if (this.msgEl) this.msgEl.classList.toggle('bad', !!why);
+  },
+
+  // Recompute numbers after any change.
+  refresh() {
+    const s = this.st;
+    const d = s.d;
+    this.nameBtn.textContent = markName(d) + (this.changed() ? ' *' : '');
+    this.delBtn.hidden = s.sel < 0;
+    const rep = designReport(d);
+    this.rep = rep;
+    const st = rep.st;
+    this.chips.textContent = '';
+    const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
+    chip(`${(st.mass / 1000).toFixed(1)} t`);
+    chip(`${st.power}/${st.drawn} kW`);
+    chip(`${st.powerToWeight.toFixed(1)} kW/t`);
+    chip(`${rep.speeds.Plains} km/h`);
+    chip(`cost ${rep.cost}`);
+    // Stats drawer: numbers only.
+    const S = this.stats;
+    S.textContent = '';
+    const head = (t) => S.appendChild(el('div', 'dz-h', t));
+    const row = (k, v) => { const r = el('div', 'dz-row'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); S.appendChild(r); };
+    head('Stats');
+    row('Mass', `${(st.mass / 1000).toFixed(2)} t`);
+    row('Centre of mass', `${st.com.x.toFixed(1)}, ${st.com.y.toFixed(1)} m`);
+    row('Power', `${st.power} kW made, ${st.drawn} kW drawn`);
+    row('Power to weight', `${st.powerToWeight.toFixed(1)} kW/t`);
+    row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
+    row('Tip angle', `${Math.round(st.tipAngle)}°`);
+    row('Climb limit', `${rep.climb}°`);
+    row('Crew space', `${st.crew}`);
+    row('Fuel', `${st.fuel} L`);
+    row('Shells', `${st.shells + 10}`);
+    head('Top speed');
+    for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
+    head('Armour');
+    row('Front', `${rep.armour.front} mm`);
+    row('Rear', `${rep.armour.rear} mm`);
+    row('Top', `${rep.armour.top} mm`);
+    head('Weapons');
+    if (!rep.weapons.length) row('None', '');
+    for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
+    head('Cost');
+    row('Parts', rep.cost);
+    row('Requisition to build', this.buildCost());
+    row('Requisition held', save.profile.requisition);
+    const cmp = s.baseOwned ? changeLog(s.base, cropDesign(d)) : [];
+    if (cmp.length) { head(`Changes vs ${markName(s.base)}`); for (const l of cmp) S.appendChild(el('div', 'dz-note', l)); }
+    const errs = rep.valid.errors;
+    if (errs.length || rep.warnings.length) {
+      head('Notes');
+      for (const e of errs) S.appendChild(el('div', 'dz-note bad', e));
+      for (const w of rep.warnings) S.appendChild(el('div', 'dz-note', w));
+    }
+    const valid = rep.valid.ok;
+    this.testBtn.disabled = !valid;
+    const need = this.buildCost();
+    this.saveBtn.disabled = !valid || !this.changed() || need > save.profile.requisition;
+    if (!this.msg) this.say(valid ? (need > save.profile.requisition ? `Saving needs ${need} Requisition; you have ${save.profile.requisition}.` : 'Tap a part in the list, then tap the grid.') : errs[0], !valid);
+  },
+
+  changed() {
+    const a = cropDesign(this.st.d), b = cropDesign(this.st.base);
+    if (a.cells.length !== b.cells.length) return true;
+    const key = (d) => d.cells.map((c) => `${c.p}@${c.x},${c.y}`).sort().join('|');
+    return key(a) !== key(b);
+  },
+
+  // Requisition to build: the price difference from a design you already own, or the full cost.
+  buildCost() {
+    const now = costOf(this.st.d);
+    const before = this.st.baseOwned ? costOf(this.st.base) : 0;
+    return Math.max(0, now - before);
+  },
+
+  newMenu() {
+    const c = ui.card('New design');
+    const col = el('div', 'card-col');
+    let close = null;
+    for (const id of ['scout', 'light', 'medium', 'assault', 'truck']) {
+      col.appendChild(button(`Template: ${TEMPLATES[id].name} Mk.I`, () => { close(); this.load(designFromTemplate(id), null, true); this.build(); }));
+    }
+    col.appendChild(button('Randomise (light)', () => { close(); this.randomise('light'); }));
+    col.appendChild(button('Randomise (heavy)', () => { close(); this.randomise('heavy'); }));
+    col.appendChild(button('Scratch build', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    c.classList.add('card-scroll');
+    close = ui.open(c);
+  },
+
+  randomise(cls) {
+    this.seed = (this.seed || 1000) + 1;
+    const d = randomDesign(this.seed * 104729, cls);
+    d.name = d.family = cls === 'heavy' ? 'Heavy design' : 'Light design';
+    this.load(d, null, false);
+    this.build();
+    audio.sfx('swap');
+  },
+
+  rename() {
+    const c = ui.card('Rename design');
+    const inp = el('input', 'text-in');
+    inp.type = 'text';
+    inp.maxLength = 28;
+    inp.value = this.st.d.family;
+    c.appendChild(inp);
+    const row = el('div', 'card-row');
+    let close = null;
+    row.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    row.appendChild(button('Rename', () => {
+      const v = inp.value.trim();
+      if (v) { this.st.d.family = v; this.st.d.name = v; }
+      close();
+      this.refresh();
+    }, 'btn btn-primary'));
+    c.appendChild(row);
+    close = ui.open(c);
+    setTimeout(() => inp.focus(), 50);
+  },
+
+  saveDesign() {
+    const s = this.st;
+    const rep = designReport(s.d);
+    if (!rep.valid.ok) { this.say(rep.valid.errors[0], true); return; }
+    const need = this.buildCost();
+    if (need > save.profile.requisition) { this.say(`Saving needs ${need} Requisition; you have ${save.profile.requisition}.`, true); return; }
+    const out = cropDesign(s.d);
+    const fromSaved = save.designs.list.find((x) => x.id === s.base.id);
+    const sameFamily = s.baseOwned && s.d.family === (s.base.family || s.base.name);
+    const mark = sameFamily ? (s.base.mark || 1) + 1 : 1;
+    const design = {
+      id: 'd' + Date.now().toString(36),
+      family: s.d.family,
+      name: '',
+      mark,
+      w: out.w, h: out.h,
+      cells: out.cells,
+      changelog: s.baseOwned ? changeLog(s.base, out) : ['New design'],
+      parent: fromSaved ? fromSaved.id : s.base.id,
+      cost: rep.cost,
+      created: Date.now(),
+    };
+    design.name = markName(design);
+    save.designs.list.push(design);
+    save.profile.requisition -= need;
+    // A refit replaces the older mark in the squad.
+    const sq = save.profile.squad;
+    for (let i = 0; i < sq.length; i++) if (sq[i] === s.base.id) sq[i] = design.id;
+    save.touch('designs');
+    save.touch('profile');
+    save.flush();
+    audio.sfx('medal');
+    ui.toast(`Saved ${design.name}.${need ? ` ${need} Requisition spent.` : ''}`);
+    this.load(design, design, true);
+    this.build();
+  },
+
+  testDrive() {
+    const d = cropDesign(this.st.d);
+    if (!validateDesign(d).ok) { this.say('Test drive needs a valid design.', true); return; }
+    d.name = markName(this.st.d);
+    screens.go('battle', { test: d, back: { restore: this.st } });
+  },
+
+  back() {
+    if (this.changed()) {
+      ui.confirm('Leave without saving? The changes will be lost.', 'Leave', () => screens.go(this.returnTo || 'workshop'), 'Keep editing');
+    } else screens.go(this.returnTo || 'workshop');
+  },
+
+  // ---------- layout and drawing
+  layout() {
+    if (!this.root) return;
+    const ui0 = uiLayer.getBoundingClientRect();
+    const top = this.root.querySelector('.dz-top').getBoundingClientRect();
+    const pal = this.palette.getBoundingClientRect();
+    const sta = this.stats.getBoundingClientRect();
+    const bl = this.root.querySelector('.dz-bl').getBoundingClientRect();
+    const x = pal.right - ui0.left + 8;
+    const y = top.bottom - ui0.top + 6;
+    const w = sta.left - ui0.left - 8 - x;
+    const h = bl.top - ui0.top - 22 - y;
+    const d = this.st.d;
+    const cs = Math.max(4, Math.min(w / d.w, h / d.h)) * this.st.zoom;
+    this.cs = cs;
+    this.gridRect = { x, y, w, h, ox: x + (w - d.w * cs) / 2 + this.st.panX, oy: y + (h - d.h * cs) / 2 + this.st.panY };
+  },
+
+  update() {},
+
+  render(g) {
+    const { w, h } = layout;
+    g.fillStyle = BLUEPRINT.bg;
+    g.fillRect(0, 0, w, h);
+    if (!this.st || !this.cs) return;
+    const d = this.st.d, cs = this.cs, R = this.gridRect;
+    const ox = R.ox, oy = R.oy;
+    g.save();
+    g.beginPath(); g.rect(R.x, R.y, R.w, R.h); g.clip();
+    // Grid.
+    g.strokeStyle = BLUEPRINT.grid;
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x <= d.w; x++) { g.moveTo(ox + x * cs + 0.5, oy); g.lineTo(ox + x * cs + 0.5, oy + d.h * cs); }
+    for (let y = 0; y <= d.h; y++) { g.moveTo(ox, oy + y * cs + 0.5); g.lineTo(ox + d.w * cs, oy + y * cs + 0.5); }
+    g.stroke();
+    g.strokeStyle = BLUEPRINT.line;
+    g.strokeRect(ox + 0.5, oy + 0.5, d.w * cs, d.h * cs);
+    // Ground line under the bottom row.
+    g.fillStyle = 'rgba(214,238,255,0.25)';
+    g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
+    // Parts: structure first.
+    const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
+    for (const i of order) {
+      if (this.move && this.move.idx === i) continue;
+      const c = d.cells[i];
+      drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
+      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
+        // Barrel preview at zero elevation.
+        const P = PARTS[c.p];
+        g.strokeStyle = '#30343b';
+        g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
+        g.beginPath();
+        g.moveTo(ox + (c.x + 0.5) * cs, oy + (c.y + P.h / 2) * cs);
+        g.lineTo(ox + (c.x + 0.5) * cs + barrelLength(P) * cs * 2, oy + (c.y + P.h / 2) * cs);
+        g.stroke();
+      }
+    }
+    // Selected part outline.
+    if (this.st.sel >= 0 && d.cells[this.st.sel]) {
+      const c = d.cells[this.st.sel], P = PARTS[c.p];
+      g.strokeStyle = PAL.amber; g.lineWidth = 2;
+      g.strokeRect(ox + c.x * cs + 1, oy + c.y * cs + 1, P.w * cs - 2, P.h * cs - 2);
+    }
+    // Ghost: placing from the palette, or moving a part.
+    const ghost = this.move ? { id: d.cells[this.move.idx].p, x: this.move.x, y: this.move.y, ignore: this.move.idx }
+      : this.hover && this.st.brush ? { id: this.st.brush, x: this.hover.x, y: this.hover.y, ignore: -1 } : null;
+    if (ghost) {
+      const P = PARTS[ghost.id];
+      const why = this.placeCheck(ghost.id, ghost.x, ghost.y, ghost.ignore);
+      g.globalAlpha = 0.6;
+      drawPart(g, { def: P, scorch: 0 }, ox + ghost.x * cs, oy + ghost.y * cs, cs, 0, 1);
+      g.globalAlpha = 1;
+      g.fillStyle = why ? 'rgba(255,107,90,0.35)' : 'rgba(127,211,255,0.35)';
+      g.fillRect(ox + ghost.x * cs, oy + ghost.y * cs, P.w * cs, P.h * cs);
+      g.strokeStyle = why ? BLUEPRINT.invalid : BLUEPRINT.valid;
+      g.lineWidth = 2;
+      g.strokeRect(ox + ghost.x * cs, oy + ghost.y * cs, P.w * cs, P.h * cs);
+    }
+    this.drawBalance(g, ox, oy, cs);
+    g.restore();
+  },
+
+  // Balance markers (design/01 §8.6): centre of mass, contact base, tip angle.
+  drawBalance(g, ox, oy, cs) {
+    const rep = this.rep;
+    if (!rep || !rep.st.mass) return;
+    const st = rep.st, d = this.st.d;
+    const px = ox + (st.com.x / CELL) * cs;
+    const py = oy + (d.h - st.com.y / CELL) * cs;
+    // Contact base.
+    let x0 = Infinity, x1 = -Infinity;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.loco) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x + P.w); } }
+    if (x1 > x0) {
+      const by = oy + d.h * cs + 6;
+      g.strokeStyle = PAL.amber; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(ox + x0 * cs, by - 4); g.lineTo(ox + x0 * cs, by); g.lineTo(ox + x1 * cs, by); g.lineTo(ox + x1 * cs, by - 4); g.stroke();
+      // Tip lines: from the base corners up through the centre of mass.
+      g.setLineDash([4, 4]);
+      g.strokeStyle = 'rgba(255,178,62,0.6)';
+      g.beginPath(); g.moveTo(ox + x0 * cs, by); g.lineTo(px, py); g.lineTo(ox + x1 * cs, by); g.stroke();
+      g.setLineDash([]);
+    }
+    g.strokeStyle = PAL.amber; g.fillStyle = BLUEPRINT.bg; g.lineWidth = 2;
+    g.beginPath(); g.arc(px, py, 7, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = PAL.amber;
+    g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, -Math.PI / 2, 0); g.lineTo(px, py); g.fill();
+    g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, Math.PI / 2, Math.PI); g.lineTo(px, py); g.fill();
+    g.font = `700 12px ${FONT_UI}`;
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = PAL.linen;
+    g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
+  },
+};
+
+/* ---------- 16f_screen_blueprints.js ---------- */
+/* ==== 16f SCREEN: BLUEPRINTS AND MEDALS ==== */
+// Captured boss blueprints and medals (design/01 §15). Facts only.
+
+SCREENS.blueprints = {
+  root: null,
+  enter() { this.build(); },
+  exit() { if (this.root) this.root.remove(); this.root = null; },
+
+  build() {
+    if (this.root) this.root.remove();
+    const p = save.profile;
+    const r = el('div', 'workshop blueprints');
+    this.root = r;
+    const top = el('div', 'ws-top');
+    top.appendChild(button('‹ Title', () => screens.go('title'), 'btn btn-small', 'back'));
+    top.appendChild(el('h2', 'ws-title', 'Blueprints and medals'));
+    r.appendChild(top);
+    const body = el('div', 'bp-body');
+    body.appendChild(el('div', 'ws-label', 'Captured blueprints'));
+    const list = el('div', 'ws-lib bp-list');
+    if (!p.blueprints.length) list.appendChild(el('p', 'bp-empty', 'None captured yet. The first boss is at level 10; every 5th level after 15 has another.'));
+    for (const b of p.blueprints) {
+      const d = TEMPLATES[b.id] ? Object.assign(designFromTemplate(b.id), { family: b.name, mark: 1 }) : null;
+      if (!d) continue;
+      const st = statsOf(d);
+      const guns = d.cells.map((c) => PARTS[c.p]).filter((x) => x.cat === 'weapon' && !x.auto && x.id !== 'smoke').map((x) => x.name).join(', ');
+      const card = el('div', 'ws-card ws-libcard bp-card');
+      card.appendChild(designThumb(d, 150, 54));
+      card.appendChild(el('b', '', b.name));
+      card.appendChild(el('small', '', `Captured: level ${b.level} boss`));
+      card.appendChild(el('small', '', `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · ${guns || 'no gun'}`));
+      card.appendChild(button('Open in Workshop', () => { SCREENS.designer.returnTo = 'blueprints'; screens.go('designer', { design: d, base: d, owned: true }); }, 'btn btn-small'));
+      list.appendChild(card);
+    }
+    body.appendChild(list);
+    body.appendChild(el('div', 'ws-label', `Medals · ${p.medals.length} of ${MEDALS.length}`));
+    const medals = el('div', 'bp-medals');
+    for (const m of MEDALS) {
+      const got = p.medals.includes(m.id);
+      const row = el('div', 'bp-medal' + (got ? ' got' : ''));
+      row.appendChild(el('span', 'bp-dot', got ? '★' : '·'));
+      const t = el('span', 'bp-medal-txt');
+      t.appendChild(el('b', '', m.name));
+      t.appendChild(el('small', '', m.how));
+      row.appendChild(t);
+      medals.appendChild(row);
+    }
+    body.appendChild(medals);
+    body.appendChild(el('p', 'bp-empty', `Battles ${p.stats.battles} · levels cleared ${p.stats.cleared} · enemies destroyed ${p.stats.kills}`));
+    r.appendChild(body);
+    uiLayer.insertBefore(r, ui.toastBox);
+  },
+
+  update() {},
+  render(g) { SCREENS.workshop.render(g); },
 };
 
 /* ---------- 17_main.js ---------- */

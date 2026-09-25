@@ -113,6 +113,7 @@ function rebuildVehicle(V, first) {
   let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
   const contacts = [];
   const weapons = [];
+  V.night = 0;
   V.parts.forEach((p, i) => {
     if (!p.alive) return;
     const d = p.def;
@@ -127,6 +128,7 @@ function rebuildVehicle(V, first) {
     if (d.fuel) fuelMax += d.fuel;
     if (d.shells) shellsMax += d.shells;
     if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.night) V.night = Math.max(V.night || 0, d.night);
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
@@ -192,7 +194,7 @@ function stepVehicle(V, T, dt) {
   const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
   const hasFuel = V.fuelMax === 0 || V.fuel > 0;
   const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
-  const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE;
+  const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE * (V.speedMul || 1);
   const dragA = V.height * 2.5;
   const throttle = V.canDrive ? V.throttle : 0;
 

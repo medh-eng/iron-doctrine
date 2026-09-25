@@ -2,7 +2,7 @@
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
 const GAME_VERSION = '0.1.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
 
 // Rendering
@@ -58,9 +58,16 @@ const DEFAULT_PROFILE = {
   bestScore: 0,
   highestLevel: 1,
   continueLevel: 1,
-  blueprints: [],
-  medals: [],
+  blueprints: [],          // captured boss design ids
+  medals: [],              // medal ids
+  run: { active: false, level: 1, lives: 3, score: 0 },   // the ladder run in progress (v2)
+  requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
+  squad: [],               // design ids fielded in the ladder (v2)
+  stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
 };
+
+// Saved designs (v2). Stored under irondoctrine.designs.
+const DEFAULT_DESIGNS = { list: [] };
 
 // Graphics quality (design/02 §7)
 const QUALITY = {

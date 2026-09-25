@@ -7,8 +7,17 @@ const TURRET_SWING = 1.0;          // seconds to swing a turret to the other sid
 const ELEVATION_RATE = 40;         // degrees per second
 const _aim = { ok: false, angle: 0, face: 1, reason: '' };
 
+// Light and weather (design/01 §14.2): rain and dusk shorten sight; at night a night sight helps.
+function sightFactor(B, O) {
+  let k = 1;
+  if (B.cfg.weather === 'rain') k *= 0.75;
+  if (B.cfg.light === 'dusk') k *= 0.85;
+  if (B.cfg.light === 'night') k *= O.night || 0.4;
+  return k;
+}
+
 function spotRange(B, O, V) {
-  let r = SPOT_BASE * O.spot;
+  let r = SPOT_BASE * O.spot * sightFactor(B, O);
   if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
   return r;
@@ -105,7 +114,13 @@ function runWeapons(B, V, dt, aiControlled) {
     if (B.cfg.holdFire && V.side === 1) continue;
     if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
-    if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) w.reload = d.reload * loaderPenalty;
+    if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
+      w.reload = d.reload * loaderPenalty;
+      if (d.indirect && B.warnings) {
+        const vx = Math.abs(Math.cos(w.angle)) * d.vel;
+        B.warnings.push({ x: tmp.x, t: Math.abs(tmp.x - V.body.x) / Math.max(1, vx) });
+      }
+    }
   }
 }
 
@@ -141,7 +156,7 @@ function enemyThink(B, V, dt) {
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const x = V.body.x;
-  if (ai.mode === 'parked') {
+  if (ai.mode === 'parked' || ai.mode === 'fixed') {
     V.throttle = 0;
   } else if (ai.mode === 'convoy') {
     // Drive between two points; run for the far edge once shot at.
@@ -159,11 +174,17 @@ function enemyThink(B, V, dt) {
     else if (d < want - 15) V.throttle = -0.5 * toward;
     else V.throttle = 0;
   } else {
-    V.throttle = -0.5;                  // advance toward the player's side
+    V.throttle = 0.5 * V.dir;           // advance
   }
 }
 
-function makeAI(mode, level) {
+// The escort truck drives for the depot and waits while an enemy is close ahead.
+function escortThink(B, V) {
+  const ahead = B.units.some((U) => U.side !== V.side && !U.destroyed && U.seen && U.body.x > V.body.x && U.body.x - V.body.x < 45);
+  V.throttle = V.body.x >= B.depot ? 0 : ahead ? 0 : 0.5;
+}
+
+function makeAI(mode, cfg) {
   return {
     mode,
     target: null,
@@ -171,8 +192,8 @@ function makeAI(mode, level) {
     hold: null,
     leg: -1,
     a: 0, b: 0,
-    accuracy: clamp(0.45 + level * 0.03, 0.3, 0.7),
-    reaction: Math.max(0.35, 1.4 - level * 0.08),
+    accuracy: cfg ? cfg.accuracy : 0.6,
+    reaction: cfg ? cfg.reaction : 0.8,
   };
 }
 
