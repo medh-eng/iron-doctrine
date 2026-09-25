@@ -29,10 +29,14 @@ SCREENS.title = {
     this.build();
     uiLayer.insertBefore(this.root, ui.toastBox);
     audio.playTheme('title');
+    audio.quiet = true;
+    this.demo = null;
   },
   exit() {
     if (this.root) this.root.remove();
     this.root = null;
+    audio.quiet = false;
+    this.demo = null;
   },
   build() {
     const r = this.root;
@@ -72,14 +76,42 @@ SCREENS.title = {
     r.appendChild(el('p', 'title-stats', `Best score ${p.bestScore} · Highest level ${p.highestLevel}`));
     r.appendChild(el('p', 'title-version', `v${GAME_VERSION}`));
   },
-  update(dt) { this.t += dt; },
+  // AI-vs-AI demo battle behind the menu (design/02 §6), camera slowly tracking the fight.
+  newDemo() {
+    this.demoN = (this.demoN || 0) + 1;
+    const cfg = Object.assign(levelConfig(3), {
+      name: 'Demo', seed: 5000 + this.demoN * 131, length: 250, hills: 0.35, forest: 1, mud: 1, gaps: 0,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 0]], accuracy: 0.5, reaction: 1, holdFire: false,
+    });
+    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns]) pool.forEachAlive((p) => { p.alive = false; });
+    const squad = ['medium', 'assault', 'light'].map(designFromTemplate);
+    this.demo = createBattle(3, { demo: true, cfg, squad });
+    this.demo.panOf = () => 0;
+    this.camX = 180;   // snaps to the lead tank on the first frame
+  },
+  update(dt) {
+    this.t += dt;
+    if (!this.demo || this.demo.result && this.demo.resultT > 4 || this.demo.time > 100) this.newDemo();
+    updateBattle(this.demo, dt);
+  },
   render(g) {
+    const B = this.demo;
+    if (!B) return;
     const { w, h } = layout;
-    drawBackground(g, save.settings.reducedMotion ? 0 : this.t * 12);
-    g.fillStyle = PAL.ground;
-    g.fillRect(0, h * 0.9, w, h * 0.1);
-    g.fillStyle = PAL.groundEdge;
-    g.fillRect(0, h * 0.9, w, 2);
+    // Follow the lead tank, looking a little ahead toward the fight.
+    const lead = B.squad.find((V) => !V.destroyed) || B.units[0];
+    const want = lead.body.x + 30;
+    this.camX += (want - this.camX) * (this.camX === 180 ? 1 : 0.02);
+    view.S = BASE_PX_PER_M * (h / 360) * 0.5;
+    view.cx = clamp(this.camX, w / view.S / 2, B.T.length - w / view.S / 2);
+    view.cy = B.T.height(view.cx) + 1;
+    view.horizon = h * 0.8;
+    view.shake.x = view.shake.y = 0;
+    B.revealAll = true;
+    renderBattle(g, B);
+    // Veil so the menu stays readable over the fight.
+    g.fillStyle = 'rgba(12,14,20,0.42)';
+    g.fillRect(0, 0, w, h);
   },
 };
 

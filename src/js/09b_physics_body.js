@@ -141,7 +141,7 @@ function rebuildVehicle(V, first) {
       // Turret weapons sit on parts connected to the hull through a turret ring.
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
-        part: i, def: d, reload: 0, angle: 0, burst: 0, gap: 0,
+        part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
         pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
       });
     }

@@ -97,6 +97,7 @@ function boot() {
   if (save.firstRun) {
     save.settings.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
+  art.init();
   ui.init();
   input.init();
   bus.on('settings', applySettings);
@@ -146,6 +147,8 @@ window.__GAME__ = {
   physicsCheck: () => physicsCheck(),
   randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of ['light', 'heavy']) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
   ladder,
+  art,
+  artTest: () => { art.usePlaceholders = true; art.debug = true; art.init(); },
   damageCheck: () => damageCheck(),
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },

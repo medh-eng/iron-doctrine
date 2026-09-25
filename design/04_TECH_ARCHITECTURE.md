@@ -30,6 +30,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
 03_audio.js        context, buses, instruments, music scheduler, sfx, haptics
 04_input.js        pointer router, control zones, gestures, keyboard
 05_render.js       canvas, DPR, camera, layers, offscreen caches, text cache
+                   (05b_art.js: imported part images, loader and fallback; design 07)
 06_ui.js           DOM overlays (menus, drawers, cards), HUD, floating text, toasts
 07_data.js         part catalogue, templates, terrain types, buildings, recipes, levelConfig
 08_design.js       grid model, placement rules, validation, statsOf(), randomiser, marks
@@ -44,13 +45,14 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
 14_campaign.js     map generation, regions, forces, movement, clock, fog, strategic AI
 15_economy.js      production, stockpiles, supply network, construction, growth
 16_screens.js      title, ladder, workshop, designer, map, battle, results, settings, pause
-                   (split: 16a_screens.js for the manager, title and pause helpers; 16b_screen_battle.js)
+                   (split: 16a manager, title and pause helpers; 16b battle; 16c ladder run;
+                    16d Workshop; 16e Drafting Office; 16f blueprints and medals)
 17_main.js         boot, resize/orientation, loop, visibility handling
 ```
 
 **Splitting large files:** when a file passes about 800 lines, split it with letter suffixes that keep the order, e.g. `09a_physics_body.js`, `09b_physics_terrain.js`.
 
-**So far:** `00`–`12`, `16` and `17` exist (Part 1b). `13`–`15` come with auto-resolve, the campaign and the economy.
+**So far:** `00`–`12`, `16` and `17` exist (Part 1c). `13`–`15` come with auto-resolve, the campaign and the economy.
 
 ## 3. Rendering
 
@@ -166,6 +168,7 @@ Derived stats come from a pure function `statsOf(design, env)`, cached by design
 ## 8. Saves
 
 - **Keys:** `irondoctrine.settings`, `irondoctrine.profile`, `irondoctrine.designs`, `irondoctrine.campaign.slot1` to `slot3`.
+- **Versions:** v1 (Part 1a) → v2 (Part 1c): the profile gains `run` {active, level, lives, score}, `requisition` (new players 150), `squad` (3 design ids) and `stats`; `irondoctrine.designs` holds `{list: [Design]}`. The v1→v2 migration turns an unfinished v1 ladder into a run to continue with 3 lives.
 - **Blob format:** `{v: SAVE_VERSION, t: timestamp, data}`.
 - **On load:** run migrations one version at a time (v → v+1). If a migration fails:
   1. keep the old blob under `irondoctrine.backup.<key>`

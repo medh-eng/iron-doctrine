@@ -5,12 +5,12 @@
 // Output: index.html, game.js, game.css, assets/, manifest.webmanifest and icons.
 // Uses only Node built-ins, so no npm install is needed to build.
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, rmSync, copyFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, rmSync, copyFileSync, statSync, cpSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { deflateSync } from 'node:zlib';
+import { png as writePng, pngInfo } from './tools/png.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SRC = join(ROOT, 'src');
@@ -28,53 +28,60 @@ if (!jsFiles.length) fail('no files in src/js');
 let js = jsFiles.map((f) => `/* ---------- ${f} ---------- */\n${read(join(jsDir, f))}`).join('\n');
 const TEST_BLOCK = /\/\*TEST:BEGIN\*\/[\s\S]*?\/\*TEST:END\*\//g;
 if (!TEST) js = js.replace(TEST_BLOCK, '');
+// ---------- 1b. Part art (design/07): every src/assets/parts/**/<name>.json describes one image.
+// The build checks each record against its PNG and embeds the list as ART_MANIFEST.
+// Placeholders (folder _placeholder) go into test builds only.
+const partsDir = join(SRC, 'assets', 'parts');
+const artManifest = [];
+const ART_STATUS = ['placeholder', 'raw-generated', 'prepared', 'visually-approved', 'integration-tested'];
+if (existsSync(partsDir)) {
+  for (const rel of readdirSync(partsDir, { recursive: true })) {
+    if (!String(rel).endsWith('.json')) continue;
+    const isPlaceholder = String(rel).startsWith('_placeholder');
+    if (isPlaceholder && !TEST) continue;
+    const where = `src/assets/parts/${rel}`;
+    let m;
+    try { m = JSON.parse(read(join(partsDir, rel))); } catch (e) { fail(`${where} is not valid JSON: ${e.message}`); }
+    for (const k of ['artId', 'part', 'revision', 'status', 'pxPerCell', 'footprint', 'canvas', 'origin', 'file']) {
+      if (m[k] === undefined) fail(`${where} is missing "${k}"`);
+    }
+    if (!ART_STATUS.includes(m.status)) fail(`${where}: status must be one of ${ART_STATUS.join(', ')}`);
+    const dir = dirname(join(partsDir, rel));
+    const checkPng = (file, size, label) => {
+      const p = join(dir, file);
+      if (!existsSync(p)) fail(`${where}: ${label} file ${file} not found`);
+      const info = pngInfo(readFileSync(p));
+      if (!info) fail(`${where}: ${file} is not a PNG`);
+      if (!info.hasAlpha) fail(`${where}: ${file} has no alpha channel (transparent background needed)`);
+      if (info.width !== size[0] || info.height !== size[1]) fail(`${where}: ${file} is ${info.width}×${info.height}, the record says ${size[0]}×${size[1]}`);
+    };
+    checkPng(m.file, m.canvas, 'image');
+    if (m.damaged) checkPng(m.damaged, m.canvas, 'damaged image');
+    if (m.barrel) {
+      for (const k of ['file', 'canvas', 'pivot', 'muzzle']) if (m.barrel[k] === undefined) fail(`${where}: barrel is missing "${k}"`);
+      checkPng(m.barrel.file, m.barrel.canvas, 'barrel');
+    }
+    const base = 'assets/parts/' + relative(partsDir, dir).split('\\').join('/');
+    const url = (f) => `${base}/${f}`.replace('//', '/');
+    artManifest.push(Object.assign({}, m, { file: url(m.file), damaged: m.damaged ? url(m.damaged) : undefined,
+      barrel: m.barrel ? Object.assign({}, m.barrel, { file: url(m.barrel.file) }) : undefined }));
+  }
+}
+// Later revisions come last, so they win when the game maps part → image.
+artManifest.sort((a, b) => a.part.localeCompare(b.part) || String(a.revision).localeCompare(String(b.revision)));
+js = `const ART_MANIFEST = ${JSON.stringify(artManifest)};\n` + js;
 js = `(() => {\n'use strict';\n${js}\n})();\n`;
 const version = (js.match(/GAME_VERSION\s*=\s*['"]([^'"]+)['"]/) || [])[1] || '0';
 
 // ---------- 2. CSS: url(assets/<file>) stays relative; the files are copied next to it
 const css = read(join(SRC, 'styles.css'));
 const assetsDir = join(SRC, 'assets');
-const assets = existsSync(assetsDir) ? readdirSync(assetsDir).filter((f) => !f.startsWith('.')) : [];
+const assets = existsSync(assetsDir) ? readdirSync(assetsDir).filter((f) => !f.startsWith('.') && statSync(join(assetsDir, f)).isFile()) : [];
 for (const m of css.matchAll(/url\((['"]?)assets\/([^'")]+)\1\)/g)) {
   if (!assets.includes(m[2])) fail(`missing asset src/assets/${m[2]}`);
 }
 
 // ---------- 3. Icons: drawn in code and written as PNG (no image tools needed)
-function crc32(buf) {
-  let c = ~0;
-  for (let i = 0; i < buf.length; i++) {
-    c ^= buf[i];
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
-  }
-  return ~c >>> 0;
-}
-function png(size, pixel) {
-  const raw = Buffer.alloc((size * 4 + 1) * size);
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    for (let x = 0; x < size; x++) {
-      // 3×3 supersampling for smooth edges.
-      let r = 0, g = 0, b = 0;
-      for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++) {
-        const c = pixel((x + (sx + 0.5) / 3) / size, (y + (sy + 0.5) / 3) / size);
-        r += c[0]; g += c[1]; b += c[2];
-      }
-      const o = y * (size * 4 + 1) + 1 + x * 4;
-      raw[o] = r / 9; raw[o + 1] = g / 9; raw[o + 2] = b / 9; raw[o + 3] = 255;
-    }
-  }
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
-    return Buffer.concat([len, td, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
-}
 // Icon: a tank silhouette on a dusk sky with an amber tracer. Kept inside the
 // central 80% so it also works as a maskable (cropped) icon.
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -157,9 +164,16 @@ rmSync(join(OUT_DIR, 'assets'), { recursive: true, force: true });
 mkdirSync(join(OUT_DIR, 'assets'), { recursive: true });
 for (const [name, text] of Object.entries(texts)) writeFileSync(join(OUT_DIR, name), text);
 for (const f of assets) copyFileSync(join(assetsDir, f), join(OUT_DIR, 'assets', f));
-writeFileSync(join(OUT_DIR, 'icon-192.png'), png(192, iconPixel));
-writeFileSync(join(OUT_DIR, 'icon-512.png'), png(512, iconPixel));
-writeFileSync(join(OUT_DIR, 'apple-touch-icon.png'), png(180, iconPixel));
+if (existsSync(partsDir)) {
+  cpSync(partsDir, join(OUT_DIR, 'assets', 'parts'), {
+    recursive: true,
+    filter: (src) => TEST || !relative(partsDir, src).startsWith('_placeholder'),
+  });
+}
+const icon = (size) => writePng(size, size, (u, v) => [...iconPixel(u, v), 255]);
+writeFileSync(join(OUT_DIR, 'icon-192.png'), icon(192));
+writeFileSync(join(OUT_DIR, 'icon-512.png'), icon(512));
+writeFileSync(join(OUT_DIR, 'apple-touch-icon.png'), icon(180));
 if (TEST) copyFileSync(join(ROOT, 'tests', 'test-hooks.js'), join(OUT_DIR, 'test-hooks.js'));
 else rmSync(join(OUT_DIR, 'test-hooks.js'), { force: true });
 
@@ -171,6 +185,6 @@ for (const f of readdirSync(OUT_DIR, { recursive: true })) {
 if (total > 25 * 1024 * 1024) fail(`site is ${(total / 1048576).toFixed(1)} MB (limit 25 MB)`);
 
 console.log(
-  `Built ${TEST ? 'TEST' : 'release'} v${version}: ${relative(ROOT, OUT_DIR)}/ ` +
+  `Built ${TEST ? 'TEST' : 'release'} v${version}: ${relative(ROOT, OUT_DIR)}/ ` + `(${artManifest.length} part images) ` +
   `(game.js ${(Buffer.byteLength(js) / 1024).toFixed(1)} KB, ${jsFiles.length} JS files; site ${(total / 1024).toFixed(0)} KB)`
 );

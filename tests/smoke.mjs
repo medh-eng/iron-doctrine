@@ -384,6 +384,49 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await wait(200);
     steps.push('designer, Mk.II, test drive');
 
+    // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
+    if (!vp.mobile) {
+      await G(() => window.__GAME__.artTest());
+      await wait(400);
+      check(await G(() => !!window.__GAME__.art.get('c37') && !!window.__GAME__.art.get('frame') && !window.__GAME__.art.failed.length), 'placeholder art did not load');
+      await G(() => {
+        const d = window.__GAME__.ladder.squadDesigns()[1];
+        window.__GAME__.go('designer', { design: d, base: d, owned: true });
+        const S = window.__GAME__.SCREENS.designer;
+        const g = S.st.d.cells.find((c) => c.p === 'c37');
+        let spot = null;
+        for (let dy = -1; dy <= 1 && !spot; dy++) for (let dx = -1; dx <= 2 && !spot; dx++) if (!S.placeCheck('frame', g.x + dx, g.y + dy)) spot = { x: g.x + dx, y: g.y + dy };
+        if (spot) S.st.d.cells.push({ p: 'frame', x: spot.x, y: spot.y });
+        S.st.zoom = 1.6; S.layout(); S.refresh();
+      });
+      await wait(300);
+      await shot('art-1-designer');
+      await G(() => { const S = window.__GAME__.SCREENS.designer; S.testDrive(); });
+      await wait(600);
+      await G(() => { const S = window.__GAME__.SCREENS.battle; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = S.B.me.body.x; S.cam.y = S.B.me.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
+      await wait(300);
+      await shot('art-2-battle');
+      await G(() => { window.__GAME__.go('battle', { level: 4 }); const S = window.__GAME__.SCREENS.battle; const e = S.B.units.find((u) => u.side === 1); S.B.revealAll = true; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = e.body.x; S.cam.y = e.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
+      await wait(400);
+      await shot('art-3-enemy-mirrored');
+      await G(() => { const A = window.__GAME__.art; A.usePlaceholders = false; A.debug = false; A.init(); });
+      steps.push('art contract placeholders');
+    }
+
+    // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery
+    if (!vp.mobile) {
+      await G(() => window.__GAME__.ladder.start(10, true));
+      await wait(200);
+      await G(() => window.__GAME__.winBattle());
+      await page.locator('.card-result').waitFor({ timeout: 6000 });
+      check(/Blueprint captured/.test(await page.locator('.card-result').textContent()), 'boss blueprint not announced');
+      await G(() => window.__GAME__.go('blueprints'));
+      await wait(300);
+      check((await page.locator('.bp-card').count()) === 1, 'blueprint missing from the gallery');
+      await shot('15-blueprints');
+      steps.push('boss blueprint, gallery');
+    }
+
     // ---------- 9c. Desktop autoplay: drive and fire until level 1 is won (time runs 4x)
     if (!vp.mobile) {
       await G(() => { window.__TEST__.timeScale = 4; window.__GAME__.save.profile.squad = []; window.__GAME__.ladder.start(1, true); });
@@ -444,6 +487,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     check(dmg.backup === '{damaged', 'damaged save was not kept as a backup');
     check(/couldn't be read/.test(dmg.toast), 'player was not told about the damaged save');
     check(dmg.music === false, 'a damaged profile also reset settings');
+
+    // A save written by the previous version (v1) migrates: an unfinished ladder becomes a run to continue.
+    await G(() => localStorage.setItem('irondoctrine.profile', JSON.stringify({ v: 1, t: 1, data: { bestScore: 900, highestLevel: 4, continueLevel: 4, blueprints: [], medals: [] } })));
+    await page.reload();
+    await page.waitForTimeout(500);
+    const mig = await G(() => window.__GAME__.save.profile);
+    check(mig.bestScore === 900 && mig.run.active && mig.run.level === 4 && mig.run.lives === 3 && mig.requisition === 150, `v1 save did not migrate (${JSON.stringify(mig.run)})`);
+    check(/Continue at level 4/.test(await page.locator('.title-screen').textContent()), 'migrated run not offered on the title');
     await shot('8-damaged-save-notice');
     steps.push('export/import, damaged save');
   }

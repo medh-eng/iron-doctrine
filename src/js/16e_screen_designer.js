@@ -380,9 +380,9 @@ SCREENS.designer = {
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
     head('Armour');
-    row('Front', `${rep.armour.front} mm`);
-    row('Rear', `${rep.armour.rear} mm`);
-    row('Top', `${rep.armour.top} mm`);
+    row('Front (at centre of mass)', rep.armour.front);
+    row('Rear', rep.armour.rear);
+    row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
     for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
@@ -565,6 +565,10 @@ SCREENS.designer = {
       if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
         // Barrel preview at zero elevation.
         const P = PARTS[c.p];
+        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
+        const len = barrelLength(P) * cs * 2;
+        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
         g.strokeStyle = '#30343b';
         g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
         g.beginPath();
@@ -573,6 +577,7 @@ SCREENS.designer = {
         g.stroke();
       }
     }
+    if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.
     if (this.st.sel >= 0 && d.cells[this.st.sel]) {
       const c = d.cells[this.st.sel], P = PARTS[c.p];

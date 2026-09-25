@@ -194,20 +194,20 @@ function climbLimit(st) {
   return best;
 }
 
-// Armour (mm) met first from the front, rear and top, through the design's middle.
+// Armour (mm) met first by a level shot at the height of the centre of mass (front, rear)
+// and by a shot straight down through it (top). Sloped plates are marked.
 function armourFacings(design) {
   const g = occupancy(design);
   const W = design.w, H = design.h;
+  const st = statsOf(design);
   const at = (x, y) => { const i = g[y * W + x]; return i >= 0 ? PARTS[design.cells[i].p] : null; };
-  const rows = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = at(x, y); if (d && !d.loco) { rows.push(y); break; } }
-  const firstIn = (xs, y) => { for (const x of xs) { const d = at(x, y); if (d) return d.armor; } return 0; };
-  const xsF = [...Array(W).keys()].reverse(), xsR = [...Array(W).keys()];
-  const front = rows.length ? Math.min(...rows.map((y) => firstIn(xsF, y))) : 0;
-  const rear = rows.length ? Math.min(...rows.map((y) => firstIn(xsR, y))) : 0;
-  let top = Infinity;
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) { const d = at(x, y); if (d) { if (!d.loco) top = Math.min(top, d.armor); break; } }
-  return { front, rear, top: top === Infinity ? 0 : top };
+  const row = clamp(H - 1 - Math.floor(st.com.y / CELL), 0, H - 1);
+  const col = clamp(Math.floor(st.com.x / CELL), 0, W - 1);
+  const label = (d) => (d ? `${d.armor} mm${d.sloped ? ' sloped' : ''}` : '—');
+  const scan = (xs) => { for (const x of xs) { const d = at(x, row); if (d) return d; } return null; };
+  let top = null;
+  for (let y = 0; y < H && !top; y++) top = at(col, y);
+  return { front: label(scan([...Array(W).keys()].reverse())), rear: label(scan([...Array(W).keys()])), top: label(top) };
 }
 
 // Everything the stats drawer shows, plus factual warnings.

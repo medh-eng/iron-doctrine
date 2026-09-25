@@ -1,9 +1,10 @@
 (() => {
 'use strict';
+const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.1.2';
+const GAME_VERSION = '0.1.3';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -663,8 +664,10 @@ const audio = {
   setIntensity(n) { this.intensity = clamp(n, 0, 3); },
 
   // ---------- sound effects (design/03 §7)
+  quiet: false,      // behind the title only menu sounds play
   sfx(name, pan = 0, vel = 1) {
     if (!this.ctx || this.ctx.state !== 'running' || !save.settings.sound) return;
+    if (this.quiet && !UI_SFX.has(name)) return;
     const fn = SFX[name];
     if (fn) fn(this, this.ctx.currentTime + 0.005, pan, vel);
   },
@@ -780,6 +783,8 @@ const THEMES = {
     },
   },
 };
+
+const UI_SFX = new Set(['tap', 'back', 'toggleOn', 'toggleOff', 'error', 'medal', 'order', 'swap']);
 
 const SFX = {
   tap(a, t, pan, vel) {
@@ -1002,6 +1007,7 @@ const SFX = {
 
 function haptic(name) {
   if (!save.settings.vibration || !navigator.vibrate) return;
+  if (audio.quiet && name !== 'tap') return;
   try { navigator.vibrate(HAPTICS[name] || 8); } catch (_e) { /* ignore */ }
 }
 
@@ -1530,6 +1536,92 @@ function drawAcetate(g, x, y, w, h) {
   g.fillRect(x, y, w, h);
   g.fillStyle = 'rgba(230,220,195,0.25)';
   g.fillRect(x, y + h - 1, w, 1);
+}
+
+/* ---------- 05b_art.js ---------- */
+/* ==== 05b ART ==== */
+// Imported part art (design/07 contract). ART_MANIFEST is embedded by the build from
+// src/assets/parts/**/<name>.json. Images load in the background; until one has
+// loaded (or if it fails, or its size is wrong) the procedural drawing is used.
+// Art is drawn at the part's footprint: canvas scaled by (cell px ÷ pxPerCell),
+// with the record's origin pixel on the footprint's top-left corner.
+
+const ART_LIVE_STATUS = ['prepared', 'visually-approved', 'integration-tested'];
+
+const art = {
+  byPart: {},          // partId → { meta, img, dmg, barrel, barrelImg }
+  version: 0,          // bumps when an image finishes loading, so sprites redraw
+  usePlaceholders: false,
+  debug: false,        // draw origin, pivot and muzzle markers
+  failed: [],
+
+  init() {
+    this.byPart = {};
+    for (const m of ART_MANIFEST) {
+      const live = ART_LIVE_STATUS.includes(m.status) || (m.status === 'placeholder' && this.usePlaceholders);
+      if (!live) continue;
+      const entry = { meta: m, img: null, dmg: null, barrelImg: null };
+      const load = (src, size, done) => {
+        const im = new Image();
+        im.onload = () => {
+          if (im.naturalWidth !== size[0] || im.naturalHeight !== size[1]) { this.failed.push(`${src}: size ${im.naturalWidth}×${im.naturalHeight}`); return; }
+          done(im);
+          this.version++;
+        };
+        im.onerror = () => this.failed.push(`${src}: failed to load`);
+        im.src = src;
+      };
+      load(m.file, m.canvas, (im) => { entry.img = im; });
+      if (m.damaged) load(m.damaged, m.canvas, (im) => { entry.dmg = im; });
+      if (m.barrel) load(m.barrel.file, m.barrel.canvas, (im) => { entry.barrelImg = im; });
+      this.byPart[m.part] = entry;
+    }
+  },
+
+  get(partId) {
+    const e = this.byPart[partId];
+    return e && e.img ? e : null;
+  },
+};
+
+// Draw imported art for a part into a footprint rectangle at (x, y), cell size cs. Returns false if none.
+function drawPartArt(g, p, x, y, cs) {
+  const A = art.get(p.def.id);
+  if (!A) return false;
+  const m = A.meta;
+  const k = cs / m.pxPerCell;
+  const img = p.scorch > 0.5 && A.dmg ? A.dmg : A.img;
+  g.drawImage(img, x - m.origin[0] * k, y - m.origin[1] * k, m.canvas[0] * k, m.canvas[1] * k);
+  return true;
+}
+
+// Barrel image rotated about its pivot. (px, py) = pivot on screen, ang = world angle, len = barrel length in px.
+function drawBarrelArt(g, d, px, py, ang, lenPx) {
+  const A = art.byPart[d.id];
+  if (!A || !A.barrelImg) return false;
+  const b = A.meta.barrel;
+  const k = lenPx / Math.max(1, b.muzzle[0] - b.pivot[0]);
+  g.save();
+  g.translate(px, py);
+  g.rotate(-ang);
+  if (Math.cos(ang) < 0) g.scale(1, -1);       // keep the top of the barrel up when it points left
+  g.drawImage(A.barrelImg, -b.pivot[0] * k, -b.pivot[1] * k, b.canvas[0] * k, b.canvas[1] * k);
+  g.restore();
+  return true;
+}
+
+// Debug markers: black cross = footprint origin, amber = barrel pivot, cyan = muzzle.
+function drawArtMarker(g, kind, x, y) {
+  g.save();
+  g.lineWidth = 2;
+  if (kind === 'origin') {
+    g.strokeStyle = '#111'; g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke();
+    g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - 5, y); g.lineTo(x + 5, y); g.moveTo(x, y - 5); g.lineTo(x, y + 5); g.stroke();
+  } else {
+    g.strokeStyle = kind === 'pivot' ? PAL.amber : '#1ec8e6';
+    g.beginPath(); g.arc(x, y, kind === 'pivot' ? 5 : 7, 0, Math.PI * 2); g.stroke();
+  }
+  g.restore();
 }
 
 /* ---------- 06_ui.js ---------- */
@@ -2372,20 +2464,20 @@ function climbLimit(st) {
   return best;
 }
 
-// Armour (mm) met first from the front, rear and top, through the design's middle.
+// Armour (mm) met first by a level shot at the height of the centre of mass (front, rear)
+// and by a shot straight down through it (top). Sloped plates are marked.
 function armourFacings(design) {
   const g = occupancy(design);
   const W = design.w, H = design.h;
+  const st = statsOf(design);
   const at = (x, y) => { const i = g[y * W + x]; return i >= 0 ? PARTS[design.cells[i].p] : null; };
-  const rows = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = at(x, y); if (d && !d.loco) { rows.push(y); break; } }
-  const firstIn = (xs, y) => { for (const x of xs) { const d = at(x, y); if (d) return d.armor; } return 0; };
-  const xsF = [...Array(W).keys()].reverse(), xsR = [...Array(W).keys()];
-  const front = rows.length ? Math.min(...rows.map((y) => firstIn(xsF, y))) : 0;
-  const rear = rows.length ? Math.min(...rows.map((y) => firstIn(xsR, y))) : 0;
-  let top = Infinity;
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) { const d = at(x, y); if (d) { if (!d.loco) top = Math.min(top, d.armor); break; } }
-  return { front, rear, top: top === Infinity ? 0 : top };
+  const row = clamp(H - 1 - Math.floor(st.com.y / CELL), 0, H - 1);
+  const col = clamp(Math.floor(st.com.x / CELL), 0, W - 1);
+  const label = (d) => (d ? `${d.armor} mm${d.sloped ? ' sloped' : ''}` : '—');
+  const scan = (xs) => { for (const x of xs) { const d = at(x, row); if (d) return d; } return null; };
+  let top = null;
+  for (let y = 0; y < H && !top; y++) top = at(col, y);
+  return { front: label(scan([...Array(W).keys()].reverse())), rear: label(scan([...Array(W).keys()])), top: label(top) };
 }
 
 // Everything the stats drawer shows, plus factual warnings.
@@ -2766,7 +2858,7 @@ function rebuildVehicle(V, first) {
       // Turret weapons sit on parts connected to the hull through a turret ring.
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
-        part: i, def: d, reload: 0, angle: 0, burst: 0, gap: 0,
+        part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
         pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
       });
     }
@@ -4207,7 +4299,9 @@ function drawPart(g, p, x, y, cs, side, seed) {
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
   g.save();
-  switch (d.id) {
+  if (drawPartArt(g, p, x, y, cs)) {
+    // Imported art: only the procedural damage overlay is added below.
+  } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
       g.strokeRect(x + 1, y + 1, w - 2, h - 2);
@@ -4358,7 +4452,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
   }
   g.strokeStyle = 'rgba(8,10,14,0.55)';
   g.lineWidth = 1;
-  if (d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (!art.get(d.id) && d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   g.restore();
 }
 
@@ -4377,15 +4471,23 @@ function paintParts(V, idxs, ppm, pad) {
     const p = V.parts[i];
     drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
   }
+  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
+  // still reads as enemy until faction paint masks arrive (design/07 §4).
+  if (V.side === 1) {
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(170,45,30,0.16)';
+    g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'source-over';
+  }
   return c;
 }
 
 function vehicleSprite(V, S) {
   const ppm = clamp(Math.round(S * 1.3 * layout.dpr), 10, 64);
-  if (!V.sprite || V.dirty || Math.abs(V.sprite.ppm - ppm) / V.sprite.ppm > 0.3) {
+  if (!V.sprite || V.dirty || V.sprite.artV !== art.version || Math.abs(V.sprite.ppm - ppm) / V.sprite.ppm > 0.3) {
     const idxs = [];
     V.parts.forEach((p, i) => { if (p.alive) idxs.push(i); });
-    V.sprite = { canvas: paintParts(V, idxs, ppm, SPRITE_PAD), ppm };
+    V.sprite = { canvas: paintParts(V, idxs, ppm, SPRITE_PAD), ppm, artV: art.version };
     V.dirty = false;
   }
   return V.sprite;
@@ -4436,8 +4538,16 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  // Barrels, drawn live.
   const tmp = { x: 0, y: 0 };
+  if (art.debug) {
+    for (const p of V.parts) {
+      if (!p.alive || !art.get(p.def.id)) continue;
+      gridToLocal(V, p.x * CELL, (V.design.h - p.y) * CELL, tmp);   // the image's origin pixel, mirrored with the vehicle
+      localToWorld(V, tmp.x, tmp.y, tmp);
+      drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
+    }
+  }
+  // Barrels, drawn live.
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
@@ -4447,6 +4557,11 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
+    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+      if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
+      continue;
+    }
+    if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
     g.strokeStyle = V.destroyed ? '#26282c' : '#30343b';
     g.lineCap = 'butt';
     g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
@@ -4700,10 +4815,14 @@ SCREENS.title = {
     this.build();
     uiLayer.insertBefore(this.root, ui.toastBox);
     audio.playTheme('title');
+    audio.quiet = true;
+    this.demo = null;
   },
   exit() {
     if (this.root) this.root.remove();
     this.root = null;
+    audio.quiet = false;
+    this.demo = null;
   },
   build() {
     const r = this.root;
@@ -4743,14 +4862,42 @@ SCREENS.title = {
     r.appendChild(el('p', 'title-stats', `Best score ${p.bestScore} · Highest level ${p.highestLevel}`));
     r.appendChild(el('p', 'title-version', `v${GAME_VERSION}`));
   },
-  update(dt) { this.t += dt; },
+  // AI-vs-AI demo battle behind the menu (design/02 §6), camera slowly tracking the fight.
+  newDemo() {
+    this.demoN = (this.demoN || 0) + 1;
+    const cfg = Object.assign(levelConfig(3), {
+      name: 'Demo', seed: 5000 + this.demoN * 131, length: 250, hills: 0.35, forest: 1, mud: 1, gaps: 0,
+      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 0]], accuracy: 0.5, reaction: 1, holdFire: false,
+    });
+    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns]) pool.forEachAlive((p) => { p.alive = false; });
+    const squad = ['medium', 'assault', 'light'].map(designFromTemplate);
+    this.demo = createBattle(3, { demo: true, cfg, squad });
+    this.demo.panOf = () => 0;
+    this.camX = 180;   // snaps to the lead tank on the first frame
+  },
+  update(dt) {
+    this.t += dt;
+    if (!this.demo || this.demo.result && this.demo.resultT > 4 || this.demo.time > 100) this.newDemo();
+    updateBattle(this.demo, dt);
+  },
   render(g) {
+    const B = this.demo;
+    if (!B) return;
     const { w, h } = layout;
-    drawBackground(g, save.settings.reducedMotion ? 0 : this.t * 12);
-    g.fillStyle = PAL.ground;
-    g.fillRect(0, h * 0.9, w, h * 0.1);
-    g.fillStyle = PAL.groundEdge;
-    g.fillRect(0, h * 0.9, w, 2);
+    // Follow the lead tank, looking a little ahead toward the fight.
+    const lead = B.squad.find((V) => !V.destroyed) || B.units[0];
+    const want = lead.body.x + 30;
+    this.camX += (want - this.camX) * (this.camX === 180 ? 1 : 0.02);
+    view.S = BASE_PX_PER_M * (h / 360) * 0.5;
+    view.cx = clamp(this.camX, w / view.S / 2, B.T.length - w / view.S / 2);
+    view.cy = B.T.height(view.cx) + 1;
+    view.horizon = h * 0.8;
+    view.shake.x = view.shake.y = 0;
+    B.revealAll = true;
+    renderBattle(g, B);
+    // Veil so the menu stays readable over the fight.
+    g.fillStyle = 'rgba(12,14,20,0.42)';
+    g.fillRect(0, 0, w, h);
   },
 };
 
@@ -6004,9 +6151,9 @@ SCREENS.designer = {
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
     head('Armour');
-    row('Front', `${rep.armour.front} mm`);
-    row('Rear', `${rep.armour.rear} mm`);
-    row('Top', `${rep.armour.top} mm`);
+    row('Front (at centre of mass)', rep.armour.front);
+    row('Rear', rep.armour.rear);
+    row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
     for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
@@ -6189,6 +6336,10 @@ SCREENS.designer = {
       if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
         // Barrel preview at zero elevation.
         const P = PARTS[c.p];
+        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
+        const len = barrelLength(P) * cs * 2;
+        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
         g.strokeStyle = '#30343b';
         g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
         g.beginPath();
@@ -6197,6 +6348,7 @@ SCREENS.designer = {
         g.stroke();
       }
     }
+    if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.
     if (this.st.sel >= 0 && d.cells[this.st.sel]) {
       const c = d.cells[this.st.sel], P = PARTS[c.p];
@@ -6408,6 +6560,7 @@ function boot() {
   if (save.firstRun) {
     save.settings.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
+  art.init();
   ui.init();
   input.init();
   bus.on('settings', applySettings);

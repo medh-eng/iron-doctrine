@@ -291,8 +291,10 @@ const audio = {
   setIntensity(n) { this.intensity = clamp(n, 0, 3); },
 
   // ---------- sound effects (design/03 §7)
+  quiet: false,      // behind the title only menu sounds play
   sfx(name, pan = 0, vel = 1) {
     if (!this.ctx || this.ctx.state !== 'running' || !save.settings.sound) return;
+    if (this.quiet && !UI_SFX.has(name)) return;
     const fn = SFX[name];
     if (fn) fn(this, this.ctx.currentTime + 0.005, pan, vel);
   },
@@ -408,6 +410,8 @@ const THEMES = {
     },
   },
 };
+
+const UI_SFX = new Set(['tap', 'back', 'toggleOn', 'toggleOff', 'error', 'medal', 'order', 'swap']);
 
 const SFX = {
   tap(a, t, pan, vel) {
@@ -630,5 +634,6 @@ const SFX = {
 
 function haptic(name) {
   if (!save.settings.vibration || !navigator.vibrate) return;
+  if (audio.quiet && name !== 'tap') return;
   try { navigator.vibrate(HAPTICS[name] || 8); } catch (_e) { /* ignore */ }
 }

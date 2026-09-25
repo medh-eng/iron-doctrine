@@ -1,0 +1,21 @@
+{
+  "artId": "part.frame.placeholder",
+  "part": "frame",
+  "variant": "placeholder",
+  "revision": "r000",
+  "status": "placeholder",
+  "pxPerCell": 64,
+  "footprint": [
+    1,
+    1
+  ],
+  "canvas": [
+    80,
+    80
+  ],
+  "origin": [
+    8,
+    8
+  ],
+  "file": "frame_placeholder_r000.png"
+}
