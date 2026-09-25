@@ -36,7 +36,10 @@ function makeTerrain(cfg) {
     h[i] = (hillsA(x) + hillsB(x)) * clamp(0.35 + edge, 0.35, 1) + rough(x);
   }
 
-  const free = (x0, x1) => x0 > 95 && x1 < L - 110 &&
+  // Sea (Part 2a): from cfg.sea.from to the right edge the ground falls away to a seabed.
+  const seaFrom = cfg.sea ? cfg.sea.from : L + 1000;
+  const land = Math.min(L, seaFrom - 30);
+  const free = (x0, x1) => x0 > 95 && x1 < land - 110 + (cfg.sea ? 100 : 0) &&
     !gaps.some((g) => x1 > g.x0 - 25 && x0 < g.x1 + 25) &&
     !mudZones.some((z) => x1 > z.x0 - 10 && x0 < z.x1 + 10);
 
@@ -70,7 +73,7 @@ function makeTerrain(cfg) {
   for (let k = 0, tries = 0; k < (cfg.forest || 0) && tries < 50; tries++) {
     const w = rng.range(30, 50);
     const x0 = rng.range(90, L - 120);
-    if (forestZones.some((z) => x0 + w > z.x0 - 10 && x0 < z.x1 + 10)) continue;
+    if (forestZones.some((z) => x0 + w > z.x0 - 10 && x0 < z.x1 + 10) || x0 + w > land) continue;
     const i0 = Math.round(x0 / CELL), i1 = Math.round((x0 + w) / CELL);
     for (let i = i0; i <= i1; i++) if (mat[i] === T_PLAINS) mat[i] = T_FOREST;
     for (let x = x0 + 2; x < x0 + w - 2; x += rng.range(3.5, 7)) {
@@ -81,8 +84,31 @@ function makeTerrain(cfg) {
     k++;
   }
 
+  // The sea surface sits just under the lowest land near the shore; beyond the shore the
+  // ground slopes down to the seabed, with a sandy beach at the water's edge.
+  let sea, seaX0;
+  if (cfg.sea) {
+    const i0 = Math.round(seaFrom / CELL);
+    let low = Infinity;
+    for (let i = Math.max(0, i0 - 60); i <= Math.min(n - 1, i0); i++) low = Math.min(low, h[i]);
+    sea = low - 0.4;
+    const bed = noise(23, 1.5);
+    const slope = cfg.sea.slope || 30;
+    for (let i = Math.max(0, i0 - 24); i < n; i++) {
+      const x = i * CELL;
+      if (x >= seaFrom) {
+        const t = clamp((x - seaFrom) / slope, 0, 1);
+        const s = t * t * (3 - 2 * t);
+        h[i] = lerp(Math.min(h[i], sea + 0.5), sea - cfg.sea.depth + bed(x), s);
+      }
+      mat[i] = T_SAND;
+    }
+    for (let i = n - 1; i >= 0 && h[i] < sea; i--) seaX0 = i * CELL;
+  }
+
   const T = {
-    length: L, n, h, mat, trees, gaps, mudZones, forestZones,
+    length: L, n, h, mat, trees: trees.filter((tr) => tr.x < seaFrom - 14), gaps, mudZones, forestZones,
+    sea, seaX0,
     version: 0,          // bumped when craters change the ground
     height(x) {
       const f = clamp(x / CELL, 0, n - 1.001);

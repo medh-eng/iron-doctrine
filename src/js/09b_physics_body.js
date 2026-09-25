@@ -54,9 +54,14 @@ function makeVehicle(design, side, x, dir, terrain) {
   rebuildVehicle(V, true);
   V.fuel = V.fuelMax;
   V.shells = V.shellsMax;
-  // Rest on the ground: lowest contact touching the terrain.
+  // Rest on the ground: lowest contact touching the terrain. Ships float level on their waterline.
   const b = V.body;
   b.x = x;
+  if (V.hull && seaAt(terrain, x - V.len / 2) && terrain.height(x) < terrain.sea - V.stats.draft) {
+    b.a = 0;
+    b.y = terrain.sea - (V.stats.waterline - V.com.y);
+    return V;
+  }
   b.a = Math.atan(terrain.slope(x));
   let low = Infinity;
   for (const c of V.contacts) low = Math.min(low, c.ly - c.r);
@@ -95,6 +100,14 @@ function worldToGrid(V, wx, wy, out) {
 // Keeps the world position of the parts unchanged when the centre of mass moves.
 function rebuildVehicle(V, first) {
   const D = V.design;
+  // Every part shot away: nothing left to simulate.
+  if (!V.parts.some((p) => p.alive)) {
+    V.gone = true;
+    V.contacts = []; V.weapons = []; V.wcells = null; V.props = null;
+    V.canDrive = false; V.immobile = true; V.crew = 0;
+    V.dirty = true;
+    return;
+  }
   const st = statsOf(D, V.alive);
   const b = V.body;
   if (!first && st.mass > 0) {
@@ -132,6 +145,7 @@ function rebuildVehicle(V, first) {
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
+    if (d.propeller) loco++;
     if (d.loco) {
       loco++;
       const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
@@ -183,9 +197,13 @@ function rebuildVehicle(V, first) {
   V.radius = Math.hypot(V.len, V.height) / 2 + 0.5;
   V.soft = V.parts.every((p) => !p.alive || p.def.armor <= 15);
   V.dirty = true;
+  buildWaterParts(V);
 }
 
+const _wf = { fx: 0, fy: 0, tq: 0 };
+
 function stepVehicle(V, T, dt) {
+  if (V.gone) return;
   const b = V.body;
   const h = dt / PHYS_SUBSTEPS;
   const st = V.stats;
@@ -263,6 +281,12 @@ function stepVehicle(V, T, dt) {
       fx += tx * F; fy += ty * F;
       tq += c.rx * ty * F - c.ry * tx * F;
     }
+    // Water: buoyancy, flooding, hull drag and propellers (09c).
+    if (seaAt(T, b.x + V.radius) && b.y - V.radius < T.sea) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      waterForces(V, T, ca, sa, throttle, h, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    }
     // Air drag.
     const v2 = b.vx * b.vx + b.vy * b.vy;
     if (v2 > 0.01) {
@@ -298,8 +322,10 @@ function stepVehicle(V, T, dt) {
 function separateVehicles(list) {
   for (let i = 0; i < list.length; i++) {
     const A = list[i];
+    if (A.gone) continue;
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
+      if (B.gone) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;

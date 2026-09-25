@@ -32,6 +32,9 @@ function bevel(g, x, y, w, h, base, k) {
   g.fillRect(x + w - b, y, b, h);
 }
 
+// Parts whose drawn shape isn't their full box get no outline.
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop']);
+
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
   const d = p.def;
@@ -99,6 +102,68 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.fillStyle = 'rgba(20,20,20,0.5)'; g.beginPath(); g.arc(x + cs * 0.26, y - cs * 0.4, cs * 0.18, 0, Math.PI * 2); g.fill();
       break;
     }
+    // Ship parts (Part 2a).
+    case 'hull':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
+      g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w, y + h * 0.5); g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.4)';
+      for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w * (0.12 + k * 0.25), y + h * 0.5 - cs * 0.12, r, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'bow':
+      g.fillStyle = shade(steel, 0.9);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = Math.max(1, cs * 0.1);
+      g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.stroke();
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
+      g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w * 0.65, y + h * 0.5); g.stroke();
+      break;
+    case 'keel':
+      bevel(g, x, y, w, h, '#5c3129', 1.4);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + h * 0.7, w, h * 0.3);
+      break;
+    case 'bulk':
+      bevel(g, x, y, w, h, shade(steel, 0.75), 1.4);
+      g.strokeStyle = PAL.amber; g.lineWidth = Math.max(1, cs * 0.07);
+      g.setLineDash([cs * 0.18, cs * 0.14]);
+      g.beginPath(); g.moveTo(x + w / 2, y + cs * 0.1); g.lineTo(x + w / 2, y + h - cs * 0.1); g.stroke();
+      g.setLineDash([]);
+      break;
+    case 'marine': {
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.fillRect(x + cs * 0.3, y + cs * 0.4, w - cs * 0.6, h - cs * 0.9);
+      g.fillStyle = shade(steel, 0.65);
+      for (let k = 0; k < 6; k++) { g.fillRect(x + cs * (0.45 + k * 0.55), y + cs * 0.55, cs * 0.3, h * 0.35); }
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w - cs * 0.9, y - cs * 1.2, cs * 0.5, cs * 1.3);
+      g.fillStyle = 'rgba(20,20,20,0.5)'; g.beginPath(); g.arc(x + w - cs * 0.65, y - cs * 1.3, cs * 0.3, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'prop': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.4, y, w * 0.2, h * 0.7);
+      g.fillStyle = '#b08d4a';
+      const cy = y + h * 0.72;
+      g.beginPath(); g.ellipse(x + w * 0.5, cy - cs * 0.28, cs * 0.14, cs * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(x + w * 0.5, cy + cs * 0.22, cs * 0.14, cs * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#6f5a30'; g.beginPath(); g.arc(x + w * 0.5, cy, cs * 0.1, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'thrust':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.28, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#7c828d'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + w / 2 - cs * 0.25, y + h / 2); g.lineTo(x + w / 2 + cs * 0.25, y + h / 2); g.stroke();
+      break;
+    case 'ngun':
+      // Gun house; the twin barrels are drawn live.
+      g.fillStyle = shade(steel, 0.8);
+      g.beginPath();
+      g.moveTo(x + w * 0.05, y + h); g.lineTo(x + w * 0.05, y + h * 0.45); g.quadraticCurveTo(x + w * 0.1, y + h * 0.15, x + w * 0.4, y + h * 0.15);
+      g.lineTo(x + w * 0.8, y + h * 0.2); g.lineTo(x + w * 0.95, y + h * 0.5); g.lineTo(x + w * 0.95, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.15)'; g.lineWidth = Math.max(1, cs * 0.08);
+      g.beginPath(); g.moveTo(x + w * 0.4, y + h * 0.15); g.lineTo(x + w * 0.8, y + h * 0.2); g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + w * 0.15, y + h * 0.6, w * 0.7, h * 0.08);
+      rivets(g, x + w * 0.05, y + h * 0.3, w * 0.9, h * 0.7, r, 'rgba(0,0,0,0.45)');
+      break;
     case 'radiator':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.strokeStyle = '#15181d'; g.lineWidth = 1;
@@ -155,7 +220,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.strokeStyle = '#c9d1dc'; g.lineWidth = 1;
       g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.22, 0, Math.PI * 2); g.stroke();
       break;
-    case 'fuel_s': case 'fuel_ss':
+    case 'fuel_s': case 'fuel_ss': case 'fuel_l':
       g.fillStyle = d.id === 'fuel_s' ? '#56613a' : '#4c5530';
       roundRect(g, x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84, cs * 0.1); g.fill();
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
@@ -192,7 +257,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
   }
   g.strokeStyle = 'rgba(8,10,14,0.55)';
   g.lineWidth = 1;
-  if (!art.get(d.id) && d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   g.restore();
 }
 
@@ -264,6 +329,7 @@ const view = {
 };
 
 function drawVehicle(g, V) {
+  if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
   const b = V.body;
@@ -304,12 +370,15 @@ function drawVehicle(g, V) {
     if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
     g.strokeStyle = V.destroyed ? '#26282c' : '#30343b';
     g.lineCap = 'butt';
-    g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
-    g.beginPath(); g.moveTo(view.sx(x0), view.sy(y0)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
-    if (!d.auto && d.cal >= 75) {
-      g.lineWidth = Math.max(2.5, (0.1 + d.cal / 700) * S);
-      const bx = x1 - Math.cos(ang) * 0.3, by = y1 - Math.sin(ang) * 0.3;
-      g.beginPath(); g.moveTo(view.sx(bx), view.sy(by)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
+    for (let k = 0; k < (d.twin ? 2 : 1); k++) {
+      const ox = d.twin ? -Math.sin(ang) * TWIN_GAP * (k ? -1 : 1) : 0, oy = d.twin ? Math.cos(ang) * TWIN_GAP * (k ? -1 : 1) : 0;
+      g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
+      g.beginPath(); g.moveTo(view.sx(x0 + ox), view.sy(y0 + oy)); g.lineTo(view.sx(x1 + ox), view.sy(y1 + oy)); g.stroke();
+      if (!d.auto && d.cal >= 75) {
+        g.lineWidth = Math.max(2.5, (0.1 + d.cal / 700) * S);
+        const bx = x1 - Math.cos(ang) * 0.3, by = y1 - Math.sin(ang) * 0.3;
+        g.beginPath(); g.moveTo(view.sx(bx + ox), view.sy(by + oy)); g.lineTo(view.sx(x1 + ox), view.sy(y1 + oy)); g.stroke();
+      }
     }
   }
 }
@@ -434,6 +503,11 @@ function drawParticles(g) {
         g.fillStyle = '#3a3026';
         g.fillRect(x - p.size * S / 2, y - p.size * S / 2, p.size * S, p.size * S);
         break;
+      case FX_SPRAY:
+        g.globalAlpha = 0.85 * (1 - k);
+        g.fillStyle = '#DCEBF2';
+        g.beginPath(); g.arc(x, y, Math.max(1, p.size * S * 0.5), 0, Math.PI * 2); g.fill();
+        break;
       case FX_RING:
         g.globalAlpha = 0.6 * (1 - k);
         g.strokeStyle = '#FFE9B8'; g.lineWidth = 2;
@@ -504,6 +578,36 @@ function drawWeather(g, B) {
   }
 }
 
+// The sea (Part 2a): a translucent layer over everything below the surface, with a
+// small moving swell on top and darker water further down. Drawn over the ships, so
+// what sits below the waterline reads as under water.
+function drawWater(g, B) {
+  const T = B.T;
+  if (T.seaX0 === undefined) return;
+  const { w, h } = layout;
+  const x0 = Math.max(-4, view.sx(T.seaX0));
+  const sy = view.sy(T.sea);
+  if (x0 > w || sy > h) return;
+  const t = B.time;
+  const S = view.S;
+  const step = 10;
+  const wave = (x) => sy - Math.sin(view.wx(x) * 0.45 + t * 1.6) * 0.14 * S - Math.sin(view.wx(x) * 0.17 - t * 0.9) * 0.08 * S;
+  g.fillStyle = 'rgba(26,64,94,0.56)';
+  g.beginPath();
+  g.moveTo(x0, h);
+  for (let x = x0; x <= w + step; x += step) g.lineTo(x, wave(x));
+  g.lineTo(w + step, h);
+  g.closePath();
+  g.fill();
+  const deep = view.sy(T.sea - 5);
+  if (deep < h) { g.fillStyle = 'rgba(8,22,38,0.35)'; g.fillRect(x0, deep, w - x0 + step, h - deep); }
+  g.strokeStyle = 'rgba(205,228,238,0.6)';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  for (let x = x0; x <= w + step; x += step) { if (x === x0) g.moveTo(x, wave(x)); else g.lineTo(x, wave(x)); }
+  g.stroke();
+}
+
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
   drawBackground(g, view.cx * view.S * 0.25);
@@ -518,6 +622,7 @@ function renderBattle(g, B) {
     drawVehicle(g, V);
   }
   drawDebris(g);
+  drawWater(g, B);
   drawShells(g);
   drawParticles(g);
   drawWeather(g, B);

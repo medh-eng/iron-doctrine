@@ -58,10 +58,11 @@ function mainWeapon(V) {
   return best;
 }
 
-// Target point on a vehicle: a little above its centre of mass.
-function aimPoint(U, out) {
+// Target point on a vehicle: a little above its centre of mass; on a floating ship, the waterline.
+function aimPoint(B, U, out) {
   out.x = U.body.x;
   out.y = U.body.y + U.height * 0.15;
+  if (U.hull && seaAt(B.T, U.body.x) && !U.destroyed) out.y = Math.min(out.y, B.T.sea - 0.1);
   return out;
 }
 
@@ -95,7 +96,7 @@ function runWeapons(B, V, dt, aiControlled) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
       const T = nearestTarget(B, V, weaponRange(d), aiControlled ? null : (U) => U.soft);
       if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
-      aimPoint(T, tmp);
+      aimPoint(B, T, tmp);
       aimWeapon(V, w, tmp.x, tmp.y, _aim);
       const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
       if (!_aim.ok || !ready || w.reload > 0) continue;
@@ -108,7 +109,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!aiControlled) continue;
     const tgt = V.ai && V.ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen) continue;
-    aimPoint(tgt, tmp);
+    aimPoint(B, tgt, tmp);
     aimWeapon(V, w, tmp.x, tmp.y, _aim);
     const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
     if (B.cfg.holdFire && V.side === 1) continue;
@@ -205,7 +206,7 @@ function mobilityNotes(B, V, dt) {
     V.bogNoteT = B.time;
     const ter = B.T.terrainAt(V.body.x);
     const slope = Math.abs(Math.atan(B.T.slope(V.body.x)) * 180 / Math.PI);
-    const text = ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
+    const text = V.hull ? (seaAt(B.T, V.body.x) && B.T.height(V.body.x) < B.T.sea - V.stats.draft ? 'Stopped' : 'Aground') : ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
     if (V.side === 0) floatText(text, V.body.x, V.body.y + V.height + 1, false);
   }
 }

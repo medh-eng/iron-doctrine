@@ -26,7 +26,7 @@ SCREENS.battle = {
     this.level = opts.level || 1;
     for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
-      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig() })
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || (domainOf(opts.test) === 'naval' ? 'sea' : 'land')) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
@@ -46,6 +46,7 @@ SCREENS.battle = {
     audio.setIntensity(0);
     audio.playTheme('battle');
     this.showHowTo();
+    if (B.inPort.length) ui.toast(`No sea on this map: ${B.inPort.map((d) => d.name).join(', ')} stay${B.inPort.length > 1 ? '' : 's'} in port.`, 3500);
   },
 
   // Two-line how-to at the start of each level (design/06 acceptance: level 1 with only this).
@@ -54,7 +55,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? 'Mud, hills and a trench. Pause to go back to the Workshop.' : B.cfg.how;
+    const how = B.test ? (B.cfg.range === 'sea' ? 'Open water off a beach. Pause to go back to the Workshop.' : 'Mud, hills and a trench. Pause to go back to the Workshop.') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -235,7 +236,7 @@ SCREENS.battle = {
     const B = this.B;
     if (this.frozen || B.me.destroyed) return;
     const T = autoTarget(B);
-    if (T) { this.say(playerFire(B, T.body.x, T.body.y + T.height * 0.15, false)); return; }
+    if (T) { const a = aimPoint(B, T, { x: 0, y: 0 }); this.say(playerFire(B, a.x, a.y, false)); return; }
     const x = B.me.body.x + B.me.dir * 60;
     this.say(playerFire(B, x, B.T.height(x) + 1.5, false));
   },
@@ -580,6 +581,10 @@ SCREENS.battle = {
     g.beginPath();
     for (let i = 0; i < T.n; i += 8) { const x = i * CELL; if (i === 0) g.moveTo(X(x), Y(T.h[i])); else g.lineTo(X(x), Y(T.h[i])); }
     g.stroke();
+    if (T.seaX0 !== undefined) {
+      g.strokeStyle = 'rgba(127,176,234,0.8)';
+      g.beginPath(); g.moveTo(X(T.seaX0), Y(T.sea)); g.lineTo(X(T.length), Y(T.sea)); g.stroke();
+    }
     for (const V of B.units) {
       if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
       g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;

@@ -29,6 +29,7 @@ function weaponPivot(V, w, out) {
   return localToWorld(V, out.x, out.y, out);
 }
 function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
 function weaponArc(V, w) {
@@ -97,19 +98,25 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   const moving = Math.abs(V.speed) > 0.4;
   if (moving) spread *= V.stab ? 1.6 : 2.5;
   spread *= spreadMul;
-  const a = ang + (gauss(B.rng) * spread * Math.PI) / 180;
   weaponPivot(V, w, _p);
   const L = barrelLength(d);
-  const mx = _p.x + Math.cos(a) * L, my = _p.y + Math.sin(a) * L;
-  const s = shells.take();
-  s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
-  s.vx = Math.cos(a) * d.vel + V.body.vx;
-  s.vy = Math.sin(a) * d.vel + V.body.vy;
-  s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
-  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false;
+  // Twin mounts fire both barrels, each with its own aiming error.
+  let mx = 0, my = 0, a = ang;
+  for (let k = 0; k < (d.twin ? 2 : 1); k++) {
+    a = ang + (gauss(B.rng) * spread * Math.PI) / 180;
+    const off = d.twin ? (k ? -1 : 1) * TWIN_GAP : 0;
+    mx = _p.x + Math.cos(a) * L - Math.sin(ang) * off;
+    my = _p.y + Math.sin(a) * L + Math.cos(ang) * off;
+    const s = shells.take();
+    s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
+    s.vx = Math.cos(a) * d.vel + V.body.vx;
+    s.vy = Math.sin(a) * d.vel + V.body.vy;
+    s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
+    s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false; s.wet = false;
+  }
   // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
   if (!d.auto) {
-    const J = d.cal * d.cal * 0.9;
+    const J = d.cal * d.cal * 0.9 * (d.twin ? 2 : 1);
     const jx = -Math.cos(a) * J, jy = -Math.sin(a) * J;
     const b = V.body;
     b.vx += jx / b.m; b.vy += jy / b.m;
@@ -219,6 +226,7 @@ function shellVsVehicle(B, s, V) {
     if (pen >= eff) {
       pen -= eff;
       if (!penetrated) { penetrated = true; hitName = d.name; }
+      if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);
       dmg *= 0.65;
       if (dmg < 4 || pen <= 1) { used = true; return true; }
@@ -305,6 +313,7 @@ function damagePart(B, V, idx, dmg, source) {
   if (!p.alive || dmg <= 0) return;
   p.hp -= dmg;
   p.scorch = Math.min(1, p.scorch + dmg / p.def.hp);
+  if (source) V.lastHitBy = source;
   V.dirty = true;
   if (p.hp <= 0) destroyPart(B, V, idx, source);
   else if (!V.destroyed) checkVehicleState(B, V, source);
@@ -366,15 +375,21 @@ function checkVehicleState(B, V, source) {
   }
 }
 
-function knockOut(B, V, source, label) {
+// quiet: sunk or flooded, so no fireball.
+function knockOut(B, V, source, label, quiet) {
   if (V.destroyed) return;
   V.destroyed = true;
   V.throttle = 0;
   V.canDrive = false;
   B.hitStop = 0.05;
-  fxExplosion(B, V.body.x, V.body.y + 0.5, 1.2);
-  fxSmokeColumn(B, V);
-  audio.sfx('boom', B.panOf(V.body.x));
+  if (quiet) {
+    fxSplash(B, V.body.x, B.T.sea, 2);
+    audio.sfx('flood', B.panOf(V.body.x), 1.5);
+  } else {
+    fxExplosion(B, V.body.x, V.body.y + 0.5, 1.2);
+    fxSmokeColumn(B, V);
+    audio.sfx('boom', B.panOf(V.body.x));
+  }
   B.trauma = Math.min(1, B.trauma + 0.35);
   floatText(label, V.body.x, V.body.y + V.height + 1, true);
   if (V.side === 0) haptic('lost');
@@ -403,7 +418,7 @@ function explode(B, x, y, dmg, radius, source) {
   fxExplosion(B, x, y, radius / 3);
   audio.sfx('boom', B.panOf(x), 0.7 + radius / 8);
   const gy = B.T.height(x);
-  if (y - gy < radius * 0.6) B.T.carve(x, radius * 0.6, 0.35 + radius * 0.06);
+  if (y - gy < radius * 0.6 && !seaAt(B.T, x)) B.T.carve(x, radius * 0.6, 0.35 + radius * 0.06);
   const tmp = { x: 0, y: 0 };
   for (const V of B.units) {
     if (Math.hypot(V.body.x - x, V.body.y - y) > radius + V.radius) continue;
@@ -468,7 +483,19 @@ function stepShells(B, dt) {
       if (Math.hypot(s.px + ex * t - b.x, s.py + ey * t - b.y) > V.radius) continue;
       if (shellVsVehicle(B, s, V)) { s.alive = false; return; }
     }
-    // Trees stop machine-gun rounds and sometimes shells.
+    // Water: bullets stop at the surface, high explosive bursts on it, and shells
+    // slow sharply and die 1.5 m down (design/01 §7.1 sea layer).
+    if (seaAt(T, s.x) && s.y < T.sea) {
+      if (!s.wet) {
+        s.wet = true;
+        fxSplash(B, s.x, T.sea, s.mg ? 0.3 : s.he ? 1.6 : 1);
+        if (s.mg) { s.alive = false; return; }
+        if (s.he) { s.alive = false; explode(B, s.x, T.sea, s.def.heDmg || s.dmg, s.def.heRadius || 3, s.shooter); return; }
+        audio.sfx('splash', B.panOf(s.x), 0.7);
+        s.vx *= 0.2; s.vy *= 0.2;
+      }
+      if (s.y < T.sea - 1.5) { s.alive = false; return; }
+    }
     // Ground.
     const gh = T.height(s.x);
     if (s.y <= gh) {

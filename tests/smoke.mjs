@@ -135,11 +135,17 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(ph.tallSlope.tilt > 60 && ph.normalSlope.tilt < 20, `top-heavy tipping wrong (tall ${ph.tallSlope.tilt.toFixed(0)}°, normal ${ph.normalSlope.tilt.toFixed(0)}°)`);
       const rnd = await G(() => window.__GAME__.randomCheck());
       check(rnd.every((r) => r.ok), `randomiser made an invalid design: ${JSON.stringify(rnd.find((r) => !r.ok))}`);
+      const nv = await G(() => window.__GAME__.navalCheck());
+      check(nv.valid, 'naval test designs are not valid');
+      check(nv.heavy.draft > nv.base.draft + 0.2 && nv.heavy.speed < nv.base.speed * 0.95, `over-armoured ship did not sit lower and slower (${JSON.stringify([nv.base, nv.heavy])})`);
+      check(Math.abs(nv.holed.angle) > 3 && !nv.holed.sunk && nv.holed.wet.every((x) => x < 10), `holed ship did not list with the water held by a bulkhead (${JSON.stringify(nv.holed)})`);
+      check(nv.open.sunk, `holed ship without bulkheads did not sink (${JSON.stringify(nv.open)})`);
+      check(nv.base.dx > 40 && nv.reverse.dx < -3, `ships don't drive forward and back (${nv.base.dx.toFixed(0)} m, ${nv.reverse.dx.toFixed(0)} m)`);
       const hw = await G(() => window.__GAME__.howitzerCheck());
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('templates, physics, damage');
+      steps.push('templates, physics, damage, ships');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }
@@ -382,9 +388,26 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await tapCtrl('pause');
     await tapButton('Back to the Workshop');
     check((await G(() => window.__GAME__.screens.name)) === 'designer', 'test drive did not return to the designer');
+    // Ships (Part 2a): the gunboat on the blueprint (waterline marker), then a sea trial driven with the pad.
+    await G(() => { const S = window.__GAME__.SCREENS.designer; S.load(window.__GAME__.designFromTemplate('gunboat'), null, true); S.build(); });
+    await wait(300);
+    check(/reserve/.test(await page.locator('.dz-top').textContent()), 'ship chips missing on the blueprint');
+    await shot('13b-designer-ship');
+    await tapButton('Test drive');
+    await wait(400);
+    const sea0 = await G(() => { const B = window.__GAME__.battle(); return { range: B.cfg.range, x: B.me.body.x }; });
+    check(sea0.range === 'sea', 'ship test drive did not use the sea range');
+    const rc = await ctrl('right');
+    if (vp.mobile) { await touch('touchStart', [{ x: rc.cx, y: rc.cy, id: 3 }]); await wait(2500); await touch('touchEnd', [{ x: rc.cx, y: rc.cy, id: 3 }]); }
+    else { await page.keyboard.down('KeyD'); await wait(2500); await page.keyboard.up('KeyD'); }
+    const sea1 = await G(() => window.__GAME__.battle().me.body.x);
+    check(sea1 > sea0.x + 3, `the ship did not move with the drive pad (${sea0.x.toFixed(1)} → ${sea1.toFixed(1)})`);
+    await shot('14b-sea-trial');
+    await tapCtrl('pause');
+    await tapButton('Back to the Workshop');
     await G(() => window.__GAME__.ladder.resume());
     await wait(200);
-    steps.push('designer, Mk.II, test drive');
+    steps.push('designer, Mk.II, test drive, sea trial');
 
     // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
     if (!vp.mobile) {

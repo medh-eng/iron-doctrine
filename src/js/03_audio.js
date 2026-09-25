@@ -561,6 +561,33 @@ const SFX = {
     const o = a.osc('sine', 70, t, t + 1.2 * k, b);
     o.frequency.exponentialRampToValueAtTime(30, t + 0.8 * k);
   },
+  // Shell into the sea: a hiss of spray over a low plunge.
+  splash(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.6, 0.35, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.01, 0.3 * vel, 0.45);
+    const f = a.filter('bandpass', 2400, 0.7, g);
+    f.frequency.exponentialRampToValueAtTime(700, t + 0.5);
+    a.noiseSrc(t, t + 0.6, f);
+    const m = a.gain(out);
+    a.env(m.gain, t, 0.004, 0.25 * vel, 0.2);
+    const o = a.osc('sine', 120, t, t + 0.25, m);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.2);
+  },
+  // Water pouring into a hull: low filtered rumble with bubbling.
+  flood(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 1.2, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.08, 0.25 * vel, 0.9);
+    a.noiseSrc(t, t + 1.2, a.filter('lowpass', 380, 3, g));
+    for (let k = 0; k < 4; k++) {
+      const b = a.gain(out);
+      const tk = t + 0.12 + k * 0.17;
+      a.env(b.gain, tk, 0.005, 0.08 * vel, 0.06);
+      const o = a.osc('sine', 220 + k * 70, tk, tk + 0.08, b);
+      o.frequency.exponentialRampToValueAtTime(520 + k * 90, tk + 0.07);
+    }
+  },
   thud(a, t, pan, vel) {
     const out = a.voice(a.sfxBus, t, 0.25, 0.3, pan);
     const g = a.gain(out);

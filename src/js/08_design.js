@@ -66,13 +66,21 @@ function components(design, grid, alive) {
   return groups;
 }
 
+// The domain comes from the parts used (design/01 §8.1): watertight hull parts make a ship.
+function domainOf(design) {
+  for (const c of design.cells) { const d = PARTS[c.p]; if (d && d.sealed) return 'naval'; }
+  return 'ground';
+}
+const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship' };
+
 // Placement rules (design/01 §8.1). Messages state facts only.
 function validateDesign(design) {
   const errors = [];
   const W = design.w, H = design.h;
   const count = new Int16Array(W * H);
+  const domain = domainOf(design);
   let lowest = -1;
-  let crew = 0, needCrew = 1, engines = 0, loco = 0;
+  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) { errors.push(`Unknown part ${c.p}.`); continue; }
@@ -85,25 +93,51 @@ function validateDesign(design) {
     if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto) needCrew++;
     if (d.power > 0) engines++;
     if (d.loco) loco++;
+    if (d.keel) keels++;
+    if (d.propeller) props++;
   }
   if (count.some((n) => n > 1)) errors.push('Two parts overlap.');
-  // Track segments need a run of 3 or more side by side (design/05 §2).
-  const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
-  for (let i = 0, run = 1; i < runs.length; i++) {
-    if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
-    if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
-    run = 1;
+  if (domain === 'ground') {
+    // Track segments need a run of 3 or more side by side (design/05 §2).
+    const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
+    for (let i = 0, run = 1; i < runs.length; i++) {
+      if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
+      if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
+      run = 1;
+    }
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
+    }
+    if (!loco) errors.push(props ? 'Propellers need a ship hull; no wheels or tracks.' : 'No wheels or tracks.');
+  } else {
+    // Ships need a sealed hull with a keel (design/01 §8.1), a propeller in the water, and must float.
+    if (!keels) errors.push('No keel.');
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (d && d.keel && c.y + d.h - 1 !== lowest) errors.push('A keel does not touch the lowest row.');
+    }
+    const st = statsOf(design);
+    if (!props) errors.push('No propeller.');
+    else if (!st.propsWet) errors.push('No propeller below the waterline.');
+    if (st.reserve <= 0) errors.push(`Mass ${(st.mass / 1000).toFixed(1)} t; the hull displaces ${(st.dispMax / 1000).toFixed(1)} t. It sinks.`);
   }
-  for (const c of design.cells) {
-    const d = PARTS[c.p];
-    if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
-  }
-  if (!loco) errors.push('No wheels or tracks.');
   if (!engines) errors.push('No engine.');
   if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
   const groups = components(design, occupancy(design));
   if (groups.length > 1) errors.push(`${groups.length - 1} part group(s) are not connected to the rest.`);
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, domain };
+}
+
+// Ships (design/05 §7.3): beam from the hull length; a watertight cell displaces 0.25 m² × beam.
+// Always measured on the whole design, so the beam doesn't change as parts are shot away.
+function hullOf(design) {
+  let x0 = Infinity, x1 = -Infinity;
+  for (const c of design.cells) { const d = PARTS[c.p]; if (d && d.sealed) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x + d.w); } }
+  if (x1 <= x0) return null;
+  const length = (x1 - x0) * CELL;
+  const beam = clamp(length * 0.18, 2.5, 12);
+  return { length, beam, cellVol: 0.25 * beam };
 }
 
 // Derived numbers (design/01 §8.2, design/05 §7). Pure; `alive` optional.
@@ -133,6 +167,7 @@ function statsOf(design, alive) {
   });
   const com = mass ? { x: mx / mass, y: my / mass } : { x: 0, y: 0 };
   const loco = tracks && !wheels ? 'track' : 'wheel';
+  const ship = shipNumbers(design, alive, mass);
   const pressure = contact ? (mass * GRAVITY) / contact / 1000 : Infinity;   // kPa
   const base = maxX > minX ? maxX - minX : 0;
   return {
@@ -150,11 +185,70 @@ function statsOf(design, alive) {
     fuel,
     shells,
     crew,
+    ...ship,
   };
 }
 
+// Waterline, draft, reserve buoyancy and centre of buoyancy for a ship floating level (design/05 §7.3).
+function shipNumbers(design, alive, mass) {
+  const hull = hullOf(design);
+  if (!hull) return { hull: null, reserve: 0, dispMax: 0, propsWet: 0 };
+  const H = design.h;
+  const rowVol = new Float64Array(H), rowX = new Float64Array(H);
+  let bottom = Infinity, top = -Infinity, props = [];
+  design.cells.forEach((c, i) => {
+    const d = PARTS[c.p];
+    bottom = Math.min(bottom, (H - c.y - d.h) * CELL);
+    if (d.propeller && (!alive || alive[i])) props.push((H - c.y - d.h) * CELL);
+    if (!d.sealed || (alive && !alive[i])) return;
+    top = Math.max(top, (H - c.y) * CELL);
+    for (let yy = c.y; yy < c.y + d.h; yy++) for (let xx = c.x; xx < c.x + d.w; xx++) {
+      const r = H - 1 - yy;
+      const v = hull.cellVol * d.sealed;
+      rowVol[r] += v;
+      rowX[r] += v * (xx + 0.5) * CELL;
+    }
+  });
+  let dispMax = 0;
+  for (let r = 0; r < H; r++) dispMax += rowVol[r] * 1000;
+  // Fill rows from the bottom until the displaced water weighs as much as the ship.
+  let acc = 0, wl = top, bx = 0, by = 0, bv = 0;
+  for (let r = 0; r < H; r++) {
+    const m = rowVol[r] * 1000;
+    if (!m) continue;
+    const f = acc + m >= mass ? (mass - acc) / m : 1;
+    bv += rowVol[r] * f; bx += rowX[r] * f; by += rowVol[r] * f * (r + f / 2) * CELL;
+    acc += m * f;
+    if (f < 1) { wl = (r + f) * CELL; break; }
+  }
+  return {
+    hull,
+    dispMax,
+    reserve: dispMax ? (dispMax - mass) / dispMax : 0,
+    waterline: wl,                                // metres above the grid's bottom edge
+    draft: Math.max(0, wl - bottom),
+    freeboard: top - wl,
+    cob: bv ? { x: bx / bv, y: by / bv } : { x: 0, y: 0 },
+    propsWet: props.filter((y) => y < wl).length,
+  };
+}
+
+// Top speed at sea (km/h, design sheet): propeller thrust against hull resistance on the
+// submerged cross-section (displaced volume ÷ hull length). Heavier ships sit deeper and go slower.
+function shipSpeed(st) {
+  if (!st.hull || !st.propsWet || !st.power || st.reserve <= 0) return 0;
+  const avail = st.power >= st.drawn ? 1 : st.power / Math.max(1, st.drawn);
+  const P = st.power * 1000 * PROP_EFF * avail;
+  const A = st.mass / 1000 / st.hull.length;
+  return Math.cbrt(P / (0.5 * 1000 * SHIP_CD * A)) * 3.6;
+}
+
 // ---------- Drafting Office numbers (design/01 §8.2, design/05 §7). Design-sheet units, not battle units.
-const CLASSES = { light: { name: 'Light ground', w: 16, h: 8 }, heavy: { name: 'Heavy ground', w: 28, h: 12 } };
+const CLASSES = {
+  light: { name: 'Light ground', w: 16, h: 8, domain: 'ground' },
+  heavy: { name: 'Heavy ground', w: 28, h: 12, domain: 'ground' },
+  ship: { name: 'Ship', w: 44, h: 16, domain: 'naval' },
+};
 
 function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
 function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
@@ -214,8 +308,10 @@ function armourFacings(design) {
 function designReport(design) {
   const st = statsOf(design);
   const v = validateDesign(design);
+  const domain = v.domain;
   const speeds = {};
-  for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
+  if (domain === 'naval') speeds.Sea = Math.round(shipSpeed(st));
+  else for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
   let load = 0;
   const weapons = [];
   for (const c of design.cells) {
@@ -227,9 +323,20 @@ function designReport(design) {
   if (st.drawn > st.power) warnings.push(`Power drawn exceeds power produced by ${st.drawn - st.power} kW.`);
   if (load && st.mass > load) warnings.push(`Mass ${(st.mass / 1000).toFixed(1)} t on running gear rated ${(load / 1000).toFixed(1)} t.`);
   if (!weapons.some((d) => !d.auto)) warnings.push('No main gun fitted.');
-  if (speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  if (domain === 'ground' && speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  if (domain === 'naval' && st.hull) {
+    // Parts below the waterline that aren't watertight add weight but no buoyancy.
+    const wet = new Set();
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (!d.sealed && !d.propeller && (design.h - c.y - d.h) * CELL < st.waterline) wet.add(d.name);
+    }
+    for (const n of wet) warnings.push(`${n} sits below the waterline and is not watertight.`);
+    if (!design.cells.some((c) => PARTS[c.p].bulkhead)) warnings.push('No watertight bulkheads: a hole floods the whole hull.');
+  }
   return {
-    st, valid: v, speeds, weapons, warnings,
+    st, valid: v, speeds, weapons, warnings, domain,
+    topSpeed: domain === 'naval' ? speeds.Sea : speeds.Plains,
     climb: climbLimit(st),
     armour: armourFacings(design),
     cost: costOf(design),
@@ -268,10 +375,11 @@ function randomDesign(seed, cls) {
     const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
     if (validateDesign(d).ok) return d;
   }
-  return designFromTemplate('light');
+  return designFromTemplate(cls === 'ship' ? 'gunboat' : 'light');
 }
 
 function tryRandomDesign(rng, cls) {
+  if (cls === 'ship') return tryRandomShip(rng);
   const C = CLASSES[cls];
   const heavy = cls === 'heavy';
   const cells = [];
@@ -330,5 +438,70 @@ function tryRandomDesign(rng, cls) {
   }
   if (rng.next() < 0.4) put(rng.pick(['fc', 'stab', 'nsight', 'smoke']), x0 + 1, hullTop - 1);
   if (rng.next() < 0.5) put('radiator', x0, hullTop - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
+}
+
+// A random ship: keel, one or two hull layers with bulkheads, a bow, propellers at the stern,
+// an engine, a bridge and guns on deck. Stern on the left, like the templates.
+function tryRandomShip(rng) {
+  const C = CLASSES.ship;
+  const W = C.w, H = C.h;
+  const cells = [];
+  const grid = new Int8Array(W * H);
+  const put = (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+  const big = rng.next() < 0.45;
+  const x0 = 3;
+  const len = big ? 2 * rng.int(16, 19) : 2 * rng.int(9, 13);        // hull length in cells, even
+  const layers = big ? 2 : rng.pick([1, 1, 2]);
+  const bottom = H - 1;
+  for (let x = x0; x + 2 <= x0 + len - 2; x += 2) put('keel', x, bottom);
+  put('prop', x0 - 1, bottom - 1);
+  if (big) put('prop', x0 - 2, bottom - 1);
+  const every = rng.int(7, 11);
+  let deck = bottom - 2 * layers;                                        // row just above the hull
+  const marine = big && rng.next() < 0.8;
+  const engX = x0 + 2 * rng.int(2, Math.max(2, Math.floor(len / 6)));
+  for (let L = 0; L < layers; L++) {
+    const y = bottom - 2 - 2 * L;
+    let sinceBulk = 0;
+    for (let x = x0; x < x0 + len;) {
+      const last = x + 2 >= x0 + len;
+      if (L === 0 && marine && x === engX && put('marine', x, bottom - 3)) { x += 4; sinceBulk += 4; continue; }
+      if (grid[y * W + x]) { x++; continue; }
+      if (sinceBulk >= every && !last && put('bulk', x, y)) { x++; sinceBulk = 0; continue; }
+      if (last) { put(L === layers - 1 || layers === 1 ? 'bow' : 'hull', x, y); if (L < layers - 1) put('bow', x + 2, y - 2); x += 2; continue; }
+      if (!put('hull', x, y)) put('plate', x, y + 1);
+      x += 2; sinceBulk += 2;
+    }
+  }
+  if (marine) { for (let x = engX; x < engX + 4; x++) put('plate', x, bottom - 4); deck = Math.min(deck, bottom - 5); }
+  if (layers === 2 && !marine) deck = bottom - 5;
+  // Deck: engine (if not below), bridge, main gun on a turret, machine guns.
+  let x = x0;
+  if (!marine) { const e = rng.pick(['eng_m', 'eng_m', 'eng_h']); put(e, x, deck - 1); x += PARTS[e].w; }
+  else x += 1;
+  put('fuel_s', x, deck); x += 1;
+  const bridgeX = x0 + Math.floor(len * 0.45);
+  for (; x < bridgeX; x++) put('plate', x, deck);
+  put('crew2', bridgeX, deck - 1);
+  put('optics', bridgeX, deck - 2);
+  if (rng.next() < 0.6) put('radio', bridgeX + 1, deck - 2);
+  x = bridgeX + 2;
+  const gun = big ? rng.pick(['ngun', 'c105', 'ngun']) : rng.pick(['c37', 'c75', 'c75']);
+  put('ammo', x, deck); x++;
+  put('turret', x, deck);
+  put('crew2', x, deck - 2);
+  put(gun, x + 2, deck - PARTS[gun].h);
+  x += 3;
+  for (; x < x0 + len - 3; x++) put('plate', x, deck);
+  put(rng.pick(['mg', 'hmg', 'hmg']), x, deck);
+  if (rng.next() < 0.5) put('fc', bridgeX + 1, deck - 3) || put('fc', bridgeX - 1, deck);
   return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
 }

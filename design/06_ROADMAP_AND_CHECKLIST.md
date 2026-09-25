@@ -71,10 +71,37 @@
 - Design lineage view.
 - New ladder ideas: air attacks, coastal gunboats, a submarine level.
 
+### Sub-steps
+
+**2a. Ships** (done in v0.2.0)
+- ship parts: hull section, bow section, keel, watertight bulkhead, marine diesel, ship propeller, manoeuvre thruster, twin 120 mm naval gun, 1000 L fuel tank
+- buoyancy per watertight cell, draft, trim, hull drag, propeller thrust (design/05 §7.3)
+- flooding through holes and destroyed hull parts, stopped by bulkheads; listing, sinking, capsizing
+- sea layer in battles: coast generator, water drawing, splashes, shells slowed by water
+- Drafting Office: ship class, waterline and centre-of-buoyancy markers, ship numbers, Gunboat and Destroyer templates, ship randomiser, ship scratch build
+- test range: sea trial for ships
+- ladder: level 14 "Coastal gunboats"; coasts with gunboats in random levels 16+
+
+**2b. Submarines**
+- ballast tanks, electric motor, periscope depth and diving with ▲ ▼
+- torpedoes (hits below the waterline flood), depth charges, sonar
+- underwater layer; submarine template; the submarine ladder level
+
+**2c. Aircraft and helicopters**
+- wings, tail, aero engine, jet, air propeller, rotor, tail rotor
+- lift, stall, thrust-to-weight; rotor lift against mass
+- sky layer, bombs, autocannon and AA guns; Fighter, Bomber, Scout helicopter templates
+- centre-of-lift and thrust-to-weight markers; air test range; the air attack ladder level
+
+**2d. Systems and constraints**
+- radar, ECM, sonar ranges; rocket pods, guided missiles, SAMs; missile hit rates
+- live constraints: heat, reliability, crew; remaining logistics parts
+- test range selector (land, sea, air); design lineage view
+
 ### Acceptance
 
-- [ ] Over-armoured ships sit low and slow down.
-- [ ] A holed ship lists and can sink; bulkheads contain flooding.
+- [x] Over-armoured ships sit low and slow down.
+- [x] A holed ship lists and can sink; bulkheads contain flooding.
 - [ ] An aircraft with too little wing stalls; a helicopter with too little power can't lift off.
 - [ ] Radar, ECM and fire control measurably change missile hit rates.
 - [ ] Every domain can be driven with the drive pad.
@@ -204,3 +231,4 @@
 | 2026-09-25 | 0.1.2 | Part 1b battle core. Terrain generator (plains, hills, mud, forest with breakable trees, gaps) on a 0.5 m heightfield with HE craters. Vehicles are rigid bodies built from their part grids: mass, centre of mass, inertia, spring-damper wheel and track contacts, drive force from engine power and grip, rolling resistance from softness and ground pressure, engine braking, recoil. Shells traced cell by cell through the part grid: armour vs penetration by angle, ricochets past 70°, bursting charges, over-penetration; per-part damage with scorch and holes, parts and cut-off groups detach as tumbling debris; engine, gun, turret ring, fuel fire and ammo detonation effects. Spotting with optics, forest concealment, smoke screens and muzzle reveal. Squad of 3 with the five orders, long-press move, swap; enemy AI (parked, convoy, attack) with reaction time and accuracy. Effects: muzzle flash, sparks, dirt, explosions with shockwave, smoke columns, hit-stop, shake. Battle music in D minor with 4 intensity layers. Start/Stop time. HUD: squad cards with health/fuel/ammo, objective bar, minimap, off-screen enemy arrows, target bracket, follow camera that frames the target. Battle results card. 6 templates drawn as detailed HighFleet-style modules. Four battle setups cycle as levels until the ladder arrives. Title button renamed Workshop; Workshop design written up (01 §8.6). Tests: templates valid; wheels faster on flat, tracks beat wheels in mud, underpowered stalls on a hill, top-heavy tips on a slope, part effects; win/lose/retry; desktop autoplay clears level 1 in about 20 s. | Enemies don't retreat or use cover yet. No infantry, howitzer or bunkers yet (ladder levels 7 and 13). Level clear has the slow-motion and stamp but not yet confetti or the fanfare. A few small per-frame allocations remain in effects and drawing (game work is about 0.5 ms per frame on the headless probe). Template masses come out lighter than the rough targets in 05 §8 (medium tank 9.5 t, not 18 t); the numbers are what the parts add up to. | Part 1c: ladder, score and lives, then the Workshop / Drafting Office v1 |
 | 2026-09-25 | 0.1.3 | Part 1c. Ladder: levelConfig to unlimited with introductions through level 15 (hold the ridge, artillery with impact warnings, escort, forest, the Behemoth boss, rain and dusk, gaps, bunkers, night) and mixes with a named boss every 5th level after that; caps applied. Lives (3, +1 every 5 levels, max 5), score, 4 s combos, critical-hit bonuses, level-clear stamp with slow-motion, confetti and bugle fanfare, life lost and game over cards, continue at level N; two-line how-to at each level start. Workshop between levels (squad of 3 within the level budget, Requisition). Drafting Office v1: cyanotype grid, 32 P1 parts, templates, randomise (light/heavy), scratch build, explained invalid placements, numbers-only stats drawer (mass, power, pressure, tip angle, climb limit, speed per terrain, armour, weapons, cost, change vs base), balance markers, undo/redo, test drive, saving marks with a change log. Blueprints and medals screen (7 medals). AI-vs-AI demo battle behind the title. Save format v2 with a v1 migration. Art integration contract with the graphics project (design 07): part images with JSON records validated by the build, loader with fallback, barrel images with pivot and muzzle, placeholder test screenshots in design/art. Fixed: enemy guns started pointing backwards. | Phone performance not yet measured on a real device (headless probe: game work about 0.5 ms per frame). Enemies still don't retreat or use cover; no infantry. Faction paint masks, rotating wheels and part research are planned, not built. The level budget and Requisition numbers are first guesses. | Part 1 release checklist on a real phone, then Part 2 (all domains) or the first imported part art from the graphics project (frame) |
 | 2026-09-26 | 0.1.4 | Fix from the producer's play test: howitzers (fitted by the player or in enemy batteries) never fired. Their arc stopped at 72°, below every lob within their 400 m range, so shots were refused as out of arc and no impact warnings appeared. Arc is now −5° to 80°, with the flat arc used when the lob doesn't fit. Smoke test checks a battery can aim at 40, 120, 250 and 390 m. | None new | Part 2, or the first imported part art (frame) |
+| 2026-09-26 | 0.2.0 | Part 2a: ships. Nine ship parts (hull and bow sections, keel, bulkhead, marine diesel, propeller, manoeuvre thruster, twin 120 mm naval gun, 1000 L fuel tank). Each watertight cell below the surface pushes up with the water it displaces, so draft, trim and list come from where parts sit; propellers push, the hull drags on its submerged cross-section, so heavier ships sit lower and go slower. Shell holes and destroyed hull parts below the waterline let water in; it fills the compartment from the bottom until bulkheads stop it; ships list, sink or capsize. Sea layer in battles: coasts, translucent water, swell, splashes, shells slowed by water, sinking without a fireball. Drafting Office: ship grid (44×16), waterline and centre-of-buoyancy markers, draft, freeboard, reserve buoyancy, beam and sea speed; Gunboat and Destroyer templates; ship randomiser and scratch build. Sea trial on the test range. Squad ships deploy only on maps with sea. Ladder level 14 is now "Coastal gunboats"; some random levels from 16 have a coast with gunboats or a destroyer. Auto-aim goes for the waterline of ships. Fixed: a vehicle that lost every part broke the physics for everyone (NaN positions). | The coast level is hard for a squad that stays parked: a machine-gun car can sit under your gun's lowest angle. Ship hulls are blocky (bow section only). Ships don't turn around; they reverse. | Part 2b: submarines |

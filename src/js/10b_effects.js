@@ -2,7 +2,7 @@
 // The joy layer (design/03 §5): muzzle flashes, sparks, dirt, explosions, smoke,
 // fire, shockwave rings. Particles are pooled and capped by the quality setting.
 
-const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6;
+const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6, FX_SPRAY = 7;
 
 const particles = makePool(() => ({
   alive: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 1, size: 1, grow: 0, g: 0, shade: 0,
@@ -44,6 +44,17 @@ function fxSparks(B, x, y, ang, n) {
     if (p) p.g = 1;
   }
   spawnParticle(FX_FLASH, x, y, 0, 0, 0.05, 0.8);
+}
+
+// Shell splash on the sea: a white column of spray and a ring (Part 2a).
+function fxSplash(B, x, y, size) {
+  const n = Math.round(4 + size * 8);
+  for (let i = 0; i < n; i++) {
+    const p = spawnParticle(FX_SPRAY, x + B.rng.range(-0.3, 0.3) * size, y, B.rng.range(-1.5, 1.5) * size, B.rng.range(4, 11) * Math.sqrt(size), B.rng.range(0.5, 1.1), B.rng.range(0.25, 0.5) * (0.6 + size * 0.4));
+    if (p) p.g = 1;
+  }
+  const r = spawnParticle(FX_RING, x, y, 0, 0, 0.5, 0.4 * size);
+  if (r) r.grow = 4 * size;
 }
 
 function fxDirt(B, x, y, n) {
@@ -108,6 +119,7 @@ function stepEffects(B, dt) {
     p.y += p.vy * dt;
     p.size += p.grow * dt;
     if (p.kind === FX_DIRT && p.y < B.T.height(p.x)) p.alive = false;
+    if (p.kind === FX_SPRAY && p.vy < 0 && seaAt(B.T, p.x) && p.y < B.T.sea) p.alive = false;
   });
   smokeScreens.forEachAlive((s) => {
     s.t += dt;

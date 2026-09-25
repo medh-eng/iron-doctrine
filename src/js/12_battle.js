@@ -37,9 +37,19 @@ function createBattle(level, opts = {}) {
     panOf: () => 0,
     onDestroyed: null,
   };
-  const squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  // Each squad design deploys in its own layer: land vehicles on the left, ships at the
+  // near edge of the sea. Ships stay in port on maps without sea.
+  let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  B.inPort = squad.filter((d) => domainOf(d) === 'naval' && T.seaX0 === undefined);
+  squad = squad.filter((d) => !B.inPort.includes(d));
+  if (!squad.length) squad = ['medium', 'light', 'scout'].map(designFromTemplate);
+  let landX = 46, seaX = T.seaX0 + 16;
   squad.forEach((d, i) => {
-    const V = makeVehicle(d, 0, 46 - i * 15, 1, T);
+    const naval = domainOf(d) === 'naval';
+    const L = cropDesign(d).w * CELL;
+    const x = naval ? seaX + L / 2 : landX;
+    if (naval) seaX += L + 8; else landX -= 15;
+    const V = makeVehicle(d, 0, x, 1, T);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -98,6 +108,12 @@ function createBattle(level, opts = {}) {
 
 function spawnEnemy(B, t, mode, x) {
   const d = designFromTemplate(t);
+  // Ships spawn at sea; land vehicles on land (Part 2a).
+  const T = B.T;
+  if (T.seaX0 !== undefined) {
+    if (domainOf(d) === 'naval') x = Math.max(x, T.seaX0 + 40);
+    else x = Math.min(x, T.seaX0 - 12);
+  }
   const V = makeVehicle(d, 1, x, -1, B.T);
   V.ai = makeAI(mode, B.cfg);
   V.template = t;
@@ -162,9 +178,11 @@ function updateBattle(B, dt) {
     } else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
     else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
+    if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
   for (const V of B.units) stepVehicle(V, B.T, dt);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 
@@ -190,7 +208,7 @@ function updateBattle(B, dt) {
       }
     }
     // Tall vehicles push over trees.
-    if (Math.abs(V.speed) > 0.8) {
+    if (Math.abs(V.speed) > 0.8 && !V.hull) {
       for (const tr of B.T.trees) {
         if (tr.alive && Math.abs(tr.x - V.body.x) < V.len / 2 && V.body.m > 3000) breakTree(B, tr, Math.sign(V.speed) || 1);
       }
@@ -287,6 +305,7 @@ function autoTarget(B) {
   return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200);
 }
 
+const _tp = { x: 0, y: 0 };
 // Keep the controlled vehicle's gun pointed at its target (or at the aim point while aiming).
 function trainPlayerGun(B, dt, aimX, aimY) {
   const V = B.me;
@@ -295,7 +314,7 @@ function trainPlayerGun(B, dt, aimX, aimY) {
   let tx = aimX, ty = aimY;
   if (tx === undefined) {
     const T = autoTarget(B);
-    if (T) { tx = T.body.x; ty = T.body.y + T.height * 0.15; }
+    if (T) { aimPoint(B, T, _tp); tx = _tp.x; ty = _tp.y; }
     else { tx = V.body.x + V.dir * 60; ty = B.T.height(V.body.x + V.dir * 60) + 1.5; }
   }
   aimWeapon(V, w, tx, ty, _aim);
@@ -378,6 +397,42 @@ function howitzerCheck() {
     out[d] = _aim.ok;
   }
   return out;
+}
+
+// Ships (design/06 Part 2 acceptance): over-armoured ships sit low and slow down; a holed
+// ship lists and bulkheads contain the water; without bulkheads it sinks; the drive pad drives it.
+function navalCheck() {
+  const T = makeTerrain({ seed: 7, length: 520, hills: 0.2, rough: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 14 } });
+  const B = { T, panOf: () => 0 };
+  const run = (d, throttle, secs, holes = []) => {
+    const V = makeVehicle(d, 0, 150, 1, T);
+    for (const [x, y] of holes) { const i = V.parts.findIndex((p) => p.x === x && p.y === y); V.parts[i].alive = false; V.alive[i] = 0; }
+    rebuildVehicle(V);
+    V.throttle = throttle;
+    for (let t = 0; t < secs; t += SIM_STEP) { stepVehicle(V, T, SIM_STEP); stepFlooding(B, V, SIM_STEP); }
+    const tmp = { x: 0, y: 0 };
+    let low = Infinity, top = -Infinity;
+    for (const [gx, gy] of [[V.bounds.minX, V.bounds.minY], [V.bounds.maxX, V.bounds.minY], [V.bounds.minX, V.bounds.maxY], [V.bounds.maxX, V.bounds.maxY]]) {
+      gridToLocal(V, gx, gy, tmp); localToWorld(V, tmp.x, tmp.y, tmp);
+      low = Math.min(low, tmp.y); top = Math.max(top, tmp.y);
+    }
+    const wet = V.parts.filter((p) => p.water > 1).map((p) => p.x);
+    return { dx: V.body.x - 150, speed: V.speed, draft: T.sea - low, sunk: top < T.sea, angle: (V.body.a * 180) / Math.PI, wet };
+  };
+  const base = designFromTemplate('gunboat');
+  const heavy = designFromTemplate('gunboat');
+  heavy.cells = heavy.cells.map((c) => (c.p === 'plate' ? { p: 'arm80', x: c.x, y: c.y } : c)).concat([12, 13, 14, 19, 20].map((x) => ({ p: 'arm80', x, y: 4 })));
+  const open = designFromTemplate('gunboat');
+  open.cells = open.cells.filter((c) => !(c.y === 6 && (c.p === 'hull' || c.p === 'bulk')));
+  for (let x = 4; x < 24; x += 2) open.cells.push({ p: 'hull', x, y: 6 });
+  return {
+    valid: validateDesign(heavy).ok && validateDesign(open).ok,
+    base: run(base, 1, 25),
+    heavy: run(heavy, 1, 25),
+    holed: run(base, 0, 30, [[6, 6]]),
+    open: run(open, 0, 40, [[6, 6]]),
+    reverse: run(designFromTemplate('destroyer'), -1, 8),
+  };
 }
 
 // Part effects: engine, gun, turret ring, ammo detonation.

@@ -28,6 +28,7 @@ These are starting values. Tune them freely for feel and balance, but never show
 | crew2 | Crew compartment | 2×2 | 300 | 80 | 10 | M3 | 2 crew slots | P1 |
 | turret | Turret ring | 3×1 | 250 | 90 | 20 | M3 | Needed for turrets; −5 kW traverse | P1 |
 | hull | Ship hull section | 2×2 | 600 | 150 | 10 | M4 W1 | Buoyancy below the waterline | P2 |
+| bow | Bow section | 2×2 | 450 | 130 | 10 | M3 W1 | Raked bow; watertight, displaces half its cells (added in 2a) | P2 |
 | keel | Keel | 2×1 | 500 | 120 | 10 | M3 | Lowers centre of mass; ships need one | P2 |
 | bulk | Watertight bulkhead | 1×2 | 200 | 100 | 10 | M2 | Stops flooding spreading | P2 |
 | wing | Wing section | 2×1 | 90 | 30 | 2 | M1 W1 | Lift area 6 m² | P2 |
@@ -179,6 +180,16 @@ These are starting values. Tune them freely for feel and balance, but never show
 - **Reserve buoyancy** = (total hull volume − mass ÷ 1000) ÷ total hull volume.
 - **Flooding:** a destroyed hull cell below the waterline takes in water at 0.5 t/s. The water spreads to neighbouring hull cells unless a bulkhead is in the way.
 
+**As built in 2a** (tuning data in `07_data.js`):
+- Watertight parts: hull, bow (half its cells), keel, bulkhead, marine diesel. Hull length is measured over them; beam = length × 0.18, clamped to 2.5–12 m, fixed for the battle.
+- Waterline, draft, freeboard and centre of buoyancy are found by filling the hull rows from the bottom until the water displaced weighs as much as the ship. Reserve buoyancy uses the whole watertight volume. A design whose mass exceeds it is invalid ("It sinks").
+- Rules: a keel on the lowest row, a propeller with a cell below the waterline, an engine, crew. Warnings name parts below the waterline that aren't watertight, and a hull without bulkheads.
+- **Speed at sea:** thrust = engine power × 0.6 (`PROP_EFF`) ÷ max(v, 1.5 m/s), while a propeller is in the water; reverse × 0.45. Hull resistance = 0.5 × 1000 × 0.35 (`SHIP_CD`) × A × v², where A = displaced volume ÷ hull length, so a heavier ship sits deeper and is slower. In battle the resistance is × 8 (= 1 ÷ `BATTLE_SPEED_SCALE`³) so ships run at half their sheet speed, like ground caps. Gunboat: 33 km/h on the sheet; Destroyer: 46 km/h.
+- **Flooding:** 0.5 t/s per destroyed watertight cell below the surface (scaled by how deep the cell is), plus 0.35 t/s (`HOLE_RATE`) per shell hole below the surface (up to 3 holes remembered per part). Only hull, bow and marine diesel parts take water; keels and bulkheads stop it. Water fills the lowest parts of the compartment first and weighs on them where they are, so the ship trims towards the flooded end.
+- **Manoeuvre thruster:** 15 kN each of extra stopping and reversing force.
+- **Naval gun, twin:** both barrels fire together; battle numbers muzzle 120 m/s, 150 damage, bursting charge 70 within 2.2 m. Recoil counts both barrels.
+- **Water and shells:** bullets stop at the surface; high explosive bursts on it; shells slow to 20% and stop 1.5 m down. Auto-aim at a floating ship aims 0.1 m below its waterline.
+
 ### 7.4 Aircraft
 
 - **Lift** = 0.5 × 1.225 × v² × S × CL.
@@ -218,6 +229,13 @@ Build these as real part grids. Rough targets:
 | Medium tank | 14×7 | 5 track segments, diesel engine M, turret with 75 mm cannon + MG, 40 mm front and 20 mm sides, ammo rack, 2 fuel tanks | about 18 t |
 | Assault gun | 13×5 | 5 track segments, diesel engine M, fixed 105 mm cannon, 80 mm sloped front, no turret | about 20 t |
 | Supply truck | 11×5 | 3 off-road wheels, petrol engine S, cargo bay, timber frame | used in escort levels |
+
+**Ships (Part 2a):**
+
+| Template | Size | Build | Mass |
+|---|---|---|---|
+| Gunboat | 26×9 | keel, one hull layer with 2 bulkheads, bow, 1 propeller, diesel engine M on deck, bridge, turret with 37 mm cannon, HMG | 15.0 t, draft 0.64 m, reserve 60% |
+| Destroyer | 42×14 | keel, two hull layers with 3 bulkheads, marine diesel in the hull, 2 propellers, forward twin 120 mm turret, aft 75 mm turret, 3 HMGs, fire control | 49.3 t, draft 0.87 m, reserve 65% |
 
 **Enemy set for the ladder:**
 - supply truck

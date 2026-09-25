@@ -143,13 +143,17 @@ window.__GAME__ = {
   flush: () => save.flush(),
   setHidden,
   battle: () => SCREENS.battle.B,
+  designFromTemplate: (id) => designFromTemplate(id),
   selfCheck: () => battleSelfCheck(),
   physicsCheck: () => physicsCheck(),
-  randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of ['light', 'heavy']) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
+  navalCheck: () => navalCheck(),
+  evalIn: (src) => eval(src),       // debugging: run code inside the game's scope
+  randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of Object.keys(CLASSES)) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
   ladder,
   art,
   artTest: () => { art.usePlaceholders = true; art.debug = true; art.init(); },
   damageCheck: () => damageCheck(),
+  destroyPart: (B, V, i, src) => destroyPart(B, V, i, src),
   howitzerCheck: () => howitzerCheck(),
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },
