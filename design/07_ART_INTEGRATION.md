@@ -1,5 +1,7 @@
 # Iron Doctrine: art integration contract and A02 report
 
+> **Superseded in design v2** by `07_ART_AND_PARTS.md` (SVG parts in `src/parts`). Kept because the PNG route in `src/assets/parts` still exists in code.
+
 This is the agreement between the game code (this repository) and the separate graphics project that paints part art. It answers the graphics project's A02 compatibility request and says exactly what files to deliver. The graphics project should read this file before producing any runtime asset.
 
 Status: **contract agreed on the code side, tested with placeholders** (screenshots in `design/art/`). No real part art has been integrated yet.

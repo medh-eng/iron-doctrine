@@ -1,0 +1,74 @@
+{
+ "_about": "Paint schemes and paint-shop palette (design/07 \u00a73). SVG parts use tokens #FF00FF (p1), #00FFFF (p2), #FFFF00 (p3).",
+ "schemes": {
+  "league": {
+   "name": "Harbour League",
+   "p1": "#6E8FA8",
+   "p2": "#D8CCAA",
+   "p3": "#F2C14E"
+  },
+  "directorate": {
+   "name": "Directorate",
+   "p1": "#8A3A2C",
+   "p2": "#4A4F57",
+   "p3": "#E0A43A"
+  },
+  "skyreach": {
+   "name": "Skyreach Concord",
+   "p1": "#E4DFD2",
+   "p2": "#6F9CC4",
+   "p3": "#C9A04A"
+  },
+  "clans": {
+   "name": "Salvage Clans",
+   "p1": "#9A5A34",
+   "p2": "#C9A86A",
+   "p3": "#2F7F7A"
+  },
+  "lumen": {
+   "name": "Lumen Collective",
+   "p1": "#3A4450",
+   "p2": "#1F2A33",
+   "p3": "#4FD1C5"
+  },
+  "primer": {
+   "name": "Primer (unpainted stock)",
+   "p1": "#7D8084",
+   "p2": "#6B6E72",
+   "p3": "#9A9DA1"
+  }
+ },
+ "palette": [
+  "#7E8A94",
+  "#4F5A63",
+  "#5F6B75",
+  "#1F3552",
+  "#2E5FA3",
+  "#7FA8C9",
+  "#2F7F7A",
+  "#4E6B3A",
+  "#6B6B3A",
+  "#8A9A7B",
+  "#C9A86A",
+  "#A38F5D",
+  "#D9CFB4",
+  "#E9ECEE",
+  "#202326",
+  "#5A3B2A",
+  "#8E3B2A",
+  "#7A2E26",
+  "#C43C2C",
+  "#D9772E",
+  "#D9A441",
+  "#F2C14E",
+  "#6E8FA8",
+  "#9A5A34"
+ ],
+ "camo": [
+  "none",
+  "bands",
+  "blotch",
+  "splinter",
+  "stripes"
+ ]
+}

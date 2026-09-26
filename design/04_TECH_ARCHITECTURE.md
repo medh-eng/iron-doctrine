@@ -1,254 +1,177 @@
-# Iron Doctrine: technical architecture
+# Iron Doctrine: technical architecture (v2)
 
 ## 1. Delivery
 
-- **Source** lives in the GitHub repo:
-  - `src/js/*.js`: one file per section
-  - `src/styles.css`
-  - `src/index.template.html`
-  - `src/assets/`: fonts and other assets, copied as they are
-- **Build:** `node build.mjs` writes a small static site to `docs/`. It uses only Node built-ins.
-  - `index.html`: the page shell
-  - `game.js`: every `src/js/*.js` joined into one strict IIFE
-  - `game.css` and `assets/`
-  - `manifest.webmanifest`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` (icons are drawn in code by the build), so Chrome's "Add to Home screen" opens the game full screen and sideways
-  - `game.js` and `game.css` are linked with `?v=<GAME_VERSION>` so phones fetch the new version after an update
-- **Publishing:** GitHub Pages serves `docs/` from the `main` branch as the live game at `https://<username>.github.io/iron-doctrine/`.
-- **Nothing from other websites.** The build fails on any external URL, except the SVG namespace. (Until v0.1.0 the game was one self-contained HTML file; the producer lifted that rule in Part 1b.)
-- **Version constants** in `src/js/00_config.js`:
-  - `GAME_VERSION`: semver. Minor version = part number (Part 1 = 0.1.x); patch = fixes.
-  - `SAVE_VERSION`: an integer.
+- **Source in the repo:**
+  - `src/js/*.js`: game code
+  - `src/styles.css`, `src/index.template.html`, `src/assets/`
+  - `src/parts/`: part library and data
+  - `src/vehicles/`: ship, missile and drone designs
+- **Build:** `node build.mjs`
+  - validates the part library (it stops on errors)
+  - bundles it as `PART_LIBRARY`
+  - writes a small self-contained static site to `docs/` (`index.html`, `game.js`, `game.css`, `assets/`, manifest and icons; the one-file rule was lifted in v0.1.1)
+  - GitHub Pages serves that folder from `main`
+- **No network requests at runtime.**
+- **Versions** in `src/js/00_config.js`:
+  - `GAME_VERSION`: semver, minor = part number
+  - `SAVE_VERSION`: an integer
 
 ## 2. Code layout
 
-The files in `src/js/` are joined in filename order inside one strict IIFE, so later files can use earlier files' top-level names. Each file starts with its banner comment.
+The files in `src/js/` are joined in filename order inside one strict IIFE. Keep the existing numbering, and add new sections with letter suffixes. When a file passes about 800 lines, split it (`09a_…`, `09b_…`).
 
 ```
-00_config.js       constants, tuning tables, feature flags
-01_util.js         math, vec2, clamp/lerp/easing, seeded RNG (mulberry32), pools, event bus
-02_save.js         load/save, migrations, export/import, quota handling
-03_audio.js        context, buses, instruments, music scheduler, sfx, haptics
-04_input.js        pointer router, control zones, gestures, keyboard
-05_render.js       canvas, DPR, camera, layers, offscreen caches, text cache
-                   (05b_art.js: imported part images, loader and fallback; design 07)
-06_ui.js           DOM overlays (menus, drawers, cards), HUD, floating text, toasts
-07_data.js         part catalogue, templates, terrain types, buildings, recipes, levelConfig
-08_design.js       grid model, placement rules, validation, statsOf(), randomiser, marks
-09_physics.js      rigid bodies, wheel/track contacts, buoyancy, lift, heightfield, debris
-                   (split: 09a_physics_terrain.js, 09b_physics_body.js, 09c_physics_water.js,
-                    09d_physics_air.js)
-10_combat.js       projectiles, ballistics, grid raycast, penetration, damage, spotting
-                   (split: 10a_combat.js, 10b_effects.js for particles, smoke and shake,
-                    10c_naval_weapons.js for torpedoes and depth charges, 10d_air_weapons.js)
-11_ai.js           unit behaviours, squad orders, force orders, enemy tactics
-                   (11b_ai_air.js: fighters, bombers and helicopters)
-12_battle.js       battlefield generator, battle state, objectives, results
-                   (split: 12_battle.js, 12b_battle_render.js for part drawing, sprites and the battle view)
-13_autoresolve.js  headless battle runner
-14_campaign.js     map generation, regions, forces, movement, clock, fog, strategic AI
-15_economy.js      production, stockpiles, supply network, construction, growth
-16_screens.js      title, ladder, workshop, designer, map, battle, results, settings, pause
-                   (split: 16a manager, title and pause helpers; 16b battle; 16c ladder run;
-                    16d Workshop; 16e Drafting Office; 16f blueprints and medals)
-17_main.js         boot, resize/orientation, loop, visibility handling
+00_config.js         constants, tuning tables
+01_util.js           math, seeded RNG, pools, event bus
+02_save.js           save/load, migrations, export/import
+03_audio.js          audio engine, music, sfx, haptics
+04_input.js          pointer router, gestures, keyboard
+05_render.js         canvas, DPR, camera, layers, caches
+05b_partrender.js    part sprites + structure auto-tiling (port of tools/part-render.js, design/07 §6)
+06_ui.js             DOM overlays, HUD, panels, floating text, toasts
+06z_part_library     GENERATED by build.mjs: const PART_LIBRARY = {...}
+07_data.js           derived tables: part index, tech tree, perks, settlement types, prices
+08_design.js         designer model: grid, validation, statsOf(), marks, paint, missiles, drones
+09_physics.js        rigid bodies, wheels/tracks, buoyancy, lift, heightfield, debris
+10_combat.js         projectiles, beams, missiles, grid raycast, damage types, fire/acid/EMP, spotting
+11_ai.js             captain AI, orders, drone AI, enemy battle tactics
+12_battle.js         battlefield generator, 3-on-field rotation, reserves, sieges, results
+13_autoresolve.js    headless battle runner (same rules)
+14_world.js          world generation, terrain, weather, fog, clock
+14b_command.js       officers (grand admiral, admirals, captains, quartermasters), fleets, garrisons
+15_economy.js        treasury, warehouses, holds, markets, production, crafting, refining, yards, salvage, convoys
+15b_research.js      tech tree, perks, XP and levels
+15c_factions.js      faction data use and strategic AI
+16_screens.js        title, map, panels, designer, battle, results, research, settings, pause
+17_main.js           boot, resize/orientation, loop, visibility
 ```
-
-**Splitting large files:** when a file passes about 800 lines, split it with letter suffixes that keep the order, e.g. `09a_physics_body.js`, `09b_physics_terrain.js`.
-
-**So far:** `00`–`12`, `16` and `17` exist (Part 1c). `13`–`15` come with auto-resolve, the campaign and the economy.
 
 ## 3. Rendering
 
-**Split of work**
-- One full-screen `<canvas>` draws the world, the HUD and the thumb controls. The controls are drawn on canvas so they composite cheaply over the world, and hit-testing is done by the input router.
-- A DOM overlay layer handles menus, drawers and cards, for crisp text and easier layout.
-
-**Canvas sizing**
-- Size = window × min(devicePixelRatio, quality cap), applied with `setTransform`.
-- Resize is debounced to 100 ms. Listen for `orientationchange` and `visualViewport` resize.
-
-**Caching**
-- Static layers (parallax backgrounds, the map base, the blueprint grid) are pre-rendered to offscreen canvases.
-- Terrain is pre-rendered in 256 px chunks. (Part 1b draws the visible ground as one path each frame instead: about 200 points, cheap enough so far. Switch to chunks if the performance probe says so.)
-- Each vehicle's parts are drawn once to an offscreen sprite and redrawn only when damage changes; barrels are drawn live so they can elevate and recoil.
-
-**Draw order each frame**
-1. Clear
-2. Background layers
-3. Terrain chunks in view
-4. Props
-5. Units (cached sprites, rotated)
-6. Projectiles
-7. Particles
-8. Floating text
-9. HUD
-10. Controls
-
-**No per-frame allocation** in hot paths. Particles, projectiles, floating text and debris come from pools, and arrays are reused.
+- **One full-screen canvas** draws the world, HUD and thumb controls. A DOM overlay handles menus and panels.
+- **Pixel ratio:** device pixel ratio capped at 2 (quality setting). Resize debounced to 100 ms.
+- **Pre-rendering:**
+  - map chunks
+  - parallax layers
+  - terrain chunks (256 px)
+  - the blueprint grid
+- **Ship sprites:**
+  - Each ship is composed once per design, damage state and paint from the part SVGs plus auto-tiled structure (07 §6).
+  - The result is cached to an offscreen canvas at the needed scale.
+  - Moving groups (barrels, rotors, wheels) are cached separately and drawn with transforms.
+- **Pools** for particles, projectiles, beams, floating text and debris. No per-frame allocation in hot paths.
 
 ## 4. Loop and time
 
-- `requestAnimationFrame` drives the loop. The simulation uses a fixed 1/60 s step with an accumulator: at most 4 steps per frame; if it falls further behind, the extra time is dropped.
+- **Loop:** `requestAnimationFrame`, with a fixed 1/60 s simulation step (at most 4 steps per frame).
 - **States:**
 
   | State | Behaviour |
   |---|---|
-  | running | Normal play |
-  | frozen | Tactical Start/Stop: simulation halted; input, camera and orders still live |
+  | running | Normal |
+  | frozen | Tactical Start/Stop: sim halted, camera and orders live |
   | paused | Pause menu open |
-  | hidden | Auto-pause, audio suspended |
+  | hidden | App in background: auto-pause, audio suspended |
 
-- **Determinism:** all simulation randomness uses seeded RNG streams (battle seed, map seed), so battles and auto-resolve can be reproduced.
+- **The map clock** runs in the same loop, at 1 in-game hour per second × speed.
+- **Determinism:** seeded RNG streams (world, battle), so battles and auto-resolve reproduce.
 
 ## 5. Input
 
-- **One pointer router** on the canvas:
-  1. On `pointerdown`, hit-test the control zones registered by the current screen.
-  2. If a control is hit, call `setPointerCapture` and route the pointer to that control.
-  3. Otherwise, pass it to the world gesture handler.
-- **Multi-touch:** each pointer is tracked separately, so the left and right thumbs work at once. Pinch uses two world pointers.
-- **Blocking browser behaviour:**
-  - CSS: `touch-action:none; user-select:none; -webkit-touch-callout:none; overscroll-behavior:none`
-  - prevent the `contextmenu` event
-  - viewport meta: `user-scalable=no, viewport-fit=cover`
-- **Timing** is judged from `event.timeStamp`.
-- The keyboard map is in 02.
+- One pointer router on the canvas. Control zones are hit-tested first, using pointer capture; everything else goes to world gestures.
+- Multi-touch for two thumbs.
+- `touch-action: none`, no selection, no callout, no context menu, `user-scalable=no`.
+- Timing uses `event.timeStamp`.
 
-## 6. Simulation model
+## 6. Simulation (summary)
 
-This is the implementation view; the rules are in 01 and the numbers in 05.
-
-- **Vehicle body:**
-  - state: position, angle, velocity, angular velocity
-  - mass, inertia and centre of mass computed from the parts
-  - wheels and track rollers are contact points with a spring and damper scaled to mass
-  - friction = terrain grip × ground-pressure factor
-  - integrated with semi-implicit Euler at 60 Hz
-- **Terrain:** a heightfield sampled every 0.5 m. Slope comes from neighbouring samples. Soft ground zones carry a softness value.
-- **Water:** a flat surface with a small sine wave. Each hull cell below the waterline adds buoyancy, and water adds drag.
-- **Air:** lift = k × wing area × v² × angle factor, plus drag and thrust.
-- **Projectiles:**
-  - shells: point masses with gravity and drag
-  - missiles: guided, with a limited turn rate
-  - machine-gun tracers: fast and straight, but they still travel
-- **Hit resolution:**
-  1. Transform the hit point into the vehicle's local grid.
-  2. Run a DDA raycast along the shell's direction through the cells.
-  3. Apply armour vs penetration, then spill damage into the cells behind.
-- **Proximity queries** use a spatial hash with 32 m cells.
+- **Ship bodies:** each ship is one rigid body; mass, inertia and centre of mass come from its cells and parts.
+- **Land:** wheels and tracks are spring-damper contacts on the heightfield. Grip depends on ground pressure and terrain softness (05 §6).
+- **Sea:** buoyancy per hull cell below the waterline; flooding through holed cells; bulkheads stop the spread.
+- **Air:** lift from envelopes and lift engines against mass; thrust from propellers; buoyancy loss when gas cells are hit.
+- **Weapons:**
+  - kinetic projectiles traced through the part grid, with penetration vs armour and angle
+  - beams resolve instantly along a ray and build heat
+  - missiles are guided bodies that flares and ECM can confuse
+  - damage types: kinetic, HE, fire, acid, EMP, energy, each resisted per material (materials.json `resist`)
 - **Caps:**
-  - at most 24 active units per side; others queue as reinforcements or are simulated coarsely off-screen
+  - 3 ships per side on the field, plus drones (up to 12 per side)
   - at most 300 projectiles
-  - particles capped by quality setting
+  - particles by quality setting
 
-## 7. Data shapes
-
-Plain, JSON-safe objects.
+## 7. Data shapes (plain JSON-safe objects)
 
 ```js
-PartDef  = { id, name, cat, sub, domains:['ground','naval','sub','air','heli'], w, h,
-             mass, hp, armor, cost:{wood,metal,fuel,elec,rubber,food}, power, heat,
-             fuelUse, crew, reliability, buildTime, props:{...}, unlock:'base'|'research'|'capture' }
-Design   = { id, name, family, mark, domain, cls, cells:[{p:partId, x, y, f:0|1}],
-             notes, created, changelog:[...] }
-Unit     = { id, name, designId, mark, dmg:{cellIndex:hpLeft}, fuel, ammo:{weaponIdx:n},
-             crew:{xp, level, casualties}, kills, battles,
-             status:'ready'|'damaged'|'wreck'|'lost', forceId }
-Force    = { id, faction, kind:'army'|'fleet'|'air', name, regionId, path:[regionId],
-             progress, stance, units:[unitId], cargo:{fuel, ammo, parts, food, build} }
-Region   = { id, name, poly:[[x,y]], cx, cy, terrain, climate, features:[...], tier:0..3,
-             buildings:[{type, hp, level}], owner, stock:{...},
-             links:[{to, kind:'road'|'rail'|'sea'|'river', quality, hp}], fort }
-Campaign = { seed, day, hour, speed, factions:{...}, regions:[...], forces:[...], units:[...],
-             designs:[...], journal:[...], ai:{...} }
-Profile  = { bestScore, highestLevel, blueprints:[designId], medals:[id], stats:{...} }
-Settings = { music, musicVol, sound, soundVol, vibration, btnOpacity, btnSize, leftHanded,
-             autoRecenter, aimLine, quality, reducedMotion, showFps, fullscreen, autoStop:{...} }
+Officer   = { id, name, rank:'grand'|'admiral'|'captain'|'quartermaster', faction, level, xp, portraitSeed,
+              shipId?, fleetId?, garrisonedAt?:{settlementId?|x,y}, morale, alive }
+Ship      = { id, designId, mark, name, captainId, fleetId, condition:{cellOrPartIndex:hpFrac}, partWear:{i:0..1},
+              fuel, ammo, magazine:{missileDesignId:n}, hangar:{droneDesignId:n}, xp, kills, battles, status }
+Fleet     = { id, faction, domain:'land'|'sea'|'air', adminId, shipIds:[], x, y, path:[[x,y]], order:{...},
+              stance, route?:{load:settlementId, deliverTo:{settlementId|fleetId}, goods:{...}}, hold:Cargo }
+Cargo     = { fuel, ammo, wood, metal, elec, scrap, items:[{partId, mark, condition}], missiles:{id:n}, drones:{id:n} }
+Settlement= { id, name, type:'village'|'city'|'metropolis'|'fort'|'citadel', faction|null, x, y, coastal, biome,
+              warehouse:Cargo, production:{...}, walls:{hp, slots:[{partId|null}]}, garrison:[shipId],
+              queue:{craft:[], yard:[], upgrade?, research?}, damage }
+Faction   = { id, name, capitalId, relations:{factionId:'war'|'truce'}, ai:{personality, tech} }
+Player    = { factionId, grandAdmiralId, treasury, commandPoints, tech:[nodeId], perks:[perkId], research:{...},
+              reputation:{factionId:n} }
+Design    = { id, name, family, mark, domain:'land'|'sea'|'air'|'drone'|'missile', class, cells:[{m,x,y,w?,h?,o?}],
+              parts:[{p,x,y,f?,mk?,opt?}], paint:{scheme|p1,p2,p3, camo}, changelog:[...] }
+World     = { seed, day, hour, speed, terrain:(compact grid), weather:[...], settlements:[...], fleets:[...],
+              ships:[...], officers:[...], factions:[...], player:Player, journal:[...] }
 ```
 
-Derived stats come from a pure function `statsOf(design, env)`, cached by design id + mark + environment.
+- `Design` uses the same format as `src/vehicles/*.json` (07 §8). Built-in templates and player designs share one format.
+- **Derived stats** come from a pure function `statsOf(design, env)`, cached by design id + mark + environment.
 
 ## 8. Saves
 
-- **Keys:** `irondoctrine.settings`, `irondoctrine.profile`, `irondoctrine.designs`, `irondoctrine.campaign.slot1` to `slot3`.
-- **Versions:** v1 (Part 1a) → v2 (Part 1c): the profile gains `run` {active, level, lives, score}, `requisition` (new players 150), `squad` (3 design ids) and `stats`; `irondoctrine.designs` holds `{list: [Design]}`. The v1→v2 migration turns an unfinished v1 ladder into a run to continue with 3 lives.
-- **Blob format:** `{v: SAVE_VERSION, t: timestamp, data}`.
-- **On load:** run migrations one version at a time (v → v+1). If a migration fails:
-  1. keep the old blob under `irondoctrine.backup.<key>`
-  2. start fresh for that key only
-  3. tell the player
-- **When to write:**
+- **Keys:** `irondoctrine.settings`, `irondoctrine.profile` (gallery, medals), `irondoctrine.designs`, `irondoctrine.campaign.slot1` to `slot3`.
+- **Blob format:** `{v: SAVE_VERSION, t, data}`.
+- **Migrations** run one version at a time. If one fails, the old blob is kept under `irondoctrine.backup.*` and the player is told.
+- **Writing:**
   - debounced to 1 s, plus on pause and when hidden
-  - campaign autosave every in-game day and after each battle
-- **Size:**
-  - keep campaign data compact: arrays instead of objects for big lists, rounded numbers
-  - if a blob passes 3.5 MB, move campaign saves to IndexedDB behind the same API
-- **Export / import:**
-  - Export: JSON → base64 text in a copy box. A file download can be added later, but copyable text always works.
-  - Import: paste box, validate, confirm.
-- **Failure-proof:** every storage call is wrapped in try/catch, and the game must still run without storage (e.g. private mode).
+  - campaign autosave every in-game day and after every battle
+- **Size:** keep campaign data compact, with arrays for big lists. Switch to IndexedDB if a blob passes 3.5 MB.
+- **Export/import** as copyable base64 text.
+- **Safety:** every storage call in try/catch; the game still runs without storage.
 
-## 9. Level config
+## 9. Part library pipeline
 
-```js
-levelConfig(level) → {
-  terrain:{roughness, mud, forest, gaps, water}, weather, timeOfDay,
-  enemies:[{type, count, armorMul, accuracy, reaction}], waves:{count, interval},
-  goal:{type, target, time}, budget, rewards
-}
-```
+- **Contract:** see 07 §5–9. Parts live in `src/parts/<category>/<id>.json` + `.svg`, and designs in `src/vehicles/*.json`.
+- **Build:** `build.mjs` loads them via `tools/part-lib.mjs`, fails on format errors, and injects `PART_LIBRARY`:
 
-Every number is clamped to the caps in 01 §14.3.
+  ```js
+  { materials, paints, classes, parts, svg, vehicles }
+  ```
+
+- **Tools:**
+  - `node tools/check-parts.mjs`: format errors, balance table and warnings, vehicle summaries.
+  - `node tools/preview-parts.mjs --part <id> | --vehicle <id> | --all [--scheme <id>]`: PNG sheets in `preview/`.
+- **Art arrives** as foundry zips (07 §9). CLAUDE.md explains how to integrate them.
 
 ## 10. Test harness
 
-**Test builds**
-- `node build.mjs --test` writes the site to `build-test/`. The smoke test serves it over a local web server, like GitHub Pages. This build includes:
-  - the code between `/*TEST:BEGIN*/` and `/*TEST:END*/` markers, which the release build strips
-  - `tests/test-hooks.js`, injected before the game script
-- The release build fails if `__TEST__`, `__GAME__` or any test marker remains.
-
-**Hooks**
-- The game exposes its state as `window.__GAME__` from inside test blocks.
-- `tests/test-hooks.js` sets `window.__TEST__`. Add hooks as parts are built:
-  - autoplay
-  - `winLevel()`, `loseSquad()`, `gameOver()`, `togglePause()`, `toggleTime()`, `setLevel(n)`
-  - time scale
-  - fixed seed
-
-**Smoke test** (`npm test` = test build + `tests/smoke.mjs`)
-- Viewports: 640×360, 800×360 and 915×412 (with touch), 1280×720 desktop, and 360×640 portrait.
-- It fails on console errors or page errors.
-- It checks the rotate card and portrait pause.
-- It saves screenshots to `test-output/`.
-
-**Extend the smoke test each part** with scripted play:
-1. start the ladder and autoplay levels 1–4
-2. force a life lost
-3. force game over, then continue
-4. pause and resume
-5. stop and start time
-6. change a setting
-7. reload and verify the save
-
-Take a screenshot after each step.
-
-**Performance probe** (`tests/perf.mjs`): average frame time and game-work time over 300 frames of a battle. Headless isn't a phone, so compare builds with each other; don't treat it as an absolute number.
+- **Test build:** `node build.mjs --test` writes the site to `build-test/`. It includes the code between `/*TEST:BEGIN*/` and `/*TEST:END*/` plus `tests/test-hooks.js`. The release build fails if any of that remains.
+- **`npm test`:** the smoke test at 640×360, 800×360, 915×412, 1280×720 and 360×640 portrait. It fails on console errors and saves screenshots.
+- **Extend the smoke test each part** with scripted play, e.g.:
+  - start a campaign and move a fleet
+  - trade and craft
+  - fight a battle using pull back and orders
+  - auto-resolve
+  - run a siege
+  - pause, stop time, save and reload
+- **Hooks:** add them as systems arrive, e.g. `newCampaign(seed, faction)`, `startBattle(setup)`, `autoplay(on)`, `timeScale(n)`.
 
 ## 11. Tooling
 
-- `node build.mjs` runs `node --check` on the bundled script automatically.
-- **Playwright:** `npm install`, then `npx playwright install chromium`. If the browser download is blocked, point `CHROMIUM_PATH` at any installed Chromium.
-- **Font subsetting:** fonttools `pyftsubset` → woff2. Put the file in `src/assets/` and reference it as `url(assets/<file>.woff2)` in `styles.css`; the build copies it to `docs/assets/`.
+- `node build.mjs` runs the part checks and `node --check` automatically.
+- **Playwright:** `npm install`, then `npx playwright install chromium`. If the browser download is blocked, set `CHROMIUM_PATH` to any Chromium.
+- **Font subsetting:** fonttools `pyftsubset` → woff2 in `src/assets/`, referenced from the CSS as `url(assets/<file>.woff2)`.
 
 ## 12. Publishing
 
-1. Bump `GAME_VERSION`, run `node build.mjs`, and commit `docs/` together with the source changes.
-2. Cloud sessions push a branch. The producer merges it into `main`.
-3. GitHub Pages (Settings → Pages → Deploy from a branch → `main` → `/docs`) updates the live link about a minute later.
-
-**Runtime notes:**
-- localStorage works per device; wrap every call in try/catch.
-- Saves are exported as copyable text.
-
-**Home-screen app:** the manifest (`display: fullscreen`, `orientation: landscape`) and icons are built into `docs/` since v0.1.1.
+1. Bump `GAME_VERSION`, run `node build.mjs`, and commit `docs/` together with the source.
+2. Merge the branch into `main`.
+3. GitHub Pages updates in about a minute.

@@ -1,6 +1,6 @@
 # Iron Doctrine
 
-A landscape mobile war campaign game. You design every tank, ship and aircraft part by part, keep them supplied across a living map, and fight the battles that matter yourself.
+A landscape mobile war campaign game. As a faction's Grand Admiral you design every landship, warship and airship part by part, keep your fleets supplied across an open world, and fight HighFleet-style battles three ships at a time.
 
 **Play:** `https://<your-github-username>.github.io/iron-doctrine/` (once GitHub Pages is switched on, see below)
 
@@ -10,7 +10,9 @@ A landscape mobile war campaign game. You design every tank, ship and aircraft p
 |---|---|
 | `docs/` | The live game: `index.html` plus its script, styles, font, icons and home-screen manifest. GitHub Pages publishes this folder. |
 | `src/` | Game source code. The build turns it into the site in `docs/`. |
-| `design/` | Design bible: game design, controls, art and audio, tech, parts, roadmap and progress log. |
+| `design/` | Design bible (v2): game design, controls, art and audio, tech, parts, roadmap, art contract, balance, factions, part roster. |
+| `src/parts/`, `src/vehicles/` | The part library (SVG art + JSON stats) and ship designs. Art arrives from the Art Foundry project as `foundry-*.zip` files. |
+| `tools/` | Part checker (`node tools/check-parts.mjs`) and preview renderer (`node tools/preview-parts.mjs`). |
 | `tests/` | Automatic tests that play the game in a headless browser and take screenshots. |
 | `CLAUDE.md` | Standing instructions Claude Code reads at the start of every session. |
 | `build.mjs` | Build script (`node build.mjs`). |
