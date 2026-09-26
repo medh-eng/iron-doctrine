@@ -300,7 +300,7 @@ SCREENS.designer = {
       b.appendChild(icon);
       const txt = el('span', 'dz-part-txt');
       txt.appendChild(el('b', '', P.name));
-      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
+      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}${P.info ? ` · ${P.info}` : ''}`));
       b.appendChild(txt);
       if (this.st.brush === P.id) b.classList.add('on');
       // Tap to pick up the part as a brush; drag it straight onto the grid.
@@ -416,8 +416,23 @@ SCREENS.designer = {
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
       row('Climb limit', `${rep.climb}°`);
     }
-    row('Crew space', `${st.crew}`);
+    const sys = rep.sys;
+    row('Crew space', `${sys.crew}`);
+    row('Crew needed (driver, gunners)', `${sys.crewNeeded}`);
+    if (sys.loaders) row('Loaders (guns of 75 mm up)', `${sys.loadersFitted} of ${sys.loaders}`);
+    row('Commander', sys.commander ? 'yes (+15% sight)' : 'no');
     row('Fuel', `${st.fuel} L`);
+    head('Heat and reliability');
+    row('Heat made', `${sys.heatMade} per s`);
+    row('Heat removed', `${sys.heatRemoved} per s`);
+    row('Breakdowns per 100 h', sys.breakdownsPer100h.toFixed(1));
+    head('Sensors');
+    row('Sight', `${sys.sightKm.toFixed(1)} km`);
+    if (sys.radarAirKm) row('Radar', `air ${sys.radarAirKm} km, surface ${sys.radarGroundKm} km`);
+    if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
+    if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
+    if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
@@ -427,7 +442,7 @@ SCREENS.designer = {
     row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
-    for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
+    for (const w of rep.weapons) row(w.name, [w.pen ? `${w.pen} mm` : '', w.range ? `${Math.round(weaponRange(w))} m` : '', w.rounds ? `${w.rounds} carried` : ''].filter(Boolean).join(' · '));
     head('Cost');
     row('Parts', rep.cost);
     row('Requisition to build', this.buildCost());
@@ -545,11 +560,24 @@ SCREENS.designer = {
     this.build();
   },
 
+  // Test range picker (design/06 Part 2d): land, sea or sky. Ships and submarines need the sea.
   testDrive() {
     const d = cropDesign(this.st.d);
     if (!validateDesign(d).ok) { this.say('Test drive needs a valid design.', true); return; }
     d.name = markName(this.st.d);
-    screens.go('battle', { test: d, back: { restore: this.st } });
+    const dom = domainOf(d);
+    const c = ui.card('Test range');
+    const col = el('div', 'card-col');
+    let close = null;
+    const go = (range) => { close(); screens.go('battle', { test: d, range, back: { restore: this.st } }); };
+    for (const [range, label] of [['land', 'Land: mud, hills and a trench'], ['sea', 'Sea: a beach and open water'], ['air', 'Sky: open air over hills']]) {
+      const b = button(label, () => go(range), range === rangeFor(dom) || (range === 'air' && dom === 'heli') ? 'btn btn-primary' : 'btn');
+      if (seaDomain(dom) && range !== 'sea') { b.disabled = true; b.textContent += ' (needs sea)'; }
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
   },
 
   back() {

@@ -18,7 +18,7 @@ const weaponRange = (d) => d.range * BATTLE_DISTANCE_SCALE;
 function penAt(d, worldDist) {
   const r = worldDist / BATTLE_DISTANCE_SCALE;
   if (d.auto) return d.pen * Math.max(0.2, 1 - 0.25 * (r / 500));
-  if (d.he) return d.pen;
+  if (d.he || d.heat) return d.pen;
   return d.pen * Math.max(0.5, 1 - (0.12 * (r - 500)) / 500);
 }
 
@@ -229,6 +229,7 @@ function shellVsVehicle(B, s, V) {
     }
     if (pen >= eff) {
       pen -= eff;
+      if (d.skirt && s.def.heat) pen *= 0.5;          // spaced skirt: the shaped charge spends itself
       if (!penetrated) { penetrated = true; hitName = d.name; }
       if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);

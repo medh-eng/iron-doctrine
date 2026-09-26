@@ -114,7 +114,7 @@ function waterForces(V, T, ca, sa, throttle, h, out) {
       if (px >= T.seaX0 && py < sea - 0.1) wet++;
     }
     // Submerged, only electric motors run (design/05 §2); on the surface everything does.
-    let power = V.power, fuelled = V.fuelMax === 0 || V.fuel > 0;
+    let power = V.power * (V.heatMul || 1), fuelled = V.fuelMax === 0 || V.fuel > 0;
     if (V.submerged) {
       power = 0;
       for (const i of V.engineParts) if (V.parts[i].alive && V.parts[i].def.electric) power += V.parts[i].def.power;

@@ -193,6 +193,26 @@ function rebuildVehicle(V, first) {
   V.spot = spot;
   V.fc = fc;
   V.sonar = sonar;
+  // Sensors and constraints (Part 2d), from the live parts.
+  let radarAir = 0, radarGround = 0, radarLock = 0, ecm = false, heatEngines = 0, heatOther = 0, radiators = 0, engineCount = 0, repair = 0, gunners = 0, bigGuns = 0;
+  for (const p of V.parts) {
+    if (!p.alive) continue;
+    const d = p.def;
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir * BATTLE_DISTANCE_SCALE); radarGround = Math.max(radarGround, d.radarGround * BATTLE_DISTANCE_SCALE); radarLock = Math.max(radarLock, d.lock); }
+    if (d.ecm) ecm = true;
+    if (d.heat > 0) { if (d.power > 0 || d.jet) heatEngines += d.heat; else heatOther += d.heat; }
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engineCount++;
+    if (d.repair) repair += d.repair;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) bigGuns++; }
+  }
+  Object.assign(V, { radarAir, radarGround, radarLock, ecm, heatEngines, heatOther, radiators, engineCount, repair });
+  // Crew roles (design/05 §1): a driver and a gunner per main gun first; then loaders for
+  // guns of 75 mm and up (else reload × 1.6); anyone left over commands (+15% sight).
+  const spare = crew - 1 - gunners;
+  V.loaderShort = bigGuns > Math.max(0, spare);
+  V.commander = spare - bigGuns >= 1;
+  if (V.heatMul === undefined) V.heatMul = 1;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };
@@ -216,7 +236,7 @@ function stepVehicle(V, T, dt) {
   const eff = DRIVE_EFF[st.loco] || 0.8;
   const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
   const hasFuel = V.fuelMax === 0 || V.fuel > 0;
-  const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
+  const Peff = V.canDrive && hasFuel ? V.power * (V.heatMul || 1) * 1000 * eff * avail : 0;
   const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE * (V.speedMul || 1);
   const dragA = V.height * 2.5;
   const throttle = V.canDrive ? V.throttle : 0;

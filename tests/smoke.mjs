@@ -153,11 +153,19 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(ac.stall.maxAlpha > 12 && ac.stall.minAlt < 2, `aircraft with too little wing did not stall and come down (${JSON.stringify(ac.stall)})`);
       check(ac.heli.alt > 15 && ac.fatHeli.alt < 2, `helicopter lift wrong (${JSON.stringify([ac.heli, ac.fatHeli])})`);
       check(ac.bomb.destroyed, `bombs did not destroy the truck (${JSON.stringify(ac.bomb)})`);
+      const mc = await G(() => window.__GAME__.missileCheck());
+      check(!mc.noRadarValid, 'a SAM launcher without radar was accepted');
+      check(mc.atgmFcRadar > mc.atgmFc + 0.05 && mc.atgmVsEcm < mc.atgmFc - 0.1, `radar and ECM don't change anti-tank missile hit rates (${JSON.stringify(mc)})`);
+      check(mc.samNaval > mc.samSearch + 0.05 && mc.samVsEcm < mc.samSearch - 0.1, `radar and ECM don't change SAM hit rates (${JSON.stringify(mc)})`);
+      console.log(`     missile hit rates: ATGM ${mc.atgmFc} / +radar ${mc.atgmFcRadar} / vs ECM ${mc.atgmVsEcm}; SAM ${mc.samSearch} / naval radar ${mc.samNaval} / vs ECM ${mc.samVsEcm}`);
+      const sy = await G(() => window.__GAME__.systemsCheck());
+      check(sy.hotPower < 0.95 && sy.coolPower === 1, `heat did not cut power or radiators did not help (${JSON.stringify(sy)})`);
+      check(sy.repaired > 20 && sy.brokeDown, `repair or breakdown failed (${JSON.stringify(sy)})`);
       const hw = await G(() => window.__GAME__.howitzerCheck());
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('templates, physics, damage, ships, submarines, aircraft');
+      steps.push('templates, physics, damage, ships, submarines, aircraft, missiles, systems');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }
@@ -394,6 +402,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     const saved = await G(() => window.__GAME__.save.designs.list.slice(-1)[0]);
     check(saved && saved.mark === 2 && /Mk\.II/.test(saved.name) && saved.changelog.some((l) => /Armour 40/.test(l)), `save did not create Mk.II with a change log (${saved && saved.name})`);
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     check((await G(() => window.__GAME__.screens.name)) === 'battle' && (await G(() => window.__GAME__.battle().test)), 'test drive did not start');
     await wait(500);
     await shot('14-test-drive');
@@ -406,6 +416,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     check(/reserve/.test(await page.locator('.dz-top').textContent()), 'ship chips missing on the blueprint');
     await shot('13b-designer-ship');
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     await wait(400);
     const sea0 = await G(() => { const B = window.__GAME__.battle(); return { range: B.cfg.range, x: B.me.body.x }; });
     check(sea0.range === 'sea', 'ship test drive did not use the sea range');
@@ -426,6 +438,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await G(() => { const S = window.__GAME__.SCREENS.designer; S.load(window.__GAME__.designFromTemplate('heli'), null, true); S.build(); });
     await wait(200);
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     await wait(400);
     const h0 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x, range: B.cfg.range }; });
     const hold = async (id, ms) => {
@@ -437,13 +451,21 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await hold('up', 2500);
     await hold('right', 2000);
     const h1 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x }; });
-    check(h0.range === 'heli' && h1.y > h0.y + 5 && h1.x > h0.x + 2, `helicopter did not fly with the pad (${JSON.stringify([h0, h1])})`);
+    check(h0.range === 'air' && h1.y > h0.y + 5 && h1.x > h0.x + 2, `helicopter did not fly with the pad (${JSON.stringify([h0, h1])})`);
     await shot('14c-test-flight');
     await tapCtrl('pause');
     await tapButton('Back to the Workshop');
+    // Design lineage (Part 2d): the Mk.II saved above shows its family tree.
+    await G(() => window.__GAME__.go('workshop'));
+    await wait(200);
+    await page.locator('.ws-lineage').first().click();
+    await wait(200);
+    check((await page.locator('.lin-row').count()) >= 1 && /template/.test(await page.locator('.lin-origin').textContent()), 'lineage view did not show the family tree');
+    await shot('15b-lineage');
+    await tapButton('Close');
     await G(() => window.__GAME__.ladder.resume());
     await wait(200);
-    steps.push('designer, Mk.II, test drive, sea trial, test flight');
+    steps.push('designer, Mk.II, test drive, sea trial, test flight, lineage');
 
     // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
     if (!vp.mobile) {
@@ -463,6 +485,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(300);
       await shot('art-1-designer');
       await G(() => { const S = window.__GAME__.SCREENS.designer; S.testDrive(); });
+      await page.locator('.card .btn-primary').first().click();
       await wait(600);
       await G(() => { const S = window.__GAME__.SCREENS.battle; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = S.B.me.body.x; S.cam.y = S.B.me.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
       await wait(300);

@@ -151,6 +151,11 @@ function validateDesign(design) {
     if (st.reserve <= 0) errors.push(`Mass ${(st.mass / 1000).toFixed(1)} t; the hull displaces ${(st.dispMax / 1000).toFixed(1)} t. It sinks.`);
     else if (domain === 'sub' && st.diveNeed > st.ballastCap) errors.push(`Diving needs ${(st.diveNeed / 1000).toFixed(1)} t of ballast; the tanks hold ${(st.ballastCap / 1000).toFixed(1)} t.`);
   }
+  // Missiles need their guidance: fire control for anti-tank missiles, radar for SAMs.
+  const has = (k) => design.cells.some((c) => PARTS[c.p] && (k === 'fc' ? PARTS[c.p].accuracy : PARTS[c.p].radarAir));
+  for (const need of new Set(design.cells.map((c) => PARTS[c.p] && PARTS[c.p].needs).filter(Boolean))) {
+    if (!has(need)) errors.push(need === 'fc' ? 'Guided anti-tank missiles need a fire-control computer.' : 'SAM launchers need a radar.');
+  }
   if (!engines) errors.push('No engine.');
   if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
   const groups = components(design, occupancy(design));
@@ -441,13 +446,55 @@ function designReport(design) {
     if (st.topSpeed <= st.stallSpeed * 1.05) warnings.push(`Top speed ${Math.round(st.topSpeed * 3.6)} km/h; stall speed ${Math.round(st.stallSpeed * 3.6)} km/h.`);
     if (st.col && st.com.x < st.col.x) warnings.push(`Centre of mass ${(st.col.x - st.com.x).toFixed(2)} m behind the centre of lift.`);
   }
+  const sys = systemsOf(design);
+  if (sys.heatBalance > 0) warnings.push(`Heat made exceeds heat removed by ${sys.heatBalance} per second.`);
+  if (sys.loaders > sys.loadersFitted) warnings.push(`${sys.loaders - sys.loadersFitted} gun(s) of 75 mm or more without a loader: reload × 1.6.`);
   if (domain === 'heli' && (st.rotorLift || 0) <= st.weight) warnings.push(`Rotor lift ${(st.rotorLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN.`);
   return {
-    st, valid: v, speeds, weapons, warnings, domain,
+    st, valid: v, speeds, weapons, warnings, domain, sys,
     topSpeed: domain === 'naval' ? speeds.Sea : domain === 'sub' ? speeds.Surfaced : airDomain(domain) ? speeds.Air : speeds.Plains,
     climb: climbLimit(st),
     armour: armourFacings(design),
     cost: costOf(design),
+  };
+}
+
+// Heat, reliability, crew roles and sensors (design/01 §8.2, design/05 §7.5–7.6).
+// Heat in units per second on plains; engines also shed ENGINE_COOLING each, and ships,
+// submarines and aircraft EXTRA_COOLING more (water or airflow).
+function systemsOf(design) {
+  const domain = domainOf(design);
+  let made = 0, radiators = 0, engines = 0, unrel = 0, crew = 0, gunners = 0, loaders = 0;
+  let spot = 1, radarAir = 0, radarGround = 0, sonar = 0, ecm = false, fc = 1, lock = 0;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d.heat > 0) made += d.heat;
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engines++;
+    unrel += 1 - d.rel;
+    if (d.crew) crew += d.crew;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) loaders++; }
+    if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir); radarGround = Math.max(radarGround, d.radarGround); lock = Math.max(lock, d.lock); }
+    if (d.sonar) sonar = Math.max(sonar, d.sonar);
+    if (d.ecm) ecm = true;
+    if (d.accuracy) fc = Math.max(fc, d.accuracy);
+  }
+  const cooling = engines * (ENGINE_COOLING + (domain === 'ground' ? 0 : EXTRA_COOLING));
+  const needed = 1 + gunners;
+  const spare = crew - needed;
+  return {
+    heatMade: made,
+    heatRemoved: radiators + cooling,
+    heatBalance: made - radiators - cooling,
+    breakdownsPer100h: unrel * 0.5 * 100,
+    crew, crewNeeded: needed, loaders, loadersFitted: Math.max(0, Math.min(loaders, spare)),
+    commander: spare - loaders >= 1,
+    sightKm: (SPOT_BASE * spot * (spare - loaders >= 1 ? 1.15 : 1)) / BATTLE_DISTANCE_SCALE / 1000,
+    radarAirKm: radarAir / 1000, radarGroundKm: radarGround / 1000, sonarKm: sonar / 1000,
+    ecm,
+    lockAtgm: Math.min(0.97, MISSILE.atgm.base + (fc > 1 ? LOCK_FC : 0) + lock),
+    lockSam: Math.min(0.97, MISSILE.sam.base + (fc > 1 ? LOCK_FC : 0) + lock),
   };
 }
 

@@ -22,6 +22,14 @@ function spotRange(B, O, V) {
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
   if (V.flier) r *= AIR_SPOT;
   if (O.flier) r *= AIR_SIGHT;
+  if (O.commander) r *= 1.15;
+  // Radar (design/05 §4): long range against aircraft, shorter against surface targets and
+  // not into forest; ECM on the target cuts it by 30%.
+  if (O.radarAir) {
+    const k = V.ecm ? 1 - ECM_RADAR : 1;
+    if (V.flier) r = Math.max(r, O.radarAir * k);
+    else if (!B.T.inForest(V.body.x) && !V.submerged) r = Math.max(r, O.radarGround * k);
+  }
   return r;
 }
 
@@ -104,14 +112,18 @@ function trainWeapon(V, w, angle, face, dt) {
 
 // Reloading, automatic weapons and (for AI) the main gun.
 function runWeapons(B, V, dt, aiControlled) {
-  const loaderPenalty = V.crew < 3 ? 1.6 : 1;
+  const loaderPenalty = V.loaderShort ? 1.6 : 1;
   const tmp = { x: 0, y: 0 };
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
-    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
+    if (d.secondary) {
+      if (d.secondary === 'sam') autoSam(B, V, w);
+      else if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); }
+      continue;
+    }
     if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
@@ -124,7 +136,7 @@ function runWeapons(B, V, dt, aiControlled) {
       if (!_aim.ok || !ready || w.reload > 0) continue;
       fireWeapon(B, V, w, w.angle, aiControlled ? 1 / (V.ai ? V.ai.accuracy : 1) : 1);
       w.burst++;
-      w.reload = 60 / d.rpm * 1.5;
+      w.reload = 60 / d.rpm * 1.5 * (1 + (V.overheat || 0));
       if (w.burst >= d.burst) { w.burst = 0; w.reload = 1.4; }
       continue;
     }
@@ -138,7 +150,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
     if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
-      w.reload = d.reload * loaderPenalty;
+      w.reload = d.reload * (d.cal >= 75 ? loaderPenalty : 1);
       if (d.indirect && B.warnings) {
         const vx = Math.abs(Math.cos(w.angle)) * d.vel;
         B.warnings.push({ x: tmp.x, t: Math.abs(tmp.x - V.body.x) / Math.max(1, vx) });

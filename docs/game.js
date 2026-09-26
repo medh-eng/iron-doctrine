@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.2';
+const GAME_VERSION = '0.2.3';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -2039,6 +2039,10 @@ const WEAPON_STATS = {
   // Air-capable automatic guns (Part 2c): aa = can engage aircraft; flak = bursts near them.
   ac20: { vel: 240, dmg: 16, spread: 1.0, cal: 20, auto: true, burst: 4, aa: true },
   aa40: { vel: 200, dmg: 30, spread: 0.9, cal: 40, auto: true, burst: 3, aa: true, flak: true },
+  // Rockets and missiles (Part 2d). heat = shaped charge: no loss of penetration with range.
+  rpod: { vel: 110, dmg: 50, spread: 2.2, cal: 70, heat: true, heDmg: 25, heRadius: 1.5 },
+  atgm: { vel: 45, dmg: 160, spread: 0, cal: 120, heat: true, burst: 60, burstR: 1.4 },
+  sam: { vel: 70, dmg: 0, spread: 0, cal: 90 },
   // Naval gun, twin: two barrels fire together (Part 2a).
   ngun: { vel: 120, dmg: 150, spread: 0.45, cal: 120, shells: 30, burst: 70, burstR: 2.2, twin: true },
 };
@@ -2079,6 +2083,27 @@ const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
 
+// Missiles, sensors and constraints (Part 2d). Battle numbers.
+// Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
+// A missile without a lock flies at a false point and misses.
+const MISSILE = {
+  atgm: { base: 0.6, turn: 1.6, life: 3.2, fuse: 0 },
+  sam: { base: 0.55, turn: 2.4, life: 5, fuse: 3, dmg: 90, radius: 4 },
+};
+const LOCK_FC = 0.2;              // added by a fire-control computer
+const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
+const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
+const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Heat (design/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
+// in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
+// power and automatic fire rate; 20 s above 100% can start a fire.
+const ENGINE_COOLING = 30;
+const EXTRA_COOLING = 30;
+const OVERHEAT_FIRE_SECS = 20;
+// Reliability (design/05 §7.5): checked every 30 s at 1/120 of the hourly breakdown rate.
+const BREAKDOWN_CHECK = 30;
+const REPAIR_RATE = 10;           // HP per second a repair workshop restores (to itself and allies within 12 m)
+
 // id: [name, category, w, h, mass, hp, armour, extras]
 const PART_ROWS = [
   // Structure
@@ -2089,6 +2114,7 @@ const PART_ROWS = [
   ['arm40', 'Armour 40 mm', 'structure', 1, 1, 380, 120, 40, { cost: { metal: 5 } }],
   ['arm80', 'Armour 80 mm', 'structure', 1, 1, 760, 180, 80, { cost: { metal: 9 } }],
   ['slope40', 'Sloped armour 40 mm', 'structure', 1, 1, 300, 110, 40, { cost: { metal: 5 }, sloped: true }],
+  ['skirt', 'Spaced skirt', 'structure', 1, 1, 90, 30, 8, { cost: { metal: 1 }, skirt: true }],
   ['crew2', 'Crew compartment', 'structure', 2, 2, 300, 80, 10, { cost: { metal: 3 }, crew: 2 }],
   ['turret', 'Turret ring', 'structure', 3, 1, 250, 90, 20, { cost: { metal: 3 }, power: -5, ring: true }],
   // Ship structure (Part 2a). sealed = watertight: displaces water below the waterline.
@@ -2117,6 +2143,7 @@ const PART_ROWS = [
   ['aprop', 'Air propeller', 'mobility', 1, 2, 80, 20, 2, { cost: { metal: 1, wood: 1 }, airprop: true }],
   ['rotor', 'Rotor', 'mobility', 4, 1, 400, 50, 2, { cost: { metal: 4, elec: 1 }, rotor: true, rel: 0.985 }],
   ['trotor', 'Tail rotor', 'mobility', 1, 1, 60, 20, 2, { cost: { metal: 1 }, trotor: true }],
+  ['gen', 'Auxiliary generator', 'mobility', 2, 1, 250, 40, 5, { cost: { metal: 2, elec: 1 }, power: 40, heat: 8, fuelUse: 10, rel: 0.990, info: 'Electrical power only' }],
   ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
   ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
   ['wheel_l', 'Off-road wheel', 'mobility', 2, 2, 200, 50, 5, { cost: { metal: 1, rubber: 3 }, loco: 'wheel', contact: 0.12, maxLoad: 5000, cap: 75, radius: 0.5 }],
@@ -2124,6 +2151,9 @@ const PART_ROWS = [
   // Weapons
   ['mg', 'Machine gun', 'weapon', 1, 1, 40, 20, 5, { cost: { metal: 1 }, pen: 8, rpm: 600, range: 600 }],
   ['hmg', 'Heavy machine gun', 'weapon', 1, 1, 80, 25, 5, { cost: { metal: 2 }, pen: 20, rpm: 450, range: 1000 }],
+  ['rpod', 'Rocket pod', 'weapon', 2, 1, 200, 30, 5, { cost: { metal: 3, fuel: 1 }, pen: 70, reload: 12, range: 1500, secondary: 'rockets', rounds: 2, salvo: 8 }],
+  ['atgm', 'Guided anti-tank missile', 'weapon', 2, 1, 180, 30, 5, { cost: { metal: 4, elec: 4 }, pen: 200, reload: 6, range: 2500, secondary: 'atgm', rounds: 4, needs: 'fc' }],
+  ['sam', 'Surface-to-air missile launcher', 'weapon', 2, 2, 600, 50, 10, { cost: { metal: 6, elec: 8 }, pen: 0, reload: 8, range: 6000, secondary: 'sam', rounds: 2, needs: 'radar' }],
   ['ac20', 'Autocannon 20 mm', 'weapon', 2, 1, 150, 35, 5, { cost: { metal: 3 }, pen: 35, rpm: 180, range: 1200 }],
   ['c37', 'Cannon 37 mm', 'weapon', 2, 1, 250, 40, 10, { cost: { metal: 4 }, pen: 50, reload: 2.5, range: 1500 }],
   ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
@@ -2141,6 +2171,10 @@ const PART_ROWS = [
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
   ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
+  ['cradio', 'Command radio', 'system', 2, 1, 120, 20, 2, { cost: { metal: 2, elec: 3 }, power: -4, crew: -1, info: '+1 platoon under force orders (campaign); needs a radio operator' }],
+  ['radar_s', 'Search radar', 'system', 2, 1, 250, 20, 2, { cost: { metal: 3, elec: 6 }, power: -25, radarAir: 8000, radarGround: 3000, lock: 0.12 }],
+  ['radar_n', 'Naval radar', 'system', 2, 2, 600, 30, 3, { cost: { metal: 5, elec: 10 }, power: -60, radarAir: 15000, radarGround: 10000, lock: 0.2 }],
+  ['ecm', 'ECM suite', 'system', 2, 1, 150, 20, 2, { cost: { metal: 2, elec: 8 }, power: -30, heat: 10, ecm: true }],
   ['sonar', 'Sonar', 'system', 2, 1, 300, 30, 5, { cost: { metal: 2, elec: 4 }, power: -10, sonar: 2000, wet: true }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
@@ -2149,6 +2183,13 @@ const PART_ROWS = [
   ['ammo', 'Ammo rack', 'logistics', 1, 1, 250, 30, 3, { cost: { metal: 1 }, shells: 20, detonate: 0.40 }],
   ['ammo_p', 'Protected ammo storage', 'logistics', 1, 1, 320, 50, 10, { cost: { metal: 2 }, shells: 20, detonate: 0.10 }],
   ['fuel_l', 'Fuel tank 1000 L', 'logistics', 2, 2, 1050, 60, 3, { cost: { metal: 3 }, fuel: 1000, fire: 0.35 }],
+  ['troop', 'Troop compartment', 'logistics', 2, 2, 250, 50, 5, { cost: { metal: 2 }, info: 'Carries 1 infantry squad (campaign)' }],
+  ['tank_c', 'Fuel cargo tank', 'logistics', 3, 2, 400, 60, 3, { cost: { metal: 4 }, fire: 0.5, info: '4,000 L fuel cargo (campaign)' }],
+  ['repair', 'Repair workshop', 'logistics', 2, 2, 600, 60, 5, { cost: { metal: 4, elec: 1 }, repair: REPAIR_RATE }],
+  ['crane', 'Recovery winch', 'logistics', 2, 2, 900, 80, 10, { cost: { metal: 5 }, info: 'Tows up to 30 t (campaign)' }],
+  ['blade', 'Dozer blade', 'logistics', 2, 1, 700, 90, 20, { cost: { metal: 4 }, info: 'Builds field works; clears obstacles (campaign)' }],
+  ['bridge', 'Bridge layer', 'logistics', 4, 1, 3000, 120, 10, { cost: { metal: 10 }, info: 'Lays a 10 m bridge (campaign)' }],
+  ['ramp', 'Landing ramp', 'logistics', 2, 2, 400, 60, 10, { cost: { metal: 3 }, info: 'Unloads onto a beach (campaign)' }],
   ['cargo', 'Cargo bay', 'logistics', 2, 2, 200, 40, 3, { cost: { metal: 2, wood: 1 }, cargo: 2000 }],
 ];
 
@@ -2160,12 +2201,12 @@ for (const [id, name, cat, w, h, mass, hp, armor, extra] of PART_ROWS) {
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -2302,6 +2343,16 @@ const TEMPLATES = {
       ['aero', 6, 2], ['fuel_ss', 6, 3], ['frame', 7, 3], ['crew2', 8, 2], ['optics', 10, 2], ['hmg', 10, 3],
     ],
   },
+  // Missile carriers (Part 2d).
+  hunter: {
+    name: 'Tank hunter', w: 10, h: 5, soft: true,
+    cells: [
+      ['wheel_s', 1, 4], ['wheel_s', 3, 4], ['wheel_s', 6, 4], ['wheel_s', 8, 4],
+      ['plate', 0, 3], ['eng_s', 1, 2], ['crew2', 3, 2], ['fuel_s', 5, 3], ['fc', 5, 2],
+      ['plate', 6, 3], ['plate', 7, 3], ['plate', 8, 3], ['arm20', 6, 2], ['arm20', 7, 2], ['slope40', 8, 2],
+      ['atgm', 4, 1], ['optics', 3, 1],
+    ],
+  },
   // Enemy-only fixed positions (no engine, so the placement rules don't apply).
   bunker: {
     name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
@@ -2310,6 +2361,13 @@ const TEMPLATES = {
       ['arm80', 0, 1], ['crew2', 1, 1], ['arm40', 3, 1], ['arm40', 4, 1], ['c75', 5, 1],
       ['arm80', 0, 2], ['ammo_p', 3, 2], ['plate', 4, 2], ['arm80', 5, 2], ['arm80', 6, 2], ['slope40', 7, 2],
       ['arm80', 0, 3], ['arm80', 1, 3], ['arm80', 2, 3], ['arm80', 3, 3], ['arm80', 4, 3], ['arm80', 5, 3], ['arm80', 6, 3], ['arm80', 7, 3],
+    ],
+  },
+  samsite: {
+    name: 'SAM site', w: 9, h: 4, fixed: true,
+    cells: [
+      ['arm40', 0, 3], ['arm40', 1, 3], ['arm40', 2, 3], ['arm40', 3, 3], ['arm40', 4, 3], ['arm40', 5, 3], ['arm40', 6, 3], ['arm40', 7, 3],
+      ['crew2', 0, 1], ['gen', 2, 2], ['radar_s', 2, 1], ['sam', 4, 1], ['aa40', 6, 1],
     ],
   },
   howitzer: {
@@ -2352,7 +2410,7 @@ const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Proving Ground ladder (design/01 §14)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { hunter: 250, samsite: 400, fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -2424,7 +2482,7 @@ function levelConfig(level) {
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
-      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['samsite', 1, 'fixed', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
       how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
@@ -2447,6 +2505,9 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // Aircraft over some maps, with a SAM site; tank hunters with guided missiles (Part 2d).
+    if (rng.next() < 0.25) c.enemies.push([rng.pick(['fighter', 'fighter', 'heli', 'bomber']), 1 + rng.int(0, 1), 'air', rng.int(0, 2)], ['samsite', 1, 'fixed', 0]);
+    if (n >= 3 && rng.next() < 0.3) c.enemies.push(['hunter', 1 + rng.int(0, 1), 'attack', rng.int(0, 2)]);
     // A coast with gunboats on some maps (Part 2a).
     if (rng.next() < 0.25) {
       c.sea = { from: Math.round(c.length * 0.64), depth: 14 };
@@ -2645,6 +2706,11 @@ function validateDesign(design) {
     else if (!st.propsWet) errors.push('No propeller below the waterline.');
     if (st.reserve <= 0) errors.push(`Mass ${(st.mass / 1000).toFixed(1)} t; the hull displaces ${(st.dispMax / 1000).toFixed(1)} t. It sinks.`);
     else if (domain === 'sub' && st.diveNeed > st.ballastCap) errors.push(`Diving needs ${(st.diveNeed / 1000).toFixed(1)} t of ballast; the tanks hold ${(st.ballastCap / 1000).toFixed(1)} t.`);
+  }
+  // Missiles need their guidance: fire control for anti-tank missiles, radar for SAMs.
+  const has = (k) => design.cells.some((c) => PARTS[c.p] && (k === 'fc' ? PARTS[c.p].accuracy : PARTS[c.p].radarAir));
+  for (const need of new Set(design.cells.map((c) => PARTS[c.p] && PARTS[c.p].needs).filter(Boolean))) {
+    if (!has(need)) errors.push(need === 'fc' ? 'Guided anti-tank missiles need a fire-control computer.' : 'SAM launchers need a radar.');
   }
   if (!engines) errors.push('No engine.');
   if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
@@ -2936,13 +3002,55 @@ function designReport(design) {
     if (st.topSpeed <= st.stallSpeed * 1.05) warnings.push(`Top speed ${Math.round(st.topSpeed * 3.6)} km/h; stall speed ${Math.round(st.stallSpeed * 3.6)} km/h.`);
     if (st.col && st.com.x < st.col.x) warnings.push(`Centre of mass ${(st.col.x - st.com.x).toFixed(2)} m behind the centre of lift.`);
   }
+  const sys = systemsOf(design);
+  if (sys.heatBalance > 0) warnings.push(`Heat made exceeds heat removed by ${sys.heatBalance} per second.`);
+  if (sys.loaders > sys.loadersFitted) warnings.push(`${sys.loaders - sys.loadersFitted} gun(s) of 75 mm or more without a loader: reload × 1.6.`);
   if (domain === 'heli' && (st.rotorLift || 0) <= st.weight) warnings.push(`Rotor lift ${(st.rotorLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN.`);
   return {
-    st, valid: v, speeds, weapons, warnings, domain,
+    st, valid: v, speeds, weapons, warnings, domain, sys,
     topSpeed: domain === 'naval' ? speeds.Sea : domain === 'sub' ? speeds.Surfaced : airDomain(domain) ? speeds.Air : speeds.Plains,
     climb: climbLimit(st),
     armour: armourFacings(design),
     cost: costOf(design),
+  };
+}
+
+// Heat, reliability, crew roles and sensors (design/01 §8.2, design/05 §7.5–7.6).
+// Heat in units per second on plains; engines also shed ENGINE_COOLING each, and ships,
+// submarines and aircraft EXTRA_COOLING more (water or airflow).
+function systemsOf(design) {
+  const domain = domainOf(design);
+  let made = 0, radiators = 0, engines = 0, unrel = 0, crew = 0, gunners = 0, loaders = 0;
+  let spot = 1, radarAir = 0, radarGround = 0, sonar = 0, ecm = false, fc = 1, lock = 0;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d.heat > 0) made += d.heat;
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engines++;
+    unrel += 1 - d.rel;
+    if (d.crew) crew += d.crew;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) loaders++; }
+    if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir); radarGround = Math.max(radarGround, d.radarGround); lock = Math.max(lock, d.lock); }
+    if (d.sonar) sonar = Math.max(sonar, d.sonar);
+    if (d.ecm) ecm = true;
+    if (d.accuracy) fc = Math.max(fc, d.accuracy);
+  }
+  const cooling = engines * (ENGINE_COOLING + (domain === 'ground' ? 0 : EXTRA_COOLING));
+  const needed = 1 + gunners;
+  const spare = crew - needed;
+  return {
+    heatMade: made,
+    heatRemoved: radiators + cooling,
+    heatBalance: made - radiators - cooling,
+    breakdownsPer100h: unrel * 0.5 * 100,
+    crew, crewNeeded: needed, loaders, loadersFitted: Math.max(0, Math.min(loaders, spare)),
+    commander: spare - loaders >= 1,
+    sightKm: (SPOT_BASE * spot * (spare - loaders >= 1 ? 1.15 : 1)) / BATTLE_DISTANCE_SCALE / 1000,
+    radarAirKm: radarAir / 1000, radarGroundKm: radarGround / 1000, sonarKm: sonar / 1000,
+    ecm,
+    lockAtgm: Math.min(0.97, MISSILE.atgm.base + (fc > 1 ? LOCK_FC : 0) + lock),
+    lockSam: Math.min(0.97, MISSILE.sam.base + (fc > 1 ? LOCK_FC : 0) + lock),
   };
 }
 
@@ -3566,6 +3674,26 @@ function rebuildVehicle(V, first) {
   V.spot = spot;
   V.fc = fc;
   V.sonar = sonar;
+  // Sensors and constraints (Part 2d), from the live parts.
+  let radarAir = 0, radarGround = 0, radarLock = 0, ecm = false, heatEngines = 0, heatOther = 0, radiators = 0, engineCount = 0, repair = 0, gunners = 0, bigGuns = 0;
+  for (const p of V.parts) {
+    if (!p.alive) continue;
+    const d = p.def;
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir * BATTLE_DISTANCE_SCALE); radarGround = Math.max(radarGround, d.radarGround * BATTLE_DISTANCE_SCALE); radarLock = Math.max(radarLock, d.lock); }
+    if (d.ecm) ecm = true;
+    if (d.heat > 0) { if (d.power > 0 || d.jet) heatEngines += d.heat; else heatOther += d.heat; }
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engineCount++;
+    if (d.repair) repair += d.repair;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) bigGuns++; }
+  }
+  Object.assign(V, { radarAir, radarGround, radarLock, ecm, heatEngines, heatOther, radiators, engineCount, repair });
+  // Crew roles (design/05 §1): a driver and a gunner per main gun first; then loaders for
+  // guns of 75 mm and up (else reload × 1.6); anyone left over commands (+15% sight).
+  const spare = crew - 1 - gunners;
+  V.loaderShort = bigGuns > Math.max(0, spare);
+  V.commander = spare - bigGuns >= 1;
+  if (V.heatMul === undefined) V.heatMul = 1;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };
@@ -3589,7 +3717,7 @@ function stepVehicle(V, T, dt) {
   const eff = DRIVE_EFF[st.loco] || 0.8;
   const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
   const hasFuel = V.fuelMax === 0 || V.fuel > 0;
-  const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
+  const Peff = V.canDrive && hasFuel ? V.power * (V.heatMul || 1) * 1000 * eff * avail : 0;
   const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE * (V.speedMul || 1);
   const dragA = V.height * 2.5;
   const throttle = V.canDrive ? V.throttle : 0;
@@ -3868,7 +3996,7 @@ function waterForces(V, T, ca, sa, throttle, h, out) {
       if (px >= T.seaX0 && py < sea - 0.1) wet++;
     }
     // Submerged, only electric motors run (design/05 §2); on the surface everything does.
-    let power = V.power, fuelled = V.fuelMax === 0 || V.fuel > 0;
+    let power = V.power * (V.heatMul || 1), fuelled = V.fuelMax === 0 || V.fuel > 0;
     if (V.submerged) {
       power = 0;
       for (const i of V.engineParts) if (V.parts[i].alive && V.parts[i].def.electric) power += V.parts[i].def.power;
@@ -4146,12 +4274,12 @@ function airForces(V, T, ca, sa, out) {
     if (V.tailL) surfaceForce(V, V.tailL, V.tailArea, null, live ? -(V.pitchCmd || 0) * (ELEVATOR_DEG * Math.PI) / 180 : 0, ca, sa, out, false);
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.CdA * dragRise(v / AIR_SPEED_SCALE) * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.throttle > 0) {
-      const T = V.throttle * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
+      const T = V.throttle * (V.heatMul || 1) * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
       out.fx += V.dir * ca * T; out.fy += V.dir * sa * T;
     }
   } else {
     // Helicopter: rotor lift along the mast; drag on the body; attitude held by the tail rotor.
-    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift : 0;
+    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift * (V.heatMul || 1) : 0;
     out.fx += -sa * L; out.fy += ca * L;
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * HELI_CDA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.rotors) {
@@ -4264,7 +4392,7 @@ const weaponRange = (d) => d.range * BATTLE_DISTANCE_SCALE;
 function penAt(d, worldDist) {
   const r = worldDist / BATTLE_DISTANCE_SCALE;
   if (d.auto) return d.pen * Math.max(0.2, 1 - 0.25 * (r / 500));
-  if (d.he) return d.pen;
+  if (d.he || d.heat) return d.pen;
   return d.pen * Math.max(0.5, 1 - (0.12 * (r - 500)) / 500);
 }
 
@@ -4475,6 +4603,7 @@ function shellVsVehicle(B, s, V) {
     }
     if (pen >= eff) {
       pen -= eff;
+      if (d.skirt && s.def.heat) pen *= 0.5;          // spaced skirt: the shaped charge spends itself
       if (!penetrated) { penetrated = true; hitName = d.name; }
       if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);
@@ -4982,7 +5111,7 @@ function gunUnderWater(B, V, w) {
 function engageRange(V) {
   const mw = mainWeapon(V);
   let r = mw ? weaponRange(mw.def) : 0;
-  for (const w of V.weapons) if (w.def.secondary === 'torpedo' && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
+  for (const w of V.weapons) if (/^(torpedo|atgm|rockets)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
   if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
   return r;
 }
@@ -5044,6 +5173,16 @@ function playerSecondary(B) {
     return '';
   }
   const tgt = autoTarget(B);
+  // Rockets and guided missiles (Part 2d) go at the target.
+  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') && w.rounds > 0);
+  if (aimed) {
+    if (!tgt) return 'No target';
+    if (aimed.reload > 0) return 'Reloading';
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(aimed.def)) return 'Out of range';
+    if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, aimed, a.x, a.y); }
+    return '';
+  }
   const sub = nearestTarget(B, V, 40, (U) => !!U.ballast);
   const dc = list.find((w) => w.def.secondary === 'depth' && w.rounds > 0);
   const tp = list.find((w) => w.def.secondary === 'torpedo' && w.rounds > 0);
@@ -5064,8 +5203,17 @@ function playerSecondary(B) {
 
 // AI use: torpedoes at ships and submarines in range, depth charges over a spotted submarine.
 function aiSecondary(B, V, w) {
-  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1) || !seaAt(B.T, V.body.x)) return;
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
   const ai = V.ai;
+  if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') {
+    const tgt = ai && ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && w.def.secondary === 'atgm')) return;
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(w.def)) return;
+    if (w.def.secondary === 'atgm') launchMissile(B, V, w, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, w, a.x, a.y); }
+    return;
+  }
+  if (!seaAt(B.T, V.body.x)) return;
   if (w.def.secondary === 'torpedo') {
     const tgt = ai && ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen || !tgt.hull || ai.react > 0) return;
@@ -5239,6 +5387,218 @@ function flakBurst(B, x, y, source) {
   if (p) { p.grow = 0.8; p.shade = 0.05; }
 }
 
+/* ---------- 10e_systems.js ---------- */
+/* ==== 10e SYSTEMS ==== */
+// Rockets, guided missiles, radar, ECM, heat, breakdowns and field repair
+// (design/01 §7.4, §8.2, design/05 §3, §4, §7.5, §7.6).
+// A guided missile rolls for a lock when it is fired: fire control and radar raise the
+// chance, the target's ECM cuts it. Locked, it steers at the target within its turn rate;
+// unlocked, it flies straight on a bad heading and misses. That is what makes the sensors matter.
+
+const missiles = makePool(() => ({ alive: false, x: 0, y: 0, ang: 0, t: 0, kind: '', def: null, target: null, locked: false, shooter: null, side: 0, trail: 0 }), 24);
+const salvos = makePool(() => ({ alive: false, V: null, w: null, n: 0, gap: 0, tx: 0, ty: 0 }), 8);
+
+// Lock chance of V's missiles of this kind against U.
+function lockChance(V, U, kind) {
+  const p = MISSILE[kind].base + (V.fc > 1 ? LOCK_FC : 0) + (V.radarLock || 0);
+  return clamp(p * (U && U.ecm ? 1 - LOCK_ECM : 1), 0, 0.97);
+}
+
+function launchMissile(B, V, w, U) {
+  if (w.rounds <= 0 || w.reload > 0 || !U) return false;
+  const kind = w.def.secondary;
+  weaponPivot(V, w, _p);
+  const m = missiles.take();
+  m.x = _p.x; m.y = _p.y + 0.2;
+  m.kind = kind; m.def = w.def; m.target = U; m.t = 0; m.trail = 0;
+  m.shooter = V; m.side = V.side;
+  // SAMs leave the rail steeply toward the target's side; anti-tank missiles straight at it.
+  m.ang = kind === 'sam' ? (U.body.x >= m.x ? 0.35 : 0.65) * Math.PI : Math.atan2(U.body.y + U.height * 0.3 - m.y, U.body.x - m.x);
+  m.locked = B.rng.next() < lockChance(V, U, kind);
+  // Without a lock the missile doesn't steer and leaves 6–14° off.
+  if (!m.locked) m.ang += (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25);
+  w.rounds--;
+  w.reload = w.def.reload;
+  V.revealT = Math.max(V.revealT, 3);
+  B.stats.missiles = (B.stats.missiles || 0) + 1;
+  audio.sfx('rocket', B.panOf(m.x));
+  return true;
+}
+
+// A rocket-pod salvo: 8 unguided rockets, one every 0.1 s, at the aim point.
+function fireSalvo(B, V, w, tx, ty) {
+  if (w.rounds <= 0 || w.reload > 0) return false;
+  const s = salvos.take();
+  s.V = V; s.w = w; s.n = w.def.salvo; s.gap = 0; s.tx = tx; s.ty = ty;
+  w.rounds--;
+  w.reload = w.def.reload;
+  return true;
+}
+
+function stepSalvos(B, dt) {
+  salvos.forEachAlive((s) => {
+    const V = s.V;
+    if (V.destroyed || !V.parts[s.w.part].alive) { s.alive = false; return; }
+    s.gap -= dt;
+    if (s.gap > 0) return;
+    s.gap = ROCKET_SALVO_GAP;
+    aimWeapon(V, s.w, s.tx, s.ty, _aim);
+    const d = s.w.def;
+    const a = _aim.angle + (gauss(B.rng) * d.spread * Math.PI) / 180;
+    weaponPivot(V, s.w, _p);
+    const r = shells.take();
+    r.x = r.px = r.sx = _p.x + Math.cos(a) * 0.8; r.y = r.py = r.sy = _p.y + Math.sin(a) * 0.8;
+    r.vx = Math.cos(a) * d.vel + V.body.vx; r.vy = Math.sin(a) * d.vel + V.body.vy;
+    r.t = 0; r.side = V.side; r.shooter = V; r.def = d;
+    r.dmg = d.dmg; r.mg = false; r.he = false; r.ignore = V; r.ignoreT = 0.3; r.whistled = false; r.wet = false;
+    audio.sfx('rocket', B.panOf(r.x), 0.6);
+    const p = spawnParticle(FX_SMOKE, r.x, r.y, 0, 0.4, 0.8, 0.5);
+    if (p) { p.grow = 0.8; p.shade = 0.6; }
+    if (--s.n <= 0) s.alive = false;
+  });
+}
+
+function stepMissiles(B, dt) {
+  const T = B.T;
+  missiles.forEachAlive((m) => {
+    const M = MISSILE[m.kind];
+    m.t += dt;
+    const U = m.target;
+    if (m.t > M.life || m.x < 0 || m.x > T.length) { m.alive = false; if (m.kind === 'sam') flakBurst(B, m.x, m.y, m.shooter); return; }
+    // Locked: steer at where the target will be, within the turn rate.
+    if (m.locked && U && !U.gone && !U.destroyed && m.t > 0.25) {
+      let want = Math.atan2(U.body.y + U.height * 0.3 + U.body.vy * 0.3 - m.y, U.body.x + U.body.vx * 0.3 - m.x) - m.ang;
+      while (want > Math.PI) want -= Math.PI * 2;
+      while (want < -Math.PI) want += Math.PI * 2;
+      m.ang += clamp(want, -M.turn * dt, M.turn * dt);
+    }
+    const v = m.def.vel;
+    m.x += Math.cos(m.ang) * v * dt;
+    m.y += Math.sin(m.ang) * v * dt;
+    m.trail += dt;
+    if (m.trail > 0.05) { m.trail = 0; const p = spawnParticle(FX_SMOKE, m.x - Math.cos(m.ang) * 0.6, m.y - Math.sin(m.ang) * 0.6, 0, 0.3, 1.1, 0.35); if (p) { p.grow = 0.6; p.shade = 0.8; } }
+    if (m.y <= T.height(m.x) || (seaAt(T, m.x) && m.y < T.sea)) {
+      m.alive = false;
+      if (seaAt(T, m.x) && m.y < T.sea) fxSplash(B, m.x, T.sea, 1); else fxDirt(B, m.x, T.height(m.x), 5);
+      audio.sfx('thud', B.panOf(m.x));
+      return;
+    }
+    // SAM: proximity fuse against aircraft.
+    if (M.fuse) {
+      for (const V of B.units) {
+        if (!V.flier || V.destroyed || V.side === m.side) continue;
+        if (Math.hypot(V.body.x - m.x, V.body.y - m.y) < M.fuse + V.radius * 0.5) {
+          m.alive = false;
+          B.stats.missileHits = (B.stats.missileHits || 0) + 1;
+          explode(B, m.x, m.y, M.dmg, M.radius, m.shooter);
+          if (m.shooter === B.me || V === B.me) floatText('Missile hit', m.x, m.y + 2, true);
+          return;
+        }
+      }
+      return;
+    }
+    // Anti-tank missile: becomes a shaped-charge shell in its last metre, so the ordinary
+    // armour and penetration rules apply.
+    for (const V of B.units) {
+      if (V.gone || V.side === m.side && !V.destroyed || V === m.shooter) continue;
+      if (Math.abs(V.body.x - m.x) > V.radius + 1 || Math.abs(V.body.y - m.y) > V.radius + 1) continue;
+      const s = shells.take();
+      s.px = s.sx = m.x; s.py = s.sy = m.y;
+      s.vx = Math.cos(m.ang) * 150; s.vy = Math.sin(m.ang) * 150;
+      s.x = m.x + s.vx * dt; s.y = m.y + s.vy * dt;
+      s.t = 0; s.side = m.side; s.shooter = m.shooter; s.def = m.def;
+      s.dmg = m.def.dmg; s.mg = false; s.he = false; s.ignore = null; s.ignoreT = 0; s.whistled = true; s.wet = false;
+      m.alive = false;
+      B.stats.missileHits = (B.stats.missileHits || 0) + 1;
+      return;
+    }
+  });
+}
+
+// SAM launchers fire by themselves at aircraft in range, for either side.
+function autoSam(B, V, w) {
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
+  const U = nearestTarget(B, V, weaponRange(w.def), (U) => U.flier);
+  if (U) launchMissile(B, V, w, U);
+}
+
+// ---------- heat, breakdowns, field repair (per vehicle, every battle step)
+function stepSystems(B, V, dt) {
+  if (V.destroyed || V.gone) return;
+  // Heat: engines only run hot while driving (fliers always).
+  const running = V.flier || V.throttle !== 0;
+  const ter = B.T.terrainAt(V.body.x);
+  const inWater = V.hull && seaAt(B.T, V.body.x);
+  const made = (running ? V.heatEngines * (ter.heat || 1) : 0) + V.heatOther;
+  const removed = V.radiators + V.engineCount * (ENGINE_COOLING + (inWater || V.flier ? EXTRA_COOLING : 0));
+  const over = made > removed ? (made - removed) / Math.max(1, made) : 0;
+  V.overheat = over;
+  V.heatMul = 1 - 0.5 * over;
+  V.overheatT = over > 0 ? (V.overheatT || 0) + dt : 0;
+  if (V.overheatT > OVERHEAT_FIRE_SECS && over >= 0.5 && B.rng.next() < dt * 0.05) {
+    const i = V.parts.findIndex((p) => p.alive && p.def.power > 0);
+    if (i >= 0) {
+      const p = V.parts[i];
+      V.fires = V.fires || [];
+      V.fires.push({ gx: (p.x + p.def.w / 2) * CELL, gy: (V.design.h - p.y - p.def.h / 2) * CELL, t: 10 });
+      if (V.side === 0 || V.seen) floatText('Engine fire', V.body.x, V.body.y + V.height, false);
+      V.overheatT = 0;
+    }
+  }
+  if (V.side === 0 && over > 0 && B.time - (V.heatNoteT || -99) > 12) {
+    V.heatNoteT = B.time;
+    floatText(`Overheating · power ${Math.round(V.heatMul * 100)}%`, V.body.x, V.body.y + V.height + 1, false);
+  }
+  // Breakdowns: every 30 s, 1/120 of the hourly rate; one part fails, weighted by (1 − rel).
+  V.breakT = (V.breakT || 0) + dt;
+  if (V.breakT >= BREAKDOWN_CHECK) {
+    V.breakT = 0;
+    let sum = 0;
+    for (const p of V.parts) if (p.alive) sum += 1 - p.def.rel;
+    if (B.rng.next() < (sum * 0.5) / 120) {
+      let r = B.rng.next() * sum;
+      for (let i = 0; i < V.parts.length; i++) {
+        const p = V.parts[i];
+        if (!p.alive) continue;
+        r -= 1 - p.def.rel;
+        if (r <= 0) {
+          if (V.side === 0 || V.seen) floatText(`Breakdown · ${p.def.name}`, V.body.x, V.body.y + V.height + 1, false);
+          destroyPart(B, V, i, null);
+          break;
+        }
+      }
+    }
+  }
+  // Field repair: damaged (not destroyed) parts of this vehicle and allies within 12 m.
+  if (V.repair && Math.abs(V.speed) < 0.5) {
+    for (const U of B.units) {
+      if (U.side !== V.side || U.destroyed || U.gone || Math.abs(U.body.x - V.body.x) > 12) continue;
+      let left = V.repair * dt;
+      for (const p of U.parts) {
+        if (!p.alive || p.hp >= p.def.hp || left <= 0) continue;
+        const add = Math.min(left, p.def.hp - p.hp);
+        p.hp += add; left -= add;
+        p.scorch = Math.max(0, p.scorch - add / p.def.hp);
+        U.dirty = true;
+      }
+    }
+  }
+}
+
+function drawMissiles(g) {
+  const S = view.S;
+  missiles.forEachAlive((m) => {
+    g.save();
+    g.translate(view.sx(m.x), view.sy(m.y));
+    g.rotate(-m.ang);
+    g.fillStyle = '#3a3f47';
+    g.fillRect(-0.5 * S, -0.08 * S, S, 0.16 * S);
+    g.fillStyle = PAL.amber;
+    g.beginPath(); g.arc(-0.55 * S, 0, 0.12 * S, 0, Math.PI * 2); g.fill();
+    g.restore();
+  });
+}
+
 /* ---------- 11_ai.js ---------- */
 /* ==== 11 AI ==== */
 // Spotting, squad orders, enemy tactics and automatic weapons (design/01 §7.2, §7.4).
@@ -5264,6 +5624,14 @@ function spotRange(B, O, V) {
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
   if (V.flier) r *= AIR_SPOT;
   if (O.flier) r *= AIR_SIGHT;
+  if (O.commander) r *= 1.15;
+  // Radar (design/05 §4): long range against aircraft, shorter against surface targets and
+  // not into forest; ECM on the target cuts it by 30%.
+  if (O.radarAir) {
+    const k = V.ecm ? 1 - ECM_RADAR : 1;
+    if (V.flier) r = Math.max(r, O.radarAir * k);
+    else if (!B.T.inForest(V.body.x) && !V.submerged) r = Math.max(r, O.radarGround * k);
+  }
   return r;
 }
 
@@ -5346,14 +5714,18 @@ function trainWeapon(V, w, angle, face, dt) {
 
 // Reloading, automatic weapons and (for AI) the main gun.
 function runWeapons(B, V, dt, aiControlled) {
-  const loaderPenalty = V.crew < 3 ? 1.6 : 1;
+  const loaderPenalty = V.loaderShort ? 1.6 : 1;
   const tmp = { x: 0, y: 0 };
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
-    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
+    if (d.secondary) {
+      if (d.secondary === 'sam') autoSam(B, V, w);
+      else if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); }
+      continue;
+    }
     if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
@@ -5366,7 +5738,7 @@ function runWeapons(B, V, dt, aiControlled) {
       if (!_aim.ok || !ready || w.reload > 0) continue;
       fireWeapon(B, V, w, w.angle, aiControlled ? 1 / (V.ai ? V.ai.accuracy : 1) : 1);
       w.burst++;
-      w.reload = 60 / d.rpm * 1.5;
+      w.reload = 60 / d.rpm * 1.5 * (1 + (V.overheat || 0));
       if (w.burst >= d.burst) { w.burst = 0; w.reload = 1.4; }
       continue;
     }
@@ -5380,7 +5752,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
     if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
-      w.reload = d.reload * loaderPenalty;
+      w.reload = d.reload * (d.cal >= 75 ? loaderPenalty : 1);
       if (d.indirect && B.warnings) {
         const vx = Math.abs(Math.cos(w.angle)) * d.vel;
         B.warnings.push({ x: tmp.x, t: Math.abs(tmp.x - V.body.x) / Math.max(1, vx) });
@@ -5729,7 +6101,7 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
-  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
@@ -5768,6 +6140,8 @@ function updateBattle(B, dt) {
   }
   stepShells(B, dt);
   stepUnderwater(B, dt);
+  stepSalvos(B, dt);
+  stepMissiles(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -5845,7 +6219,7 @@ function playerFire(B, tx, ty, manual) {
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
   w.angle = _aim.angle;
   if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
-  w.reload = w.def.reload * (V.crew < 3 ? 1.6 : 1);
+  w.reload = w.def.reload * (V.loaderShort && w.def.cal >= 75 ? 1.6 : 1);
   B.stats.shots++;
   B.heat = Math.min(3, B.heat + 0.2);
   return '';
@@ -5924,7 +6298,7 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge', 'ramp']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
@@ -6138,6 +6512,90 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.fillStyle = shade(steel, 0.7);
       roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
       if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
+      break;
+    // Systems, missiles and logistics (Part 2d).
+    case 'skirt':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.15 + k * 0.3), y + h * 0.2, w * 0.08, h * 0.6);
+      break;
+    case 'rpod':
+      g.fillStyle = shade(steel, 0.7); roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.2); g.fill();
+      g.fillStyle = '#15181d';
+      for (let r0 = 0; r0 < 2; r0++) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w - cs * 0.12 - r0 * cs * 0.05, y + h * (0.28 + k * 0.15), cs * 0.05, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'atgm':
+      g.fillStyle = '#4a5a3a'; g.fillRect(x + w * 0.1, y + h * 0.35, w * 0.8, h * 0.35);
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.3, y + h * 0.7, w * 0.15, h * 0.3);
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.85, y + h * 0.4, w * 0.08, h * 0.25);
+      break;
+    case 'sam':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.35, y + h * 0.55, w * 0.3, h * 0.45);
+      g.save(); g.translate(x + w * 0.5, y + h * 0.6); g.rotate(-0.6);
+      g.fillStyle = '#4a5a3a';
+      for (const o of [-0.22, 0.22]) g.fillRect(-w * 0.45, o * h - h * 0.09, w * 0.9, h * 0.18);
+      g.restore();
+      break;
+    case 'radar_s': case 'radar_n': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.strokeStyle = '#c9d1dc'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.arc(x + w / 2, y + h * 0.55, w * 0.42, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      if (d.id === 'radar_n') { g.fillStyle = shade(steel, 0.8); g.fillRect(x + w * 0.2, y + h * 0.75, w * 0.6, h * 0.25); }
+      break;
+    }
+    case 'ecm':
+      bevel(g, x, y, w, h, '#3d4552', 1);
+      g.strokeStyle = PAL.amber; g.lineWidth = 1;
+      g.beginPath();
+      for (let k = 0; k <= 8; k++) { const px = x + w * (0.1 + k * 0.1), py = y + h * (k % 2 ? 0.3 : 0.7); if (k) g.lineTo(px, py); else g.moveTo(px, py); }
+      g.stroke();
+      break;
+    case 'cradio':
+      bevel(g, x, y, w, h, '#3f4a3a', 1);
+      g.fillStyle = '#b8c28a'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + w * (0.2 + k * 0.15), y + h * 0.45, cs * 0.08, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = '#1b1d21'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (const f of [0.7, 0.85]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.2); g.lineTo(x + w * f - cs * 0.2, y - cs * 3.6); g.stroke(); }
+      break;
+    case 'gen':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.6, y + h * 0.35, w * 0.25, h * 0.3);
+      break;
+    case 'troop':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.fillStyle = '#12151a';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.12 + k * 0.28), y + h * 0.25, w * 0.18, h * 0.16);
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.1, y + h * 0.7, w * 0.8, h * 0.08);
+      break;
+    case 'tank_c':
+      g.fillStyle = '#56613a'; roundRect(g, x + w * 0.02, y + h * 0.1, w * 0.96, h * 0.8, h * 0.4); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.1); g.lineTo(x + w * f, y + h * 0.9); g.stroke(); }
+      g.fillStyle = PAL.danger; g.fillRect(x + w * 0.42, y + h * 0.4, w * 0.16, h * 0.2);
+      break;
+    case 'repair':
+      bevel(g, x, y, w, h, '#4a4f3a', 1);
+      g.strokeStyle = PAL.linen; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.3, y + h * 0.7); g.lineTo(x + w * 0.65, y + h * 0.35); g.stroke();
+      g.beginPath(); g.arc(x + w * 0.7, y + h * 0.3, cs * 0.18, 0, Math.PI * 2); g.stroke();
+      break;
+    case 'crane':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.2, y + h * 0.8); g.lineTo(x + w * 0.9, y - h * 0.3); g.lineTo(x + w * 0.9, y + h * 0.3); g.stroke();
+      break;
+    case 'blade':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.moveTo(x + w * 0.6, y); g.quadraticCurveTo(x + w, y + h * 0.5, x + w * 0.7, y + h); g.lineTo(x, y + h); g.lineTo(x, y + h * 0.3); g.closePath(); g.fill();
+      break;
+    case 'bridge':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.3, w, h * 0.4);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
+      g.beginPath(); for (let k = 0; k <= 8; k++) { g.moveTo(x + (w * k) / 8, y + h * 0.3); g.lineTo(x + (w * (k + 0.5)) / 8, y + h * 0.7); } g.stroke();
+      break;
+    case 'ramp':
+      g.fillStyle = shade(steel, 0.85);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.3, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
       break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
@@ -6632,6 +7090,7 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);
 }
@@ -6814,12 +7273,9 @@ function enterFullscreen() {
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-const TEST_RANGE_HOW = {
-  land: 'Mud, hills and a trench.',
-  sea: 'Open water off a beach.',
-  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
-  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
-};
+const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket' };
+const TEST_RANGE_HOW = { land: 'Mud, hills and a trench.', sea: 'Open water off a beach.', air: 'Open air over hills.', heli: 'Open air over hills.' };
+const FLIGHT_HOW = { air: '▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.', heli: '◀ ▶ move, ▲ ▼ height.', sub: '▲ ▼ depth.' };
 // The test range that suits a design's domain.
 const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
@@ -6844,7 +7300,7 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
@@ -6878,7 +7334,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -7196,11 +7652,12 @@ SCREENS.battle = {
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
-    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    // Alt: the secondary weapon and what is left (SAMs fire by themselves).
+    const sec = B.me.weapons.filter((w) => w.def.secondary && w.def.secondary !== 'sam' && B.me.parts[w.part].alive);
     C.alt.hidden = !sec.length;
     if (sec.length) {
       const n = sec.reduce((a, w) => a + w.rounds, 0);
-      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      const label = `${ALT_LABEL[sec[0].def.secondary] || 'Alt'} ${n}`;
       if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
       C.alt.disabled = this.frozen || n === 0;
     }
@@ -7471,7 +7928,7 @@ SCREENS.battle = {
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
     }
     const mw = mainWeapon(B.me);
-    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
+    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.loaderShort && mw.def.cal >= 75 ? 1.6 : 1)), ghost);
   },
 
   // Minimap strip: terrain line, spotted units, camera window.
@@ -7621,6 +8078,46 @@ function designLibrary() {
   return out;
 }
 
+// Design lineage (design/01 §8.4): the family tree of saved marks, from the template or
+// design they started from, with each mark's change log.
+function lineageOf(design) {
+  const list = save.designs.list;
+  const byId = new Map(list.map((d) => [d.id, d]));
+  // Walk up to the oldest saved ancestor, then collect everything below it.
+  let root = design;
+  for (let k = 0; k < 50 && root.parent && byId.has(root.parent); k++) root = byId.get(root.parent);
+  const rows = [];
+  const walk = (d, depth) => {
+    rows.push({ d, depth });
+    for (const c of list) if (c.parent === d.id && c !== d) walk(c, depth + 1);
+  };
+  walk(root, 0);
+  return { origin: root.parent && !byId.has(root.parent) ? (TEMPLATES[root.parent] ? `${TEMPLATES[root.parent].name} Mk.I (template)` : 'a blueprint') : null, rows };
+}
+
+function showLineage(design) {
+  const tree = lineageOf(design);
+  const c = ui.card(`Lineage · ${design.family || design.name}`);
+  c.classList.add('card-scroll');
+  const box = el('div', 'lineage');
+  if (tree.origin) box.appendChild(el('div', 'lin-origin', `From ${tree.origin}`));
+  for (const { d, depth } of tree.rows) {
+    const row = el('div', 'lin-row' + (d.id === design.id ? ' on' : ''));
+    row.style.marginLeft = `${depth * 16}px`;
+    const st = statsOf(d);
+    row.appendChild(el('b', '', markName(d)));
+    row.appendChild(el('small', '', ` ${(st.mass / 1000).toFixed(1)} t · cost ${costOf(d)}`));
+    for (const l of d.changelog || []) row.appendChild(el('div', 'lin-log', l));
+    box.appendChild(row);
+  }
+  c.appendChild(box);
+  let close = null;
+  const r = el('div', 'card-row');
+  r.appendChild(button('Close', () => close(), 'btn', 'back'));
+  c.appendChild(r);
+  close = ui.open(c);
+}
+
 SCREENS.workshop = {
   root: null,
   slot: 0,
@@ -7654,7 +8151,7 @@ SCREENS.workshop = {
     top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
     top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
     const lc = levelConfig(level);
-    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle: ships and submarines only' : lc.sea ? 'Map has sea' : 'No sea: ships stay in port'));
+    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle' : lc.sea ? 'Coast' : 'No sea'));
     r.appendChild(top);
 
     // Squad slots.
@@ -7691,7 +8188,10 @@ SCREENS.workshop = {
         this.build();
       });
       card.appendChild(pick);
-      card.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      const btns = el('div', 'ws-btns');
+      btns.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      if (o.src === 'Your design') btns.appendChild(button('Lineage', () => showLineage(o.design), 'btn btn-small ws-lineage'));
+      card.appendChild(btns);
       list.appendChild(card);
     }
     r.appendChild(list);
@@ -8031,7 +8531,7 @@ SCREENS.designer = {
       b.appendChild(icon);
       const txt = el('span', 'dz-part-txt');
       txt.appendChild(el('b', '', P.name));
-      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
+      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}${P.info ? ` · ${P.info}` : ''}`));
       b.appendChild(txt);
       if (this.st.brush === P.id) b.classList.add('on');
       // Tap to pick up the part as a brush; drag it straight onto the grid.
@@ -8147,8 +8647,23 @@ SCREENS.designer = {
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
       row('Climb limit', `${rep.climb}°`);
     }
-    row('Crew space', `${st.crew}`);
+    const sys = rep.sys;
+    row('Crew space', `${sys.crew}`);
+    row('Crew needed (driver, gunners)', `${sys.crewNeeded}`);
+    if (sys.loaders) row('Loaders (guns of 75 mm up)', `${sys.loadersFitted} of ${sys.loaders}`);
+    row('Commander', sys.commander ? 'yes (+15% sight)' : 'no');
     row('Fuel', `${st.fuel} L`);
+    head('Heat and reliability');
+    row('Heat made', `${sys.heatMade} per s`);
+    row('Heat removed', `${sys.heatRemoved} per s`);
+    row('Breakdowns per 100 h', sys.breakdownsPer100h.toFixed(1));
+    head('Sensors');
+    row('Sight', `${sys.sightKm.toFixed(1)} km`);
+    if (sys.radarAirKm) row('Radar', `air ${sys.radarAirKm} km, surface ${sys.radarGroundKm} km`);
+    if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
+    if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
+    if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
@@ -8158,7 +8673,7 @@ SCREENS.designer = {
     row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
-    for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
+    for (const w of rep.weapons) row(w.name, [w.pen ? `${w.pen} mm` : '', w.range ? `${Math.round(weaponRange(w))} m` : '', w.rounds ? `${w.rounds} carried` : ''].filter(Boolean).join(' · '));
     head('Cost');
     row('Parts', rep.cost);
     row('Requisition to build', this.buildCost());
@@ -8276,11 +8791,24 @@ SCREENS.designer = {
     this.build();
   },
 
+  // Test range picker (design/06 Part 2d): land, sea or sky. Ships and submarines need the sea.
   testDrive() {
     const d = cropDesign(this.st.d);
     if (!validateDesign(d).ok) { this.say('Test drive needs a valid design.', true); return; }
     d.name = markName(this.st.d);
-    screens.go('battle', { test: d, back: { restore: this.st } });
+    const dom = domainOf(d);
+    const c = ui.card('Test range');
+    const col = el('div', 'card-col');
+    let close = null;
+    const go = (range) => { close(); screens.go('battle', { test: d, range, back: { restore: this.st } }); };
+    for (const [range, label] of [['land', 'Land: mud, hills and a trench'], ['sea', 'Sea: a beach and open water'], ['air', 'Sky: open air over hills']]) {
+      const b = button(label, () => go(range), range === rangeFor(dom) || (range === 'air' && dom === 'heli') ? 'btn btn-primary' : 'btn');
+      if (seaDomain(dom) && range !== 'sea') { b.disabled = true; b.textContent += ' (needs sea)'; }
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
   },
 
   back() {

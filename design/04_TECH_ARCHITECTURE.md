@@ -39,7 +39,8 @@ The files in `src/js/` are joined in filename order inside one strict IIFE, so l
                     09d_physics_air.js)
 10_combat.js       projectiles, ballistics, grid raycast, penetration, damage, spotting
                    (split: 10a_combat.js, 10b_effects.js for particles, smoke and shake,
-                    10c_naval_weapons.js for torpedoes and depth charges, 10d_air_weapons.js)
+                    10c_naval_weapons.js for torpedoes and depth charges, 10d_air_weapons.js,
+                    10e_systems.js for missiles, rockets, heat, breakdowns and repair)
 11_ai.js           unit behaviours, squad orders, force orders, enemy tactics
                    (11b_ai_air.js: fighters, bombers and helicopters)
 12_battle.js       battlefield generator, battle state, objectives, results

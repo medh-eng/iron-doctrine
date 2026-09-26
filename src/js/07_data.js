@@ -25,6 +25,10 @@ const WEAPON_STATS = {
   // Air-capable automatic guns (Part 2c): aa = can engage aircraft; flak = bursts near them.
   ac20: { vel: 240, dmg: 16, spread: 1.0, cal: 20, auto: true, burst: 4, aa: true },
   aa40: { vel: 200, dmg: 30, spread: 0.9, cal: 40, auto: true, burst: 3, aa: true, flak: true },
+  // Rockets and missiles (Part 2d). heat = shaped charge: no loss of penetration with range.
+  rpod: { vel: 110, dmg: 50, spread: 2.2, cal: 70, heat: true, heDmg: 25, heRadius: 1.5 },
+  atgm: { vel: 45, dmg: 160, spread: 0, cal: 120, heat: true, burst: 60, burstR: 1.4 },
+  sam: { vel: 70, dmg: 0, spread: 0, cal: 90 },
   // Naval gun, twin: two barrels fire together (Part 2a).
   ngun: { vel: 120, dmg: 150, spread: 0.45, cal: 120, shells: 30, burst: 70, burstR: 2.2, twin: true },
 };
@@ -65,6 +69,27 @@ const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
 
+// Missiles, sensors and constraints (Part 2d). Battle numbers.
+// Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
+// A missile without a lock flies at a false point and misses.
+const MISSILE = {
+  atgm: { base: 0.6, turn: 1.6, life: 3.2, fuse: 0 },
+  sam: { base: 0.55, turn: 2.4, life: 5, fuse: 3, dmg: 90, radius: 4 },
+};
+const LOCK_FC = 0.2;              // added by a fire-control computer
+const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
+const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
+const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Heat (design/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
+// in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
+// power and automatic fire rate; 20 s above 100% can start a fire.
+const ENGINE_COOLING = 30;
+const EXTRA_COOLING = 30;
+const OVERHEAT_FIRE_SECS = 20;
+// Reliability (design/05 §7.5): checked every 30 s at 1/120 of the hourly breakdown rate.
+const BREAKDOWN_CHECK = 30;
+const REPAIR_RATE = 10;           // HP per second a repair workshop restores (to itself and allies within 12 m)
+
 // id: [name, category, w, h, mass, hp, armour, extras]
 const PART_ROWS = [
   // Structure
@@ -75,6 +100,7 @@ const PART_ROWS = [
   ['arm40', 'Armour 40 mm', 'structure', 1, 1, 380, 120, 40, { cost: { metal: 5 } }],
   ['arm80', 'Armour 80 mm', 'structure', 1, 1, 760, 180, 80, { cost: { metal: 9 } }],
   ['slope40', 'Sloped armour 40 mm', 'structure', 1, 1, 300, 110, 40, { cost: { metal: 5 }, sloped: true }],
+  ['skirt', 'Spaced skirt', 'structure', 1, 1, 90, 30, 8, { cost: { metal: 1 }, skirt: true }],
   ['crew2', 'Crew compartment', 'structure', 2, 2, 300, 80, 10, { cost: { metal: 3 }, crew: 2 }],
   ['turret', 'Turret ring', 'structure', 3, 1, 250, 90, 20, { cost: { metal: 3 }, power: -5, ring: true }],
   // Ship structure (Part 2a). sealed = watertight: displaces water below the waterline.
@@ -103,6 +129,7 @@ const PART_ROWS = [
   ['aprop', 'Air propeller', 'mobility', 1, 2, 80, 20, 2, { cost: { metal: 1, wood: 1 }, airprop: true }],
   ['rotor', 'Rotor', 'mobility', 4, 1, 400, 50, 2, { cost: { metal: 4, elec: 1 }, rotor: true, rel: 0.985 }],
   ['trotor', 'Tail rotor', 'mobility', 1, 1, 60, 20, 2, { cost: { metal: 1 }, trotor: true }],
+  ['gen', 'Auxiliary generator', 'mobility', 2, 1, 250, 40, 5, { cost: { metal: 2, elec: 1 }, power: 40, heat: 8, fuelUse: 10, rel: 0.990, info: 'Electrical power only' }],
   ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
   ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
   ['wheel_l', 'Off-road wheel', 'mobility', 2, 2, 200, 50, 5, { cost: { metal: 1, rubber: 3 }, loco: 'wheel', contact: 0.12, maxLoad: 5000, cap: 75, radius: 0.5 }],
@@ -110,6 +137,9 @@ const PART_ROWS = [
   // Weapons
   ['mg', 'Machine gun', 'weapon', 1, 1, 40, 20, 5, { cost: { metal: 1 }, pen: 8, rpm: 600, range: 600 }],
   ['hmg', 'Heavy machine gun', 'weapon', 1, 1, 80, 25, 5, { cost: { metal: 2 }, pen: 20, rpm: 450, range: 1000 }],
+  ['rpod', 'Rocket pod', 'weapon', 2, 1, 200, 30, 5, { cost: { metal: 3, fuel: 1 }, pen: 70, reload: 12, range: 1500, secondary: 'rockets', rounds: 2, salvo: 8 }],
+  ['atgm', 'Guided anti-tank missile', 'weapon', 2, 1, 180, 30, 5, { cost: { metal: 4, elec: 4 }, pen: 200, reload: 6, range: 2500, secondary: 'atgm', rounds: 4, needs: 'fc' }],
+  ['sam', 'Surface-to-air missile launcher', 'weapon', 2, 2, 600, 50, 10, { cost: { metal: 6, elec: 8 }, pen: 0, reload: 8, range: 6000, secondary: 'sam', rounds: 2, needs: 'radar' }],
   ['ac20', 'Autocannon 20 mm', 'weapon', 2, 1, 150, 35, 5, { cost: { metal: 3 }, pen: 35, rpm: 180, range: 1200 }],
   ['c37', 'Cannon 37 mm', 'weapon', 2, 1, 250, 40, 10, { cost: { metal: 4 }, pen: 50, reload: 2.5, range: 1500 }],
   ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
@@ -127,6 +157,10 @@ const PART_ROWS = [
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
   ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
+  ['cradio', 'Command radio', 'system', 2, 1, 120, 20, 2, { cost: { metal: 2, elec: 3 }, power: -4, crew: -1, info: '+1 platoon under force orders (campaign); needs a radio operator' }],
+  ['radar_s', 'Search radar', 'system', 2, 1, 250, 20, 2, { cost: { metal: 3, elec: 6 }, power: -25, radarAir: 8000, radarGround: 3000, lock: 0.12 }],
+  ['radar_n', 'Naval radar', 'system', 2, 2, 600, 30, 3, { cost: { metal: 5, elec: 10 }, power: -60, radarAir: 15000, radarGround: 10000, lock: 0.2 }],
+  ['ecm', 'ECM suite', 'system', 2, 1, 150, 20, 2, { cost: { metal: 2, elec: 8 }, power: -30, heat: 10, ecm: true }],
   ['sonar', 'Sonar', 'system', 2, 1, 300, 30, 5, { cost: { metal: 2, elec: 4 }, power: -10, sonar: 2000, wet: true }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
@@ -135,6 +169,13 @@ const PART_ROWS = [
   ['ammo', 'Ammo rack', 'logistics', 1, 1, 250, 30, 3, { cost: { metal: 1 }, shells: 20, detonate: 0.40 }],
   ['ammo_p', 'Protected ammo storage', 'logistics', 1, 1, 320, 50, 10, { cost: { metal: 2 }, shells: 20, detonate: 0.10 }],
   ['fuel_l', 'Fuel tank 1000 L', 'logistics', 2, 2, 1050, 60, 3, { cost: { metal: 3 }, fuel: 1000, fire: 0.35 }],
+  ['troop', 'Troop compartment', 'logistics', 2, 2, 250, 50, 5, { cost: { metal: 2 }, info: 'Carries 1 infantry squad (campaign)' }],
+  ['tank_c', 'Fuel cargo tank', 'logistics', 3, 2, 400, 60, 3, { cost: { metal: 4 }, fire: 0.5, info: '4,000 L fuel cargo (campaign)' }],
+  ['repair', 'Repair workshop', 'logistics', 2, 2, 600, 60, 5, { cost: { metal: 4, elec: 1 }, repair: REPAIR_RATE }],
+  ['crane', 'Recovery winch', 'logistics', 2, 2, 900, 80, 10, { cost: { metal: 5 }, info: 'Tows up to 30 t (campaign)' }],
+  ['blade', 'Dozer blade', 'logistics', 2, 1, 700, 90, 20, { cost: { metal: 4 }, info: 'Builds field works; clears obstacles (campaign)' }],
+  ['bridge', 'Bridge layer', 'logistics', 4, 1, 3000, 120, 10, { cost: { metal: 10 }, info: 'Lays a 10 m bridge (campaign)' }],
+  ['ramp', 'Landing ramp', 'logistics', 2, 2, 400, 60, 10, { cost: { metal: 3 }, info: 'Unloads onto a beach (campaign)' }],
   ['cargo', 'Cargo bay', 'logistics', 2, 2, 200, 40, 3, { cost: { metal: 2, wood: 1 }, cargo: 2000 }],
 ];
 
@@ -146,12 +187,12 @@ for (const [id, name, cat, w, h, mass, hp, armor, extra] of PART_ROWS) {
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -288,6 +329,16 @@ const TEMPLATES = {
       ['aero', 6, 2], ['fuel_ss', 6, 3], ['frame', 7, 3], ['crew2', 8, 2], ['optics', 10, 2], ['hmg', 10, 3],
     ],
   },
+  // Missile carriers (Part 2d).
+  hunter: {
+    name: 'Tank hunter', w: 10, h: 5, soft: true,
+    cells: [
+      ['wheel_s', 1, 4], ['wheel_s', 3, 4], ['wheel_s', 6, 4], ['wheel_s', 8, 4],
+      ['plate', 0, 3], ['eng_s', 1, 2], ['crew2', 3, 2], ['fuel_s', 5, 3], ['fc', 5, 2],
+      ['plate', 6, 3], ['plate', 7, 3], ['plate', 8, 3], ['arm20', 6, 2], ['arm20', 7, 2], ['slope40', 8, 2],
+      ['atgm', 4, 1], ['optics', 3, 1],
+    ],
+  },
   // Enemy-only fixed positions (no engine, so the placement rules don't apply).
   bunker: {
     name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
@@ -296,6 +347,13 @@ const TEMPLATES = {
       ['arm80', 0, 1], ['crew2', 1, 1], ['arm40', 3, 1], ['arm40', 4, 1], ['c75', 5, 1],
       ['arm80', 0, 2], ['ammo_p', 3, 2], ['plate', 4, 2], ['arm80', 5, 2], ['arm80', 6, 2], ['slope40', 7, 2],
       ['arm80', 0, 3], ['arm80', 1, 3], ['arm80', 2, 3], ['arm80', 3, 3], ['arm80', 4, 3], ['arm80', 5, 3], ['arm80', 6, 3], ['arm80', 7, 3],
+    ],
+  },
+  samsite: {
+    name: 'SAM site', w: 9, h: 4, fixed: true,
+    cells: [
+      ['arm40', 0, 3], ['arm40', 1, 3], ['arm40', 2, 3], ['arm40', 3, 3], ['arm40', 4, 3], ['arm40', 5, 3], ['arm40', 6, 3], ['arm40', 7, 3],
+      ['crew2', 0, 1], ['gen', 2, 2], ['radar_s', 2, 1], ['sam', 4, 1], ['aa40', 6, 1],
     ],
   },
   howitzer: {
@@ -338,7 +396,7 @@ const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Proving Ground ladder (design/01 §14)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { hunter: 250, samsite: 400, fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -410,7 +468,7 @@ function levelConfig(level) {
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
-      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['samsite', 1, 'fixed', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
       how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
@@ -433,6 +491,9 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // Aircraft over some maps, with a SAM site; tank hunters with guided missiles (Part 2d).
+    if (rng.next() < 0.25) c.enemies.push([rng.pick(['fighter', 'fighter', 'heli', 'bomber']), 1 + rng.int(0, 1), 'air', rng.int(0, 2)], ['samsite', 1, 'fixed', 0]);
+    if (n >= 3 && rng.next() < 0.3) c.enemies.push(['hunter', 1 + rng.int(0, 1), 'attack', rng.int(0, 2)]);
     // A coast with gunboats on some maps (Part 2a).
     if (rng.next() < 0.25) {
       c.sea = { from: Math.round(c.length * 0.64), depth: 14 };

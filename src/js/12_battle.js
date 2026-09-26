@@ -189,7 +189,7 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
-  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
@@ -228,6 +228,8 @@ function updateBattle(B, dt) {
   }
   stepShells(B, dt);
   stepUnderwater(B, dt);
+  stepSalvos(B, dt);
+  stepMissiles(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -305,7 +307,7 @@ function playerFire(B, tx, ty, manual) {
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
   w.angle = _aim.angle;
   if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
-  w.reload = w.def.reload * (V.crew < 3 ? 1.6 : 1);
+  w.reload = w.def.reload * (V.loaderShort && w.def.cal >= 75 ? 1.6 : 1);
   B.stats.shots++;
   B.heat = Math.min(3, B.heat + 0.2);
   return '';
@@ -543,8 +545,89 @@ function airCheck() {
   return out;
 }
 
+// Sensors (design/06 Part 2 acceptance): radar, ECM and fire control measurably change missile
+// hit rates. 40 missiles per case against a parked tank (anti-tank) or a passing fighter (SAM).
+function missileCheck(n = 40) {
+  const add = (d, cells) => { d.cells.push(...cells.map(([p, x, y]) => ({ p, x, y }))); return d; };
+  const rate = (kind, extra, ecm) => {
+    const B = createBattle(4);
+    B.units = []; B.squad = [];
+    const S = makeVehicle(add(designFromTemplate(kind === 'sam' ? 'scout' : 'light'), kind === 'sam' ? [['sam', 6, 0], ...extra] : [['atgm', 8, 1], ['fc', 1, 2], ...extra]), 0, 100, 1, B.T);
+    B.units.push(S); B.squad.push(S); B.me = S;
+    const w = S.weapons.find((x) => x.def.secondary === kind);
+    let hits = 0;
+    for (let i = 0; i < n; i++) {
+      const T = kind === 'sam' ? makeVehicle(add(designFromTemplate('fighter'), ecm ? [['ecm', 4, 2]] : []), 1, 30, 1, B.T)
+        : makeVehicle(add(designFromTemplate('light'), ecm ? [['ecm', 8, 1]] : []), 1, 190, -1, B.T);
+      if (T.flier) launchFlier(T, B.T, 45);
+      B.units = [S, T];
+      w.reload = 0; w.rounds = 99;
+      const before = B.stats.missileHits || 0;
+      launchMissile(B, S, w, T);
+      for (let t = 0; t < 6; t += SIM_STEP) {
+        if (T.flier) { flightControl(T, B.T, SIM_STEP); stepVehicle(T, B.T, SIM_STEP); }
+        stepMissiles(B, SIM_STEP);
+        let live = 0;
+        missiles.forEachAlive(() => live++);
+        if (!live) break;
+      }
+      missiles.forEachAlive((m) => { m.alive = false; });
+      shells.forEachAlive((s) => { s.alive = false; });
+      if ((B.stats.missileHits || 0) > before) hits++;
+    }
+    return hits / n;
+  };
+  return {
+    atgmFc: rate('atgm', [], false),
+    atgmFcRadar: rate('atgm', [['radar_s', 6, 0]], false),
+    atgmVsEcm: rate('atgm', [], true),
+    samSearch: rate('sam', [['radar_s', 8, 1]], false),
+    samNaval: rate('sam', [['radar_n', 8, 0]], false),
+    samVsEcm: rate('sam', [['radar_s', 8, 1]], true),
+    noRadarValid: validateDesign(add(designFromTemplate('scout'), [['sam', 6, 0]])).ok,
+  };
+}
+
+// Constraints (Part 2d): an engine making more heat than is removed loses power until radiators
+// are fitted; a repair workshop heals a damaged neighbour; breakdowns disable a part.
+function systemsCheck() {
+  const B = createBattle(1);
+  const hot = makeVehicle(designFromTemplate('behemoth'), 0, 60, 1, B.T);
+  hot.throttle = 1;
+  stepSystems(B, hot, SIM_STEP);
+  const cool = designFromTemplate('behemoth');
+  cool.h += 1;
+  for (const c of cool.cells) c.y += 1;
+  cool.cells.push({ p: 'radiator', x: 1, y: 3 }, { p: 'radiator', x: 2, y: 3 });
+  const cv = makeVehicle(cool, 0, 60, 1, B.T);
+  cv.throttle = 1;
+  stepSystems(B, cv, SIM_STEP);
+  const rep = designFromTemplate('truck');
+  rep.cells = rep.cells.filter((c) => !(c.p === 'cargo' && c.x === 1)).concat([{ p: 'repair', x: 1, y: 0 }]);
+  const R = makeVehicle(rep, 0, 80, 1, B.T);
+  const ally = B.squad[0];
+  ally.body.x = 86;
+  B.units.push(R);
+  const part = ally.parts.find((p) => p.alive && p.def.hp >= 80);
+  part.hp -= 50;
+  const hp0 = part.hp;
+  for (let t = 0; t < 3; t += SIM_STEP) stepSystems(B, R, SIM_STEP);
+  const real = B.rng.next;
+  B.rng.next = () => 0;
+  const alive0 = hot.parts.filter((p) => p.alive).length;
+  hot.breakT = BREAKDOWN_CHECK;
+  stepSystems(B, hot, SIM_STEP);
+  B.rng.next = real;
+  return {
+    hotPower: hot.heatMul, coolPower: cv.heatMul,
+    repaired: part.hp - hp0,
+    brokeDown: hot.parts.filter((p) => p.alive).length < alive0,
+  };
+}
+
 // Part effects: engine, gun, turret ring, ammo detonation.
 function damageCheck() {
+  debris.forEachAlive((d) => { d.alive = false; });   // earlier checks may have filled the pool
   const B = createBattle(4);
   const find = (V, id) => V.parts.findIndex((p) => p.alive && p.def.id === id);
   const V = B.units.find((u) => u.side === 1);

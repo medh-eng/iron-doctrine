@@ -33,7 +33,7 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge', 'ramp']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
@@ -247,6 +247,90 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.fillStyle = shade(steel, 0.7);
       roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
       if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
+      break;
+    // Systems, missiles and logistics (Part 2d).
+    case 'skirt':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.15 + k * 0.3), y + h * 0.2, w * 0.08, h * 0.6);
+      break;
+    case 'rpod':
+      g.fillStyle = shade(steel, 0.7); roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.2); g.fill();
+      g.fillStyle = '#15181d';
+      for (let r0 = 0; r0 < 2; r0++) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w - cs * 0.12 - r0 * cs * 0.05, y + h * (0.28 + k * 0.15), cs * 0.05, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'atgm':
+      g.fillStyle = '#4a5a3a'; g.fillRect(x + w * 0.1, y + h * 0.35, w * 0.8, h * 0.35);
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.3, y + h * 0.7, w * 0.15, h * 0.3);
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.85, y + h * 0.4, w * 0.08, h * 0.25);
+      break;
+    case 'sam':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.35, y + h * 0.55, w * 0.3, h * 0.45);
+      g.save(); g.translate(x + w * 0.5, y + h * 0.6); g.rotate(-0.6);
+      g.fillStyle = '#4a5a3a';
+      for (const o of [-0.22, 0.22]) g.fillRect(-w * 0.45, o * h - h * 0.09, w * 0.9, h * 0.18);
+      g.restore();
+      break;
+    case 'radar_s': case 'radar_n': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.strokeStyle = '#c9d1dc'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.arc(x + w / 2, y + h * 0.55, w * 0.42, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      if (d.id === 'radar_n') { g.fillStyle = shade(steel, 0.8); g.fillRect(x + w * 0.2, y + h * 0.75, w * 0.6, h * 0.25); }
+      break;
+    }
+    case 'ecm':
+      bevel(g, x, y, w, h, '#3d4552', 1);
+      g.strokeStyle = PAL.amber; g.lineWidth = 1;
+      g.beginPath();
+      for (let k = 0; k <= 8; k++) { const px = x + w * (0.1 + k * 0.1), py = y + h * (k % 2 ? 0.3 : 0.7); if (k) g.lineTo(px, py); else g.moveTo(px, py); }
+      g.stroke();
+      break;
+    case 'cradio':
+      bevel(g, x, y, w, h, '#3f4a3a', 1);
+      g.fillStyle = '#b8c28a'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + w * (0.2 + k * 0.15), y + h * 0.45, cs * 0.08, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = '#1b1d21'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (const f of [0.7, 0.85]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.2); g.lineTo(x + w * f - cs * 0.2, y - cs * 3.6); g.stroke(); }
+      break;
+    case 'gen':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.6, y + h * 0.35, w * 0.25, h * 0.3);
+      break;
+    case 'troop':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.fillStyle = '#12151a';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.12 + k * 0.28), y + h * 0.25, w * 0.18, h * 0.16);
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.1, y + h * 0.7, w * 0.8, h * 0.08);
+      break;
+    case 'tank_c':
+      g.fillStyle = '#56613a'; roundRect(g, x + w * 0.02, y + h * 0.1, w * 0.96, h * 0.8, h * 0.4); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.1); g.lineTo(x + w * f, y + h * 0.9); g.stroke(); }
+      g.fillStyle = PAL.danger; g.fillRect(x + w * 0.42, y + h * 0.4, w * 0.16, h * 0.2);
+      break;
+    case 'repair':
+      bevel(g, x, y, w, h, '#4a4f3a', 1);
+      g.strokeStyle = PAL.linen; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.3, y + h * 0.7); g.lineTo(x + w * 0.65, y + h * 0.35); g.stroke();
+      g.beginPath(); g.arc(x + w * 0.7, y + h * 0.3, cs * 0.18, 0, Math.PI * 2); g.stroke();
+      break;
+    case 'crane':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.2, y + h * 0.8); g.lineTo(x + w * 0.9, y - h * 0.3); g.lineTo(x + w * 0.9, y + h * 0.3); g.stroke();
+      break;
+    case 'blade':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.moveTo(x + w * 0.6, y); g.quadraticCurveTo(x + w, y + h * 0.5, x + w * 0.7, y + h); g.lineTo(x, y + h); g.lineTo(x, y + h * 0.3); g.closePath(); g.fill();
+      break;
+    case 'bridge':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.3, w, h * 0.4);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
+      g.beginPath(); for (let k = 0; k <= 8; k++) { g.moveTo(x + (w * k) / 8, y + h * 0.3); g.lineTo(x + (w * (k + 0.5)) / 8, y + h * 0.7); } g.stroke();
+      break;
+    case 'ramp':
+      g.fillStyle = shade(steel, 0.85);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.3, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
       break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
@@ -741,6 +825,7 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);
 }
