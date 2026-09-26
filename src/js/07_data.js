@@ -336,7 +336,7 @@ const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gun
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
-// ---------- the Proving Ground ladder (design/01 §14)
+// ---------- the Gauntlet ladder (v1 Proving Ground; design/01 §15 optional Gauntlet)
 // Enemy value for scoring (points per kill).
 const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
@@ -355,7 +355,7 @@ function levelConfig(level) {
   const L = Math.max(1, Math.floor(level));
   const c = {
     level: L,
-    name: 'Proving Ground',
+    name: 'Gauntlet',
     goal: { type: 'destroy', text: 'Destroy the enemy' },
     seed: 1009 + L * 7919,
     length: 460,
@@ -462,7 +462,7 @@ const MEDALS = [
   { id: 'slope40', name: 'Climbed a 40° slope', how: 'Drive up ground steeper than 40°.' },
   { id: 'crit5', name: 'Five critical hits', how: 'Destroy 5 engines, guns, crew or ammo racks in one battle.' },
   { id: 'boss', name: 'Boss destroyed', how: 'Destroy a boss.' },
-  { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Proving Ground.' },
+  { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Gauntlet.' },
 ];
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short

@@ -1,521 +1,417 @@
-# Iron Doctrine: game design
+# Iron Doctrine: game design (v2)
 
-## 1. Pitch
+v2 replaces the region map, the six-resource supply chain and the Proving Ground ladder of v1.
 
-Command an entire war. Design every tank, ship and aircraft part by part, keep them fuelled and armed across a living map, and fight the battles that matter yourself. Nobody tells you what works. You find out, and that becomes your doctrine.
+- Numbers live in **08_BALANCE_AND_ECONOMY**.
+- Factions live in **09_FACTIONS**.
+- Parts and art live in **05_PARTS_CATALOGUE** and **07_ART_AND_PARTS**.
+
+## 1. Pitch and pillars
+
+You are the Grand Admiral of one faction on the continent of Kessra, where fleets of great war machines rule the land, the sea and the sky. You:
+
+- design every ship part by part
+- keep your fleets fuelled, armed and repaired across an open world
+- fight HighFleet-style side-view battles, three ships at a time
 
 **Tagline:** "No manual tells you how to win this war. You'll write your own."
 
-**Inspirations:**
-- HighFleet: campaign, fleets, logistics, design
-- Bad Piggies: physical, part-by-part construction
-- Command & Conquer: real-time battles
+**Pillars**
 
-The player is a field commander, not an all-seeing RTS god.
+1. **Designs are physical.** Mass, balance, power, lift, buoyancy and armour come from where parts sit.
+2. **No meta.** The game shows numbers and consequences, never verdicts. Every part has real pros and cons.
+3. **Logistics win wars.**
+   - Money is the only universal resource.
+   - Everything else sits physically in a fleet's hold or a settlement's warehouse.
+   - Salvage never fully pays for a campaign.
+4. **Everything persists.** Ships, damage, captains, admirals and design lineages all carry forward.
+5. **Commander, not god.** You drive one ship. Captains and admirals follow orders.
+6. **From timber to plasma.** A long climb from wooden hulls and small guns to lasers, plasma, missiles and drone carriers.
 
-## 2. Pillars
+## 2. World
 
-1. **Designs are physical.** Mass, balance, power, grip and armour come from where parts sit, not from stat sliders. The player can see why a design fails.
-2. **No meta.** The game shows numbers and consequences, never verdicts. Every strength costs something elsewhere: fuel, terrain, price, reliability or supply.
-3. **Logistics win wars.** A victory that outruns its supply collapses.
-4. **Everything persists.** Losses, damage, veteran crews and design lineages carry forward.
-5. **Commander, not god.** You drive one vehicle and give orders to the rest.
+### 2.1 Kessra
 
-## 3. Setting
+- Kessra is built on the ruins of a vanished high-technology civilisation, the Precursors.
+- Their wreckage lies everywhere as scrap.
+- Refined scrap becomes electronics.
+- The most advanced technology (tier 4: lasers, plasma, EMP, levitators) is reverse-engineered from Precursor relics.
 
-The continent of Kessra is fictional. A century-old treaty has collapsed. The maritime Harbour League (player, blue) and the inland Directorate (enemy, red) now fight over oil, ore and the rail lines that connect them. Neutral free cities can be won over or captured.
+### 2.2 The map
 
-**Technology:** a fictional diesel-to-early-missile era, so propellers, rotors, radar and early guided missiles all coexist.
+- **View:** one open world seen from above, not a grid of regions. It is seeded, generated and roughly 4 by 3 days of land travel.
+- **Terrain:** sea, coast, plains, forest, hills, mountains, desert, marsh, tundra and ice, and Precursor ruins.
+- **Roads** link settlements.
+- **Movement by domain:**
+  - Land fleets follow terrain. Roads are fast. Mountains are impassable except through passes.
+  - Sea fleets stay on water.
+  - Air fleets fly anywhere, but burn more fuel. Storms slow and push them.
+- **Scrap fields** in the ruins can be picked over for scrap. This needs salvage parts and time.
+- **Weather** moves across the map: clear, rain, fog, storm, snow, sandstorm. It affects spotting, speed and air travel.
+- **Time:** real time with a Start/Stop button and 1×, 3× and 10× speeds. At 1×, 1 in-game hour = 1 s.
+  - The clock stops itself on contact, sieges, arrivals, low fuel and finished crafting.
+  - Each of these can be turned off in Settings.
+- **Fog of war:** you see what your fleets, settlements and sensors can see.
 
-**Tone:** serious stakes, warm presentation. It should feel like a war-room table with toy-soldier crispness. No gore.
+## 3. Factions
 
-## 4. Modes
+Five factions share Kessra:
 
-- **Proving Ground (Part 1+):** an endless battle ladder, levels 1 to unlimited, with lives and score. It is the fastest way to have fun and doubles as the design test bench.
-- **Campaign (Part 3+):** the full war on a generated continent, saved in 3 slots.
-- **Drafting Office:** the vehicle designer. Reachable from the title screen, the ladder workshop and campaign workshops.
-- **Test Range:** drive any design on any terrain, with nothing at stake.
-
-## 5. Core loop (campaign)
-
-1. Gather resources.
-2. Build and grow infrastructure.
-3. Design and build forces.
-4. Organise armies, fleets and air groups.
-5. Plan supply.
-6. Move on the map and make contact.
-7. Fight the battle, or auto-resolve it.
-8. Take losses and gain ground.
-9. Recover, repair and refit.
-10. Adapt designs, then repeat.
-
-## 6. Strategic campaign
-
-### 6.1 Map
-
-- Generated from a seed: about 50 land regions plus sea zones. Built as Voronoi cells over a noise-based continent with a coastline, 2–4 islands and rivers.
-- **Terrain per region:** plains, forest, hills, mountains, desert, marsh, snowfield (north), urban, coast, island.
-- **Features:** village, town or city, port, oil field, offshore oil rig, iron mine, copper mine, timber forest, rubber plantation (warm south), farmland, factories, airfield, shipyard, military base, fortifications.
-- **Links between regions:**
-  - road (quality 1–3)
-  - rail (must be built)
-  - river crossing (needs a bridge, otherwise a slow ford)
-  - sea lane (port to port)
-
-### 6.2 Time
-
-- The map runs in real time, like HighFleet. At 1× speed, 1 in-game hour = 1 second. Speeds are 1×, 3× and 10×.
-- A big **Start/Stop** button controls the clock. The player can give orders while time is stopped.
-- The clock stops automatically on:
-  - enemy contact
-  - battle ready
-  - construction done
-  - supply warning
-  - force arrival
-
-  Each auto-stop event can be switched off in Settings.
-
-### 6.3 Forces
-
-- **Force types:**
-  - Army: ground vehicles, infantry and support vehicles
-  - Fleet: ships and submarines
-  - Air group: aircraft and helicopters, based at airfields
-- Every unit is an individual, persistent object. It has a design and mark, per-part damage, fuel, ammo and crew experience.
-- **Movement** follows links. A force moves at the speed of its slowest unit for that terrain and link, reduced by bad weather or poor supply.
-  - Rail is fast but needs rail links and train capacity.
-  - Fleets move through sea zones, and fuel range matters.
-- **Stances:** Advance, Defend, Recon, Raid supply, Withdraw.
-- **Fog of war:** you see what your units, radar stations, recon aircraft and friendly regions can see. Weather reduces detection.
-
-### 6.4 Contact and battle generation
-
-When hostile forces meet in a region, the player chooses:
-- **Fight**
-- **Auto-resolve**
-- **Withdraw** (pursuit by a faster enemy costs some units)
-
-The generator builds the battlefield from:
-- region terrain
-- features (village, bridge, port)
-- weather and time of day
-- the forces involved
-- attack directions
-- fortifications
-
-| Region | Battlefield |
+| Faction | Identity |
 |---|---|
-| Plains | Rolling farmland, little cover, long sight lines |
-| Forest | Forest road with clearings and a village; concealment |
-| Hills / Mountains | Steep ridges and passes; height helps artillery and spotting |
-| Desert | Dunes and flats; heat; very long sight lines |
-| Marsh | Mud patches and a causeway road |
-| Urban | Streets with destructible buildings and rubble |
-| Coast | Beach landing: sea on one side, beach, bluffs, bunkers |
-| Island | Mostly sea: naval and air fighting around a small beach |
-| Sea zone | Open water: surface, air and underwater |
+| Harbour League | Maritime traders |
+| Directorate | Industrial land power |
+| Skyreach Concord | Sky clans |
+| Salvage Clans | Desert scavengers |
+| Lumen Collective | Relic technocrats |
 
-- **Flanking:** attack a region from two linked regions at once, and your forces enter from both edges of the battlefield.
-- **Fortifications** in a region add trenches, bunkers and anti-tank obstacles to the battlefield.
+- Each has its own home territory, strengths and weaknesses, look, signature parts and AI personality (see 09).
+- The player picks a faction at the start of a campaign; the other four are AI.
+- Unowned neutral villages are scattered between them.
 
-### 6.5 Winning the war
+## 4. Chain of command
 
-- **Win:** capture the Directorate capital, or break it. Its war capacity (industry + supply + morale) is tracked, and when it falls below a threshold it sues for peace.
-- **Lose:** your capital falls or your own capacity collapses.
-- **Difficulty settings** (chosen at campaign start): enemy industry, AI aggression, supply harshness, battle damage.
+### 4.1 Ranks
 
-## 7. Tactical battles
+- **Grand Admiral (the player):**
+  - Commands like an admiral, with their own flagship and fleet.
+  - Earns XP into ranks. Ranks give Command Points, which unlock the tech tree and perks.
+- **Admiral:**
+  - Leads one fleet (regiment).
+  - The admiral's level sets the fleet size (3 up to 11 ships) and the largest class of flagship they can command.
+- **Captain:**
+  - Commands one ship; every ship needs one.
+  - The captain's level sets the largest class they can command, and improves their AI skill.
+  - Captains **cannot move on their own**. A captain removed from a fleet is garrisoned where they are left:
+    - at a settlement, they join its garrison
+    - in the open, they become a field outpost that can be attacked, or picked up by any fleet of the same domain
+- **Quartermaster:** a cheap officer who leads **supply convoys** only. See §8.4.
 
-### 7.1 View and layers
+### 4.2 Fleets
 
-- Side view in landscape. The camera follows your controlled vehicle; the player can pan and pinch to look around.
-- **Vertical layers:**
-  - sky: aircraft, helicopters, falling bombs
-  - ground: terrain heightfield that craters
-  - sea surface: ships, landing craft
-  - underwater: submarines, torpedoes
-- Battlefields are 1.5–4 km long. A minimap strip shows everything spotted.
+- **One domain each.** A fleet (regiment) is all land, all sea or all air.
+- **Merging and transfers:** fleets in the same place can swap ships, captains and cargo, within fleet-size limits.
+- **Combined battles:** several fleets can fight together when they meet an enemy in the same place (§10.2).
+- **Orders on the map:**
+  - Move, Follow, Intercept, Patrol
+  - Siege (attack a settlement)
+  - Dock (at a settlement: trade, craft, repair, recruit)
+  - Detach captain, Transfer
+  - Supply route (convoys only)
 
-### 7.2 Command structure
+### 4.3 Start of a campaign
 
-**Your squad** is up to 3 vehicles. You drive one. The other two follow squad orders:
-- Follow (formation)
-- Escort (stay between you and threats)
-- Hold here
-- Attack my target
-- Fall back
+**Home territory:** a coastal home **City**, 2 **Villages** and 1 **Fort**.
 
-Tap a squad vehicle or press Swap to take control of it.
+**Fleets:**
 
-**The rest of your force** is organised into platoons of up to 4 units. They follow force orders:
-- Advance
-- Hold line
-- Flank (only when attacking from both edges)
-- Bombard (artillery or naval guns on a marked area)
-- Air strike
-- Air cover
-- Smoke screen
-- Withdraw
+| Fleet | Commander | Ships |
+|---|---|---|
+| Land | The Grand Admiral (flagship tank) | Flagship tank + 2 captains' tanks |
+| Sea | An admiral | 3 corvettes |
+| Air | An admiral | 3 gunships |
 
-Platoons arrive as reinforcement waves whenever the on-screen unit cap allows.
+**Other starting conditions:**
+- all designs use tier 0 parts: timber, iron bands, small guns, steam engines, canvas gas bags
+- some money, and a little fuel and ammo in the holds (08 §13)
+- the starting designs come from 10_PART_ROSTER batch F
 
-**Infantry** squads are not designed. Types are rifle, anti-tank, engineers, recon and AA. They are trained in barracks and carried by trucks or APCs with troop space. Engineers build and repair bridges and clear obstacles.
+## 5. Ships and classes
 
-### 7.3 Physics (the Bad Piggies feel)
+"Ship" means any large vehicle in its domain: landship, water ship or airship. The class sets the build grid and the part limit. The source of truth is `src/parts/classes.json`.
 
-**Ground vehicles**
-- A vehicle is one rigid body made of its parts. Its mass and centre of mass come from where the parts sit.
-- Wheels and track units are spring-damper contacts on the terrain heightfield. Engines drive them through the locomotion parts.
-- Grip depends on terrain softness and ground pressure (mass ÷ contact area).
-- Consequences the player should see:
-  - top-heavy designs tip over on slopes
-  - underpowered designs stall on hills
-  - long vehicles bridge trenches; short ones fall in
+| Captain level | Land | Sea | Air |
+|---|---|---|---|
+| 1 | Tank (16×8) | Corvette (32×10) | Gunship (24×10) |
+| 3 | Behemoth (28×12) | Destroyer (48×14) | Air frigate (36×14) |
+| 5 | Landship (44×16) | Cruiser (64×18) | Air cruiser (52×18) |
+| 8 | Land dreadnought (64×20) | Battleship (88×24) | Sky fortress (72×24) |
 
-**Ships and submarines**
-- Buoyancy comes from hull cells below the waterline, and draft rises with mass.
-- Holed hull cells flood, so the ship lists and can sink.
-- As built in v0.2.0: watertight parts are the hull and bow sections, keel, bulkheads and the marine diesel. A shell that goes through a hull part below the waterline leaves a hole; a destroyed one is a wide breach. Water fills the compartment from the bottom up; bulkheads and the keel stop it. A ship whose highest point goes under, or that rolls past about 75°, is out ("Sunk", "Capsized"). A land vehicle whose crew compartments go under is "Flooded".
-- Side view: ships drive forward and reverse like ground vehicles; they don't turn around.
-- Submarines (v0.2.1): ▲ ▼ set a depth order; the ballast tanks hold it and keep the boat level. Submerged, only electric motors drive, and the boat is hidden from everything but sonar.
-- Submarines trim with ballast tanks.
+Grid sizes are in 0.5 m cells.
 
-**Aircraft and helicopters**
-- Aircraft get lift from wing cells against their mass, and thrust against drag. They stall below minimum speed.
-- Helicopters get lift from the rotor against their mass.
-- As built in v0.2.2: aircraft squad members start in the air on any map (45 m up, helicopters 18 m). A design whose centre of mass is behind its centre of lift is unstable and can pitch up into a stall; the Drafting Office says so as a fact.
+**Drones**
+- Drones are smaller than every class and have no captain.
+- They are designed on a small grid with a part limit set by the drone computer: I = 8×4 grid, 6 parts; II = 10×5, 10 parts; III = 12×6, 16 parts.
+- They are carried and launched by carriers (§10.5).
 
-**Destroyed parts** detach and fly off as debris. A tank can lose its turret and keep driving.
+**Missiles**
+- Missiles are designed from missile parts in three sizes: small (6×1), medium (10×2) and large (16×3).
+- They are stored as items in magazines.
+- Large missiles can carry smaller missiles as cluster payloads.
 
-### 7.4 Weapons and damage
+## 6. Moving on the map
 
-**Weapons**
-- cannon (armour-piercing and high-explosive shells, ballistic arcs)
-- machine gun (fires automatically at soft targets and aircraft)
-- autocannon
-- howitzer (indirect fire, needs spotting)
-- rockets and missiles (guided when fire control or radar allows; ECM confuses them)
-- torpedoes
-- bombs
-- depth charges
-- AA guns
+- **Speed:** a fleet moves at the speed of its slowest ship, adjusted for terrain, roads, weather and cargo load.
+- **Fuel:** every ship burns fuel from its own tanks as it travels (08 §8).
+  - Ships can share fuel inside a fleet, and fleets can transfer fuel when they meet.
+  - A fleet with no fuel is **stranded**: it crawls at 10% speed on land and sea, and air fleets cannot move.
+- **Detection:** fleets see as far as their sensors reach. Radar, optics, spotting balloons and airship altitude all add range.
+  - Enemy fleets appear as contacts: first their size, then their class once closer.
+- **Contact:** hostile fleets that come within engagement range trigger a battle choice (§10.1).
 
-**How hits work**
-- Every shot is a projectile. When it reaches a vehicle, it is traced through the part grid.
-- Each cell has HP and armour thickness in mm.
-- Penetration (mm, falling with range) is compared with effective armour = thickness ÷ cos(impact angle).
-- Beyond about 70° the shot ricochets.
-- A penetrating shot damages the part it hits and spills into the parts behind it.
+## 7. Settlements
 
-**Part effects**
-| Part destroyed | Effect |
+### 7.1 Types and upgrade paths
+
+- **Village** → **City** → **Metropolis**
+- **Village** → **Fort** → **Citadel**
+
+Upgrades need wood, metal, electronics and money delivered to that settlement's warehouse, plus build time (08 §7).
+
+| | Village | City | Metropolis | Fort | Citadel |
+|---|---|---|---|---|---|
+| Produces | Wood, metal, money | More wood, metal, money | Most wood, metal, money, plus electronics | Nothing (costs upkeep) | Nothing (costs upkeep) |
+| Fuel and ammo market | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Resource market (wood, metal, electronics, scrap) | Small | ✔ | ✔ | Small | ✔ |
+| Crafts parts | | Tier 0–2 | All tiers | | |
+| Refines scrap → electronics | | ✔ | ✔ (better rate) | | |
+| Builds ships (yard) | | Classes 1–2 | All classes | | |
+| Repairs | Slow | ✔ | ✔ | Fast | Fast |
+| Recruits captains with ships | | | | Levels 1–4 (small and medium ships) | Levels 3–8 (big ships) |
+| Recruits admirals | | | | Levels 1–2 | Levels 1–5 |
+| Recruits quartermasters | | ✔ | ✔ | | |
+| Research | | Tier 1–2 | Tier 3–4 | | |
+| Walls and emplacement slots | None | Light walls, 2 slots | City walls, 4 | Strong walls, 4 | Fortress walls, 8 |
+| Garrison limit (ships) | 2 | 4 | 6 | 8 | 12 |
+
+"Class 1–2" means tank, corvette, gunship, behemoth, destroyer and air frigate.
+
+**Warehouses**
+- Each settlement's production goes into **its own warehouse**, which has a capacity.
+- When the warehouse is full, production of that resource stops.
+- Money goes straight to your treasury.
+
+**Emplacements**
+- These are weapon parts you install in wall slots, taken from that settlement's warehouse.
+- They fire in siege battles.
+
+**Garrison**
+- The garrison is made up of the captains and ships you leave at a settlement, plus a few militia ships by settlement type.
+
+### 7.2 Ownership
+
+- **Capture** a settlement by siege (§11).
+- **Neutral villages** can also be bought: a charter costs money and reputation with nearby factions.
+- **Captured settlements** keep their buildings. Production restarts after 2 days, and half their warehouse can be plundered into your holds.
+- **Every faction has a capital** (a metropolis or citadel).
+
+## 8. Resources and logistics
+
+### 8.1 Resources
+
+| Resource | Where it comes from | Where it is kept |
+|---|---|---|
+| **Money** | Settlement income, sales, plunder, bounties | **Universal treasury.** Usable by every fleet at once. |
+| **Wood, metal** | Villages, cities, metropolises | Warehouses and fleet holds |
+| **Electronics** | Refining scrap (city, metropolis), or produced directly by metropolises | Warehouses and fleet holds |
+| **Scrap** | Salvage from battles, scrap fields | Warehouses and fleet holds |
+| **Fuel, ammo** | Bought at any settlement | Ships' tanks and magazines, plus cargo |
+| **Parts** (items) | Crafted, salvaged, recovered | Warehouses and fleet holds |
+| **Missiles, drones** (items) | Crafted, or built in battle by fabricators | Magazines, hangars, holds |
+
+- Everything except money is **physical**: it exists in one place and takes cargo space.
+- To craft at a city, the materials must be in that city's warehouse or in the hold of a fleet docked there.
+
+### 8.2 What fleets consume
+
+- **Fuel:** for map travel and in battle.
+- **Ammo:** for guns. Flamethrowers burn fuel. Missiles and drones are items. Lasers and plasma use power and produce heat instead of ammo.
+- **Wood, metal and electronics:** for field repairs.
+- **Replacement parts:** needed when a part is destroyed.
+- **Money:** officers' wages and settlement upkeep, paid daily.
+
+### 8.3 Supply ships
+
+- Support ships carry the logistics. These are cargo trucks, tankers, supply ships, supply airships, repair and workshop ships, and salvage ships.
+- A combat fleet with no support ships is fast, but it runs dry.
+
+### 8.4 Convoys and supply routes
+
+**Quartermasters** lead convoys: fleets of support ships plus a small escort (up to 2 combat ships).
+
+**Standing supply route**, which runs automatically:
+1. Load at settlement A.
+2. Deliver to settlement B, or to a named fleet (meeting it wherever it is).
+3. Return.
+4. Repeat.
+
+Convoys are visible and can be raided. Protecting them is part of the war.
+
+### 8.5 Running dry
+
+| Out of | Effect |
 |---|---|
-| Engine | No drive |
-| Fuel tank | Fire (damage over time) |
-| Ammo storage | Chance to detonate, unless it is protected storage |
-| Wheels / tracks | Limping or immobilised |
-| Gun | Can't fire |
-| Turret ring | Turret can't turn |
-| Radar / sensors | Spotting drops |
-| Radio | Can't receive orders beyond line of sight |
-| Crew compartment | Crew casualties: slower reloads, then vehicle abandoned |
-| Hull below waterline | Flooding |
+| Fuel | Stranded; can't enter battle as a mover. Air fleets can't take off. |
+| Ammo | Guns silent. Energy weapons and missiles still work. |
+| Repair materials | No field repairs. |
+| Money | Wages unpaid: captain morale falls, and after 3 days captains may desert. Upkeep unpaid: settlement services stop. |
 
-**Knocked out:** a vehicle is out of the fight when its crew compartments are gone, when only locomotion is left, when its ammunition detonates, or when its parts are down to 30% of their total HP ("Wrecked").
+A fleet can win a battle and still have to limp home. That is intended.
 
-**Accuracy** = weapon base × fire control × crew skill × stationary bonus × visibility. The player can also aim manually for a precise shot (spread × 0.6).
+## 9. Parts: getting, swapping, upgrading
 
-**Spotting:** you can only target what someone sees. Sensors, height, weather, night, smoke and forest concealment all matter. In Part 1b: a crew sees 95 m (× 1.4 with optics), halved against a target in forest; smoke screens block the line of sight; firing reveals the shooter for a few seconds. Unseen enemies are not drawn and can't be targeted; a red arrow at the screen edge points to spotted enemies off screen.
+- **Crafting:** at cities (tier 0–2) and metropolises (all tiers). Parts must be unlocked in the tech tree or your faction's list. Crafting costs resources, money and time, and has a queue.
+- **Salvage:** after a battle you win, you recover a *portion* of the enemy's destroyed parts as damaged items, plus scrap. The rates are deliberately too low to sustain a campaign (08 §9).
+- **Swapping (refit):**
+  - Change a ship's parts at a city or metropolis yard, or in the field with a workshop ship (small parts only).
+  - Removed parts go back into the warehouse or hold.
+- **Upgrades (Mk II, Mk III):** paid at a workshop. Each mark offers two different directions to choose from, not a straight improvement.
+- **Condition:** parts wear with use, and salvaged parts arrive worn. Worn parts break down more often.
+- **Designs:**
+  - Designs and marks live in the Drafting Office (the designer).
+  - Saving a changed design makes the next mark.
+  - Ships in service keep their mark until refitted.
 
-### 7.5 Ending a battle
+## 10. Battles
 
-**Objectives by battle type:**
-- rout or destroy the enemy
-- take and hold the objective flag
-- hold until time runs out
-- get the convoy through
-- establish the beachhead
+### 10.1 Starting a battle
 
-**Withdraw** at any time. Units that leave by your edge survive.
+When fleets make contact, or a siege begins, a pre-battle card shows:
+- both sides' forces, as far as they've been spotted
+- the battlefield type and the weather
 
-**Results written back to the campaign:**
-- destroyed units are removed
-- wrecks can be recovered by recovery vehicles if you hold the field
-- damaged parts stay damaged
-- ammo and fuel are spent
-- crews gain experience
-- captured enemy wrecks become blueprints and part unlocks
+**Choices:**
+- **Fight.**
+- **Auto-resolve:** the same combat rules run headless.
+- **Retreat:** only if your slowest ship is faster than their fastest pursuer. Otherwise the retreat costs you the rearmost ships.
 
-### 7.6 Auto-resolve
+### 10.2 Battlefields and who can fight
 
-Auto-resolve runs the same combat rules as a fast headless simulation, so results match what would have happened. It is offered for every battle; the player picks which battles to fight in person.
+Side view, landscape, generated from the location.
 
-## 8. Construction (Drafting Office)
-
-### 8.1 Grid and rules
-
-Side-view grid; one cell = 0.5 m. Parts occupy one or more cells and can be flipped.
-
-| Chassis class | Grid size |
+| Where | Who can deploy |
 |---|---|
-| Light ground | 16×8 |
-| Heavy ground | 28×12 |
-| Aircraft | 32×12 |
-| Ship | 44×16 (was planned up to 80×24; 44×16 keeps cells readable on a phone) |
+| Inland (plains, forest, hills, desert, snow, ruins) | Land and air |
+| Open sea | Sea and air |
+| Coast | Land, sea and air |
+| Settlement (siege) | Depends on the settlement's position (coastal or inland) |
 
-**Placement rules:**
-- all parts must connect to the structure
-- locomotion must touch the lowest row
-- turrets need a turret ring
-- weapons need a mount (hull or turret)
-- crew need compartments
-- aircraft need wings or rotors
-- ships need a sealed hull with a keel
+- Every fleet (on both sides) within reinforcement range joins in.
+- Your roster is every ship of an allowed domain from those fleets.
+- Ships of domains that can't fight in that place stay out.
 
-The domain (ground, naval, submarine, air, helicopter) is worked out from the parts used.
+### 10.3 Three on the field
 
-### 8.2 Constraints and derived numbers
+- **Line-up:** each side has at most **3 ships on the field**. The rest wait in reserve, in the order you choose before the battle.
+- **Pull back:**
+  - The ship drives off the rear edge, and stays targetable until it leaves.
+  - It then returns to reserve.
+  - The next ship in line enters from the rear edge 5 s later.
+- **Destroyed ships** are replaced from reserve in the same way.
+- **Repairs in reserve:** reserve ships repair slowly if a ship in reserve carries a repair bay.
+- **Win condition:** the battle ends when one side has no ships left (on the field or in reserve), or it retreats.
 
-The designer shows these numbers:
-- mass and centre of mass
-- power: produced vs drawn (kW), and power-to-weight
-- top speed on each terrain, climb limit, tip angle, ground pressure
-- draft and reserve buoyancy (ships); stall speed (aircraft)
-- fuel use per hour, range
-- heat produced vs removed, adjusted for climate
-- reliability (expected breakdowns per 100 h)
-- crew needed vs available
-- armour per facing (front, side, top, bottom)
-- detection range
-- cost in the six resources, build time
-- cargo, ammo and fuel capacity
+### 10.4 Control and orders
 
-Warnings state facts only, e.g. "Power drawn exceeds power produced by 40 kW." Never judgements like "weak armour".
+- **Driving:** you drive **one** of your three on-field ships (the flagship by default) and can switch at any time.
+- **AI ships** are driven by their captains. Their skill depends on captain level.
+- **Orders** to any of your on-field ships:
+  - Move to point
+  - Fire at point or target
+  - Hold
+  - Pull back
+  - Utility: drop flares, drop smoke, launch drones, release a clamp
 
-### 8.3 Templates, random designs and scratch builds
+### 10.5 Carriers, drones, missiles, fabricators
 
-- **Starting templates (Mk.I):** Scout car, Light tank, Medium tank, Assault gun, Self-propelled howitzer, Half-track APC, Supply truck, Fuel tanker, Recovery vehicle, Gunboat, Destroyer, Submarine, Landing craft, Fighter, Bomber, Scout helicopter.
-- **Randomise:** generates a valid design for a chosen class and budget. It is seeded, and the player can re-roll.
-- **Scratch build:** an empty grid with a starter frame.
+**Drones**
+- **Launching:** drones launch from **hangar** parts. The **drone computer** (tier I–III) sets how many drones can fly at once and how big each drone design can be.
+- **Drone orders:** attack a target, defend the carrier, scout.
+- **Losing drones:** drones are lost if their carrier is destroyed or leaves the field. They can be rebuilt in battle by fabricators, or crafted at cities.
+- **Field limit:** drones don't count towards the 3-ship limit.
 
-### 8.4 Versions and refits
+**Missiles**
+- Missiles fire from racks and VLS launchers.
+- **Guidance:** unguided, radar or heat seeking; laser guidance comes later. Flares and ECM can defeat guidance.
+- **Warheads:**
 
-- Saving a changed design creates the next mark (Mk.I → Mk.II) with an automatic change log.
-- Units already in the field keep their mark until refitted at a workshop, repair depot or shipyard. A refit costs the difference in parts plus labour time.
-- A lineage view shows each design family tree.
+  | Warhead | Effect |
+  |---|---|
+  | High explosive (HE) | Blast damage |
+  | Napalm | Burning area; sets parts on fire |
+  | Acid | Armour corrodes over time |
+  | EMP | Electronics, turrets and drones stop working for a few seconds |
+  | Cluster | Splits into small missiles |
 
-### 8.5 Unlocking parts
+**Fabricators**
+- Fabricators build missiles, drones or ammo **during battle**, using the ship's own metal and electronics.
 
-Base parts are available from the start. More come from:
-- research at workshops (costs electronics and time)
-- reverse-engineering captured enemy wrecks
+**Release clamps**
+- These hold a detachable section: a drone, a bomb, or a whole module.
+- When released, the section becomes its own unit, guided by its drone computer if it has one; otherwise it falls free.
+- This makes missile barges, parasite fighters and drop-ship designs possible.
 
-### 8.6 The Workshop (HighFleet influence)
+### 10.6 Damage and aftermath
 
-The producer asked for a workshop where vehicles, ships and planes are customised and upgraded, taking HighFleet's parts, balancing and graphics as the model. The Workshop is the Drafting Office plus refits of existing units, reachable between ladder levels, from the title and at campaign workshops, repair depots and shipyards.
+- **Damage:** per part, physical, and it persists (as in v1): engines, weapons, lift, sensors, fires, flooding and falling airships.
+- **Destroyed ships** are gone. Their captain survives 60% of the time and returns unassigned; otherwise the captain is lost.
+- **Experience:** XP goes to captains, admirals and the Grand Admiral.
+- **Salvage and plunder:** the winner holds the field and gets salvage (§9), plus plunder in sieges.
 
-**What we take from HighFleet**
-- **Every part is a physical module with a price in weight.** Armour, guns, engines, fuel and ammo all add mass, and the machine visibly pays for it: it sits lower, climbs slower, accelerates slower, burns more fuel.
-- **Balance is shown, not scored.** Live markers on the blueprint: centre of mass, centre of lift (aircraft), waterline and centre of buoyancy (ships), contact base and tip angle (ground). An unbalanced design visibly leans in the preview before it ever reaches a battle.
-- **Thrust or power against weight is the headline number.** The top strip always shows mass, power-to-weight (ground), thrust-to-weight (air), reserve buoyancy (ships), top speed, fuel range and cost, as raw numbers.
-- **Damage is per module and stays.** A refit replaces destroyed or damaged modules; what isn't repaired stays damaged.
-- **Parts are bought, not levelled.** Upgrading means fitting a better part (37 mm → 75 mm, 20 mm → 40 mm plate, petrol S → diesel M), paid in resources (campaign) or Requisition (ladder). There are no stat sliders or upgrade levels (pillar 1).
-- **Supply of parts varies.** In the campaign, each workshop stocks the parts its region can make; rare parts come from research and captured wrecks (§8.5).
+## 11. Sieges
 
-**Refit flow**
-1. Pick a unit (or a design) and open it on the blueprint.
-2. Drag parts on and off. Each change shows its mass, cost and time delta, and the markers move.
-3. Test drive or test flight on the range (§4 Test Range).
-4. Confirm: the unit is refitted to the next mark. It costs the parts' price difference plus labour time (§8.4).
+- **Attacking** a settlement starts a siege battle. The battlefield is placed by the settlement's position.
+- **Defenders:**
+  - wall sections, which are static and destructible
+  - wall emplacements (weapon parts installed in slots)
+  - the gatehouse or keep
+  - garrison ships, rotating 3 at a time
+  - defence bonuses by type (08 §7)
+- **Winning:** destroy the garrison (on the field and in reserve), or destroy the keep.
+- **Losing:** a failed siege leaves the settlement damaged. Walls and emplacements repair over days.
 
-**Domains:** ground vehicles in Part 1c; ships, submarines, aircraft and helicopters in Part 2, with the same screen.
+## 12. Progression
 
-## 9. Logistics
+- **Captains:** levels 1–10. Level unlocks class access at 1, 3, 5 and 8, and improves AI accuracy and reactions.
+- **Admirals:** levels 1–10. Level sets fleet size (3 → 11) and flagship class.
+- **Grand Admiral:**
+  - levels 1–30
+  - each level gives Command Points
+  - Command Points unlock **tech nodes** (together with money, electronics and research at a city or metropolis) and **perks**
+- **Tech tiers:**
 
-### 9.1 What forces consume
+  | Tier | Name | Contents |
+  |---|---|---|
+  | T0 | Timber and iron | Start |
+  | T1 | Iron and steel | Steel hulls, diesel engines, tracks, rubber wheels |
+  | T2 | Heavy industry | Heavy guns, lift engines, rockets, flamethrowers, radar |
+  | T3 | Advanced | Missiles, drones, fabricators, composites, ECM |
+  | T4 | Precursor | Lasers, plasma, EMP, levitators, Precursor plating |
 
-- **Fuel:** by engine use and distance
-- **Ammunition:** by shots fired
-- **Spare parts:** for repairs and breakdowns
-- **Food:** per crew and infantry per day
-- **Construction materials:** for engineers and field works
+Full tree and perks: 08 §11–12.
 
-### 9.2 Supply network
+## 13. The AI factions
 
-Supply flows along this chain:
+- AI factions:
+  - grow their settlements
+  - run convoys
+  - hunt weak or stranded fleets
+  - besiege where they are strong
+  - build ships from their own faction designs within their tech level
+- Personalities per faction are in 09.
+- **Later (Part 5):** AI factions adapt their designs to counter what you field most.
 
-**producers → regional stockpiles → links → depots → supply radius → forces**
+## 14. Winning and losing
 
-- **Links** carry a limited amount per day: road by trucks, rail by trains, sea by cargo ships.
-- **Supply radius** is 2 links from a depot by road, more by rail.
-- **Support vehicles** travel with a force and carry a buffer that extends its reach: fuel tankers, ammo trucks, supply trucks, cargo and supply ships.
-- **Convoys** are visible on the map and can be raided.
+- **Win:** take every rival capital, or hold 60% of all settlements.
+- **Grand Admiral's flagship destroyed:** you escape to your nearest settlement, losing 20% of your money and 10% of your XP towards the next level.
+- **Lose:** when you have no settlements and no fleets left.
 
-### 9.3 Running dry
+## 15. Battle Simulator
 
-| Shortage | Effect |
-|---|---|
-| Low fuel | Slower, then immobile |
-| No ammo | Weapons silent |
-| No spare parts | No field repairs; breakdowns stay broken |
-| No food | Morale and experience loss, then infantry desert |
+This replaces the v1 Proving Ground. You can:
+- pick designs from your library
+- pick a battlefield and an enemy force by tier
+- fight straight away, with no campaign consequences
 
-Forces out of supply show a clear warning with the days left.
+It is also the test range for the Drafting Office.
 
-### 9.4 Repair and recovery
+**Optional later:** "Gauntlet", an endless ladder of battles with lives and score.
 
-- Repair vehicles and repair ships fix damaged parts in the field, using spare parts.
-- Recovery vehicles tow immobilised or recoverable wrecks back to repair depots.
-- Mobile workshops can refit near the front.
-- Major rebuilds need a repair depot or shipyard.
+## 16. Rewards and joy
 
-## 10. Economy
-
-### 10.1 Resources and chains
-
-| Resource | Chain |
-|---|---|
-| Wood | Forest camp → sawmill |
-| Metal | Iron mine → steel mill |
-| Fuel | Oil field or offshore rig → refinery |
-| Electronics | Copper mine + metal → electronics works (needs power) |
-| Rubber | Plantation (south), or synthetic rubber plant (fuel → rubber) |
-| Food | Farms, fisheries |
-
-- **Power:** power plants burn fuel or wood to supply regional electricity. Factories need it.
-- **Labour:** settlements provide workers. Buildings need workers. Population grows with food surplus and housing.
-- **Production:**
-  - vehicle factories build ground units
-  - shipyards build ships
-  - aircraft works build aircraft
-  - each factory has a build queue
-  - costs are drawn from stockpiles that must be delivered through the network
-  - build time scales with mass and complexity
-
-## 11. Infrastructure
-
-**Settlement tiers:** Village (2 building slots) → Town (5) → City (10). Growth needs a food surplus, housing (wood and metal), a road or rail connection, and time.
-
-**City buildings:**
-- factory, warehouse, refinery
-- vehicle factory, shipyard (port only), aircraft works
-- barracks, hospital (crew recovery)
-- workshop (research and refits), power plant
-- airfield, repair depot
-- steel mill, electronics works
-
-**Field structures** (any owned region):
-- mine, oil rig, farm
-- road upgrade, railway, bridge
-- radar station
-- fortifications: trenches, bunkers, anti-tank obstacles
-- port, depot
-
-**Damage:** battles and bombing damage buildings and links, e.g. a rail line cut or a bridge down. Repairs need construction materials, engineers and time. A retreating side may sabotage the regions it leaves.
-
-## 12. Persistence and history
-
-- **Unit records:** each unit has a name and a record of battles, kills, distance travelled and damage history.
-- **Crew veterancy:** Green → Trained → Veteran → Elite → Ace.
-  - Improves reload speed, accuracy, spotting, breakdown chance and morale.
-  - Crews can move to a new vehicle, e.g. a veteran crew in a fresh Mk.II.
-- **War journal:** automatic entries for battles, captures, new design marks and notable deeds.
-- **Hall of honour:** decorated units and crews.
-
-## 13. The enemy
-
-- **Strategic AI:**
-  - values regions by resources and supply
-  - attacks weak points and protects its own supply
-  - reacts to threats
-  - difficulty scales its production and aggression; it respects fog of war unless a difficulty setting says otherwise
-- **Evolving designs (Part 5):** the enemy starts with its own templates. It records what killed its units and adapts: more armour where it was penetrated, tracks where it bogged down, AA where it was bombed, cheaper designs where it lost on numbers. The more the player relies on one design, the more counters appear. This is the anti-meta engine.
-
-## 14. Proving Ground ladder (Part 1)
-
-### 14.1 Rules
-
-- Each level has one short goal.
-- You field a squad of 3 designs within a budget. If all 3 are lost, you lose a life and retry the level.
-- **Lives:** start with 3, gain 1 every 5 levels, maximum 5. Game over at 0.
-- `levelConfig(level)` controls:
-  - enemy count, types, armour, accuracy, reaction time and wave timing
-  - terrain roughness and features
-  - weather and time of day
-  - squad budget
-
-### 14.2 Introduction schedule
-
-One new idea every 2–3 levels:
-
-| Level | New idea |
-|---|---|
-| 1 | Flat farmland. Goal: destroy 3 parked supply trucks. Enemies don't shoot. |
-| 2 | Moving trucks and one machine-gun car that shoots back |
-| 3 | Hills |
-| 4 | Armoured light tanks: ricochets appear; side and rear shots penetrate |
-| 5 | Hold the ridge for 60 s. +1 life |
-| 6 | Mud patches: grip and ground pressure |
-| 7 | Enemy artillery, with incoming-shell warnings |
-| 8 | Escort your supply truck to the depot |
-| 9 | Forest: spotting and concealment |
-| 10 | Boss: heavy tank. Capturing its blueprint is the reward. +1 life |
-| 11 | Rain and dusk visibility |
-| 12 | Gaps and bridges: vehicle length matters |
-| 13 | Anti-tank guns in bunkers |
-| 14 | Coastal gunboats (Part 2a): the sea begins at 300 m; gunboats sail in and shell the shore |
-| 17 | Air raid (Part 2c): fighters, then a bomber and a helicopter, with a light tank on the ground. Only heavy machine guns, autocannons and AA guns reach aircraft |
-| 16 | Submarine hunt (Part 2b): a sea battle. Only ships and submarines deploy; with none in the squad, 2 Destroyers and a Gunboat are lent |
-| 15 | Night: sensors matter. +1 life |
-| 16+ | Mixes of earlier ideas with rising numbers; every 5th level is a named boss with a blueprint |
-
-Part 2 adds ladder levels with aircraft (you need AA), coastal gunboats and a submarine level. Level 14 became "Coastal gunboats" in v0.2.0. From level 16 on, about a quarter of the maps have a coast with a gunboat or two (a destroyer from level 28).
-
-**Ships in the squad:** a squad design with a hull deploys at the near edge of the sea. On a map without sea it stays in port (a toast says so) and the rest of the squad fights. The Workshop shows whether the next level has sea.
-
-### 14.3 Caps
-
-These keep high levels possible:
-- at most 10 enemies on screen
-- enemy accuracy at most 0.7
-- enemy reaction time at least 0.35 s
-- enemy speed multiplier at most 1.5
-- waves at least 6 s apart
-
-### 14.4 Workshop, score and saves
-
-- **Workshop between levels:** you earn Requisition from score and spend it on building or modifying designs within the ladder budget. Designs made here are kept for the campaign.
-- **Score comes from:**
-  - damage dealt and kills
-  - precision bonuses for hitting critical parts
-  - combo chains (kills within 4 s)
-  - level-clear, no-loss and time bonuses
-
-  Floating text shows every bonus as it happens.
-- **Saved:** best score, highest level (continue from it), blueprints, medals, settings.
-
-**Numbers as built in Part 1c** (tuning data in `07_data.js`):
-- Kill points: truck 100, machine-gun car and scout 150, light tank 300, medium 450, assault gun 500, howitzer 350, bunker 400, boss 1500. Kills within 4 s chain a combo: points × combo count.
-- Critical hit: +50 when your side destroys an enemy's engine, gun, crew compartment or ammunition.
-- Level clear: 200 + 50 × level; no losses +300; time bonus 5 points per second under 60 + 5 × level seconds.
-- Requisition earned = level score ÷ 10. New players start with 150.
-- Squad budget per level = 200 + 12 × level cost points (the starting squad costs 211).
-- Saving a design costs the part-price difference from the design you started from (a template, one of your designs or a blueprint); a randomised or scratch design costs its full part price.
-- Losing the squad (or the escorted truck) costs a life and retries the level; at 0 lives it is game over, and "Continue at level N" starts a new run there with 3 lives and score 0.
-
-## 15. Collection and rewards
-
-- **Blueprints gallery** (on the title screen): captured enemy designs, from ladder bosses and from wrecks recovered in the campaign.
-  - Each card shows the silhouette, name, where it was captured, and its stats.
-  - It can be opened in the Drafting Office as a starting point.
-- **Medals** for feats, e.g.:
-  - survive a ricochet
-  - a 5-kill combo
-  - climb a 40° slope
-  - win with no losses
-  - sink a ship with a torpedo
-  - keep one unit alive for 10 battles
-- **Level clear:**
-  - fanfare and paper-scrap confetti
-  - a stencil stamp "Objective complete" slams onto the screen
-  - reward reveal
+- **Floating text** for hits ("Penetrated", "Engine knocked out", "+150"), and combo multipliers.
+- **Battle-won card:** salvage reveal, XP bars filling, and medals.
+- **Captured-settlement ceremony:** the flag changes and a fanfare plays.
+- **Captured blueprints:** recovered enemy parts can be reverse-engineered at a metropolis to unlock that family. Captured blueprints make up the title-screen gallery.
+- **Medals and war journal** entries for feats.

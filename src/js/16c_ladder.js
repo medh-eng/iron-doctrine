@@ -1,5 +1,5 @@
 /* ==== 16c LADDER ==== */
-// The Proving Ground run: lives, score, continue, rewards (design/01 §14, §15).
+// The Gauntlet run (the v1 Proving Ground): lives, score, continue, rewards (design/01 §14, §15).
 
 const ladder = {
   get run() { return save.profile.run; },

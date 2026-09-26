@@ -1,14 +1,30 @@
-# Iron Doctrine: roadmap and release checklist
+# Iron Doctrine: roadmap and release checklist (v2)
 
-- Each part is a playable release on the GitHub Pages link. Part N is version 0.N.x.
-- A part may span several sessions (sub-steps a, b, c).
-- Each session ends with a Progress log row in the table at the bottom.
+- **Releases:** each part is a playable release on the GitHub Pages link. Part N is version 0.N.x.
+- **Sessions:** a part may span several sessions (sub-steps a, b, c).
+- **Progress log:** each session ends with a row in the table at the bottom.
+- **v2 note:** Part 1a (engine core) is the same as in v1. Keep whatever is already built. From 1b onwards the plan follows the v2 design (01).
 
-## Part 1: Proving Ground (v0.1)
+## Where the build stands going into v2 (v0.2.2)
 
-### Sub-steps
+v1 got as far as its Part 2c before the v2 design arrived. That work is kept and reused; it is not the v2 plan yet.
 
-**1a. Engine core** (done in v0.1.0; the home-screen manifest followed in v0.1.1)
+- **Done (Part 1a):** everything listed under 1a below, including the manifest and icons (v0.1.0 and v0.1.1).
+- **Already built, to be adapted to v2 (1b and 1c):**
+  - land physics (terrain heightfield, wheels and tracks, ground pressure, slopes, tipping, bogging)
+  - sea physics (buoyancy per hull cell, flooding, bulkheads), submarines, aircraft and helicopters
+  - projectiles, penetration by angle, per-part damage, fire, debris, spotting; kinetic and HE
+  - a squad of 3 with orders and swap, enemy AI, effects, floating text, battle music layers, Start/Stop time
+  - the Drafting Office v1 (land, sea, submarine, air grids, templates, randomise, stats drawer, marks)
+  - the AI-vs-AI title demo; blueprints and medals
+  - the v1 ladder, now labelled **Gauntlet** (the optional mode in 01 §15)
+- **Not built yet for v2:** the SVG part renderer and `PART_LIBRARY`-driven parts (parts are still defined in `07_data.js` and drawn in code), airships and envelopes, three-on-field with reserves, the command wheel, the Battle Simulator, and paint schemes.
+- **Still v1-only:** the PNG part-image route in `src/assets/parts` (design `07_ART_INTEGRATION`), superseded by the SVG library (`07_ART_AND_PARTS`).
+
+## Part 1: Battle core (v0.1)
+
+### 1a. Engine core (unchanged from v1) — done in v0.1.0 and v0.1.1
+
 - boot, landscape layout, rotate card
 - input router and transparent thumb controls
 - audio engine, first sound effects, title music
@@ -17,212 +33,156 @@
 - extend the test harness (the starter repo already has the build, test build, smoke test and screenshots)
 - optional: web app manifest and icons, so the home-screen app opens full screen and sideways
 
-**1b. Battle core** (done in v0.1.2)
-- terrain heightfield and generator: plains, hills, mud, forest, gaps
-- vehicle physics from part grids
-- projectiles, penetration, per-part damage, debris
-- basic spotting
-- squad of 3 with orders; enemy AI
-- effects and floating text
-- battle music with intensity layers
-- tactical Start/Stop time
+### 1b. Battle core: land and air
 
-**1c. Ladder and Drafting Office v1** (done in v0.1.3)
-- `levelConfig` from level 1 to unlimited, with introductions through level 15
-- lives, score, combos
-- level-clear celebration, life lost, game over
-- workshop between levels
-- Workshop / Drafting Office v1 (HighFleet-style, 01 §8.6): ~30 ground parts marked P1 in 05, 5 templates, randomise, scratch build, stats drawer, balance markers, test drive, marks, refits by fitting better parts
-- blueprint gallery and medals
-- AI-vs-AI demo battle behind the title
+- `05b_partrender.js`: port `tools/part-render.js`, with SVG paint tokens, auto-tiled structure and moving groups (07 §6). Composed ships are cached as sprites.
+- Designs load from `PART_LIBRARY.vehicles`. Use the batch F starting designs as soon as they exist; until then use simple placeholder designs built from materials plus `wpn_c75_std`.
+- **Physics:**
+  - land: terrain heightfield, wheels and tracks, ground pressure, slopes, tipping, bogging
+  - air: lift margin, thrust, climb and descend, falling when envelopes are lost
+- **Combat:**
+  - projectiles, penetration and angle, per-part damage, fire, debris, spotting
+  - damage types: kinetic and HE for now
+- **Three on the field and reserves:**
+  - line-up, pull back, entry from the rear edge
+  - destroyed ships replaced
+  - win and lose checks
+- **Control:** drive one ship and swap. The command wheel gives Move to, Fire at, Hold, Pull back, Smoke. The reserve drawer.
+- **Enemy AI:** captain skill by level; uses its own reserve rotation.
+- **Feel:** effects and floating text; battle music with intensity layers; tactical Start/Stop time.
 
-### Acceptance
+### 1c. Sea, Drafting Office v1, Battle Simulator
 
-- [x] A first-time player clears level 1 within about 30 s with only the two-line how-to.
-- [x] Both thumbs work at once. FIRE tap auto-aims; FIRE press-and-drag aims manually with a trajectory preview. Swap and the order chips work.
-- [x] Tap, drag and pinch on the world never steal a touch from the thumb controls.
-- [x] Start/Stop time freezes the battle while the camera and orders still work.
-- [x] The Pause card works. The game pauses automatically in the background and in portrait.
-- [x] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, an ammo rack can detonate.
-- [x] These emerge from the numbers without special-case code:
-  - a top-heavy design tips on a steep slope
-  - an underpowered design stalls on a hill
+- **Sea physics:** buoyancy per hull cell, waves, flooding and bulkheads. Coastal battlefields mix land, sea and air.
+- **Drafting Office v1** (ship tab):
+  - domain and class selector with grid and part limits
+  - palette of tier 0–1 parts and materials
+  - templates (the batch F designs), scratch build
+  - stats drawer (numbers only), marks and change log
+  - paint (schemes, custom colours, camouflage)
+- **Battle Simulator:** pick your designs, a battlefield and an enemy force by tier; fight straight away.
+- **Title screen:** AI-vs-AI demo battle behind it.
+
+### Acceptance (Part 1)
+
+- [ ] Both thumbs work at once. FIRE tap auto-aims; press-and-drag aims manually. Swap, Group and Utility work. The command wheel orders work.
+- [x] Tap, drag and pinch on the world never steal a touch from the controls. (v0.1.0)
+- [ ] Three-on-field works on both sides: pull back → the next ship arrives from the rear; destroyed ships are replaced; line-up order is respected.
+- [ ] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, lost envelopes make an airship fall, flooding sinks a ship.
+- [ ] These emerge from the numbers without special-case code:
+  - top-heavy designs tip
+  - underpowered designs stall on hills
   - tracks beat wheels in mud
-  - wheels are faster on flat ground
-- [x] Designer: templates, randomise and scratch build all work. Invalid placements are explained. Stats are numbers only. Saving creates Mk.II with a change log.
-- [x] Ladder: 3 lives, +1 every 5 levels, max 5. "Continue at level N" and best score persist. Boss blueprints appear in the title gallery.
-- [x] Audio:
-  - title theme, battle music with intensity layers, and the victory fanfare
-  - every Part 1 action has a distinct sound effect
-  - Music, Sound and Vibration toggles are remembered
+  - overloaded airships sink
+- [ ] Ships look like 07 describes: part art, auto-tiled hull and paint schemes render correctly at phone scale.
+- [ ] Designer: class limits are enforced and invalid placements explained. Saving makes the next mark.
+- [ ] Audio: every Part 1 action has a distinct sound; Music, Sound and Vibration toggles are remembered.
 - [ ] Smooth on a phone, no console errors, release checklist passed.
 
-## Part 2: Drafting Office, all domains (v0.2)
+## Part 2: World map and fleets (v0.2)
 
-### Scope
+- **World generation** (seeded):
+  - terrain, biomes, roads, ruins and scrap fields, sea
+  - weather that drifts
+  - faction territories (09 layout)
+  - settlements of all 5 types, each faction's capital, neutral villages
+- **Map rendering:**
+  - pre-rendered chunks and the tactical overlay
+  - pan and zoom
+  - fog of war, detection
+- **Clock:** Start/Stop, 1×/3×/10×, auto-stop events.
+- **Officers and fleets** (14b):
+  - the Grand Admiral, admirals, captains
+  - fleets per domain, fleet-size and class limits by level
+  - moving by domain rules, path preview with fuel
+  - stranding
+- **Faction choice** at New campaign; the starting set-up from 01 §4.3.
+- **Settlements (basic):** dock, buy and sell fuel and ammo at markets, the treasury.
+- **Contact → pre-battle card → battle or auto-resolve → results back on the map.**
+- **Persistence:** ship damage, losses and XP, captain survival; saves and loads.
 
-- The full parts catalogue from 05: naval, submarine, air, helicopter, systems and logistics parts.
-- The Workshop (01 §8.6) extended to ships, submarines, aircraft and helicopters: waterline, centre of lift and thrust-to-weight markers.
-- Live constraints: power, heat, reliability, crew, cost.
-- Physics for buoyancy, flooding, lift, stall and rotors.
-- Sky, sea and underwater layers in battles.
-- Weapons and systems: AA, missiles, ECM, torpedoes, bombs, depth charges.
-- Test range with a terrain, water and air selector.
-- Design lineage view.
-- New ladder ideas: air attacks, coastal gunboats, a submarine level.
+### Acceptance (Part 2)
 
-### Sub-steps
+- [ ] A new campaign in any faction starts with the correct home territory and 3 fleets.
+- [ ] Fleets move by domain rules; fuel burns; an empty fleet is stranded; path previews warn before it happens.
+- [ ] Buying fuel and ammo uses the global treasury from any docked fleet.
+- [ ] Battles start from map contact. Only allowed domains deploy. Results persist.
+- [ ] Removing a captain garrisons them where they're left. Captains can't move alone.
 
-**2a. Ships** (done in v0.2.0)
-- ship parts: hull section, bow section, keel, watertight bulkhead, marine diesel, ship propeller, manoeuvre thruster, twin 120 mm naval gun, 1000 L fuel tank
-- buoyancy per watertight cell, draft, trim, hull drag, propeller thrust (design/05 §7.3)
-- flooding through holes and destroyed hull parts, stopped by bulkheads; listing, sinking, capsizing
-- sea layer in battles: coast generator, water drawing, splashes, shells slowed by water
-- Drafting Office: ship class, waterline and centre-of-buoyancy markers, ship numbers, Gunboat and Destroyer templates, ship randomiser, ship scratch build
-- test range: sea trial for ships
-- ladder: level 14 "Coastal gunboats"; coasts with gunboats in random levels 16+
+## Part 3: Economy, logistics and sieges (v0.3)
 
-**2b. Submarines** (done in v0.2.1)
-- ballast tanks, electric motor, pressure hull section, diving with ▲ ▼ and automatic depth keeping
-- torpedoes (hits below the waterline flood), depth charges, sonar; Alt button and F key
-- underwater layer; submarine template and randomiser; the Destroyer carries depth charges, a torpedo tube and sonar
-- ladder: level 16 "Submarine hunt", a sea battle with a lent fleet when the squad has no ships
+- **Warehouses and holds:**
+  - physical cargo for every resource except money
+  - transfers between fleets and settlements
+  - capacity limits
+- **Production** by settlement type and biome; upkeep and wages; running dry (01 §8.5).
+- **Markets** for all goods, with stock and prices (08 §6).
+- **Workshop:** crafting queue; refinery (scrap → electronics).
+- **Yard:** build ships from designs; refit and swap; dock repair; field repair and the mobile workshop.
+- **Salvage and reverse-engineering;** scrap fields.
+- **Recruitment:** captains with ships, admirals, quartermasters, promotion.
+- **Convoys:** quartermasters, standing supply routes, the logistics view, raiding.
+- **Settlement upgrades** (village → city or fort → …).
+- **Sieges:** walls, emplacement slots (install parts), keep, garrison rotation, capture, plunder.
 
-**2c. Aircraft and helicopters** (done in v0.2.2)
-- wings, tail, aero engine, jet, gas turbine, air propeller, rotor, tail rotor
-- lift, stall, thrust-to-weight; rotor lift against mass; loops with a half roll to turn round
-- sky layer, bombs, 20 mm autocannon and 40 mm AA gun with flak; Fighter, Bomber, Scout helicopter templates
-- centre-of-lift marker and thrust-to-weight numbers; aircraft and helicopter randomisers; air test range; ladder level 17 "Air raid"
+### Acceptance (Part 3)
 
-**2d. Systems and constraints**
-- radar, ECM, sonar ranges; rocket pods, guided missiles, SAMs; missile hit rates
-- live constraints: heat, reliability, crew; remaining logistics parts
-- test range selector (land, sea, air); design lineage view
+- [ ] A campaign cannot be sustained on salvage alone. Supply routes visibly keep a fleet going.
+- [ ] Crafting only works with the materials physically at that settlement or in the docked hold.
+- [ ] A convoy on a standing route runs by itself, can be intercepted, and its loss is felt at the other end.
+- [ ] Sieges work from both sides. A captured settlement changes owner and restarts production after 2 days.
 
-### Acceptance
+## Part 4: Research and advanced warfare (v0.4)
 
-- [x] Over-armoured ships sit low and slow down.
-- [x] A holed ship lists and can sink; bulkheads contain flooding.
-- [x] An aircraft with too little wing stalls; a helicopter with too little power can't lift off.
-- [ ] Radar, ECM and fire control measurably change missile hit rates.
-- [x] Every domain can be driven with the drive pad.
-- [x] The randomiser makes valid designs in every class.
+- **Tech tree and perks:** Command Points, research at cities and metropolises (08 §11–12).
+- **Grand Admiral ranks;** admiral and captain levelling fully applied.
+- **Drafting Office:** Missile tab (missile designer) and Drone tab (drone designer, grid limit set by the drone computer).
+- **Missiles:** racks, VLS, magazines; guidance vs flares and ECM; warheads HE, napalm, acid, EMP, cluster.
+- **Carriers and drones:** hangars, drone computers, drone orders; drones lost when their carrier leaves or dies.
+- **Fabricators;** release clamps and detachable sections.
+- **Flamethrowers, lasers, plasma;** power and heat management; damage types and material resistances.
+- **Radar, ECM, stabilisers;** the tier 3–4 music layer.
 
-## Part 3: The War Map (v0.3)
+### Acceptance (Part 4)
 
-### Scope
+- [ ] Researching a node unlocks its parts for crafting and the designer. Command Points force real choices.
+- [ ] A drone carrier built in the designer launches drones that follow orders, and loses them when it retreats.
+- [ ] Every warhead type has a visible, distinct effect. Flares beat heat seekers more than radar seekers.
+- [ ] Energy weapons are limited by power and heat, not ammo.
 
-**Map and time**
-- seeded map generation: regions, terrain, features, links
-- real-time clock with Start/Stop, speeds and auto-stop events
-- fog of war
+## Part 5: Living world and polish (v0.5 → 1.0)
 
-**Forces**
-- armies, fleets and air groups made of persistent units
-- movement along links
-- a basic enemy strategic AI
+- **Faction strategic AI:** expand, run convoys, raid, besiege, defend capitals; personalities per 09.
+- **AI designs evolve** to counter what the player fields most (the no-meta pillar).
+- **Relations:** war and truce changes, reputation, charters for neutral villages.
+- **Win and lose conditions,** the war journal, medals, the blueprint gallery.
+- **Optional:** the Gauntlet mode.
+- **Balance pass** with simulator telemetry (08); performance pass on a mid-range Android phone.
+- **Accessibility pass:** text size, colour-blind-safe status icons, reduced motion.
 
-**Battles**
-- on contact: Fight, Auto-resolve or Withdraw
-- battlefield generator for forest, urban, desert, mountain, coast landing, island and open sea
-- flanking from two directions
-- force orders and reinforcement waves
+## Ongoing: art integration
 
-**Aftermath and saves**
-- after-action report
-- losses, damage and experience persist
-- 3 campaign save slots
-- war victory and defeat
+- Foundry zips arrive in any order (10_PART_ROSTER). Integrate them as CLAUDE.md describes, whenever they appear in the repo root.
+- **Code must never hard-code a part's look.** Everything comes from `PART_LIBRARY`.
+- **Placeholders:** until a part's art exists, the designer shows a labelled grey block with the part's footprint. The part is usable in code as soon as its JSON exists.
 
-### Acceptance
+## Release checklist (every part)
 
-- [ ] Losses carry over exactly.
-- [ ] Across 20 seeds, auto-resolved and hand-fought versions of the same battle give comparable outcomes.
-- [ ] The map pans and zooms smoothly on the phone.
-- [ ] Saving and loading mid-campaign restores everything.
-
-## Part 4: Economy, logistics and infrastructure (v0.4)
-
-### Scope
-
-**Economy**
-- six resources and their production chains
-- buildings and settlement growth
-- production queues and power
-
-**Supply**
-- supply network with capacity, depots and supply radius
-- supply and support vehicles and ships
-- visible convoys that can be raided
-- consumption of fuel, ammo, spare parts, food and materials
-- out-of-supply effects
-- repair and recovery
-
-**Infrastructure**
-- damage and repair
-
-**Interface**
-- resource strip
-- supply map layer
-
-### Acceptance
-
-- [ ] An army can win a battle and still be forced back by lack of supply.
-- [ ] Cutting a rail link visibly starves a front.
-- [ ] A village grows into a town with investment.
-
-## Part 5: A living war (v0.5 → 1.0)
-
-### Scope
-
-**Units and crews**
-- crew veterancy and crew transfer
-- refits at workshops
-
-**Progression**
-- research and reverse-engineering unlocks
-- war journal and hall of honour
-
-**Warfare**
-- combined operations: amphibious assaults with naval bombardment, air cover and landing craft
-- enemy design evolution
-- difficulty settings
-
-**Finish**
-- button layout editor
-- balance pass, performance pass, polish
-
-### Acceptance
-
-- [ ] Enemy designs visibly change in response to what the player uses.
-- [ ] A D-Day-style landing is playable from start to finish.
-- [ ] A 1-hour campaign session on the phone has no slowdown.
-
-## Release checklist (every publish)
-
-**Code and tests**
-- [ ] `node build.mjs` passes. It includes the syntax check, the no-test-code check and the no-external-URL check.
-- [ ] Playwright passes at 640×360, 800×360, 915×412 and 1280×720, plus 360×640 portrait, with zero console or page errors.
-- [ ] Autoplay covers level up, life lost, game over, continue, pause and resume, Start/Stop time, a settings change, reload with the save kept, and this part's new features.
-
-**Screenshots**
-- [ ] Nothing is cut off by notches or safe areas.
-- [ ] HUD, controls and drawers don't overlap.
-- [ ] Text is readable at 360 px screen height.
-- [ ] Transparent controls stay visible over both bright and dark scenes.
-
-**Saves and file**
-- [x] Save migration tested using a blob from the previous SAVE_VERSION. (v1 → v2, in the smoke test)
-
-**Accessibility**
-- [ ] Reduced motion is respected.
-- [ ] Vibration follows its own toggle.
-
-**Publish**
-- [ ] GAME_VERSION bumped.
-- [ ] `docs/` rebuilt and committed with the source; branch merged to `main` so GitHub Pages updates.
+- [ ] `node build.mjs` passes (part library, syntax, no test code, no external URLs).
+- [ ] `npm test` passes at all 5 viewports with no console errors. Screenshots reviewed.
+- [ ] Scripted play covers the new systems (04 §10).
+- [ ] Tested on a real Android phone in Chrome: landscape, both thumbs, pinch, background → auto-pause.
+- [ ] Old saves migrate or are backed up with a message.
+- [ ] `GAME_VERSION` bumped; `docs/` rebuilt and committed.
+- [ ] Progress log row added below.
 
 ## Progress log
+
+| Date | Part | Version | What changed | Notes / next |
+|---|---|---|---|---|
+| 2026-09-26 | Design v2 | 0.2.3 | Design v2 and the part library pipeline applied from the update pack. Design 01–06 rewritten, 07–10 added. The build now checks `src/parts` and `src/vehicles` and bundles them into the game as `PART_LIBRARY` (1 part, the golden sample 75 mm gun, and 1 test design). Part checker and preview tools added. The v1 Proving Ground ladder is now called the Gauntlet on the title screen and in medals. Kept from before: the static-site build (not one file) and all v1 game code. | The game doesn't use `PART_LIBRARY` yet; parts are still built in code. The title menu doesn't have the v2 items yet (campaign, Battle Simulator), since those screens don't exist. | Part 1b (v2): port the part renderer, then three-on-field and reserves |
+
+### v1 progress log (before design v2)
 
 | Date | Version | Done | Known issues | Next |
 |---|---|---|---|---|

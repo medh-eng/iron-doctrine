@@ -1,0 +1,17 @@
+{
+  "id": "test_gun_block",
+  "name": "Test gun block",
+  "domain": "land",
+  "class": "tank",
+  "notes": "Pipeline test only: structure auto-tiling plus one component part. Not a real template.",
+  "cells": [
+    { "m": "arm20", "x": 1, "y": 4, "w": 8, "h": 2 },
+    { "m": "slope40", "x": 9, "y": 4, "o": 0 },
+    { "m": "slope40", "x": 0, "y": 4, "o": 1 },
+    { "m": "steel_plate", "x": 2, "y": 3, "w": 4, "h": 1 },
+    { "m": "plank", "x": 1, "y": 6, "w": 9, "h": 1 }
+  ],
+  "parts": [
+    { "p": "wpn_c75_std", "x": 6, "y": 3 }
+  ]
+}

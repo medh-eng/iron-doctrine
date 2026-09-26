@@ -1,0 +1,356 @@
+{
+ "_about": "Structure cell materials (design/05 \u00a71, design/07 \u00a74). Stats are per 0.5 m cell. look.kind picks the auto-tile style.",
+ "timber": {
+  "name": "Timber frame",
+  "tier": 0,
+  "mass": 40,
+  "hp": 25,
+  "armor": 3,
+  "cost": {
+   "wood": 1
+  },
+  "burns": true,
+  "look": {
+   "kind": "wood",
+   "color": "#A8743F",
+   "paintable": false,
+   "rivets": false,
+   "seam": 2
+  }
+ },
+ "plank": {
+  "name": "Plank hull",
+  "tier": 0,
+  "mass": 70,
+  "hp": 40,
+  "armor": 8,
+  "cost": {
+   "wood": 2
+  },
+  "burns": true,
+  "look": {
+   "kind": "wood",
+   "color": "#A8743F",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": false,
+   "seam": 3
+  }
+ },
+ "ironwood": {
+  "name": "Iron-banded plank",
+  "tier": 0,
+  "mass": 110,
+  "hp": 55,
+  "armor": 12,
+  "cost": {
+   "wood": 2,
+   "metal": 1
+  },
+  "burns": true,
+  "look": {
+   "kind": "wood",
+   "color": "#8E6035",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "wood_hull": {
+  "name": "Wooden ship hull",
+  "tier": 0,
+  "mass": 90,
+  "hp": 50,
+  "armor": 8,
+  "cost": {
+   "wood": 3
+  },
+  "burns": true,
+  "hull": true,
+  "look": {
+   "kind": "wood",
+   "color": "#8E6035",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": false,
+   "seam": 3
+  }
+ },
+ "canvas_bag": {
+  "name": "Canvas gas bag",
+  "tier": 0,
+  "mass": 12,
+  "hp": 15,
+  "armor": 0,
+  "cost": {
+   "wood": 1,
+   "money": 8
+  },
+  "lift": 1.6,
+  "burns": true,
+  "look": {
+   "kind": "envelope",
+   "color": "#B9A77A",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": false,
+   "seam": 4
+  }
+ },
+ "iron_frame": {
+  "name": "Iron frame",
+  "tier": 1,
+  "mass": 60,
+  "hp": 40,
+  "armor": 5,
+  "cost": {
+   "metal": 1
+  },
+  "look": {
+   "kind": "frame",
+   "color": "#4F565E",
+   "paintable": false,
+   "rivets": true,
+   "seam": 1
+  }
+ },
+ "steel_plate": {
+  "name": "Steel hull plate",
+  "tier": 1,
+  "mass": 120,
+  "hp": 60,
+  "armor": 15,
+  "cost": {
+   "metal": 2
+  },
+  "look": {
+   "kind": "plate",
+   "color": "#8A9199",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "arm20": {
+  "name": "Armour 20 mm",
+  "tier": 1,
+  "mass": 190,
+  "hp": 80,
+  "armor": 20,
+  "cost": {
+   "metal": 3
+  },
+  "look": {
+   "kind": "plate",
+   "color": "#8A9199",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "steel_hull": {
+  "name": "Steel ship hull",
+  "tier": 1,
+  "mass": 150,
+  "hp": 70,
+  "armor": 12,
+  "cost": {
+   "metal": 3
+  },
+  "hull": true,
+  "look": {
+   "kind": "plate",
+   "color": "#8A9199",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 3
+  }
+ },
+ "rigid_env": {
+  "name": "Rigid envelope",
+  "tier": 1,
+  "mass": 20,
+  "hp": 35,
+  "armor": 2,
+  "cost": {
+   "metal": 1,
+   "wood": 1,
+   "money": 12
+  },
+  "lift": 1.8,
+  "look": {
+   "kind": "envelope",
+   "color": "#D8CCAA",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": true,
+   "seam": 3
+  }
+ },
+ "arm40": {
+  "name": "Armour 40 mm",
+  "tier": 2,
+  "mass": 380,
+  "hp": 120,
+  "armor": 40,
+  "cost": {
+   "metal": 5
+  },
+  "look": {
+   "kind": "plate",
+   "color": "#8A9199",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "arm80": {
+  "name": "Armour 80 mm",
+  "tier": 2,
+  "mass": 760,
+  "hp": 180,
+  "armor": 80,
+  "cost": {
+   "metal": 9
+  },
+  "look": {
+   "kind": "heavy",
+   "color": "#4A4E55",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "slope40": {
+  "name": "Sloped armour 40 mm",
+  "tier": 2,
+  "mass": 300,
+  "hp": 110,
+  "armor": 40,
+  "cost": {
+   "metal": 5
+  },
+  "shape": "slope",
+  "look": {
+   "kind": "plate",
+   "color": "#8A9199",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "bulkhead": {
+  "name": "Watertight bulkhead",
+  "tier": 2,
+  "mass": 200,
+  "hp": 100,
+  "armor": 10,
+  "cost": {
+   "metal": 2
+  },
+  "hull": true,
+  "stopsFlooding": true,
+  "look": {
+   "kind": "plate",
+   "color": "#4F565E",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": true,
+   "seam": 1
+  }
+ },
+ "composite": {
+  "name": "Composite armour",
+  "tier": 3,
+  "mass": 330,
+  "hp": 130,
+  "armor": 45,
+  "cost": {
+   "metal": 4,
+   "elec": 1
+  },
+  "resist": {
+   "fire": 0.5,
+   "plasma": 0.6,
+   "acid": 0.7
+  },
+  "look": {
+   "kind": "composite",
+   "color": "#6B7079",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": false,
+   "seam": 2
+  }
+ },
+ "alloy": {
+  "name": "Light alloy",
+  "tier": 3,
+  "mass": 90,
+  "hp": 55,
+  "armor": 14,
+  "cost": {
+   "metal": 3,
+   "elec": 1
+  },
+  "look": {
+   "kind": "alloy",
+   "color": "#B7C3CF",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": false,
+   "seam": 3
+  }
+ },
+ "armored_env": {
+  "name": "Armoured envelope",
+  "tier": 3,
+  "mass": 45,
+  "hp": 70,
+  "armor": 8,
+  "cost": {
+   "metal": 2,
+   "elec": 1,
+   "money": 20
+  },
+  "lift": 1.7,
+  "look": {
+   "kind": "envelope",
+   "color": "#8E9BA8",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": true,
+   "seam": 2
+  }
+ },
+ "precursor": {
+  "name": "Precursor plating",
+  "tier": 4,
+  "mass": 260,
+  "hp": 150,
+  "armor": 50,
+  "cost": {
+   "metal": 4,
+   "elec": 3,
+   "scrap": 6
+  },
+  "resist": {
+   "laser": 0.5,
+   "emp": 0.5
+  },
+  "look": {
+   "kind": "precursor",
+   "color": "#2B3440",
+   "paintable": false,
+   "rivets": false,
+   "seam": 2
+  }
+ }
+}

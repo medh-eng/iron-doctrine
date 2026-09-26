@@ -1,280 +1,281 @@
-# Iron Doctrine: controls and UI
+# Iron Doctrine: controls and UI (v2)
 
 ## 1. Principles
 
-- **Landscape, full screen.** The world fills the whole screen. The HUD and controls float on top as translucent "acetate" layers, so the world always shows through.
-- **Transparent thumb controls** sit in the bottom corners and brighten only when touched.
-- **Touch the world directly.** Anything a button does can also be done by touching the world, where that makes sense: tap, drag, long-press, pinch.
-- **Sizes:**
-  - text: sentence case, 12 CSS px minimum; primary labels 14–16 px
-  - touch targets: at least 44 px
-  - thumb buttons: 64–88 px (size setting)
+- **Landscape, full screen.** The HUD and controls are translucent overlays (smoked acetate), so the world always shows through.
+- **Thumb controls** sit in the bottom corners. They are transparent until touched.
+- **Touch the world directly:** tap, drag, long-press and pinch anywhere.
+- **Text:** sentence case. At least 12 CSS px; primary labels 14–16 px.
+- **Sizes:** touch targets at least 44 px. Thumb buttons 64–88 px, set by the size setting.
+- **Safe areas** on all four sides.
+- **Portrait** shows the rotate card and pauses the game.
 
 ## 2. Screen map
 
-- **Title** → Proving Ground, Campaign, Drafting Office, Blueprints, Settings
-- **Proving Ground:** Workshop ↔ Battle → Level clear, Life lost or Game over
-- **Campaign:** Map ↔ region, force and production drawers ↔ Drafting Office ↔ Battle → After-action report
-- **Overlays anywhere:** Pause card, Settings, Rotate card
+- **Title** → Continue campaign, New campaign (pick a faction), Battle Simulator, Drafting Office, Blueprint gallery, Settings.
+- **Campaign:** World map ↔ fleet panel, settlement panel, logistics view, research and perks, Drafting Office, war journal.
+- **Battle:** pre-battle card → battle → result card (salvage, XP, losses).
+- **Overlays anywhere:** Pause card, Settings, Rotate card.
 
 ## 3. Battle screen
 
 ```
-+--------------------------------------------------------------------+
-| [sq1][sq2][sq3]  Destroy the trucks  ====---- 3/5  [minimap] T P S |
-|                                                          (Follow)  |
-|                                                          (Escort)  |
-|                     world, full screen                   (Hold)    |
-|                                                          (Attack)  |
-|                                                          (Back)    |
-|      (^)                                         (Alt)   (Swap)    |
-|  (<)     (>)                                         (FIRE)        |
-|      (v)                                    (Special)              |
-+--------------------------------------------------------------------+
-T = Start/Stop time   P = Pause   S = Settings
++------------------------------------------------------------------------+
+| [ship1][ship2][ship3] [Reserve 5 >]  Objective ===---  [minimap] T P S |
+|                                                                        |
+|                        world (full screen)                             |
+|                                                                        |
+|      (^)                                            (Group)  (Swap)    |
+|  (<)     (>)                                               (FIRE)      |
+|      (v)                                       (Utility)               |
++------------------------------------------------------------------------+
+T = Start/Stop time (tactical freeze)   P = Pause   S = Settings
 ```
 
 ### 3.1 Top bar
 
-About 34 px tall, translucent. Left to right:
-
-- **Squad cards:** 3 small silhouettes with health, fuel and ammo bars. The vehicle you control is outlined. Tap a card to take control of that vehicle.
-- **Objective:** text plus a progress bar. In the ladder this area also shows the level, score and lives (lives drawn as dog tags).
-- **Minimap strip:** the terrain line, spotted units as dots, and the camera window.
-- **Start/Stop time:** tactical freeze. The simulation stops, but you can still pan, zoom, pick targets and give orders. Tap again to resume.
-- **Pause:** opens the pause card.
-- **Settings.**
+- **Ship cards:** your 3 on-field ships, showing silhouette, captain level, and bars for hull, fuel, ammo and heat.
+  - The ship you drive is outlined.
+  - Tap a card: drive that ship.
+  - Long-press a card: open that ship's command wheel (§3.4).
+- **Reserve button:** opens the line-up drawer.
+  - Reserve ships are listed in order, with condition.
+  - Drag to reorder.
+  - "Send in" swaps the selected reserve ship for a chosen on-field ship, which then pulls back.
+- **Objective and minimap:** the minimap strip shows the whole battlefield, including incoming reserves.
+- **Start/Stop time:** tactical freeze. The simulation stops, but the camera and orders still work.
 
 ### 3.2 Left thumb: drive pad
 
-Translucent discs. ◀ and ▶ are large; ▲ and ▼ appear only for vehicles that climb or dive.
-
-| Vehicle | ◀ ▶ | ▲ ▼ |
+| Ship type | ◀ ▶ | ▲ ▼ |
 |---|---|---|
-| Ground, ship | Drive back / forward | Hidden |
-| Helicopter | Move | Altitude |
-| Submarine | Move | Depth |
-| Aircraft | ▶ throttle up; ◀ throttle down (hold at low speed to turn around) | Pitch |
+| Land, sea | Drive back / forward | Hidden |
+| Airship | Move | Climb / descend |
 
-Pressing ◀ and ▶ together is the **halt/brake**.
-
-As built (v0.2.2), aircraft: ◀ ▶ change the throttle (±60% a second); ▲ ▼ are the elevator, and letting go holds level flight; holding ▲ loops the aircraft, which rolls level facing the other way at the top (this replaces "hold ◀ at low speed to turn around"). Fire shoots every gun fixed along the nose; Alt drops a bomb. The readout shows throttle and height, and STALL in red. Helicopters: ◀ ▶ move (the body tilts and turns to face the way it goes), ▲ ▼ move the height order.
-
-As built (v0.2.1): ▲ ▼ sit above the middle of the pad, with the depth and the depth order written above them. For a submarine, holding ▼ moves the order down at 2 m/s and ▲ up; above the surfaced level the order becomes "surface" and the tanks are blown. Alt shows the secondary weapon and what is left ("Torp 2", "Charge 6"): torpedo at the target, or depth charges when a submarine is within 40 m. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
+Pressing ◀ and ▶ together is the **halt/brake**. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
 
 ### 3.3 Right thumb: action cluster
 
-- **FIRE** (largest):
-  - Tap: fire the main weapon at the current target using the fire-control solution.
-  - Press and drag: manual aim. A dotted trajectory preview follows your thumb; release to fire. Drag back onto the button to cancel.
-  - A ring around the button shows reload progress.
-- **Alt:**
-  - Tap: fire the secondary weapon (missiles, rockets, torpedoes, bombs).
-  - Long-press: cycle secondary weapons.
-  - Machine guns and AA guns fire automatically.
-- **Swap:** take control of the next squad vehicle.
-- **Special:** a context action, such as smoke, deploy stabiliser spades, drop cargo, field repair, or emergency surface/dive. In Part 1 it fires the smoke launcher, and is hidden when no squad vehicle has one.
-- Alt is hidden while the controlled vehicle has no secondary weapon.
+- **FIRE:**
+  - Tap: fire the selected weapon group at the current target, using the fire-control solution.
+  - Press and drag: manual aim with a trajectory preview; release to fire.
+  - A ring around the button shows the reload.
+- **Group:** cycle weapon groups (guns, missiles, flamethrowers, energy). The icon shows the group; a small bar shows ammo or heat.
+- **Swap:** drive the next on-field ship.
+- **Utility:** quick flares or smoke for the ship you're driving. Long-press for the full utility list: flares, smoke, launch drones, release clamp.
 
-### 3.4 Order chips
+### 3.4 Command wheel
 
-A vertical column on the right edge, above the action cluster: **Follow, Escort, Hold, Attack, Back.** The active order is lit.
+Opened by long-pressing a ship card or a ship in the world.
 
-In campaign battles an extra **Command** chip opens a radial menu of force orders: Advance, Hold line, Flank, Bombard (then tap an area), Air strike (tap an area), Air cover, Smoke, Withdraw.
+| Order | How |
+|---|---|
+| Move to | Tap a point |
+| Fire at | Tap a target or point |
+| Hold | Stay put |
+| Pull back | Return to reserve |
+| Flares | |
+| Smoke | |
+| Launch drones | Then tap a target or point |
+| Release | Detach a clamped section |
+
+- Orders confirm with a radio blip and a small grease-pencil marker in the world.
 
 ### 3.5 World gestures
 
 | Gesture | What it does |
 |---|---|
-| Tap enemy | Set as target (for you and for the Attack order) |
-| Tap own vehicle | Take control (if in your squad) or select its platoon to see its orders |
-| Long-press ground | Squad-mates move there and hold |
-| One-finger drag on empty world | Pan the camera; it stops following your vehicle and a Recenter chip appears |
-| Pinch | Zoom 0.35×–2× |
+| Tap enemy | Set the target |
+| Tap own ship | Drive it |
+| Long-press own ship | Command wheel |
+| One-finger drag | Pan the camera (a Recenter chip appears) |
+| Pinch | Zoom 0.5×–2× |
 | Double-tap | Reset zoom |
 
-**Follow camera:** while it follows your vehicle, the camera pulls back (down to 0.55×) to keep your target or the nearest spotted enemy in view. A pinch sets your own zoom, which the camera keeps until you double-tap.
-
-After 4 s without touching the world, the camera recenters on its own (this can be turned off in Settings).
-
-### 3.6 Gesture arbitration
-
-- A touch that **starts inside a control** belongs to that control until it is released (pointer capture). Every other touch goes to the world.
+**Arbitration rules:**
+- A touch that starts on a control belongs to that control until it is released.
 - Two world touches at once are a pinch.
-- Touches that start within 24 px of a screen edge are ignored for world gestures, to avoid Android's back gesture.
-- Tap timing is judged from the `pointerdown` event's `event.timeStamp`.
+- Touches within 24 px of a screen edge are ignored, to avoid Android's back gesture.
+- Timing uses `event.timeStamp`.
 
-## 4. Map screen (campaign)
+### 3.6 Pre-battle and result cards
+
+- **Pre-battle card:**
+  - forces on both sides (enemy shown as far as spotted)
+  - battlefield type and weather
+  - line-up editor (drag to order)
+  - buttons: Fight, Auto-resolve, Retreat (with its cost shown)
+- **Result card:**
+  - win or loss stamp
+  - losses, damage and XP bars
+  - salvage reveal (items flip in one by one)
+  - "Load salvage" (limited by cargo space)
+
+## 4. World map
 
 ```
-+--------------------------------------------------------------------+
-| Day 12, 06:00 | wood 820+ metal 1.2k+ fuel 640- elec 90 ... | P S  |
-|                                                 +---------------+  |
-|                                                 | region/force  |  |
-|        map: drag to pan, pinch to zoom          | drawer (tabs) |  |
-|                                                 +---------------+  |
-|                                                                    |
-|  (< force)  (force >)                    (1x)(3x)(10x) ( > Start ) |
-+--------------------------------------------------------------------+
++------------------------------------------------------------------------+
+| Day 12, 06:00 | Treasury 4,820 | [fleet cargo strip]          | R P S  |
+|                                                   +------------------+ |
+|                                                   | fleet/settlement | |
+|        map: drag to pan, pinch to zoom            | panel (tabs)     | |
+|                                                   +------------------+ |
+|  (< fleet)  (fleet >)                         (1x)(3x)(10x) (> Start)  |
++------------------------------------------------------------------------+
+R = Research and perks   P = Pause   S = Settings
 ```
 
-### 4.1 Time and forces
+### 4.1 Top bar and thumbs
 
-- **Start/Stop:** a big translucent button at bottom right, labelled ▶ Start when stopped and ■ Stop when running, with speed chips beside it. When the clock stops automatically, a toast says why.
-- **Force cycling:** ◀ ▶ at bottom left cycle through your forces; the camera flies to each one.
+- **Top bar:**
+  - date and time
+  - **treasury** (money is global)
+  - the **selected fleet's cargo strip**: fuel, ammo, wood, metal, electronics, scrap, parts, with capacity used
+  - Research, Pause, Settings
+- **Thumb buttons:**
+  - ◀ ▶ cycle your fleets; the camera flies to each.
+  - The **Start/Stop** clock sits with speed chips (1×, 3×, 10×).
+  - When the clock stops on its own, a toast says why.
 
 ### 4.2 Touching the map
 
-- **Tap a region:** opens the region drawer with terrain, features, settlement, buildings, stockpile, supply status and the build menu.
-- **Tap a force:** opens the force drawer with its units, supply days left, stance and orders.
-- **Move a force:** with a force selected, tap a destination. A path preview shows travel time and fuel; tap Confirm (or tap the destination again).
-- **Long-press a region:** opens a quick-build radial menu.
+- **Tap a fleet:** fleet panel. With a fleet selected, tap a destination: the path preview shows travel time, **fuel needed vs fuel held**, and a warning if you'll be stranded.
+- **Tap a settlement:** settlement panel.
+- **Long-press:** a quick-order radial menu (Move, Follow, Intercept, Siege, Patrol).
+- **Layer toggles:** Supply routes, Terrain, Territory, Weather, Fog.
 
-### 4.3 Map information
+### 4.3 Fleet panel tabs
 
-- **Layer toggles** (under the top bar, right): Supply, Terrain, Resources, Fog.
-- **Resource strip:** each resource shows an icon drawn in code (not emoji), the amount and a trend arrow. Tap it for a breakdown.
+- **Ships:** list with class, captain and level, condition and fuel.
+  - Detach captain here.
+  - Transfer ships to another fleet in the same place.
+- **Cargo:** the hold contents, and transfers to a docked settlement or a nearby fleet.
+- **Orders:** stance and route. Convoys get **supply route** editing here.
+- **Admiral:** level, fleet-size cap, flagship class cap, XP.
 
-## 5. Drafting Office
+### 4.4 Settlement panel tabs
+
+Only the services that type has are shown (01 §7.1).
+
+| Tab | What's there |
+|---|---|
+| Overview | Owner, type, production, warehouse, garrison, walls |
+| Market | Buy and sell fuel, ammo and resources, with the docked fleet's hold |
+| Warehouse | Move goods between the warehouse and the docked fleet |
+| Workshop | Craft parts, upgrade parts (Mk II and III), crafting queue |
+| Refinery | Scrap → electronics |
+| Yard | Build ships from designs, refit and swap parts, repair |
+| Barracks | Recruit captains with ships, admirals, quartermasters |
+| Walls | Emplacement slots: install weapon parts |
+| Upgrade | Village → city or fort, and so on; shows costs vs warehouse stock |
+
+## 5. Logistics view
+
+- A map layer showing:
+  - every convoy route, with arrows
+  - each fleet's fuel days and ammo
+  - warehouse stock levels as small bars on settlements
+- Fleets or convoys running low glow amber; stranded ones glow red.
+
+## 6. Drafting Office
 
 ```
-+--------------------------------------------------------------------+
-| < Back   Medium tank Mk.II (rename)   24.1 t  310/420 kW  ...    S |
-| +--------+                                         +------------+  |
-| | Struct |                                         | Stats      |  |
-| | Mobil. |          blueprint grid                 | terrain    |  |
-| | Weapon |       (pinch zoom, 2-finger pan)        | costs      |  |
-| | System |                                         | warnings   |  |
-| | Logist.|                                         | vs Mk.I    |  |
-| +--------+                                         +------------+  |
-|  (Undo) (Redo)                              (Test drive) (Save)    |
-+--------------------------------------------------------------------+
++------------------------------------------------------------------------+
+| < Back  [Ship|Missile|Drone]  Land: Tank ▾  "Ironside" Mk II    ...  S |
+| +--------+                                            +--------------+ |
+| |Struct. |                                            | Stats        | |
+| |Mobil.  |            blueprint grid                  | per terrain  | |
+| |Weapon  |      (pinch zoom, 2-finger pan)            | costs        | |
+| |System  |                                            | warnings     | |
+| |Logist. |                                            | vs last Mk   | |
+| +--------+                                            +--------------+ |
+|  (Undo) (Redo)                          (Paint) (Simulate) (Save)      |
++------------------------------------------------------------------------+
 ```
 
-- **Placing parts:** drag a part from the palette onto the grid, or tap a part to pick it up and tap the grid to place it (its bottom-left cell goes where you tap). Long-press a placed part to delete it. A ghost preview shows valid (light blue) or invalid (red); if invalid, a one-line reason appears.
-- **Placed parts:** tap to select, then drag to move, or use Flip, Delete or Info.
-- **Grid view:** two-finger pinch zooms, two-finger drag pans.
-- **Thumb corners:** bottom left is Undo/Redo; bottom right is Test drive and Save. Save creates the next mark.
+- **Tabs:** Ship, Missile, Drone.
+- **Selectors:** domain and class set the grid and part limit. The part counter shows used / allowed.
+- **Palette:**
+  - Unlocked parts only, filtered by domain.
+  - Items **in stock** at the current settlement or fleet show a count.
+  - Parts not in stock can still be placed. The Yard crafts them when building, if they're unlocked.
 - **Stats drawer:**
   - numbers only
-  - speed per terrain table
-  - costs
+  - changes vs the previous mark in neutral amber, never green or red
   - factual warnings
-  - changes compared with the previous mark
-- **Palette and stats drawers** collapse so the grid can use the whole screen.
+- **Paint:** faction scheme or custom primary, secondary and accent colours from the paint-shop palette, plus a camouflage pattern (07 §3).
+- **Simulate:** opens the Battle Simulator with this design.
 
-## 6. Other screens
+## 7. Research and perks
 
-**Title**
-- Stencil logo and tagline.
-- Proving Ground: "Continue at level N" and "Play from level 1".
-- Campaign (appears in Part 3), Drafting Office, Blueprints gallery, Settings.
-- Best score and highest level.
-- A small fullscreen button.
-- Behind it all, a live AI-vs-AI battle with the camera slowly tracking.
+- **Tech tree:** pannable and zoomable; branches run left to right, tiers run top to bottom.
+  - Each node shows its unlocks, Command Point cost, money and electronics cost, where it can be researched, and research time.
+- **Perk tree:** 3 branches (Command, Logistics, Engineering), plus Trade.
+- **Grand Admiral card:** level, XP, and unspent Command Points.
 
-**Pause card**
-- Resume, Settings, Restart level (ladder), Quit to title (campaign: Save and quit).
-- The game also pauses automatically when the app goes to the background, when the window loses focus, and in portrait.
+## 8. Other screens
 
-**Level clear**
-- Stamp animation and score breakdown.
-- Reward: blueprint or medal.
-- Next level, or Workshop.
+- **Title:** logo, tagline, menu, and a live AI-vs-AI battle behind it.
+- **Pause card:** Resume, Settings, Save and quit.
+  - The game also pauses automatically when the app goes to the background or the phone turns to portrait.
+- **War journal:** automatic entries for battles, captures, new marks, medals and lost captains.
+- **Blueprint gallery:** captured enemy designs and parts.
 
-**Workshop** (between levels and from the title): the squad of 3 as cards (mass, kW/t, cost); a scrolling library of starting templates, your designs and captured blueprints (tap to put one in the selected slot, Edit to open it in the Drafting Office); Requisition held; the level budget used/allowed; New design; Start level N (refused with the fact when over budget).
+## 9. Settings
 
-**Level start:** a two-line how-to under the top bar for 7 s: "Level N · name · goal" and one sentence about the new idea.
-
-**Life lost:** a short card with a Retry button.
-
-**Game over**
-- Score, level reached, best.
-- "Continue at level N", "Play from level 1", Title.
-
-**After-action report** (campaign), facts only:
-- losses and kills
-- damage per unit
-- supplies spent
-- experience gained
-- captured wrecks
-- highlights of what happened
-
-**Rotate card:** in portrait, a phone outline turns sideways with the text "Turn your phone sideways to play." The game pauses.
-
-## 7. Settings
-
-- **Audio:** Music on/off and volume, Sound on/off and volume, Vibration on/off.
+- **Audio:** Music on/off and volume, Sound on/off and volume, Vibration.
 - **Controls:**
-  - button opacity: 10–80%, default 30%
-  - button size: S, M, L
+  - button opacity (10–80%, default 30%)
+  - button size (S, M, L)
   - left-handed swap
   - auto-recenter camera
-  - aim assist line
+  - aim line
 - **Display:**
+
+  | Quality | Pixel ratio | Particles |
+  |---|---|---|
+  | Low | 1 | 120 |
+  | Medium | 1.5 | 200 |
+  | High | 2 | 300 |
+
   - fullscreen
-  - graphics quality:
-
-    | Quality | Pixel ratio | Particles |
-    |---|---|---|
-    | Low | 1 | 120 |
-    | Medium | 1.5 | 200 |
-    | High | 2 | 300 |
-
-  - reduced motion (no shake, fewer flashes)
+  - reduced motion
   - show FPS
-- **Gameplay:** campaign auto-stop events (checkboxes), auto-resolve default, difficulty (set at campaign start).
-- **Data:**
-  - Export save (copy a code)
-  - Import save (paste a code)
-  - Reset progress (confirm twice)
-  - version number
+- **Gameplay:** clock auto-stop events, auto-resolve default, difficulty (set at campaign start).
+- **Data:** Export save (copy a code), Import save (paste a code), Reset (confirm twice), version number.
 
-## 8. Look of the transparent controls
+## 10. Transparent controls, keyboard, haptics
+
+**Control look**
 
 | State | Look |
 |---|---|
-| Idle | Smoked acetate disc. Fill is staff ink at 18% × the opacity setting; grease-pencil outline at 50%; glyph at 70% |
-| Pressed | Fill warms toward tracer amber at 45%, glyph at 100%, scale 0.94, soft amber glow ring. Eases back over 120 ms on release |
-| Ghost mode | After 4 s untouched, fades to 60% of idle opacity |
-| Disabled | Dashed outline |
+| Idle | Acetate disc: staff-ink fill at 18% × the opacity setting; grease-pencil outline at 50%; glyph at 70% |
+| Pressed | Fill warms toward amber at 45%, glyph at 100%, scale 0.94, amber glow |
+| Ghost | After 4 s untouched, fades to 60% of idle opacity |
 
-Glyphs are drawn as grease-pencil strokes: slightly wobbly, seeded so they don't shimmer.
-
-The opacity setting scales every value in the table: the default 30% gives exactly the values shown, 80% is about 2.7× stronger and 10% a third as strong. Outlines and glyphs also get a thin dark under-stroke, so they stay visible over bright skies as well as dark ground.
-
-## 9. Keyboard and mouse (desktop)
+**Keyboard and mouse**
 
 | Action | Input |
 |---|---|
 | Drive | A / D or ← / → |
-| Climb / dive | W / S or ↑ / ↓ |
-| Fire | Space, or click an enemy; hold right mouse button to aim manually |
-| Alt weapon | F |
+| Climb / descend | W / S or ↑ / ↓ |
+| Fire | Space, or click an enemy (hold right mouse button to aim manually) |
+| Weapon group | F |
 | Swap | E or Tab |
-| Special | Q |
-| Squad orders | 1–5 |
-| Start / Stop time | T (on the map: Space) |
+| Utility | Q |
+| Command wheel | Right-click a ship |
+| Reserve drawer | R |
+| Start/Stop time | T (on the map: Space) |
 | Pause | P or Esc |
 | Zoom / pan | Mouse wheel / drag |
-| Recenter | C |
-| Map speed | + / − |
 
-## 10. Haptics
-
-Vibration only runs when the Vibration setting is on.
+**Haptics** (only when Vibration is on)
 
 | Moment | Pattern |
 |---|---|
-| UI tap | 8 ms |
 | Fire | 12 ms |
 | Hit taken | 35 ms |
 | Part destroyed | 20-30-20 |
-| Vehicle lost | 80-40-80 |
-| Level clear | 30-40-30-40-120 |
-
-## 11. Safe areas, fullscreen and orientation
-
-- `viewport-fit=cover`. Pad the HUD and controls by `env(safe-area-inset-*)` on all sides; in landscape the notch is on the left or right.
-- On the first tap from the title screen (if the Fullscreen setting is on): call `requestFullscreen()`, then `screen.orientation.lock('landscape')`. Ignore errors. This happens on touch devices only; on desktop the title's small full-screen button does it.
-- Desktop: letterbox to 16:9, at most 1280 px wide, centred.
+| Ship lost | 80-40-80 |
+| Victory | 30-40-30-40-120 |

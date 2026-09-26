@@ -1,0 +1,193 @@
+{
+ "_about": "Ship classes (design/01 \u00a75). grid = max width x height in cells, parts = max component parts (structure cells not counted), captain = captain level needed.",
+ "land": [
+  {
+   "id": "tank",
+   "name": "Tank",
+   "grid": [
+    16,
+    8
+   ],
+   "parts": 24,
+   "captain": 1
+  },
+  {
+   "id": "behemoth",
+   "name": "Behemoth",
+   "grid": [
+    28,
+    12
+   ],
+   "parts": 48,
+   "captain": 3
+  },
+  {
+   "id": "landship",
+   "name": "Landship",
+   "grid": [
+    44,
+    16
+   ],
+   "parts": 90,
+   "captain": 5
+  },
+  {
+   "id": "land_dreadnought",
+   "name": "Land dreadnought",
+   "grid": [
+    64,
+    20
+   ],
+   "parts": 150,
+   "captain": 8
+  }
+ ],
+ "sea": [
+  {
+   "id": "corvette",
+   "name": "Corvette",
+   "grid": [
+    32,
+    10
+   ],
+   "parts": 40,
+   "captain": 1
+  },
+  {
+   "id": "destroyer",
+   "name": "Destroyer",
+   "grid": [
+    48,
+    14
+   ],
+   "parts": 80,
+   "captain": 3
+  },
+  {
+   "id": "cruiser",
+   "name": "Cruiser",
+   "grid": [
+    64,
+    18
+   ],
+   "parts": 130,
+   "captain": 5
+  },
+  {
+   "id": "battleship",
+   "name": "Battleship",
+   "grid": [
+    88,
+    24
+   ],
+   "parts": 200,
+   "captain": 8
+  }
+ ],
+ "air": [
+  {
+   "id": "gunship",
+   "name": "Gunship",
+   "grid": [
+    24,
+    10
+   ],
+   "parts": 30,
+   "captain": 1
+  },
+  {
+   "id": "air_frigate",
+   "name": "Air frigate",
+   "grid": [
+    36,
+    14
+   ],
+   "parts": 60,
+   "captain": 3
+  },
+  {
+   "id": "air_cruiser",
+   "name": "Air cruiser",
+   "grid": [
+    52,
+    18
+   ],
+   "parts": 100,
+   "captain": 5
+  },
+  {
+   "id": "sky_fortress",
+   "name": "Sky fortress",
+   "grid": [
+    72,
+    24
+   ],
+   "parts": 160,
+   "captain": 8
+  }
+ ],
+ "drone": [
+  {
+   "id": "drone_1",
+   "name": "Drone (computer I)",
+   "grid": [
+    8,
+    4
+   ],
+   "parts": 6,
+   "captain": 0
+  },
+  {
+   "id": "drone_2",
+   "name": "Drone (computer II)",
+   "grid": [
+    10,
+    5
+   ],
+   "parts": 10,
+   "captain": 0
+  },
+  {
+   "id": "drone_3",
+   "name": "Drone (computer III)",
+   "grid": [
+    12,
+    6
+   ],
+   "parts": 16,
+   "captain": 0
+  }
+ ],
+ "missile": [
+  {
+   "id": "missile_s",
+   "name": "Small missile",
+   "grid": [
+    6,
+    1
+   ],
+   "parts": 4,
+   "captain": 0
+  },
+  {
+   "id": "missile_m",
+   "name": "Medium missile",
+   "grid": [
+    10,
+    2
+   ],
+   "parts": 8,
+   "captain": 0
+  },
+  {
+   "id": "missile_l",
+   "name": "Large missile",
+   "grid": [
+    16,
+    3
+   ],
+   "parts": 14,
+   "captain": 0
+  }
+ ]
+}

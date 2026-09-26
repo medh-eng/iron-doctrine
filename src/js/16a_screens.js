@@ -54,7 +54,7 @@ SCREENS.title = {
 
     const menu = el('div', 'menu');
     const pg = el('div', 'menu-group');
-    pg.appendChild(el('div', 'menu-label', 'Proving Ground'));
+    pg.appendChild(el('div', 'menu-label', 'Gauntlet'));
     const pgRow = el('div', 'menu-row');
     const run = p.run;
     const contLevel = run.active ? run.level : p.continueLevel;
