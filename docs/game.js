@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.1.4';
+const GAME_VERSION = '0.2.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -933,6 +933,51 @@ const SFX = {
     a.env(b.gain, t, 0.005, 1, 0.8 * k);
     const o = a.osc('sine', 70, t, t + 1.2 * k, b);
     o.frequency.exponentialRampToValueAtTime(30, t + 0.8 * k);
+  },
+  // Shell into the sea: a hiss of spray over a low plunge.
+  splash(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 0.6, 0.35, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.01, 0.3 * vel, 0.45);
+    const f = a.filter('bandpass', 2400, 0.7, g);
+    f.frequency.exponentialRampToValueAtTime(700, t + 0.5);
+    a.noiseSrc(t, t + 0.6, f);
+    const m = a.gain(out);
+    a.env(m.gain, t, 0.004, 0.25 * vel, 0.2);
+    const o = a.osc('sine', 120, t, t + 0.25, m);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.2);
+  },
+  // Torpedo launch: a compressed-air thump and a fading whine.
+  torpedo(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.0, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.005, 0.35, 0.25);
+    a.noiseSrc(t, t + 0.3, a.filter('lowpass', 600, 0, g));
+    const w = a.gain(out);
+    a.env(w.gain, t + 0.1, 0.1, 0.06, 0.8);
+    const o = a.osc('triangle', 520, t + 0.1, t + 1.0, w);
+    o.frequency.exponentialRampToValueAtTime(260, t + 1.0);
+  },
+  // Sonar contact: a single high ping with a long tail.
+  ping(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 1.4, 0.2, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.004, 0.16, 1.2);
+    a.osc('sine', 1560, t, t + 1.4, g);
+  },
+  // Water pouring into a hull: low filtered rumble with bubbling.
+  flood(a, t, pan, vel) {
+    const out = a.voice(a.sfxBus, t, 1.2, 0.3, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.08, 0.25 * vel, 0.9);
+    a.noiseSrc(t, t + 1.2, a.filter('lowpass', 380, 3, g));
+    for (let k = 0; k < 4; k++) {
+      const b = a.gain(out);
+      const tk = t + 0.12 + k * 0.17;
+      a.env(b.gain, tk, 0.005, 0.08 * vel, 0.06);
+      const o = a.osc('sine', 220 + k * 70, tk, tk + 0.08, b);
+      o.frequency.exponentialRampToValueAtTime(520 + k * 90, tk + 0.07);
+    }
   },
   thud(a, t, pan, vel) {
     const out = a.voice(a.sfxBus, t, 0.25, 0.3, pan);
@@ -1985,13 +2030,54 @@ const BATTLE_SPEED_SCALE = 0.5;
 // cal = calibre in mm (recoil = cal² × 0.9 N·s), auto = automatic weapon.
 const WEAPON_STATS = {
   mg: { vel: 260, dmg: 6, spread: 1.4, cal: 8, auto: true, burst: 6 },
-  hmg: { vel: 250, dmg: 11, spread: 1.2, cal: 13, auto: true, burst: 5 },
+  hmg: { vel: 250, dmg: 11, spread: 1.2, cal: 13, auto: true, burst: 5, aa: true },
   // burst / burstR: the shell's small bursting charge after it penetrates (damage, radius in m).
   c37: { vel: 180, dmg: 45, spread: 0.55, cal: 37, shells: 40, burst: 25, burstR: 1.0 },
   c75: { vel: 165, dmg: 95, spread: 0.5, cal: 75, shells: 30, burst: 55, burstR: 1.6, heDmg: 70, heRadius: 3 },
   c105: { vel: 155, dmg: 150, spread: 0.45, cal: 105, shells: 20, burst: 80, burstR: 2.0, heDmg: 110, heRadius: 4 },
   how: { vel: 95, dmg: 180, spread: 0.9, cal: 150, shells: 12, heDmg: 180, heRadius: 6, indirect: true },
+  // Air-capable automatic guns (Part 2c): aa = can engage aircraft; flak = bursts near them.
+  ac20: { vel: 240, dmg: 16, spread: 1.0, cal: 20, auto: true, burst: 4, aa: true },
+  aa40: { vel: 200, dmg: 30, spread: 0.9, cal: 40, auto: true, burst: 3, aa: true, flak: true },
+  // Naval gun, twin: two barrels fire together (Part 2a).
+  ngun: { vel: 120, dmg: 150, spread: 0.45, cal: 120, shells: 30, burst: 70, burstR: 2.2, twin: true },
 };
+
+// Ships (design/05 §7.3). A cell of a watertight part displaces 0.25 m² × beam of water.
+// SHIP_CD is the hull resistance coefficient on the submerged cross-section (displaced
+// volume ÷ hull length); PROP_EFF is the share of engine power the propellers turn into thrust.
+const SHIP_CD = 0.35;
+const PROP_EFF = 0.6;
+const FLOOD_RATE = 500;           // kg per second through each destroyed watertight cell below the waterline
+const HOLE_RATE = 350;            // kg per second through each shell hole below the waterline
+const THRUSTER_FORCE = 15000;     // N of extra stopping and reversing force per manoeuvre thruster
+
+// Submarines and underwater weapons (Part 2b). Battle numbers.
+const BALLAST_RATE = 1500;        // kg per second each ballast tank floods or blows
+const DIVE_RATE = 2;              // metres per second the depth order moves while ▲ or ▼ is held
+const TORPEDO = { speed: 16, dmg: 320, radius: 3.2, depthRate: 3 };
+const DEPTH_CHARGE = { sink: 3, dmg: 240, radius: 6, depth: 8 };
+
+// Aircraft and helicopters (design/05 §7.4). Battles compress distance, so air speeds are
+// scaled by AIR_SPEED_SCALE: air density is raised by 1 ÷ scale² (lift and drag at the
+// scaled speed match the sheet) and propeller power is × scale.
+const AIR_SPEED_SCALE = 0.25;
+const AIR_SPOT = 2;               // aircraft are seen this many times further away
+const AIR_SIGHT = 1.5;            // and see this many times further
+const AIR_RHO = 1.225;
+const WING_AREA = 6;              // m² of lift per wing section
+const TAIL_AREA = 3;              // m² per tail unit (stabiliser and elevator)
+const CL_PER_DEG = 0.1, CL_MAX = 1.2, STALL_DEG = 12;
+const AIR_CD_WING = 0.01;         // parasite drag per m² of wing
+const AIR_CD_FRONT = 0.1;         // parasite drag per m² of frontal area (height × 1.2 m)
+const INDUCED_K = 0.06;           // induced drag: k × CL² × wing area
+const DRAG_RISE_SPEED = 230;      // m/s (sheet): above this, drag climbs steeply (near the speed of sound)
+const AIRPROP_EFF = 0.8;          // share of engine power an air propeller turns into thrust
+const ROTOR_LIFT = 25000;         // N per rotor at full power
+const ROTOR_POWER = 400;          // kW each rotor needs for full lift
+const HELI_CDA = 3;               // m² drag area of a helicopter
+const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
+const BOMB = { dmg: 200, radius: 5 };
 
 // id: [name, category, w, h, mass, hp, armour, extras]
 const PART_ROWS = [
@@ -2005,10 +2091,32 @@ const PART_ROWS = [
   ['slope40', 'Sloped armour 40 mm', 'structure', 1, 1, 300, 110, 40, { cost: { metal: 5 }, sloped: true }],
   ['crew2', 'Crew compartment', 'structure', 2, 2, 300, 80, 10, { cost: { metal: 3 }, crew: 2 }],
   ['turret', 'Turret ring', 'structure', 3, 1, 250, 90, 20, { cost: { metal: 3 }, power: -5, ring: true }],
+  // Ship structure (Part 2a). sealed = watertight: displaces water below the waterline.
+  // floods = takes in water when the hull is holed; bulkheads and keels don't.
+  ['hull', 'Ship hull section', 'structure', 2, 2, 600, 150, 10, { cost: { metal: 4, wood: 1 }, sealed: 1, floods: true }],
+  ['bow', 'Bow section', 'structure', 2, 2, 450, 130, 10, { cost: { metal: 3, wood: 1 }, sealed: 0.5, floods: true, bowShape: true }],
+  ['keel', 'Keel', 'structure', 2, 1, 500, 120, 10, { cost: { metal: 3 }, sealed: 1, keel: true }],
+  ['phull', 'Pressure hull section', 'structure', 2, 2, 2200, 220, 25, { cost: { metal: 8 }, sealed: 1, floods: true }],
+  ['bulk', 'Watertight bulkhead', 'structure', 1, 2, 200, 100, 10, { cost: { metal: 2 }, sealed: 1, bulkhead: true }],
   // Mobility
   ['eng_s', 'Petrol engine S', 'mobility', 2, 2, 450, 60, 5, { cost: { metal: 3 }, power: 110, heat: 12, fuelUse: 30, rel: 0.990 }],
   ['eng_m', 'Diesel engine M', 'mobility', 3, 2, 1100, 90, 5, { cost: { metal: 7 }, power: 300, heat: 25, fuelUse: 55, rel: 0.994 }],
   ['eng_h', 'Diesel engine H', 'mobility', 4, 2, 1900, 120, 5, { cost: { metal: 12 }, power: 520, heat: 45, fuelUse: 95, rel: 0.992 }],
+  ['marine', 'Marine diesel', 'mobility', 4, 3, 5000, 200, 10, { cost: { metal: 25 }, power: 1500, heat: 40, fuelUse: 300, rel: 0.995, sealed: 1, floods: true }],
+  ['prop', 'Ship propeller', 'mobility', 1, 2, 300, 50, 10, { cost: { metal: 2 }, propeller: true }],
+  // Submarines (Part 2b). ballast = kg of water the tank can take in or blow out.
+  ['emotor', 'Electric motor + batteries', 'mobility', 2, 2, 1200, 70, 10, { cost: { metal: 6, elec: 3 }, power: 200, heat: 5, rel: 0.996, electric: true, sealed: 1, floods: true }],
+  ['ballast', 'Ballast tank', 'mobility', 2, 2, 300, 80, 10, { cost: { metal: 3 }, ballast: 4000, sealed: 1 }],
+  ['thrust', 'Manoeuvre thruster', 'mobility', 1, 1, 150, 30, 5, { cost: { metal: 1, elec: 1 }, power: -40, heat: 5, thruster: true }],
+  // Aircraft (Part 2c). air = only works on aircraft and helicopters.
+  ['wing', 'Wing section', 'structure', 2, 1, 90, 30, 2, { cost: { metal: 1, wood: 1 }, lift: WING_AREA }],
+  ['tail', 'Tail unit', 'structure', 2, 2, 60, 30, 2, { cost: { metal: 1, wood: 1 }, tail: TAIL_AREA }],
+  ['aero', 'Aero piston engine', 'mobility', 2, 1, 600, 50, 5, { cost: { metal: 6, elec: 1 }, power: 900, heat: 40, fuelUse: 250, rel: 0.985, air: true }],
+  ['jet', 'Jet engine', 'mobility', 3, 1, 900, 70, 5, { cost: { metal: 10, elec: 4 }, jet: 25000, heat: 60, fuelUse: 900, rel: 0.970, air: true }],
+  ['turb', 'Gas turbine', 'mobility', 3, 2, 900, 80, 5, { cost: { metal: 8, elec: 3 }, power: 750, heat: 70, fuelUse: 220, rel: 0.980 }],
+  ['aprop', 'Air propeller', 'mobility', 1, 2, 80, 20, 2, { cost: { metal: 1, wood: 1 }, airprop: true }],
+  ['rotor', 'Rotor', 'mobility', 4, 1, 400, 50, 2, { cost: { metal: 4, elec: 1 }, rotor: true, rel: 0.985 }],
+  ['trotor', 'Tail rotor', 'mobility', 1, 1, 60, 20, 2, { cost: { metal: 1 }, trotor: true }],
   ['radiator', 'Radiator', 'mobility', 1, 1, 70, 20, 2, { cost: { metal: 1 }, heat: -12 }],
   ['wheel_s', 'Road wheel', 'mobility', 1, 1, 80, 30, 5, { cost: { metal: 1, rubber: 1 }, loco: 'wheel', contact: 0.04, maxLoad: 2000, cap: 90, radius: 0.25 }],
   ['wheel_l', 'Off-road wheel', 'mobility', 2, 2, 200, 50, 5, { cost: { metal: 1, rubber: 3 }, loco: 'wheel', contact: 0.12, maxLoad: 5000, cap: 75, radius: 0.5 }],
@@ -2016,9 +2124,16 @@ const PART_ROWS = [
   // Weapons
   ['mg', 'Machine gun', 'weapon', 1, 1, 40, 20, 5, { cost: { metal: 1 }, pen: 8, rpm: 600, range: 600 }],
   ['hmg', 'Heavy machine gun', 'weapon', 1, 1, 80, 25, 5, { cost: { metal: 2 }, pen: 20, rpm: 450, range: 1000 }],
+  ['ac20', 'Autocannon 20 mm', 'weapon', 2, 1, 150, 35, 5, { cost: { metal: 3 }, pen: 35, rpm: 180, range: 1200 }],
   ['c37', 'Cannon 37 mm', 'weapon', 2, 1, 250, 40, 10, { cost: { metal: 4 }, pen: 50, reload: 2.5, range: 1500 }],
   ['c75', 'Cannon 75 mm', 'weapon', 3, 1, 600, 60, 10, { cost: { metal: 7 }, pen: 90, reload: 5, range: 2000 }],
   ['c105', 'Cannon 105 mm', 'weapon', 4, 1, 1300, 80, 10, { cost: { metal: 12 }, pen: 150, reload: 8, range: 2500 }],
+  ['ngun', 'Naval gun 120 mm, twin', 'weapon', 4, 3, 9000, 200, 25, { cost: { metal: 40 }, pen: 130, reload: 6, range: 9000 }],
+  // Secondary weapons (Part 2b): fired with Alt; rounds = torpedoes or charges carried.
+  ['torp', 'Torpedo tube', 'weapon', 3, 1, 900, 60, 10, { cost: { metal: 8, elec: 1 }, reload: 30, range: 4000, secondary: 'torpedo', rounds: 2, wet: true }],
+  ['dc', 'Depth-charge rack', 'weapon', 2, 1, 300, 40, 5, { cost: { metal: 2 }, reload: 4, range: 0, secondary: 'depth', rounds: 6 }],
+  ['aa40', 'AA gun 40 mm', 'weapon', 3, 2, 1800, 80, 10, { cost: { metal: 10 }, pen: 60, rpm: 120, range: 3500 }],
+  ['bomb', 'Bomb rack', 'weapon', 2, 1, 1100, 30, 3, { cost: { metal: 2 }, range: 0, reload: 0.5, secondary: 'bomb', rounds: 4, bombMass: 250, air: true, pen: 60, heDmg: BOMB.dmg, heRadius: BOMB.radius }],
   ['how', 'Howitzer 150 mm', 'weapon', 4, 2, 2500, 100, 10, { cost: { metal: 18 }, pen: 40, reload: 12, range: 8000, he: true }],
   ['smoke', 'Smoke launcher', 'weapon', 1, 1, 30, 15, 2, { cost: { metal: 1, fuel: 1 }, salvos: 3 }],
   // Systems
@@ -2026,12 +2141,14 @@ const PART_ROWS = [
   ['optics', 'Optics', 'system', 1, 1, 30, 10, 2, { cost: { metal: 1, elec: 1 }, spot: 1.4 }],
   ['nsight', 'Night sight', 'system', 1, 1, 20, 10, 2, { cost: { metal: 1, elec: 4 }, power: -3, night: 0.7 }],
   ['fc', 'Fire-control computer', 'system', 1, 1, 60, 15, 2, { cost: { metal: 1, elec: 5 }, power: -5, accuracy: 1.35 }],
+  ['sonar', 'Sonar', 'system', 2, 1, 300, 30, 5, { cost: { metal: 2, elec: 4 }, power: -10, sonar: 2000, wet: true }],
   ['stab', 'Gun stabiliser', 'system', 1, 1, 90, 15, 2, { cost: { metal: 2, elec: 4 }, power: -8 }],
   // Logistics
   ['fuel_s', 'Fuel tank 200 L', 'logistics', 1, 1, 220, 30, 3, { cost: { metal: 1 }, fuel: 200, fire: 0.35 }],
   ['fuel_ss', 'Self-sealing tank 150 L', 'logistics', 1, 1, 210, 40, 3, { cost: { metal: 1, rubber: 2 }, fuel: 150, fire: 0.10 }],
   ['ammo', 'Ammo rack', 'logistics', 1, 1, 250, 30, 3, { cost: { metal: 1 }, shells: 20, detonate: 0.40 }],
   ['ammo_p', 'Protected ammo storage', 'logistics', 1, 1, 320, 50, 10, { cost: { metal: 2 }, shells: 20, detonate: 0.10 }],
+  ['fuel_l', 'Fuel tank 1000 L', 'logistics', 2, 2, 1050, 60, 3, { cost: { metal: 3 }, fuel: 1000, fire: 0.35 }],
   ['cargo', 'Cargo bay', 'logistics', 2, 2, 200, 40, 3, { cost: { metal: 2, wood: 1 }, cargo: 2000 }],
 ];
 
@@ -2048,8 +2165,9 @@ const TERRAIN = [
   { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
   { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
   { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
 ];
-const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4;
+const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
 // ---------- templates (design/05 §8). Grid rows go top (y = 0) to bottom; front faces right.
 // cells: [partId, x, y]
@@ -2101,6 +2219,89 @@ const TEMPLATES = {
       ['arm40', 5, 1], ['arm40', 6, 1], ['arm40', 7, 1], ['c105', 8, 1], ['optics', 6, 0],
     ],
   },
+  // Ships (Part 2a). The stern is on the left; the keel runs along the bottom row.
+  gunboat: {
+    name: 'Gunboat', w: 26, h: 9,
+    cells: [
+      ['prop', 3, 7],
+      ['keel', 4, 8], ['keel', 6, 8], ['keel', 8, 8], ['keel', 10, 8], ['keel', 12, 8], ['keel', 14, 8], ['keel', 16, 8], ['keel', 18, 8], ['keel', 20, 8],
+      ['hull', 4, 6], ['hull', 6, 6], ['hull', 8, 6], ['bulk', 10, 6], ['hull', 11, 6], ['hull', 13, 6], ['hull', 15, 6], ['hull', 17, 6],
+      ['bulk', 19, 6], ['hull', 20, 6], ['hull', 22, 6], ['bow', 24, 6],
+      ['eng_m', 4, 4], ['fuel_s', 7, 5], ['ammo', 8, 5], ['plate', 7, 4], ['plate', 8, 4], ['plate', 9, 5],
+      ['crew2', 10, 4], ['optics', 10, 3], ['radio', 11, 3], ['plate', 12, 5], ['plate', 13, 5], ['plate', 14, 5],
+      ['turret', 15, 5], ['crew2', 15, 3], ['c37', 17, 4], ['plate', 18, 5], ['plate', 19, 5], ['plate', 20, 5], ['hmg', 21, 5],
+    ],
+  },
+  destroyer: {
+    name: 'Destroyer', w: 42, h: 14,
+    cells: [
+      ['prop', 3, 12], ['prop', 4, 12],
+      ['keel', 5, 13], ['keel', 7, 13], ['keel', 9, 13], ['keel', 11, 13], ['keel', 13, 13], ['keel', 15, 13], ['keel', 17, 13], ['keel', 19, 13],
+      ['keel', 21, 13], ['keel', 23, 13], ['keel', 25, 13], ['keel', 27, 13], ['keel', 29, 13], ['keel', 31, 13], ['keel', 33, 13], ['keel', 35, 13], ['keel', 37, 13],
+      // Lower hull.
+      ['hull', 5, 11], ['hull', 7, 11], ['bulk', 9, 11], ['hull', 10, 11], ['hull', 12, 11], ['hull', 14, 11], ['marine', 16, 10], ['bulk', 20, 11],
+      ['hull', 21, 11], ['hull', 23, 11], ['hull', 25, 11], ['hull', 27, 11], ['hull', 29, 11], ['hull', 31, 11], ['bulk', 33, 11], ['hull', 34, 11], ['hull', 36, 11], ['bow', 38, 11],
+      // Upper hull.
+      ['hull', 5, 9], ['hull', 7, 9], ['bulk', 9, 9], ['hull', 10, 9], ['hull', 12, 9], ['hull', 14, 9], ['plate', 16, 9], ['plate', 17, 9], ['plate', 18, 9], ['plate', 19, 9], ['bulk', 20, 9],
+      ['hull', 21, 9], ['hull', 23, 9], ['hull', 25, 9], ['hull', 27, 9], ['hull', 29, 9], ['hull', 31, 9], ['bulk', 33, 9], ['hull', 34, 9], ['hull', 36, 9], ['hull', 38, 9], ['bow', 40, 9],
+      // Aft gun.
+      ['turret', 8, 8], ['crew2', 8, 6], ['c75', 10, 7], ['dc', 5, 8], ['plate', 7, 8], ['hmg', 5, 7],
+      // Funnel deck, bridge and fuel.
+      ['plate', 11, 8], ['plate', 12, 8], ['plate', 13, 8], ['hmg', 14, 8], ['plate', 15, 8], ['eng_s', 16, 7], ['fuel_l', 18, 7],
+      ['fuel_l', 20, 7], ['plate', 22, 8], ['plate', 23, 8], ['crew2', 24, 7], ['crew2', 24, 5], ['optics', 24, 4], ['radio', 25, 4], ['fc', 26, 6],
+      ['ammo_p', 26, 8], ['ammo_p', 27, 8], ['torp', 28, 8],
+      // Forward twin 120 mm.
+      ['turret', 31, 8], ['ngun', 31, 5], ['plate', 34, 8], ['plate', 35, 8], ['plate', 36, 8], ['hmg', 37, 8],
+      ['sonar', 39, 13],
+    ],
+  },
+  // Submarine (Part 2b): ballast tanks fore and aft, electric motor for running submerged,
+  // a diesel for the surface, a bow torpedo tube and a periscope on the sail.
+  sub: {
+    name: 'Submarine', w: 27, h: 8,
+    cells: [
+      ['prop', 3, 6],
+      ['keel', 5, 7], ['keel', 7, 7], ['keel', 9, 7], ['keel', 11, 7], ['keel', 13, 7], ['keel', 15, 7], ['keel', 17, 7], ['keel', 19, 7], ['keel', 21, 7], ['sonar', 23, 7],
+      ['ballast', 4, 5], ['emotor', 6, 5], ['phull', 8, 5], ['bulk', 10, 5], ['phull', 11, 5], ['ballast', 13, 5], ['phull', 15, 5], ['bulk', 17, 5],
+      ['phull', 18, 5], ['ballast', 20, 5], ['bow', 22, 5], ['torp', 24, 6],
+      // Upper deck; the 80 mm plates are trim weights.
+      ['arm80', 5, 4], ['arm80', 5, 3], ['ballast', 6, 3], ['phull', 8, 3], ['eng_m', 10, 3], ['arm80', 13, 3], ['fuel_s', 13, 4], ['crew2', 14, 3],
+      ['phull', 16, 3], ['phull', 18, 3], ['arm80', 20, 4], ['arm80', 21, 4],
+      ['optics', 14, 2], ['radio', 15, 2], ['arm80', 16, 2], ['arm80', 17, 2],
+    ],
+  },
+  // Aircraft (Part 2c). Nose on the right.
+  fighter: {
+    name: 'Fighter', w: 18, h: 6,
+    cells: [
+      ['tail', 0, 2],
+      ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3], ['fuel_ss', 6, 3], ['frame', 7, 3], ['frame', 8, 3],
+      ['frame', 9, 3], ['frame', 10, 3], ['frame', 11, 3], ['frame', 12, 3], ['frame', 13, 3],
+      ['aero', 14, 3], ['aprop', 16, 2],
+      ['crew2', 9, 1], ['radio', 8, 2], ['hmg', 12, 2], ['hmg', 13, 2],
+      ['wing', 6, 4], ['wing', 8, 4], ['wing', 10, 4],
+    ],
+  },
+  bomber: {
+    name: 'Bomber', w: 30, h: 7,
+    cells: [
+      ['tail', 0, 2],
+      ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3], ['frame', 6, 3], ['frame', 7, 3], ['fuel_s', 8, 3], ['fuel_s', 9, 3],
+      ['frame', 10, 3], ['frame', 11, 3], ['frame', 12, 3], ['frame', 13, 3], ['frame', 14, 3], ['frame', 15, 3], ['frame', 16, 3], ['frame', 17, 3],
+      ['aero', 18, 3], ['frame', 20, 3], ['frame', 21, 3], ['frame', 22, 3], ['frame', 23, 3], ['aero', 24, 3], ['aprop', 26, 2],
+      ['turret', 12, 2], ['crew2', 13, 0], ['hmg', 15, 1], ['crew2', 20, 1], ['optics', 22, 2],
+      ['wing', 10, 4], ['wing', 12, 4], ['wing', 14, 4], ['wing', 16, 4], ['wing', 18, 4],
+      ['bomb', 11, 5], ['bomb', 15, 5],
+    ],
+  },
+  heli: {
+    name: 'Scout helicopter', w: 12, h: 4,
+    cells: [
+      ['rotor', 5, 0], ['frame', 8, 1],
+      ['trotor', 0, 3], ['frame', 1, 3], ['frame', 2, 3], ['frame', 3, 3], ['frame', 4, 3], ['frame', 5, 3],
+      ['aero', 6, 2], ['fuel_ss', 6, 3], ['frame', 7, 3], ['crew2', 8, 2], ['optics', 10, 2], ['hmg', 10, 3],
+    ],
+  },
   // Enemy-only fixed positions (no engine, so the placement rules don't apply).
   bunker: {
     name: 'Anti-tank gun bunker', w: 8, h: 4, fixed: true,
@@ -2144,9 +2345,14 @@ const TEMPLATES = {
   },
 };
 
+// Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli'];
+// Fleet lent to the player on sea levels when the squad has no ships.
+const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
+
 // ---------- the Proving Ground ladder (design/01 §14)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -2209,8 +2415,17 @@ function levelConfig(level) {
       enemies: [['light', 2, 'attack', 0], ['mgcar', 2, 'attack', 1]], how: 'Trenches: long vehicles bridge them; short ones fall in.' }),
     13: () => Object.assign(c, { name: 'Bunker line', hills: 0.4,
       enemies: [['bunker', 2, 'fixed', 0], ['light', 1, 'attack', 0]], how: 'Anti-tank guns in bunkers: thick front armour, fixed arc.' }),
-    14: () => Object.assign(c, { name: 'Crossroads', mud: 2, forest: 2,
-      enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 1], ['mgcar', 2, 'attack', 1]] }),
+    14: () => Object.assign(c, { name: 'Coastal gunboats', goal: { type: 'destroy', text: 'Clear the coast' }, hills: 0.3, forest: 1, length: 560,
+      sea: { from: 300, depth: 14 },
+      enemies: [['gunboat', 1, 'attack', 0], ['mgcar', 1, 'attack', 0], ['gunboat', 2, 'attack', 1]],
+      how: 'Gunboats: hit them at the waterline. A holed hull floods until a bulkhead stops the water.' }),
+    16: () => Object.assign(c, { name: 'Submarine hunt', goal: { type: 'destroy', text: 'Clear the sea lane' }, hills: 0.2, length: 640, fleet: true,
+      sea: { from: 40, depth: 24 }, lifeBonus: false,
+      enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
+      how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
+    17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
   };
@@ -2232,6 +2447,12 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // A coast with gunboats on some maps (Part 2a).
+    if (rng.next() < 0.25) {
+      c.sea = { from: Math.round(c.length * 0.64), depth: 14 };
+      c.gaps = 0;
+      c.enemies.push([n > 12 && rng.next() < 0.4 ? 'destroyer' : 'gunboat', 1 + rng.int(0, 1), 'attack', rng.int(0, 1)]);
+    }
     if (L % 5 === 0) {
       c.boss = 'behemoth';
       c.bossName = `${BOSS_NAMES[(L / 5 - 3) % BOSS_NAMES.length]} (level ${L})`;
@@ -2258,13 +2479,17 @@ const MEDALS = [
   { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Proving Ground.' },
 ];
 
-// Test drive ground (Workshop): flat start, a hill, mud, a trench, forest; no enemies.
-function testDriveConfig() {
-  return {
+// Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
+// beach and open water with a shoal. No enemies.
+function testDriveConfig(range = 'land') {
+  const c = {
     level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
     hills: 0.7, rough: 0.3, mud: 2, forest: 1, gaps: 1, weather: 'clear', light: 'day',
-    enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '',
+    enemies: [], wave: 20, accuracy: 0.5, reaction: 1, speedMul: 1, how: '', range,
   };
+  if (range === 'sea') Object.assign(c, { hills: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 20 } });
+  if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
+  return c;
 }
 
 /* ---------- 08_design.js ---------- */
@@ -2336,13 +2561,32 @@ function components(design, grid, alive) {
   return groups;
 }
 
+// The domain comes from the parts used (design/01 §8.1): watertight hull parts make a ship.
+// Rotors make a helicopter, wings an aircraft; ballast tanks make a watertight hull a submarine.
+function domainOf(design) {
+  let sealed = false, wing = false, sub = false;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (!d) continue;
+    if (d.rotor) return 'heli';
+    if (d.lift) wing = true;
+    if (d.ballast) sub = true;
+    if (d.sealed) sealed = true;
+  }
+  return wing ? 'air' : sub ? 'sub' : sealed ? 'naval' : 'ground';
+}
+const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter' };
+const airDomain = (domain) => domain === 'air' || domain === 'heli';
+const seaDomain = (domain) => domain === 'naval' || domain === 'sub';
+
 // Placement rules (design/01 §8.1). Messages state facts only.
 function validateDesign(design) {
   const errors = [];
   const W = design.w, H = design.h;
   const count = new Int16Array(W * H);
+  const domain = domainOf(design);
   let lowest = -1;
-  let crew = 0, needCrew = 1, engines = 0, loco = 0;
+  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0, wings = 0, tails = 0, airprops = 0, jets = 0, rotors = 0, trotors = 0, airOnly = 0;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) { errors.push(`Unknown part ${c.p}.`); continue; }
@@ -2352,28 +2596,72 @@ function validateDesign(design) {
     }
     lowest = Math.max(lowest, c.y + d.h - 1);
     if (d.crew) crew += d.crew;
-    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto) needCrew++;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) needCrew++;
     if (d.power > 0) engines++;
     if (d.loco) loco++;
+    if (d.keel) keels++;
+    if (d.propeller) props++;
+    if (d.lift) wings++;
+    if (d.tail) tails++;
+    if (d.airprop) airprops++;
+    if (d.jet) { jets++; engines++; }
+    if (d.rotor) rotors++;
+    if (d.trotor) trotors++;
+    if (d.air) airOnly++;
   }
   if (count.some((n) => n > 1)) errors.push('Two parts overlap.');
-  // Track segments need a run of 3 or more side by side (design/05 §2).
-  const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
-  for (let i = 0, run = 1; i < runs.length; i++) {
-    if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
-    if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
-    run = 1;
+  if (airDomain(domain)) {
+    // Aircraft need wings and a tail, and something to push: a jet, or an engine with an air
+    // propeller. Helicopters need a tail rotor (design/05 §2).
+    if (domain === 'air') {
+      if (!tails) errors.push('No tail unit.');
+      if (!jets && !airprops) errors.push('No jet or air propeller.');
+    } else if (!trotors) errors.push('No tail rotor.');
+  } else if (airOnly) {
+    errors.push('Aero engines and bomb racks only work on aircraft.');
   }
-  for (const c of design.cells) {
-    const d = PARTS[c.p];
-    if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
+  if (domain === 'ground') {
+    // Track segments need a run of 3 or more side by side (design/05 §2).
+    const runs = design.cells.filter((c) => PARTS[c.p] && PARTS[c.p].loco === 'track').map((c) => c.x).sort((a, b) => a - b);
+    for (let i = 0, run = 1; i < runs.length; i++) {
+      if (i + 1 < runs.length && runs[i + 1] === runs[i] + 2) { run++; continue; }
+      if (run < 3) { errors.push(`A run of ${run} track segment${run > 1 ? 's' : ''}; tracks need 3 in a row.`); break; }
+      run = 1;
+    }
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (d && d.loco && c.y + d.h - 1 !== lowest) errors.push(`${d.name} does not touch the lowest row.`);
+    }
+    if (!loco) errors.push(props ? 'Propellers need a ship hull; no wheels or tracks.' : 'No wheels or tracks.');
+  } else if (seaDomain(domain)) {
+    // Ships need a sealed hull with a keel (design/01 §8.1), a propeller in the water, and must float.
+    if (!keels) errors.push('No keel.');
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (d && d.keel && c.y + d.h - 1 !== lowest) errors.push('A keel does not touch the lowest row.');
+    }
+    const st = statsOf(design);
+    if (!props) errors.push('No propeller.');
+    else if (!st.propsWet) errors.push('No propeller below the waterline.');
+    if (st.reserve <= 0) errors.push(`Mass ${(st.mass / 1000).toFixed(1)} t; the hull displaces ${(st.dispMax / 1000).toFixed(1)} t. It sinks.`);
+    else if (domain === 'sub' && st.diveNeed > st.ballastCap) errors.push(`Diving needs ${(st.diveNeed / 1000).toFixed(1)} t of ballast; the tanks hold ${(st.ballastCap / 1000).toFixed(1)} t.`);
   }
-  if (!loco) errors.push('No wheels or tracks.');
   if (!engines) errors.push('No engine.');
   if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
   const groups = components(design, occupancy(design));
   if (groups.length > 1) errors.push(`${groups.length - 1} part group(s) are not connected to the rest.`);
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, domain };
+}
+
+// Ships (design/05 §7.3): beam from the hull length; a watertight cell displaces 0.25 m² × beam.
+// Always measured on the whole design, so the beam doesn't change as parts are shot away.
+function hullOf(design) {
+  let x0 = Infinity, x1 = -Infinity;
+  for (const c of design.cells) { const d = PARTS[c.p]; if (d && d.sealed) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x + d.w); } }
+  if (x1 <= x0) return null;
+  const length = (x1 - x0) * CELL;
+  const beam = clamp(length * 0.18, 2.5, 12);
+  return { length, beam, cellVol: 0.25 * beam };
 }
 
 // Derived numbers (design/01 §8.2, design/05 §7). Pure; `alive` optional.
@@ -2403,6 +2691,8 @@ function statsOf(design, alive) {
   });
   const com = mass ? { x: mx / mass, y: my / mass } : { x: 0, y: 0 };
   const loco = tracks && !wheels ? 'track' : 'wheel';
+  const ship = shipNumbers(design, alive, mass);
+  const air = airNumbers(design, alive, mass, top);
   const pressure = contact ? (mass * GRAVITY) / contact / 1000 : Infinity;   // kPa
   const base = maxX > minX ? maxX - minX : 0;
   return {
@@ -2420,11 +2710,137 @@ function statsOf(design, alive) {
     fuel,
     shells,
     crew,
+    ...ship,
+    ...air,
   };
 }
 
+// Parasite drag grows steeply above DRAG_RISE_SPEED (sheet m/s).
+const dragRise = (v) => (v > DRAG_RISE_SPEED ? 1 + ((v - DRAG_RISE_SPEED) / 30) ** 2 : 1);
+
+// Aircraft and helicopters (design/05 §7.4), design-sheet units (m/s, N).
+function airNumbers(design, alive, mass, height) {
+  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0;
+  design.cells.forEach((c, i) => {
+    if (alive && !alive[i]) return;
+    const d = PARTS[c.p];
+    if (d.lift) {
+      S += d.lift;
+      lx += d.lift * (c.x + d.w / 2) * CELL;
+      ly += d.lift * (design.h - c.y - d.h / 2) * CELL;
+    }
+    if (d.tail) tailA += d.tail;
+    if (d.jet) jet += d.jet;
+    if (d.airprop) airprops++;
+    if (d.rotor) rotors++;
+    if (d.trotor) trotors++;
+    if (d.power > 0) power += d.power;
+  });
+  if (!S && !rotors) return { wingArea: 0, rotors: 0 };
+  const W = mass * GRAVITY;
+  const out = { wingArea: S, tailArea: tailA, rotors, trotors, weight: W, jetThrust: jet };
+  if (S) {
+    out.col = { x: lx / S, y: ly / S };
+    out.stallSpeed = Math.sqrt((2 * W) / (AIR_RHO * S * CL_MAX));
+    out.propPower = airprops ? power : 0;
+    out.CdA = AIR_CD_WING * S + AIR_CD_FRONT * height * 1.2;
+    // Top speed: thrust (jets, plus propeller power ÷ speed) meets drag at level flight.
+    let v = 10;
+    for (let k = 0; k < 80; k++) {
+      const T = jet + (out.propPower * 1000 * AIRPROP_EFF) / Math.max(v, 8);
+      const CL = Math.min(CL_MAX, (2 * W) / (AIR_RHO * S * v * v));
+      const D = 0.5 * AIR_RHO * v * v * (out.CdA * dragRise(v) + INDUCED_K * CL * CL * S);
+      v = clamp(v + (T - D) / (mass * 0.5 + 1) * 2, 1, 400);
+    }
+    out.topSpeed = v;
+    out.thrustAtStall = jet + (out.propPower * 1000 * AIRPROP_EFF) / Math.max(out.stallSpeed, 8);
+  }
+  if (rotors) out.rotorLift = rotors * ROTOR_LIFT * Math.min(1, power / (ROTOR_POWER * rotors));
+  return out;
+}
+
+// Waterline, draft, reserve buoyancy and centre of buoyancy for a ship floating level (design/05 §7.3).
+function shipNumbers(design, alive, mass) {
+  const hull = hullOf(design);
+  if (!hull) return { hull: null, reserve: 0, dispMax: 0, propsWet: 0 };
+  const H = design.h;
+  const rowVol = new Float64Array(H), rowX = new Float64Array(H);
+  let bottom = Infinity, top = -Infinity, props = [], ballastCap = 0, electric = 0;
+  design.cells.forEach((c, i) => {
+    const d = PARTS[c.p];
+    if (d.ballast && (!alive || alive[i])) ballastCap += d.ballast;
+    if (d.electric && (!alive || alive[i])) electric += d.power;
+    bottom = Math.min(bottom, (H - c.y - d.h) * CELL);
+    if (d.propeller && (!alive || alive[i])) props.push((H - c.y - d.h) * CELL);
+    if (!d.sealed || (alive && !alive[i])) return;
+    top = Math.max(top, (H - c.y) * CELL);
+    for (let yy = c.y; yy < c.y + d.h; yy++) for (let xx = c.x; xx < c.x + d.w; xx++) {
+      const r = H - 1 - yy;
+      const v = hull.cellVol * d.sealed;
+      rowVol[r] += v;
+      rowX[r] += v * (xx + 0.5) * CELL;
+    }
+  });
+  let dispMax = 0;
+  for (let r = 0; r < H; r++) dispMax += rowVol[r] * 1000;
+  // Fill rows from the bottom until the displaced water weighs as much as the ship.
+  let acc = 0, wl = top, bx = 0, by = 0, bv = 0;
+  for (let r = 0; r < H; r++) {
+    const m = rowVol[r] * 1000;
+    if (!m) continue;
+    const f = acc + m >= mass ? (mass - acc) / m : 1;
+    bv += rowVol[r] * f; bx += rowX[r] * f; by += rowVol[r] * f * (r + f / 2) * CELL;
+    acc += m * f;
+    if (f < 1) { wl = (r + f) * CELL; break; }
+  }
+  return {
+    hull,
+    dispMax,
+    reserve: dispMax ? (dispMax - mass) / dispMax : 0,
+    waterline: wl,                                // metres above the grid's bottom edge
+    draft: Math.max(0, wl - bottom),
+    freeboard: top - wl,
+    cob: bv ? { x: bx / bv, y: by / bv } : { x: 0, y: 0 },
+    propsWet: props.filter((y) => y < wl).length,
+    ballastCap,
+    diveNeed: dispMax - mass,                     // kg of ballast water to hang level under water
+    electric,                                     // kW that works submerged
+  };
+}
+
+// Top speed submerged (km/h, design sheet): electric motors only, the whole hull under water.
+function subSpeed(st) {
+  if (!st.hull || !st.electric || !st.propsWet) return 0;
+  const P = st.electric * 1000 * PROP_EFF;
+  const A = st.dispMax / 1000 / st.hull.length;
+  return Math.cbrt(P / (0.5 * 1000 * SHIP_CD * A)) * 3.6;
+}
+
+// Helicopter top speed (m/s, sheet): rotor lift tilted 15° forward against drag.
+function heliSpeed(st) {
+  if (!st.rotorLift || st.rotorLift <= st.weight) return 0;
+  return Math.sqrt((st.weight * Math.tan((15 * Math.PI) / 180)) / (0.5 * AIR_RHO * HELI_CDA));
+}
+
+// Top speed at sea (km/h, design sheet): propeller thrust against hull resistance on the
+// submerged cross-section (displaced volume ÷ hull length). Heavier ships sit deeper and go slower.
+function shipSpeed(st) {
+  if (!st.hull || !st.propsWet || !st.power || st.reserve <= 0) return 0;
+  const avail = st.power >= st.drawn ? 1 : st.power / Math.max(1, st.drawn);
+  const P = st.power * 1000 * PROP_EFF * avail;
+  const A = st.mass / 1000 / st.hull.length;
+  return Math.cbrt(P / (0.5 * 1000 * SHIP_CD * A)) * 3.6;
+}
+
 // ---------- Drafting Office numbers (design/01 §8.2, design/05 §7). Design-sheet units, not battle units.
-const CLASSES = { light: { name: 'Light ground', w: 16, h: 8 }, heavy: { name: 'Heavy ground', w: 28, h: 12 } };
+const CLASSES = {
+  light: { name: 'Light ground', w: 16, h: 8, domain: 'ground' },
+  heavy: { name: 'Heavy ground', w: 28, h: 12, domain: 'ground' },
+  ship: { name: 'Ship', w: 44, h: 16, domain: 'naval' },
+  sub: { name: 'Submarine', w: 44, h: 16, domain: 'sub' },
+  air: { name: 'Aircraft', w: 32, h: 12, domain: 'air' },
+  heli: { name: 'Helicopter', w: 32, h: 12, domain: 'heli' },
+};
 
 function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
 function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
@@ -2484,8 +2900,14 @@ function armourFacings(design) {
 function designReport(design) {
   const st = statsOf(design);
   const v = validateDesign(design);
+  const domain = v.domain;
   const speeds = {};
-  for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
+  if (domain === 'air') speeds.Air = Math.round((st.topSpeed || 0) * 3.6);
+  else if (domain === 'heli') speeds.Air = Math.round(heliSpeed(st) * 3.6);
+  else if (seaDomain(domain)) {
+    speeds[domain === 'sub' ? 'Surfaced' : 'Sea'] = Math.round(shipSpeed(st));
+    if (domain === 'sub') speeds.Submerged = Math.round(subSpeed(st));
+  } else for (const t of [T_ROAD, T_PLAINS, T_FOREST, T_MUD]) speeds[TERRAIN[t].name] = Math.round(topSpeed(st, TERRAIN[t]));
   let load = 0;
   const weapons = [];
   for (const c of design.cells) {
@@ -2493,13 +2915,31 @@ function designReport(design) {
     if (d.maxLoad) load += d.maxLoad;
     if (d.cat === 'weapon' && d.id !== 'smoke') weapons.push(d);
   }
+  const main = weapons.filter((d) => !d.auto && !d.secondary);
   const warnings = [];
   if (st.drawn > st.power) warnings.push(`Power drawn exceeds power produced by ${st.drawn - st.power} kW.`);
   if (load && st.mass > load) warnings.push(`Mass ${(st.mass / 1000).toFixed(1)} t on running gear rated ${(load / 1000).toFixed(1)} t.`);
-  if (!weapons.some((d) => !d.auto)) warnings.push('No main gun fitted.');
-  if (speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  if (airDomain(domain) ? !weapons.length : !main.length && !weapons.some((d) => d.secondary)) warnings.push(airDomain(domain) ? 'No weapons fitted.' : 'No main gun fitted.');
+  if (domain === 'ground' && speeds.Mud === 0 && st.power) warnings.push('Top speed in mud is 0 km/h.');
+  if (seaDomain(domain) && st.hull) {
+    // Parts below the waterline that aren't watertight add weight but no buoyancy.
+    const wet = new Set();
+    for (const c of design.cells) {
+      const d = PARTS[c.p];
+      if (!d.sealed && !d.propeller && !d.wet && (design.h - c.y - d.h) * CELL < st.waterline) wet.add(d.name);
+    }
+    if (domain === 'sub' && !st.electric) warnings.push('No electric motor: no drive when submerged.');
+    for (const n of wet) warnings.push(`${n} sits below the waterline and is not watertight.`);
+    if (!design.cells.some((c) => PARTS[c.p].bulkhead)) warnings.push('No watertight bulkheads: a hole floods the whole hull.');
+  }
+  if (domain === 'air' && st.stallSpeed) {
+    if (st.topSpeed <= st.stallSpeed * 1.05) warnings.push(`Top speed ${Math.round(st.topSpeed * 3.6)} km/h; stall speed ${Math.round(st.stallSpeed * 3.6)} km/h.`);
+    if (st.col && st.com.x < st.col.x) warnings.push(`Centre of mass ${(st.col.x - st.com.x).toFixed(2)} m behind the centre of lift.`);
+  }
+  if (domain === 'heli' && (st.rotorLift || 0) <= st.weight) warnings.push(`Rotor lift ${(st.rotorLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN.`);
   return {
-    st, valid: v, speeds, weapons, warnings,
+    st, valid: v, speeds, weapons, warnings, domain,
+    topSpeed: domain === 'naval' ? speeds.Sea : domain === 'sub' ? speeds.Surfaced : airDomain(domain) ? speeds.Air : speeds.Plains,
     climb: climbLimit(st),
     armour: armourFacings(design),
     cost: costOf(design),
@@ -2538,10 +2978,14 @@ function randomDesign(seed, cls) {
     const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
     if (validateDesign(d).ok) return d;
   }
-  return designFromTemplate('light');
+  return designFromTemplate({ ship: 'gunboat', sub: 'sub', air: 'fighter', heli: 'heli' }[cls] || 'light');
 }
 
 function tryRandomDesign(rng, cls) {
+  if (cls === 'ship') return tryRandomShip(rng);
+  if (cls === 'sub') return tryRandomSub(rng);
+  if (cls === 'air') return tryRandomPlane(rng);
+  if (cls === 'heli') return tryRandomHeli(rng);
   const C = CLASSES[cls];
   const heavy = cls === 'heavy';
   const cells = [];
@@ -2603,6 +3047,192 @@ function tryRandomDesign(rng, cls) {
   return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
 }
 
+// A random ship: keel, one or two hull layers with bulkheads, a bow, propellers at the stern,
+// an engine, a bridge and guns on deck. Stern on the left, like the templates.
+function tryRandomShip(rng) {
+  const C = CLASSES.ship;
+  const W = C.w, H = C.h;
+  const cells = [];
+  const grid = new Int8Array(W * H);
+  const put = (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+  const big = rng.next() < 0.45;
+  const x0 = 3;
+  const len = big ? 2 * rng.int(16, 19) : 2 * rng.int(9, 13);        // hull length in cells, even
+  const layers = big ? 2 : rng.pick([1, 1, 2]);
+  const bottom = H - 1;
+  for (let x = x0; x + 2 <= x0 + len - 2; x += 2) put('keel', x, bottom);
+  put('prop', x0 - 1, bottom - 1);
+  if (big) put('prop', x0 - 2, bottom - 1);
+  const every = rng.int(7, 11);
+  let deck = bottom - 2 * layers;                                        // row just above the hull
+  const marine = big && rng.next() < 0.8;
+  const engX = x0 + 2 * rng.int(2, Math.max(2, Math.floor(len / 6)));
+  for (let L = 0; L < layers; L++) {
+    const y = bottom - 2 - 2 * L;
+    let sinceBulk = 0;
+    for (let x = x0; x < x0 + len;) {
+      const last = x + 2 >= x0 + len;
+      if (L === 0 && marine && x === engX && put('marine', x, bottom - 3)) { x += 4; sinceBulk += 4; continue; }
+      if (grid[y * W + x]) { x++; continue; }
+      if (sinceBulk >= every && !last && put('bulk', x, y)) { x++; sinceBulk = 0; continue; }
+      if (last) { put(L === layers - 1 || layers === 1 ? 'bow' : 'hull', x, y); if (L < layers - 1) put('bow', x + 2, y - 2); x += 2; continue; }
+      if (!put('hull', x, y)) put('plate', x, y + 1);
+      x += 2; sinceBulk += 2;
+    }
+  }
+  if (marine) { for (let x = engX; x < engX + 4; x++) put('plate', x, bottom - 4); deck = Math.min(deck, bottom - 5); }
+  if (layers === 2 && !marine) deck = bottom - 5;
+  // Deck: engine (if not below), bridge, main gun on a turret, machine guns.
+  let x = x0;
+  if (!marine) { const e = rng.pick(['eng_m', 'eng_m', 'eng_h']); put(e, x, deck - 1); x += PARTS[e].w; }
+  else x += 1;
+  put('fuel_s', x, deck); x += 1;
+  const bridgeX = x0 + Math.floor(len * 0.45);
+  for (; x < bridgeX; x++) put('plate', x, deck);
+  put('crew2', bridgeX, deck - 1);
+  put('optics', bridgeX, deck - 2);
+  if (rng.next() < 0.6) put('radio', bridgeX + 1, deck - 2);
+  x = bridgeX + 2;
+  const gun = big ? rng.pick(['ngun', 'c105', 'ngun']) : rng.pick(['c37', 'c75', 'c75']);
+  put('ammo', x, deck); x++;
+  put('turret', x, deck);
+  put('crew2', x, deck - 2);
+  put(gun, x + 2, deck - PARTS[gun].h);
+  x += 3;
+  for (; x < x0 + len - 3; x++) put('plate', x, deck);
+  put(rng.pick(['mg', 'hmg', 'hmg']), x, deck);
+  if (rng.next() < 0.5) put('fc', bridgeX + 1, deck - 3) || put('fc', bridgeX - 1, deck);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
+}
+
+// A random submarine: a keel, a pressure hull of one or two layers with ballast tanks fore
+// and aft, an electric motor and a diesel, a bow tube and a sail with a periscope. Then trim
+// weights (80 mm plates) go on the upper deck until the tanks can take it under.
+function tryRandomSub(rng) {
+  const C = CLASSES.sub;
+  const W = C.w, H = C.h;
+  const cells = [];
+  const grid = new Int8Array(W * H);
+  const put = (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+  const x0 = 4, len = 2 * rng.int(9, 14), bottom = H - 1;
+  const lower = bottom - 2, upper = bottom - 4;
+  for (let x = x0 + 1; x + 2 <= x0 + len - 1; x += 2) put('keel', x, bottom);
+  put('prop', x0 - 1, bottom - 1);
+  // Lower layer: tank, motor, hull with bulkheads, tank, bow, tube.
+  put('ballast', x0, lower);
+  put('emotor', x0 + 2, lower);
+  let x = x0 + 4;
+  const tankMid = rng.next() < 0.5 ? x0 + 2 * Math.floor(len / 4) : -1;
+  while (x < x0 + len - 4) {
+    if (x === tankMid) { put('ballast', x, lower); x += 2; continue; }
+    if (rng.next() < 0.18 && put('bulk', x, lower)) { x++; continue; }
+    if (!put('phull', x, lower)) put('plate', x, lower + 1);
+    x += 2;
+  }
+  put('ballast', x, lower); x += 2;
+  put('bow', x, lower);
+  put('torp', x + 2, lower + 1);
+  if (rng.next() < 0.6) put('sonar', x + 1, bottom);
+  // Upper layer: tank, hull, diesel, fuel, the sail with the crew and periscope.
+  put('ballast', x0 + 2, upper);
+  const sail = x0 + 2 * Math.floor(len / 4) + 2;
+  for (let u = x0 + 4; u < x0 + len - 6;) {
+    if (u === sail) { put('crew2', u, upper); put('optics', u, upper - 1); if (rng.next() < 0.7) put('radio', u + 1, upper - 1); u += 2; continue; }
+    if (u === x0 + 4) { const e = rng.pick(['eng_s', 'eng_m']); if (put(e, u, upper)) { u += PARTS[e].w; continue; } }
+    if (!put('phull', u, upper)) put('fuel_s', u, upper + 1);
+    u += 2;
+  }
+  put('fuel_s', sail + 2, upper + 1);
+  let d = cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
+  // Trim weights until diving is possible with 2 t of ballast to spare for depth keeping.
+  for (let k = 0; k < 40; k++) {
+    const st = statsOf(d);
+    if (st.diveNeed <= st.ballastCap - 2000) break;
+    let placed = false;
+    for (let yy = upper + 1; yy >= upper - 1 && !placed; yy--) for (let xx = x0; xx < x0 + len && !placed; xx++) {
+      if (grid[yy * W + xx]) continue;
+      const touches = (grid[(yy + 1) * W + xx] || (xx > 0 && grid[yy * W + xx - 1]) || grid[yy * W + xx + 1]);
+      if (touches) placed = put('arm80', xx, yy);
+    }
+    if (!placed) break;
+    d = cropDesign({ id: 'random', name: `${C.name} (random)`, w: W, h: H, cells });
+  }
+  return d;
+}
+
+// Grid painter shared by the air randomisers.
+function gridPutter(W, H, cells) {
+  const grid = new Int8Array(W * H);
+  return (p, x, y) => {
+    const d = PARTS[p];
+    if (x < 0 || y < 0 || x + d.w > W || y + d.h > H) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) if (grid[yy * W + xx]) return false;
+    for (let yy = y; yy < y + d.h; yy++) for (let xx = x; xx < x + d.w; xx++) grid[yy * W + xx] = 1;
+    cells.push({ p, x, y });
+    return true;
+  };
+}
+
+// A random aircraft: a fuselage of frames with the tail at the back, an engine and propeller
+// (or a jet) at the nose, the cockpit, wings under the middle, guns and maybe bombs.
+function tryRandomPlane(rng) {
+  const C = CLASSES.air;
+  const cells = [];
+  const put = gridPutter(C.w, C.h, cells);
+  const row = 6, len = rng.int(12, 22), x0 = 2;
+  put('tail', 0, row - 1);
+  const jet = rng.next() < 0.3;
+  for (let x = x0; x < x0 + len; x++) put(rng.next() < 0.15 ? 'fuel_ss' : 'frame', x, row);
+  if (jet) put('jet', x0 + len, row);
+  else { put('aero', x0 + len, row); put('aprop', x0 + len + 2, row - 1); }
+  const cockpit = x0 + Math.floor(len * 0.55);
+  put('crew2', cockpit, row - 2);
+  if (rng.next() < 0.6) put('radio', cockpit - 1, row - 1);
+  const wings = rng.int(2, 5);
+  const wx = cockpit - wings - 1;
+  for (let k = 0; k < wings; k++) put('wing', wx + k * 2, row + 1);
+  const gun = rng.pick(['hmg', 'hmg', 'ac20', 'mg']);
+  put(gun, x0 + len - 2, row - 1);
+  if (rng.next() < 0.5) put(gun, x0 + len - 3, row - 1);
+  if (wings >= 3 && rng.next() < 0.5) put('bomb', wx + 1, row + 2);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
+}
+
+// A random helicopter: rotor on a mast over the cabin, engine behind, a tail boom with a tail
+// rotor, a chin gun. Parts are kept light: one rotor lifts 25 kN.
+function tryRandomHeli(rng) {
+  const C = CLASSES.heli;
+  const cells = [];
+  const put = gridPutter(C.w, C.h, cells);
+  const row = 6, boom = rng.int(4, 7), x0 = 1;
+  put('trotor', x0, row);
+  for (let x = x0 + 1; x <= x0 + boom; x++) put('frame', x, row);
+  const ex = x0 + boom + 1;
+  put('aero', ex, row - 1);
+  put(rng.pick(['fuel_ss', 'fuel_s']), ex, row);
+  put('frame', ex + 1, row);
+  put('crew2', ex + 2, row - 1);
+  put('frame', ex + 2, row - 2);
+  put('rotor', ex - 1, row - 3);
+  put(rng.pick(['hmg', 'mg', 'ac20']), ex + 4, row);
+  if (rng.next() < 0.6) put('optics', ex + 4, row - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
+}
+
 /* ---------- 09a_physics_terrain.js ---------- */
 /* ==== 09a PHYSICS: TERRAIN ==== */
 // Heightfield sampled every 0.5 m, with a material per sample (design/04 §6).
@@ -2642,7 +3272,10 @@ function makeTerrain(cfg) {
     h[i] = (hillsA(x) + hillsB(x)) * clamp(0.35 + edge, 0.35, 1) + rough(x);
   }
 
-  const free = (x0, x1) => x0 > 95 && x1 < L - 110 &&
+  // Sea (Part 2a): from cfg.sea.from to the right edge the ground falls away to a seabed.
+  const seaFrom = cfg.sea ? cfg.sea.from : L + 1000;
+  const land = Math.min(L, seaFrom - 30);
+  const free = (x0, x1) => x0 > 95 && x1 < land - 110 + (cfg.sea ? 100 : 0) &&
     !gaps.some((g) => x1 > g.x0 - 25 && x0 < g.x1 + 25) &&
     !mudZones.some((z) => x1 > z.x0 - 10 && x0 < z.x1 + 10);
 
@@ -2676,7 +3309,7 @@ function makeTerrain(cfg) {
   for (let k = 0, tries = 0; k < (cfg.forest || 0) && tries < 50; tries++) {
     const w = rng.range(30, 50);
     const x0 = rng.range(90, L - 120);
-    if (forestZones.some((z) => x0 + w > z.x0 - 10 && x0 < z.x1 + 10)) continue;
+    if (forestZones.some((z) => x0 + w > z.x0 - 10 && x0 < z.x1 + 10) || x0 + w > land) continue;
     const i0 = Math.round(x0 / CELL), i1 = Math.round((x0 + w) / CELL);
     for (let i = i0; i <= i1; i++) if (mat[i] === T_PLAINS) mat[i] = T_FOREST;
     for (let x = x0 + 2; x < x0 + w - 2; x += rng.range(3.5, 7)) {
@@ -2687,8 +3320,31 @@ function makeTerrain(cfg) {
     k++;
   }
 
+  // The sea surface sits just under the lowest land near the shore; beyond the shore the
+  // ground slopes down to the seabed, with a sandy beach at the water's edge.
+  let sea, seaX0;
+  if (cfg.sea) {
+    const i0 = Math.round(seaFrom / CELL);
+    let low = Infinity;
+    for (let i = Math.max(0, i0 - 60); i <= Math.min(n - 1, i0); i++) low = Math.min(low, h[i]);
+    sea = low - 0.4;
+    const bed = noise(23, 1.5);
+    const slope = cfg.sea.slope || 30;
+    for (let i = Math.max(0, i0 - 24); i < n; i++) {
+      const x = i * CELL;
+      if (x >= seaFrom) {
+        const t = clamp((x - seaFrom) / slope, 0, 1);
+        const s = t * t * (3 - 2 * t);
+        h[i] = lerp(Math.min(h[i], sea + 0.5), sea - cfg.sea.depth + bed(x), s);
+      }
+      mat[i] = T_SAND;
+    }
+    for (let i = n - 1; i >= 0 && h[i] < sea; i--) seaX0 = i * CELL;
+  }
+
   const T = {
-    length: L, n, h, mat, trees, gaps, mudZones, forestZones,
+    length: L, n, h, mat, trees: trees.filter((tr) => tr.x < seaFrom - 14), gaps, mudZones, forestZones,
+    sea, seaX0,
     version: 0,          // bumped when craters change the ground
     height(x) {
       const f = clamp(x / CELL, 0, n - 1.001);
@@ -2771,9 +3427,14 @@ function makeVehicle(design, side, x, dir, terrain) {
   rebuildVehicle(V, true);
   V.fuel = V.fuelMax;
   V.shells = V.shellsMax;
-  // Rest on the ground: lowest contact touching the terrain.
+  // Rest on the ground: lowest contact touching the terrain. Ships float level on their waterline.
   const b = V.body;
   b.x = x;
+  if (V.hull && seaAt(terrain, x - V.len / 2) && terrain.height(x) < terrain.sea - V.stats.draft) {
+    b.a = 0;
+    b.y = terrain.sea - (V.stats.waterline - V.com.y);
+    return V;
+  }
   b.a = Math.atan(terrain.slope(x));
   let low = Infinity;
   for (const c of V.contacts) low = Math.min(low, c.ly - c.r);
@@ -2812,6 +3473,14 @@ function worldToGrid(V, wx, wy, out) {
 // Keeps the world position of the parts unchanged when the centre of mass moves.
 function rebuildVehicle(V, first) {
   const D = V.design;
+  // Every part shot away: nothing left to simulate.
+  if (!V.parts.some((p) => p.alive)) {
+    V.gone = true;
+    V.contacts = []; V.weapons = []; V.wcells = null; V.props = null;
+    V.canDrive = false; V.immobile = true; V.crew = 0;
+    V.dirty = true;
+    return;
+  }
   const st = statsOf(D, V.alive);
   const b = V.body;
   if (!first && st.mass > 0) {
@@ -2823,11 +3492,12 @@ function rebuildVehicle(V, first) {
   V.com.x = st.com.x;
   V.com.y = st.com.y;
   V.stats = st;
-  b.m = Math.max(st.mass, 1);
+  b.m = Math.max(st.mass - (V.dropped || 0), 1);
+  if (V.domain === undefined) { V.domain = domainOf(D); V.flier = airDomain(V.domain); }
   V.grid = occupancy(D, V.alive);
 
   let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0, jets = 0;
   const contacts = [];
   const weapons = [];
   V.night = 0;
@@ -2847,8 +3517,11 @@ function rebuildVehicle(V, first) {
     if (d.spot) spot = Math.max(spot, d.spot);
     if (d.night) V.night = Math.max(V.night || 0, d.night);
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
+    if (d.sonar) sonar = Math.max(sonar, d.sonar * BATTLE_DISTANCE_SCALE);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
+    if (d.propeller || d.airprop || d.jet || d.rotor) loco++;
+    if (d.jet) jets++;
     if (d.loco) {
       loco++;
       const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
@@ -2859,7 +3532,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
+        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
       });
     }
   });
@@ -2885,13 +3558,14 @@ function rebuildVehicle(V, first) {
   V.c = (2 * SUSPENSION_DAMP * Math.sqrt(K * b.m)) / Math.max(V.nLoco, 3);
   V.power = engines;
   V.crew = crew;
-  V.canDrive = engines > 0 && crew > 0 && loco > 0;
+  V.canDrive = (engines > 0 || jets > 0) && crew > 0 && loco > 0;
   V.immobile = !V.canDrive;
   V.fuelMax = fuelMax;
   V.fuel = Math.min(V.fuel, fuelMax);
   V.shellsMax = Math.max(V.shellsMax, shellsMax);
   V.spot = spot;
   V.fc = fc;
+  V.sonar = sonar;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };
@@ -2900,9 +3574,14 @@ function rebuildVehicle(V, first) {
   V.radius = Math.hypot(V.len, V.height) / 2 + 0.5;
   V.soft = V.parts.every((p) => !p.alive || p.def.armor <= 15);
   V.dirty = true;
+  buildWaterParts(V);
+  buildAirParts(V);
 }
 
+const _wf = { fx: 0, fy: 0, tq: 0 };
+
 function stepVehicle(V, T, dt) {
+  if (V.gone) return;
   const b = V.body;
   const h = dt / PHYS_SUBSTEPS;
   const st = V.stats;
@@ -2980,9 +3659,19 @@ function stepVehicle(V, T, dt) {
       fx += tx * F; fy += ty * F;
       tq += c.rx * ty * F - c.ry * tx * F;
     }
-    // Air drag.
+    // Water: buoyancy, flooding, hull drag and propellers (09c).
+    if (seaAt(T, b.x + V.radius) && b.y - V.radius < T.sea) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      waterForces(V, T, ca, sa, throttle, h, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    }
+    // Aircraft and helicopters: lift, thrust and drag (09d). Everything else: air drag.
     const v2 = b.vx * b.vx + b.vy * b.vy;
-    if (v2 > 0.01) {
+    if (V.flier) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      airForces(V, T, ca, sa, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    } else if (v2 > 0.01) {
       const v = Math.sqrt(v2);
       const fd = 0.5 * 1.225 * 0.9 * dragA * v2;
       fx -= (fd * b.vx) / v; fy -= (fd * b.vy) / v;
@@ -2998,6 +3687,11 @@ function stepVehicle(V, T, dt) {
   }
   // Keep inside the battlefield.
   const lo = 3 + V.len / 2, hi = T.length - 3 - V.len / 2;
+  if (V.flier && ((b.x < lo && b.vx < 0) || (b.x > hi && b.vx > 0))) {
+    // Fliers turn back at the edge of the battlefield.
+    b.vx = -b.vx;
+    if (Math.sign(b.vx) !== V.dir) flipFlier(V);
+  }
   if (b.x < lo) { b.x = lo; if (b.vx < 0) b.vx = 0; }
   if (b.x > hi) { b.x = hi; if (b.vx > 0) b.vx = 0; }
   if (b.a > Math.PI) b.a -= Math.PI * 2;
@@ -3015,8 +3709,10 @@ function stepVehicle(V, T, dt) {
 function separateVehicles(list) {
   for (let i = 0; i < list.length; i++) {
     const A = list[i];
+    if (A.gone) continue;
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
+      if (B.gone) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;
@@ -3055,6 +3751,498 @@ function stepDebris(T, dt) {
   });
 }
 
+/* ---------- 09c_physics_water.js ---------- */
+/* ==== 09c PHYSICS: WATER ==== */
+// Ships (design/01 §7.3, design/05 §7.3, design/04 §6): every watertight cell below the
+// surface pushes up with the weight of the water it displaces, so draft, trim and list
+// come from where the parts sit. Propellers in the water push the hull; the hull drags
+// on its submerged cross-section. Holed watertight parts below the waterline let water
+// in, which spreads through the hull until a bulkhead stops it.
+
+// Battle speeds are scaled like ground speed caps (BATTLE_SPEED_SCALE): top speed goes
+// with the cube root of power ÷ drag, so the drag is raised by 1 ÷ scale³.
+const SHIP_BATTLE_DRAG = 1 / (BATTLE_SPEED_SCALE * BATTLE_SPEED_SCALE * BATTLE_SPEED_SCALE);
+const WATER_DAMPING = 0.6;        // damping ratio of the heave and pitch motion
+const FLOOD_TICK = 0.1;           // seconds between flooding updates
+const MAX_HOLES = 3;              // shell holes remembered per part
+
+// A shell went through a watertight part: remember the hole (grid cell, y counted from the bottom).
+function addHole(V, idx, cx, cy) {
+  const p = V.parts[idx];
+  p.holes = p.holes || [];
+  if (p.holes.length < MAX_HOLES) p.holes.push({ gx: (cx + 0.5) * CELL, gy: (cy + 0.5) * CELL });
+}
+
+// Is there sea at world x? (The sea runs from T.seaX0 to the right edge.)
+function seaAt(T, x) { return T.seaX0 !== undefined && x >= T.seaX0; }
+
+// Called from rebuildVehicle: the watertight cells, propellers and thrusters of the live parts.
+function buildWaterParts(V) {
+  const D = V.design;
+  if (V.hull === undefined) {
+    V.hull = hullOf(D);
+    V.fullAdj = V.hull ? adjacency(D, occupancy(D)) : null;       // all parts, alive or not
+  }
+  V.compCache = null;
+  if (!V.hull) { V.wcells = null; V.props = null; return; }
+  const wcells = [], props = [], ballast = [], engines = [];
+  let thrusters = 0, n = 0;
+  const tmp = { x: 0, y: 0 };
+  V.parts.forEach((p, i) => {
+    const d = p.def;
+    if (d.sealed) {
+      p.cap = d.w * d.h * V.hull.cellVol * d.sealed * 1000;       // kg of water it can hold
+      if (p.water === undefined) p.water = 0;
+    }
+    if (!p.alive) return;
+    if (d.sealed) {
+      for (let yy = p.y; yy < p.y + d.h; yy++) for (let xx = p.x; xx < p.x + d.w; xx++) {
+        gridToLocal(V, (xx + 0.5) * CELL, (D.h - yy - 0.5) * CELL, tmp);
+        wcells.push({ lx: tmp.x, ly: tmp.y, vol: V.hull.cellVol * d.sealed, part: i });
+        n++;
+      }
+    }
+    if (d.propeller) {
+      gridToLocal(V, (p.x + 0.5) * CELL, (D.h - p.y - d.h + 0.25) * CELL, tmp);
+      props.push({ lx: tmp.x, ly: tmp.y, part: i });
+    }
+    if (d.thruster) thrusters++;
+    if (d.ballast) { ballast.push(i); if (p.bw === undefined) p.bw = 0; }
+    if (d.power > 0) engines.push(i);
+  });
+  V.ballast = ballast.length ? ballast : null;
+  V.engineParts = engines;
+  V.wcells = wcells;
+  V.props = props;
+  V.buoyFull = wcells.reduce((sum, w) => sum + w.vol * 1000, 0);    // kg of water the live hull displaces fully under
+  V.thrusters = thrusters;
+  // Per-cell damping: a share of the critical damping of the whole hull.
+  const k = (1000 * GRAVITY * V.hull.cellVol) / CELL;
+  V.wDamp = 2 * WATER_DAMPING * Math.sqrt((k * V.body.m) / Math.max(1, n * 0.4));
+  V.draftNeed = (V.stats.draft || 0) + 0.8;
+}
+
+// Buoyancy, flooding weight, water drag and propeller thrust for one physics substep.
+// Adds into out.fx, out.fy, out.tq. h = substep length.
+function waterForces(V, T, ca, sa, throttle, h, out) {
+  const b = V.body;
+  const sea = T.sea;
+  let fx = 0, fy = 0, tq = 0, sub = 0;
+  if (V.wcells) {
+    const c = V.wDamp;
+    for (let i = 0; i < V.wcells.length; i++) {
+      const w = V.wcells[i];
+      const rx = w.lx * ca - w.ly * sa, ry = w.lx * sa + w.ly * ca;
+      if (b.x + rx < T.seaX0) continue;
+      const f = clamp((sea - (b.y + ry)) / CELL + 0.5, 0, 1);
+      if (f <= 0) continue;
+      // Damping is strongest for cells cutting the surface (waves carry the energy away);
+      // cells deep under only feel ordinary drag.
+      const vpy = b.vy + b.w * rx;
+      const Fy = 1000 * GRAVITY * w.vol * f - c * 4 * f * (1 - f) * vpy - 125 * V.hull.beam * f * vpy * Math.abs(vpy);
+      fy += Fy;
+      tq += rx * Fy;
+      sub += w.vol * f;
+    }
+    // Water inside flooded parts and ballast tanks weighs on them where they are.
+    for (let i = 0; i < V.parts.length; i++) {
+      const p = V.parts[i];
+      if (!(p.water || p.bw) || !p.alive) continue;
+      const lx = ((p.x + p.def.w / 2) * CELL - V.com.x) * V.dir, ly = (V.design.h - p.y - p.def.h / 2) * CELL - V.com.y;
+      const rx = lx * ca - ly * sa;
+      const F = ((p.water || 0) + (p.bw || 0)) * GRAVITY;
+      fy -= F;
+      tq -= rx * F;
+    }
+    // Hull resistance on the submerged cross-section.
+    if (sub > 0) {
+      const A = sub / V.hull.length;
+      fx -= 0.5 * 1000 * SHIP_CD * SHIP_BATTLE_DRAG * A * b.vx * Math.abs(b.vx);
+    }
+    // Propellers push along the hull while they are in the water.
+    const vAlong = b.vx * ca + b.vy * sa;
+    let wet = 0;
+    for (const p of V.props) {
+      if (!V.parts[p.part].alive) continue;
+      const px = b.x + p.lx * ca - p.ly * sa, py = b.y + p.lx * sa + p.ly * ca;
+      if (px >= T.seaX0 && py < sea - 0.1) wet++;
+    }
+    // Submerged, only electric motors run (design/05 §2); on the surface everything does.
+    let power = V.power, fuelled = V.fuelMax === 0 || V.fuel > 0;
+    if (V.submerged) {
+      power = 0;
+      for (const i of V.engineParts) if (V.parts[i].alive && V.parts[i].def.electric) power += V.parts[i].def.power;
+      fuelled = true;
+    }
+    const avail = power >= V.stats.drawn ? 1 : power / Math.max(V.stats.drawn, 1);
+    if (throttle !== 0 && wet && V.canDrive && fuelled && power > 0) {
+      const sign = throttle > 0 ? 1 : -1;
+      const sm = V.speedMul || 1;
+      const P = power * 1000 * PROP_EFF * avail * sm * sm * sm * (wet / V.props.length);
+      let F = (P / Math.max(Math.abs(vAlong), 1.5)) * Math.abs(throttle);
+      if (sign !== V.dir) F *= REVERSE_CAP;
+      fx += ca * F * sign; fy += sa * F * sign;
+    }
+    // Manoeuvre thrusters: quicker stops and reversals.
+    if (V.thrusters && V.canDrive && Math.abs(vAlong) > 0.05 && (throttle === 0 || Math.sign(throttle) !== Math.sign(vAlong))) {
+      const F = Math.min(V.thrusters * THRUSTER_FORCE, (b.m * Math.abs(vAlong)) / h) * -Math.sign(vAlong);
+      fx += ca * F; fy += sa * F;
+    }
+  } else {
+    // Vehicles without a hull: the water only slows them down; they sink.
+    const f = clamp((sea - (b.y - V.height / 2)) / Math.max(1, V.height), 0, 1);
+    if (f > 0) {
+      fx -= 1.5 * f * b.m * b.vx;
+      fy -= 1.5 * f * b.m * b.vy;
+      tq -= 1.5 * f * b.I * b.w;
+    }
+  }
+  out.fx += fx; out.fy += fy; out.tq += tq;
+}
+
+// Parts reachable by water from part i (a breach or a holed part): through holed
+// watertight parts and live parts that flood; bulkheads, keels and everything else stop it.
+function floodCompartment(V, i) {
+  V.compCache = V.compCache || {};
+  if (V.compCache[i]) return V.compCache[i];
+  const seen = new Uint8Array(V.parts.length);
+  const out = [];
+  const stack = [i];
+  seen[i] = 1;
+  if (V.parts[i].alive) out.push(i);
+  while (stack.length) {
+    const a = stack.pop();
+    for (const k of V.fullAdj[a]) {
+      if (seen[k]) continue;
+      const p = V.parts[k];
+      const pass = p.alive ? !!p.def.floods : !!p.def.sealed;
+      if (!pass) continue;
+      seen[k] = 1;
+      stack.push(k);
+      if (p.alive) out.push(k);
+    }
+  }
+  // Water finds the lowest parts first.
+  out.sort((a, b) => (V.parts[b].y + V.parts[b].def.h) - (V.parts[a].y + V.parts[a].def.h));
+  V.compCache[i] = out;
+  return out;
+}
+
+// How far under the surface a grid point (metres, y up) is, as a share of a cell (0..1).
+function underWater(V, T, gx, gy, tmp) {
+  gridToLocal(V, gx, gy, tmp);
+  localToWorld(V, tmp.x, tmp.y, tmp);
+  return tmp.x >= T.seaX0 ? clamp((T.sea - tmp.y) / CELL + 0.5, 0, 1) : 0;
+}
+
+// Flooding (design/05 §7.3): each holed-through (destroyed) watertight cell below the
+// surface lets in FLOOD_RATE kg/s, and each shell hole HOLE_RATE; the water fills the
+// compartment from the bottom up.
+function stepFlooding(B, V, dt) {
+  if (!V.hull || V.gone || !seaAt(B.T, V.body.x + V.len)) return;
+  V.floodT = (V.floodT || 0) + dt;
+  if (V.floodT < FLOOD_TICK) return;
+  const step = V.floodT;
+  V.floodT = 0;
+  const T = B.T;
+  const tmp = { x: 0, y: 0 };
+  const D = V.design;
+  for (let i = 0; i < V.parts.length; i++) {
+    const p = V.parts[i];
+    if (!p.def.sealed) continue;
+    let rate = 0;
+    if (!p.alive) {
+      for (let yy = p.y; yy < p.y + p.def.h; yy++) for (let xx = p.x; xx < p.x + p.def.w; xx++) rate += FLOOD_RATE * underWater(V, T, (xx + 0.5) * CELL, (D.h - yy - 0.5) * CELL, tmp);
+    } else if (p.holes && p.def.floods) {
+      for (const h of p.holes) rate += HOLE_RATE * underWater(V, T, h.gx, h.gy, tmp);
+    }
+    if (rate <= 0) continue;
+    let water = rate * step;
+    for (const k of floodCompartment(V, i)) {
+      const q = V.parts[k];
+      const add = Math.min(water, q.cap - q.water);
+      if (add <= 0) continue;
+      q.water += add;
+      water -= add;
+      if (!p.flooding) {
+        p.flooding = true;
+        const at = gridCellToWorld(V, p.x, D.h - p.y - 1);
+        if (V.side === 0 || V.seen) floatText('Flooding', at.x, at.y + 2, false);
+        audio.sfx('flood', B.panOf(at.x));
+      }
+      if (water <= 0) break;
+    }
+  }
+}
+
+// Submarines (design/01 §7.3): the ballast tanks trim to hold the depth order.
+// V.depthCmd = world height for the centre of mass, or null to surface (tanks blown).
+// Also works out V.submerged (the whole hull under water) for the engines and sensors.
+function subControl(V, T, dt) {
+  if (!V.hull || V.gone) return;
+  const b = V.body;
+  V.submerged = seaAt(T, b.x) && b.y + (V.bounds.maxY - V.com.y) * Math.cos(b.a) < T.sea - 0.05;
+  if (!V.ballast) return;
+  let cap = 0, now = 0, flood = 0;
+  for (const i of V.ballast) { const p = V.parts[i]; if (p.alive) { cap += p.def.ballast; now += p.bw; } }
+  for (const p of V.parts) if (p.alive && p.water) flood += p.water;
+  let want = 0;
+  if (V.depthCmd !== null && V.depthCmd !== undefined && !V.destroyed) {
+    // Level trim under water, plus a push toward the ordered depth, damped by the rate of climb.
+    const neutral = V.buoyFull - b.m - flood;
+    want = clamp(neutral + 1500 * (b.y - V.depthCmd) + 5000 * b.vy, 0, cap);
+  }
+  // Fore and aft tanks also trim the boat level: bow up takes water forward.
+  const step = BALLAST_RATE * dt;
+  const trim = V.depthCmd === null || V.depthCmd === undefined ? 0 : 3000 * b.a + 3000 * b.w;
+  for (const i of V.ballast) {
+    const p = V.parts[i];
+    if (!p.alive) continue;
+    const lx = ((p.x + p.def.w / 2) * CELL - V.com.x) * V.dir;
+    const target = clamp((cap ? (want * p.def.ballast) / cap : 0) + trim * lx, 0, p.def.ballast);
+    p.bw += clamp(target - p.bw, -step, step);
+  }
+}
+
+// Sinking and drowning: a ship whose highest point is under water has sunk; a capsized
+// ship is out; a land vehicle with its crew compartments under water is flooded.
+function waterChecks(B, V) {
+  const T = B.T;
+  if (V.destroyed || V.gone || !seaAt(T, V.body.x + V.len / 2)) return;
+  const b = V.body;
+  const tmp = { x: 0, y: 0 };
+  if (V.hull) {
+    let top = -Infinity;
+    for (const [gx, gy] of [[V.bounds.minX, V.bounds.maxY], [V.bounds.maxX, V.bounds.maxY], [(V.bounds.minX + V.bounds.maxX) / 2, V.bounds.maxY]]) {
+      gridToLocal(V, gx, gy, tmp);
+      localToWorld(V, tmp.x, tmp.y, tmp);
+      top = Math.max(top, tmp.y);
+    }
+    if (V.ballast) {
+      // A submarine is lost when, even with its tanks blown, it is too heavy to come up.
+      let flood = 0;
+      for (const p of V.parts) if (p.alive && p.water) flood += p.water;
+      if (top < T.sea && b.m + flood > V.buoyFull) knockOut(B, V, V.lastHitBy, 'Sunk', true);
+    } else if (top < T.sea - 0.1) knockOut(B, V, V.lastHitBy, 'Sunk', true);
+    else if (Math.abs(b.a) > 1.35 && b.y < T.sea + 1) knockOut(B, V, V.lastHitBy, 'Capsized', true);
+    return;
+  }
+  let crew = 0, wet = 0;
+  V.parts.forEach((p) => {
+    if (!p.alive || !p.def.crew) return;
+    crew++;
+    gridToLocal(V, (p.x + p.def.w / 2) * CELL, (V.design.h - p.y - p.def.h / 2) * CELL, tmp);
+    localToWorld(V, tmp.x, tmp.y, tmp);
+    if (tmp.x >= T.seaX0 && tmp.y < T.sea) wet++;
+  });
+  if (crew && wet === crew) knockOut(B, V, V.lastHitBy, 'Flooded', true);
+}
+
+// Ships keep to water deep enough for their keel; land vehicles stay out of the sea.
+// Used for AI-driven vehicles only: the player may run aground or drive in.
+function domainGuard(B, V) {
+  if (!V.throttle) return;
+  const T = B.T;
+  const ahead = V.body.x + Math.sign(V.throttle) * (V.len / 2 + 4);
+  if (V.hull) {
+    if (!seaAt(T, ahead) || T.height(ahead) > T.sea - V.draftNeed) V.throttle = 0;
+  } else if (seaAt(T, ahead) && T.height(ahead) < T.sea - 0.6) {
+    V.throttle = 0;
+  }
+}
+
+/* ---------- 09d_physics_air.js ---------- */
+/* ==== 09d PHYSICS: AIR ==== */
+// Aircraft and helicopters (design/01 §7.3, design/05 §7.4, design/04 §6).
+// Aircraft: wing lift at the centre of lift, from the airflow over the wing; beyond 12° the
+// wing stalls. The tail steadies the nose and carries the elevator. Thrust from jets, or
+// engine power through air propellers, against drag. Helicopters: rotor lift along the
+// mast, tilted to move; the tail rotor keeps them pointing.
+// Battle speeds are × AIR_SPEED_SCALE (07_data): the air is denser by 1 ÷ scale² and
+// propeller power is × scale, so the sheet numbers hold at the scaled speed.
+
+const AIR_RHO_BATTLE = AIR_RHO / (AIR_SPEED_SCALE * AIR_SPEED_SCALE);
+const CRASH_SPEED = 7;            // m/s: touching the ground faster than this is a crash
+const HELI_TILT = 0.26;           // radians of tilt at full ◀ or ▶ (15°)
+const CLIMB_RATE = 6;             // m/s the helicopter height order moves while ▲ or ▼ is held
+
+// Called from rebuildVehicle: lift, tail, thrust and rotors of the live parts, in body space.
+function buildAirParts(V) {
+  if (V.domain === undefined) V.domain = domainOf(V.design);
+  V.flier = airDomain(V.domain);
+  if (!V.flier) return;
+  const st = V.stats;
+  const D = V.design;
+  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0;
+  V.parts.forEach((p) => {
+    if (!p.alive) return;
+    const d = p.def;
+    const cx = (p.x + d.w / 2) * CELL, cy = (D.h - p.y - d.h / 2) * CELL;
+    if (d.tail) { tailA += d.tail; tx += d.tail * cx; ty += d.tail * cy; }
+    if (d.rotor) rotors++;
+    if (d.trotor) trotors++;
+    if (d.airprop) airprops++;
+    if (d.jet) jet += d.jet;
+  });
+  const tmp = { x: 0, y: 0 };
+  V.wingArea = st.wingArea || 0;
+  if (st.col) { gridToLocal(V, st.col.x, st.col.y, tmp); V.colL = { x: tmp.x, y: tmp.y }; } else V.colL = null;
+  V.tailArea = tailA;
+  if (tailA) { gridToLocal(V, tx / tailA, ty / tailA, tmp); V.tailL = { x: tmp.x, y: tmp.y }; } else V.tailL = null;
+  V.jetThrust = jet;
+  V.airPower = airprops ? V.power : 0;
+  V.rotors = rotors;
+  V.trotors = trotors;
+  V.rotorLift = rotors ? rotors * ROTOR_LIFT * Math.min(1, V.power / (ROTOR_POWER * rotors)) : 0;
+  V.CdA = AIR_CD_WING * V.wingArea + AIR_CD_FRONT * V.height * 1.2;
+  if (V.throttle === undefined) V.throttle = 0;
+}
+
+// Angle of attack of airflow (vx, vy) against the body: positive when the nose is above it.
+function attackAngle(V, vx, vy, ca, sa) {
+  const fx = V.dir * ca, fy = V.dir * sa;       // nose direction
+  const ux = -sa, uy = ca;                      // body up
+  return Math.atan2(-(vx * ux + vy * uy), vx * fx + vy * fy);
+}
+
+// Lift coefficient: 0.1 per degree up to 1.2 at 12°, falling away beyond (the stall).
+function liftCoeff(alpha) {
+  const deg = (alpha * 180) / Math.PI;
+  const a = Math.abs(deg);
+  const cl = a <= STALL_DEG ? CL_PER_DEG * a : Math.max(0, CL_MAX - 0.07 * (a - STALL_DEG));
+  return Math.sign(deg) * cl;
+}
+
+// A surface of area A at body point L, flown through the air: lift across the local airflow
+// plus induced drag along it. extra = added angle (elevator). Adds into out.
+function surfaceForce(V, L, A, cl0, extra, ca, sa, out, induced) {
+  const b = V.body;
+  const rx = L.x * ca - L.y * sa, ry = L.x * sa + L.y * ca;
+  const vx = b.vx - b.w * ry, vy = b.vy + b.w * rx;
+  const v2 = vx * vx + vy * vy;
+  if (v2 < 0.01) return 0;
+  const v = Math.sqrt(v2);
+  const alpha = attackAngle(V, vx, vy, ca, sa) + extra;
+  const CL = cl0 ? cl0(alpha) : clamp(((alpha * 180) / Math.PI) * 0.08, -1, 1);
+  const q = 0.5 * AIR_RHO_BATTLE * v2 * A;
+  // Lift is square to the airflow, on the side of the body's up.
+  let nx = -vy / v, ny = vx / v;
+  if (nx * -sa + ny * ca < 0) { nx = -nx; ny = -ny; }
+  const Fl = q * CL, Fd = induced ? q * INDUCED_K * CL * CL : 0;
+  const Fx = nx * Fl - (vx / v) * Fd, Fy = ny * Fl - (vy / v) * Fd;
+  out.fx += Fx; out.fy += Fy;
+  out.tq += rx * Fy - ry * Fx;
+  return alpha;
+}
+
+// Air forces for one physics substep; adds into out. Replaces the ground air drag.
+function airForces(V, T, ca, sa, out) {
+  const b = V.body;
+  const v2 = b.vx * b.vx + b.vy * b.vy;
+  const v = Math.sqrt(v2);
+  const live = !V.destroyed && V.canDrive && (V.fuelMax === 0 || V.fuel > 0);
+  if (V.domain === 'air') {
+    V.alpha = V.colL ? surfaceForce(V, V.colL, V.wingArea, liftCoeff, 0, ca, sa, out, true) : 0;
+    if (V.tailL) surfaceForce(V, V.tailL, V.tailArea, null, live ? -(V.pitchCmd || 0) * (ELEVATOR_DEG * Math.PI) / 180 : 0, ca, sa, out, false);
+    if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.CdA * dragRise(v / AIR_SPEED_SCALE) * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
+    if (live && V.throttle > 0) {
+      const T = V.throttle * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
+      out.fx += V.dir * ca * T; out.fy += V.dir * sa * T;
+    }
+  } else {
+    // Helicopter: rotor lift along the mast; drag on the body; attitude held by the tail rotor.
+    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift : 0;
+    out.fx += -sa * L; out.fy += ca * L;
+    if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * HELI_CDA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
+    if (live && V.rotors) {
+      if (V.trotors) out.tq += b.I * (8 * ((V.tiltCmd || 0) - b.a) - 5 * b.w);
+      else out.tq += b.I * 1.5;                 // no tail rotor: the body spins
+    }
+  }
+}
+
+// Controls, once per battle step. Aircraft: an autopilot holds level flight when there is no
+// pitch order. Helicopters: the collective holds the height order. Also turns fliers round.
+function flightControl(V, T, dt) {
+  if (!V.flier || V.gone) return;
+  const b = V.body;
+  if (V.domain === 'air') {
+    const gamma = Math.atan2(b.vy, b.vx * V.dir);            // climb angle, facing forward
+    if (V.pitchOrder === undefined || V.pitchOrder === null) {
+      // Proportional on the climb angle, damped by the pitch rate, with trim that builds up
+      // to hold it (an integral term).
+      const err = (V.gammaCmd || 0) - gamma;
+      V.trim = clamp((V.trim || 0) + err * 1.5 * dt, -1, 1);
+      V.pitchCmd = clamp(2.5 * err + V.trim - 0.6 * b.w * V.dir, -1, 1);
+    } else { V.pitchCmd = V.pitchOrder; V.trim = 0; }
+    // Past the vertical in a loop: roll level, now facing the other way (a half loop and roll).
+    if (Math.abs(b.a * V.dir) > 1.75 && !V.destroyed) flipFlier(V);
+  } else {
+    if (V.altCmd === undefined || V.altCmd === null) V.altCmd = b.y;
+    const W = b.m * GRAVITY;
+    const want = W + b.m * (1.2 * (V.altCmd - b.y) - 1.8 * b.vy);
+    V.collective = V.rotorLift ? clamp(want / Math.max(0.2, Math.cos(b.a)) / V.rotorLift, 0, 1) : 0;
+    const move = V.moveCmd || 0;
+    V.tiltCmd = -move * HELI_TILT;
+    if (move && Math.sign(move) !== V.dir && b.vx * move > 1) flipFlier(V);
+  }
+}
+
+// Mirror the flier to face the other way, keeping its place and motion.
+function flipFlier(V) {
+  const b = V.body;
+  V.dir = -V.dir;
+  if (V.domain === 'air') {
+    b.a += Math.PI;
+    while (b.a > Math.PI) b.a -= Math.PI * 2;
+    while (b.a < -Math.PI) b.a += Math.PI * 2;
+  }
+  for (const w of V.weapons) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); }
+  rebuildVehicle(V);
+}
+
+// Put a flier in the air at a height over the ground, flying (aircraft) or hovering.
+function launchFlier(V, T, alt) {
+  const b = V.body;
+  b.y = Math.max(T.height(b.x), seaAt(T, b.x) ? T.sea : -Infinity) + alt;
+  b.a = 0; b.w = 0; b.vy = 0;
+  if (V.domain === 'air') {
+    const st = V.stats;
+    const stall = (st.stallSpeed || 10) * AIR_SPEED_SCALE;
+    const top = (st.topSpeed || 10) * AIR_SPEED_SCALE;
+    b.vx = V.dir * Math.max(stall * 1.4, Math.min(top * 0.8, stall * 2));
+    V.throttle = 0.8;
+    V.gammaCmd = 0;
+  } else {
+    b.vx = 0;
+    V.altCmd = b.y;
+  }
+}
+
+// Touching the ground too fast is a crash; coming down on the sea is ditching.
+function airChecks(B, V) {
+  if (!V.flier || V.gone) return;
+  const b = V.body;
+  const T = B.T;
+  const v = Math.hypot(b.vx, b.vy);
+  let touch = false;
+  for (const c of V.contacts) if (c.N > 0) touch = true;
+  if (seaAt(T, b.x) && b.y - V.height * 0.3 < T.sea) {
+    if (!V.destroyed) knockOut(B, V, V.lastHitBy, 'Ditched', true);
+    return;
+  }
+  if (!touch) { V.lastAirV = v; return; }
+  const hard = (V.lastAirV || 0) > CRASH_SPEED || Math.abs(b.a) > 0.8;
+  if (hard && !V.crashed) {
+    V.crashed = true;
+    if (!V.destroyed) knockOut(B, V, V.lastHitBy, 'Crashed');
+    else { fxExplosion(B, b.x, b.y, 1.4); audio.sfx('boom', B.panOf(b.x), 1.2); B.trauma = Math.min(1, B.trauma + 0.2); }
+    fxDirt(B, b.x, T.height(b.x), 10);
+    for (let i = 0; i < V.parts.length; i++) if (V.parts[i].alive && B.rng.next() < 0.4) damagePart(B, V, i, 999, null);
+  }
+  V.lastAirV = v;
+}
+
 /* ---------- 10a_combat.js ---------- */
 /* ==== 10a COMBAT ==== */
 // Projectiles, ballistics, grid raycast, penetration, ricochet, per-part damage
@@ -3087,11 +4275,16 @@ function weaponPivot(V, w, out) {
   return localToWorld(V, out.x, out.y, out);
 }
 function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
 function weaponArc(V, w) {
   const d = w.def;
   if (d.indirect) return { lo: -5, hi: 80, both: false };
+  // Aircraft guns point along the nose; a helicopter's chin gun swings down; AA mounts swing
+  // round and up (Part 2c).
+  if (V.flier && !w.turret) return V.domain === 'heli' ? { lo: -50, hi: 12, both: false } : { lo: -4, hi: 4, both: false };
+  if (d.aa && !V.flier) return { lo: -5, hi: 85, both: true };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
 }
 
@@ -3127,7 +4320,7 @@ function aimWeapon(V, w, tx, ty, out) {
   out.face = face;
   out.ok = false;
   out.reason = '';
-  if (!w.turret && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
+  if (!w.turret && !weaponArc(V, w).both && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
   let ang = d.auto ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect);
   if (Number.isNaN(ang)) { ang = angleFromElevation(V, 35, face); out.reason = 'Out of range'; }
   const arc = weaponArc(V, w);
@@ -3155,19 +4348,25 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   const moving = Math.abs(V.speed) > 0.4;
   if (moving) spread *= V.stab ? 1.6 : 2.5;
   spread *= spreadMul;
-  const a = ang + (gauss(B.rng) * spread * Math.PI) / 180;
   weaponPivot(V, w, _p);
   const L = barrelLength(d);
-  const mx = _p.x + Math.cos(a) * L, my = _p.y + Math.sin(a) * L;
-  const s = shells.take();
-  s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
-  s.vx = Math.cos(a) * d.vel + V.body.vx;
-  s.vy = Math.sin(a) * d.vel + V.body.vy;
-  s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
-  s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false;
+  // Twin mounts fire both barrels, each with its own aiming error.
+  let mx = 0, my = 0, a = ang;
+  for (let k = 0; k < (d.twin ? 2 : 1); k++) {
+    a = ang + (gauss(B.rng) * spread * Math.PI) / 180;
+    const off = d.twin ? (k ? -1 : 1) * TWIN_GAP : 0;
+    mx = _p.x + Math.cos(a) * L - Math.sin(ang) * off;
+    my = _p.y + Math.sin(a) * L + Math.cos(ang) * off;
+    const s = shells.take();
+    s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
+    s.vx = Math.cos(a) * d.vel + V.body.vx;
+    s.vy = Math.sin(a) * d.vel + V.body.vy;
+    s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
+    s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false; s.wet = false;
+  }
   // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
   if (!d.auto) {
-    const J = d.cal * d.cal * 0.9;
+    const J = d.cal * d.cal * 0.9 * (d.twin ? 2 : 1);
     const jx = -Math.cos(a) * J, jy = -Math.sin(a) * J;
     const b = V.body;
     b.vx += jx / b.m; b.vy += jy / b.m;
@@ -3277,6 +4476,7 @@ function shellVsVehicle(B, s, V) {
     if (pen >= eff) {
       pen -= eff;
       if (!penetrated) { penetrated = true; hitName = d.name; }
+      if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);
       dmg *= 0.65;
       if (dmg < 4 || pen <= 1) { used = true; return true; }
@@ -3363,6 +4563,7 @@ function damagePart(B, V, idx, dmg, source) {
   if (!p.alive || dmg <= 0) return;
   p.hp -= dmg;
   p.scorch = Math.min(1, p.scorch + dmg / p.def.hp);
+  if (source) V.lastHitBy = source;
   V.dirty = true;
   if (p.hp <= 0) destroyPart(B, V, idx, source);
   else if (!V.destroyed) checkVehicleState(B, V, source);
@@ -3424,15 +4625,21 @@ function checkVehicleState(B, V, source) {
   }
 }
 
-function knockOut(B, V, source, label) {
+// quiet: sunk or flooded, so no fireball.
+function knockOut(B, V, source, label, quiet) {
   if (V.destroyed) return;
   V.destroyed = true;
   V.throttle = 0;
   V.canDrive = false;
   B.hitStop = 0.05;
-  fxExplosion(B, V.body.x, V.body.y + 0.5, 1.2);
-  fxSmokeColumn(B, V);
-  audio.sfx('boom', B.panOf(V.body.x));
+  if (quiet) {
+    fxSplash(B, V.body.x, B.T.sea, 2);
+    audio.sfx('flood', B.panOf(V.body.x), 1.5);
+  } else {
+    fxExplosion(B, V.body.x, V.body.y + 0.5, 1.2);
+    fxSmokeColumn(B, V);
+    audio.sfx('boom', B.panOf(V.body.x));
+  }
   B.trauma = Math.min(1, B.trauma + 0.35);
   floatText(label, V.body.x, V.body.y + V.height + 1, true);
   if (V.side === 0) haptic('lost');
@@ -3461,7 +4668,7 @@ function explode(B, x, y, dmg, radius, source) {
   fxExplosion(B, x, y, radius / 3);
   audio.sfx('boom', B.panOf(x), 0.7 + radius / 8);
   const gy = B.T.height(x);
-  if (y - gy < radius * 0.6) B.T.carve(x, radius * 0.6, 0.35 + radius * 0.06);
+  if (y - gy < radius * 0.6 && !seaAt(B.T, x)) B.T.carve(x, radius * 0.6, 0.35 + radius * 0.06);
   const tmp = { x: 0, y: 0 };
   for (const V of B.units) {
     if (Math.hypot(V.body.x - x, V.body.y - y) > radius + V.radius) continue;
@@ -3511,8 +4718,9 @@ function stepShells(B, dt) {
     s.y += s.vy * dt;
     if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
     // Incoming artillery whistles for its last second and a half.
-    if (s.def.indirect && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
+    if ((s.def.indirect || s.def.secondary === 'bomb') && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
     const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
+    if (s.def.flak && (flakCheck(B, s) || s.t > maxT)) { if (s.t > maxT) flakBurst(B, s.x, s.y, s.shooter); s.alive = false; return; }
     if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
     // Vehicles.
     for (const V of B.units) {
@@ -3526,7 +4734,19 @@ function stepShells(B, dt) {
       if (Math.hypot(s.px + ex * t - b.x, s.py + ey * t - b.y) > V.radius) continue;
       if (shellVsVehicle(B, s, V)) { s.alive = false; return; }
     }
-    // Trees stop machine-gun rounds and sometimes shells.
+    // Water: bullets stop at the surface, high explosive bursts on it, and shells
+    // slow sharply and die 1.5 m down (design/01 §7.1 sea layer).
+    if (seaAt(T, s.x) && s.y < T.sea) {
+      if (!s.wet) {
+        s.wet = true;
+        fxSplash(B, s.x, T.sea, s.mg ? 0.3 : s.he ? 1.6 : 1);
+        if (s.mg) { s.alive = false; return; }
+        if (s.he) { s.alive = false; explode(B, s.x, T.sea, s.def.heDmg || s.dmg, s.def.heRadius || 3, s.shooter); return; }
+        audio.sfx('splash', B.panOf(s.x), 0.7);
+        s.vx *= 0.2; s.vy *= 0.2;
+      }
+      if (s.y < T.sea - 1.5) { s.alive = false; return; }
+    }
     // Ground.
     const gh = T.height(s.x);
     if (s.y <= gh) {
@@ -3543,7 +4763,7 @@ function stepShells(B, dt) {
 // The joy layer (design/03 §5): muzzle flashes, sparks, dirt, explosions, smoke,
 // fire, shockwave rings. Particles are pooled and capped by the quality setting.
 
-const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6;
+const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6, FX_SPRAY = 7, FX_BUBBLE = 8;
 
 const particles = makePool(() => ({
   alive: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 1, size: 1, grow: 0, g: 0, shade: 0,
@@ -3585,6 +4805,17 @@ function fxSparks(B, x, y, ang, n) {
     if (p) p.g = 1;
   }
   spawnParticle(FX_FLASH, x, y, 0, 0, 0.05, 0.8);
+}
+
+// Shell splash on the sea: a white column of spray and a ring (Part 2a).
+function fxSplash(B, x, y, size) {
+  const n = Math.round(4 + size * 8);
+  for (let i = 0; i < n; i++) {
+    const p = spawnParticle(FX_SPRAY, x + B.rng.range(-0.3, 0.3) * size, y, B.rng.range(-1.5, 1.5) * size, B.rng.range(4, 11) * Math.sqrt(size), B.rng.range(0.5, 1.1), B.rng.range(0.25, 0.5) * (0.6 + size * 0.4));
+    if (p) p.g = 1;
+  }
+  const r = spawnParticle(FX_RING, x, y, 0, 0, 0.5, 0.4 * size);
+  if (r) r.grow = 4 * size;
 }
 
 function fxDirt(B, x, y, n) {
@@ -3649,6 +4880,8 @@ function stepEffects(B, dt) {
     p.y += p.vy * dt;
     p.size += p.grow * dt;
     if (p.kind === FX_DIRT && p.y < B.T.height(p.x)) p.alive = false;
+    if (p.kind === FX_SPRAY && p.vy < 0 && seaAt(B.T, p.x) && p.y < B.T.sea) p.alive = false;
+    if (p.kind === FX_BUBBLE && p.y > B.T.sea) p.alive = false;
   });
   smokeScreens.forEachAlive((s) => {
     s.t += dt;
@@ -3728,6 +4961,284 @@ function drawConfetti(g) {
   });
 }
 
+/* ---------- 10c_naval_weapons.js ---------- */
+/* ==== 10c NAVAL WEAPONS ==== */
+// Torpedoes and depth charges (design/01 §7.4, design/05 §3), fired with Alt.
+// A torpedo runs straight at a set depth and bursts against a hull below the
+// waterline; a depth charge rolls off the stern, sinks, and bursts at its set depth.
+// Both do their damage with the ordinary blast, so holed hull parts flood.
+
+const torpedoes = makePool(() => ({ alive: false, x: 0, y: 0, vy: 0, dir: 1, depth: 0, t: 0, life: 0, shooter: null, side: 0, bub: 0 }), 12);
+const charges = makePool(() => ({ alive: false, x: 0, y: 0, vx: 0, vy: 0, depth: 0, t: 0, shooter: null, side: 0 }), 16);
+
+// Guns can't fire with their mount under water (a submerged submarine's deck gun).
+function gunUnderWater(B, V, w) {
+  if (!V.hull || !seaAt(B.T, V.body.x)) return false;
+  weaponPivot(V, w, _p);
+  return _p.y < B.T.sea;
+}
+
+// Battlefield range for engaging: the main gun, or a torpedo tube.
+function engageRange(V) {
+  const mw = mainWeapon(V);
+  let r = mw ? weaponRange(mw.def) : 0;
+  for (const w of V.weapons) if (w.def.secondary === 'torpedo' && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
+  if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
+  return r;
+}
+
+// Depth a torpedo should run at to hit U: just above its keel; with no ship to aim at,
+// the launch depth (at least 1.5 m down).
+function runDepth(B, U, launchY) {
+  const T = B.T;
+  if (U && U.hull && seaAt(T, U.body.x)) return Math.min(T.sea - 0.6, U.body.y - (U.com.y - 0.6));
+  return Math.min(launchY, T.sea - 1.5);
+}
+
+function launchTorpedo(B, V, w, tgt) {
+  if (w.rounds <= 0 || w.reload > 0) return false;
+  weaponPivot(V, w, _p);
+  const t = torpedoes.take();
+  const face = tgt ? (tgt.body.x >= V.body.x ? 1 : -1) : V.dir;
+  t.x = _p.x + face * w.def.w * CELL;
+  t.y = _p.y;
+  t.vy = 0;
+  t.dir = face;
+  t.depth = runDepth(B, tgt, _p.y);
+  t.t = 0;
+  t.life = weaponRange(w.def) / TORPEDO.speed;
+  t.shooter = V; t.side = V.side; t.bub = 0;
+  w.rounds--;
+  w.reload = w.def.reload;
+  V.revealT = Math.max(V.revealT, 2);
+  audio.sfx('torpedo', B.panOf(t.x));
+  if (V === B.me) haptic('fire');
+  return true;
+}
+
+function dropCharge(B, V, w, depth) {
+  if (w.rounds <= 0 || w.reload > 0) return false;
+  weaponPivot(V, w, _p);
+  const c = charges.take();
+  c.x = _p.x - V.dir * 0.4; c.y = _p.y + 0.2;
+  c.vx = V.body.vx - V.dir * 1.5; c.vy = 1;
+  c.depth = depth; c.t = 0;
+  c.shooter = V; c.side = V.side;
+  w.rounds--;
+  w.reload = w.def.reload;
+  audio.sfx('tap', B.panOf(c.x));
+  return true;
+}
+
+// The player's Alt button: a torpedo at the target, or depth charges over a submarine.
+// Returns a short reason when nothing can be fired.
+function playerSecondary(B) {
+  const V = B.me;
+  const list = V.weapons.filter((w) => w.def.secondary && V.parts[w.part].alive);
+  if (!list.length) return 'No secondary weapon';
+  const bomb = list.find((w) => w.def.secondary === 'bomb' && w.rounds > 0) || list.find((w) => w.def.secondary === 'bomb');
+  if (bomb) {
+    if (bomb.rounds <= 0) return 'Out of bombs';
+    if (bomb.reload > 0) return 'Reloading';
+    dropBomb(B, V, bomb);
+    return '';
+  }
+  const tgt = autoTarget(B);
+  const sub = nearestTarget(B, V, 40, (U) => !!U.ballast);
+  const dc = list.find((w) => w.def.secondary === 'depth' && w.rounds > 0);
+  const tp = list.find((w) => w.def.secondary === 'torpedo' && w.rounds > 0);
+  if (dc && (sub || !tp)) {
+    if (dc.reload > 0) return 'Reloading';
+    if (!seaAt(B.T, V.body.x)) return 'Not at sea';
+    dropCharge(B, V, dc, sub ? sub.body.y : B.T.sea - DEPTH_CHARGE.depth);
+    return '';
+  }
+  if (tp) {
+    if (tp.reload > 0) return 'Reloading';
+    if (!seaAt(B.T, V.body.x)) return 'Not at sea';
+    launchTorpedo(B, V, tp, tgt);
+    return '';
+  }
+  return 'Out of torpedoes and charges';
+}
+
+// AI use: torpedoes at ships and submarines in range, depth charges over a spotted submarine.
+function aiSecondary(B, V, w) {
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1) || !seaAt(B.T, V.body.x)) return;
+  const ai = V.ai;
+  if (w.def.secondary === 'torpedo') {
+    const tgt = ai && ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen || !tgt.hull || ai.react > 0) return;
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(w.def) * 0.9) return;
+    launchTorpedo(B, V, w, tgt);
+  } else {
+    const sub = nearestTarget(B, V, 12, (U) => !!U.ballast && U.body.y < V.body.y);
+    if (sub) dropCharge(B, V, w, sub.body.y);
+  }
+}
+
+// Underwater burst: the ordinary blast (holes flood), a white column on the surface.
+function underwaterBurst(B, x, y, dmg, radius, source) {
+  explode(B, x, y, dmg, radius, source);
+  if (y > B.T.sea - radius * 1.5) fxSplash(B, x, B.T.sea, 2.5);
+  B.trauma = Math.min(1, B.trauma + 0.2);
+}
+
+function stepUnderwater(B, dt) {
+  const T = B.T;
+  torpedoes.forEachAlive((t) => {
+    t.t += dt;
+    if (t.t > t.life || !seaAt(T, t.x) || t.x < 1 || t.x > T.length - 1) { t.alive = false; return; }
+    // Falls in from a deck tube, then runs level at its set depth.
+    if (t.y > T.sea) { t.vy -= GRAVITY * dt; t.y += t.vy * dt; t.x += t.dir * 4 * dt; return; }
+    t.vy = 0;
+    t.x += t.dir * TORPEDO.speed * dt;
+    t.y += clamp(t.depth - t.y, -TORPEDO.depthRate * dt, TORPEDO.depthRate * dt);
+    t.bub += dt;
+    if (t.bub > 0.08) { t.bub = 0; const p = spawnParticle(FX_BUBBLE, t.x - t.dir * 0.8, t.y, 0, 0.8, 0.9, 0.18); if (p) p.grow = 0.1; }
+    if (t.y <= T.height(t.x) + 0.2) { t.alive = false; underwaterBurst(B, t.x, t.y, TORPEDO.dmg, TORPEDO.radius, t.shooter); return; }
+    for (const V of B.units) {
+      if (V === t.shooter && t.t < 1.5) continue;
+      if (V.gone || (V.side === t.side && !V.destroyed)) continue;
+      if (Math.abs(V.body.x - t.x) > V.radius || Math.abs(V.body.y - t.y) > V.radius) continue;
+      worldToGrid(V, t.x + t.dir * 0.4, t.y, _g0);
+      const cx = Math.floor(_g0.x / CELL), cy = V.design.h - 1 - Math.floor(_g0.y / CELL);
+      if (cx < 0 || cy < 0 || cx >= V.design.w || cy >= V.design.h || V.grid[cy * V.design.w + cx] < 0) continue;
+      t.alive = false;
+      if (t.shooter === B.me || V === B.me) floatText('Torpedo hit', t.x, T.sea + 2, true);
+      underwaterBurst(B, t.x, t.y, TORPEDO.dmg, TORPEDO.radius, t.shooter);
+      return;
+    }
+  });
+  charges.forEachAlive((c) => {
+    c.t += dt;
+    if (c.y > T.sea || !seaAt(T, c.x)) {
+      c.vy -= GRAVITY * dt;
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      if (seaAt(T, c.x) && c.y <= T.sea) { fxSplash(B, c.x, T.sea, 0.6); c.vx *= 0.2; }
+      else if (c.y <= T.height(c.x)) { c.alive = false; }
+      return;
+    }
+    c.vx *= 1 - 2 * dt;
+    c.x += c.vx * dt;
+    c.y -= DEPTH_CHARGE.sink * dt;
+    let hit = c.y <= c.depth || c.y <= T.height(c.x) + 0.3 || c.t > 20;
+    for (const V of B.units) {
+      if (hit) break;
+      if (V.gone || V.side === c.side || V.destroyed) continue;
+      if (Math.abs(V.body.x - c.x) < V.len / 2 && Math.abs(V.body.y - c.y) < 1) hit = true;
+    }
+    if (hit) { c.alive = false; underwaterBurst(B, c.x, c.y, DEPTH_CHARGE.dmg, DEPTH_CHARGE.radius, c.shooter); }
+  });
+}
+
+// Drawn under the water layer, so they read as under water.
+function drawUnderwater(g) {
+  const S = view.S;
+  torpedoes.forEachAlive((t) => {
+    const x = view.sx(t.x), y = view.sy(t.y);
+    g.fillStyle = '#2b2f36';
+    roundRect(g, x - (t.dir > 0 ? 0.9 : 0.1) * S, y - 0.12 * S, S, 0.24 * S, 0.12 * S); g.fill();
+    g.fillStyle = '#9aa06b';
+    g.fillRect(x + (t.dir > 0 ? 0 : -0.1) * S, y - 0.1 * S, 0.1 * S, 0.2 * S);
+  });
+  charges.forEachAlive((c) => {
+    const x = view.sx(c.x), y = view.sy(c.y);
+    g.fillStyle = '#3a3f47';
+    g.fillRect(x - 0.18 * S, y - 0.25 * S, 0.36 * S, 0.5 * S);
+    g.fillStyle = PAL.amber;
+    g.fillRect(x - 0.18 * S, y - 0.05 * S, 0.36 * S, 0.1 * S);
+  });
+}
+
+/* ---------- 10d_air_weapons.js ---------- */
+/* ==== 10d AIR WEAPONS ==== */
+// Guns fixed along an aircraft's nose, bombs, flak and aiming at aircraft
+// (design/01 §7.4, design/05 §3). Only heavy machine guns, autocannons and AA guns
+// can engage aircraft (their def.aa); AA guns burst near them (def.flak).
+
+const FLAK_FUSE = 3;              // metres from an aircraft at which a flak shell bursts
+const FLAK = { dmg: 30, radius: 3 };
+
+// Can V's weapons fight U? Aircraft only by weapons that can hit aircraft, or by other aircraft.
+function canEngage(V, U) {
+  if (!U.flier || V.flier) return true;
+  return V.weapons.some((w) => w.def.aa && V.parts[w.part].alive);
+}
+
+// Lead a moving aircraft: aim where it will be when the shot arrives.
+function leadTarget(V, w, U, out) {
+  if (!U.flier) return out;
+  weaponPivot(V, w, _p);
+  const t = Math.hypot(out.x - _p.x, out.y - _p.y) / w.def.vel;
+  out.x += U.body.vx * t;
+  out.y += U.body.vy * t;
+  return out;
+}
+
+// The player's Fire on an aircraft: every gun fixed along the nose fires straight ahead.
+function fireForward(B, V) {
+  let fired = false, loading = false, any = false;
+  const ang = angleFromElevation(V, 0, V.dir);
+  for (const w of V.weapons) {
+    if (w.def.secondary || w.turret || !V.parts[w.part].alive) continue;
+    any = true;
+    if (w.reload > 0) { loading = true; continue; }
+    if (!w.def.auto && V.shells <= 0) continue;
+    w.angle = ang;
+    fireWeapon(B, V, w, ang, 1);
+    w.reload = w.def.auto ? (60 / w.def.rpm) * 3 : w.def.reload;
+    fired = true;
+  }
+  if (fired) { B.stats.shots++; return ''; }
+  return !any ? (V.weapons.some((w) => w.def.secondary) ? playerSecondary(B) : 'No gun') : loading ? 'Reloading' : 'Out of shells';
+}
+
+// Release one bomb from rack w, falling with the aircraft's speed.
+function dropBomb(B, V, w) {
+  if (w.rounds <= 0 || w.reload > 0) return false;
+  weaponPivot(V, w, _p);
+  const s = shells.take();
+  s.x = s.px = s.sx = _p.x; s.y = s.py = s.sy = _p.y - 0.4;
+  s.vx = V.body.vx; s.vy = V.body.vy - 0.5;
+  s.t = 0; s.side = V.side; s.shooter = V; s.def = w.def;
+  s.dmg = BOMB.dmg; s.mg = false; s.he = true; s.ignore = V; s.ignoreT = 0.6; s.whistled = false; s.wet = false;
+  w.rounds--;
+  w.reload = w.def.reload;
+  V.dropped = (V.dropped || 0) + w.def.bombMass;
+  V.body.m = Math.max(1, V.body.m - w.def.bombMass);
+  audio.sfx('tap', B.panOf(s.x));
+  return true;
+}
+
+// Where a bomb let go now would land (x), falling to height y.
+function bombImpactX(V, y) {
+  const b = V.body;
+  const h = b.y - y;
+  if (h <= 0) return b.x;
+  const t = (b.vy + Math.sqrt(b.vy * b.vy + 2 * GRAVITY * h)) / GRAVITY;
+  return b.x + b.vx * t;
+}
+
+// A flak shell bursts when it passes near an enemy aircraft. Returns true if it burst.
+function flakCheck(B, s) {
+  for (const V of B.units) {
+    if (!V.flier || V.destroyed || V.side === s.side) continue;
+    if (Math.abs(V.body.x - s.x) < FLAK_FUSE + V.radius && Math.abs(V.body.y - s.y) < FLAK_FUSE + V.radius &&
+        Math.hypot(V.body.x - s.x, V.body.y - s.y) < FLAK_FUSE + V.radius * 0.5) {
+      flakBurst(B, s.x, s.y, s.shooter);
+      return true;
+    }
+  }
+  return false;
+}
+
+function flakBurst(B, x, y, source) {
+  explode(B, x, y, FLAK.dmg, FLAK.radius, source);
+  const p = spawnParticle(FX_SMOKE, x, y, 0, 0.2, 2.2, 1.2);
+  if (p) { p.grow = 0.8; p.shade = 0.05; }
+}
+
 /* ---------- 11_ai.js ---------- */
 /* ==== 11 AI ==== */
 // Spotting, squad orders, enemy tactics and automatic weapons (design/01 §7.2, §7.4).
@@ -3751,10 +5262,14 @@ function spotRange(B, O, V) {
   let r = SPOT_BASE * O.spot * sightFactor(B, O);
   if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
+  if (V.flier) r *= AIR_SPOT;
+  if (O.flier) r *= AIR_SIGHT;
   return r;
 }
 
 // Every 0.25 s: who can each side see? Wrecks stay visible once seen.
+// A submerged submarine is only found by sonar (design/05 §4); a submerged observer
+// sees only through a periscope above the water, or by sonar.
 function updateSpotting(B) {
   for (const V of B.units) {
     if (V.destroyed && V.seen) continue;
@@ -3762,14 +5277,29 @@ function updateSpotting(B) {
     for (const O of B.units) {
       if (O.side === V.side || O.destroyed || O.crew <= 0) continue;
       const d = Math.abs(O.body.x - V.body.x);
+      if (O.sonar && d <= O.sonar && seaAt(B.T, V.body.x)) { seen = true; if (V.submerged && !V.pinged && O.side === 0) { V.pinged = true; audio.sfx('ping', B.panOf(V.body.x)); } break; }
+      if (V.submerged || (O.submerged && !periscopeUp(B, O))) continue;
       if (d > spotRange(B, O, V)) continue;
       if (smokeBlocks(O.body.x, O.body.y + O.height, V.body.x, V.body.y + V.height * 0.5)) continue;
       seen = true;
       break;
     }
+    if (!seen) V.pinged = false;
     V.seen = seen || (V.destroyed && V.seen);
     if (seen) { V.lastSeenX = V.body.x; V.everSeen = true; }
   }
+}
+
+// A submerged vehicle can look out if a live periscope (optics) is above the surface.
+function periscopeUp(B, O) {
+  const tmp = { x: 0, y: 0 };
+  for (const p of O.parts) {
+    if (!p.alive || !p.def.spot) continue;
+    gridToLocal(O, (p.x + 0.5) * CELL, (O.design.h - p.y) * CELL, tmp);
+    localToWorld(O, tmp.x, tmp.y, tmp);
+    if (tmp.y > B.T.sea) return true;
+  }
+  return false;
 }
 
 function nearestTarget(B, V, maxRange, filter) {
@@ -3785,14 +5315,15 @@ function nearestTarget(B, V, maxRange, filter) {
 
 function mainWeapon(V) {
   let best = null;
-  for (const w of V.weapons) if (!w.def.auto && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
+  for (const w of V.weapons) if (!w.def.auto && !w.def.secondary && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
   return best;
 }
 
-// Target point on a vehicle: a little above its centre of mass.
-function aimPoint(U, out) {
+// Target point on a vehicle: a little above its centre of mass; on a floating ship, the waterline.
+function aimPoint(B, U, out) {
   out.x = U.body.x;
   out.y = U.body.y + U.height * 0.15;
+  if (U.hull && seaAt(B.T, U.body.x) && !U.destroyed) out.y = Math.min(out.y, B.T.sea - 0.1);
   return out;
 }
 
@@ -3800,7 +5331,7 @@ function aimPoint(U, out) {
 function trainWeapon(V, w, angle, face, dt) {
   if (w.face === undefined) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); w.swing = 0; }
   if (face !== w.face) {
-    if (!w.turret) return false;
+    if (!w.turret && !weaponArc(V, w).both) return false;
     w.face = face;
     w.swing = TURRET_SWING;
   }
@@ -3822,11 +5353,14 @@ function runWeapons(B, V, dt, aiControlled) {
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
+    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
+    if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
-      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? null : (U) => U.soft);
+      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? (U) => !U.flier || d.aa : (U) => U.soft && (!U.flier || d.aa));
       if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
-      aimPoint(T, tmp);
+      aimPoint(B, T, tmp);
+      leadTarget(V, w, T, tmp);
       aimWeapon(V, w, tmp.x, tmp.y, _aim);
       const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
       if (!_aim.ok || !ready || w.reload > 0) continue;
@@ -3839,7 +5373,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!aiControlled) continue;
     const tgt = V.ai && V.ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen) continue;
-    aimPoint(tgt, tmp);
+    aimPoint(B, tgt, tmp);
     aimWeapon(V, w, tmp.x, tmp.y, _aim);
     const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
     if (B.cfg.holdFire && V.side === 1) continue;
@@ -3868,12 +5402,12 @@ function squadThink(B, V, dt) {
   else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
   else if (B.order === 'Back') goal = me.body.x - dir * 30 * slot;
   V.throttle = goal === null ? 0 : Math.abs(goal - V.body.x) < 2 ? 0 : clamp((goal - V.body.x) * 0.25, -1, 1);
+  if (V.ballast) V.depthCmd = me.ballast ? me.depthCmd : patrolDepth(B, V);
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
-  const mw = mainWeapon(V);
-  const range = mw ? weaponRange(mw.def) : 0;
+  const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen) tgt = B.target;
-  else tgt = nearestTarget(B, V, range);
+  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;
 }
@@ -3881,9 +5415,9 @@ function squadThink(B, V, dt) {
 // ---------- enemy tactics
 function enemyThink(B, V, dt) {
   const ai = V.ai;
-  const mw = mainWeapon(V);
-  const range = mw ? weaponRange(mw.def) : V.weapons.length ? weaponRange(V.weapons[0].def) : 0;
-  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2));
+  const range = engageRange(V);
+  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2), (U) => canEngage(V, U));
+  if (V.ballast) V.depthCmd = patrolDepth(B, V);
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const x = V.body.x;
@@ -3904,9 +5438,21 @@ function enemyThink(B, V, dt) {
     if (d > want + 8) V.throttle = 0.8 * toward;
     else if (d < want - 15) V.throttle = -0.5 * toward;
     else V.throttle = 0;
+  } else if (ai.lastX !== undefined && Math.abs(ai.lastX - x) > 6) {
+    V.throttle = 0.6 * Math.sign(ai.lastX - x);   // search where the enemy was last seen
   } else {
+    ai.lastX = undefined;
     V.throttle = 0.5 * V.dir;           // advance
   }
+  if (tgt) ai.lastX = tgt.body.x;
+}
+
+// Submarines on patrol run 5 m under (their top), clear of the seabed.
+function patrolDepth(B, V) {
+  const T = B.T;
+  const top = V.bounds.maxY - V.com.y;
+  const floor = Math.min(T.height(V.body.x - 8), T.height(V.body.x), T.height(V.body.x + 8)) + V.com.y + 1.5;
+  return Math.max(floor, T.sea - 5 - top);
 }
 
 // The escort truck drives for the depot and waits while an enemy is close ahead.
@@ -3936,9 +5482,59 @@ function mobilityNotes(B, V, dt) {
     V.bogNoteT = B.time;
     const ter = B.T.terrainAt(V.body.x);
     const slope = Math.abs(Math.atan(B.T.slope(V.body.x)) * 180 / Math.PI);
-    const text = ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
+    const text = V.hull ? (seaAt(B.T, V.body.x) && B.T.height(V.body.x) < B.T.sea - V.stats.draft ? 'Stopped' : 'Aground') : ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
     if (V.side === 0) floatText(text, V.body.x, V.body.y + V.height + 1, false);
   }
+}
+
+/* ---------- 11b_ai_air.js ---------- */
+/* ==== 11b AI: AIRCRAFT ==== */
+// Fighters strafe: they dive along a line to the target and pull out low. Bombers fly level
+// and release when the bomb would land on the target. Past the target they loop round.
+// Helicopters hover at a stand-off distance and use their guns.
+
+function airThink(B, V, dt) {
+  const ai = V.ai;
+  const b = V.body;
+  const T = B.T;
+  const bomber = V.weapons.some((w) => w.def.secondary === 'bomb' && w.rounds > 0 && V.parts[w.part].alive);
+  const tgt = nearestTarget(B, V, 500, bomber ? (U) => !U.flier : null);
+  if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
+  if (ai.react > 0) ai.react -= dt;
+  const ground = Math.max(T.height(b.x), seaAt(T, b.x) ? T.sea : -Infinity);
+  if (V.domain === 'heli') { heliThink(B, V, tgt, ground); return; }
+  const cruise = ground + (bomber ? 55 : 45);
+  V.throttle = 0.9;
+  V.pitchOrder = null;
+  let gamma = clamp((cruise - b.y) * 0.03, -0.3, 0.3);
+  if (tgt) {
+    const ahead = (tgt.body.x - b.x) * V.dir;
+    const alt = b.y - ground;
+    if (ahead < -45 && alt > 22) {
+      V.pitchOrder = 1;                                   // loop round
+    } else if (!bomber && ahead > 8 && ahead < 120) {
+      gamma = clamp(Math.atan2(tgt.body.y + tgt.height * 0.5 - b.y, ahead), -0.7, 0.2);
+      if (alt < 14) gamma = 0.35;                         // pull out
+    }
+  }
+  if (b.y - ground < 10) { V.pitchOrder = null; gamma = 0.45; }
+  V.gammaCmd = gamma;
+}
+
+function heliThink(B, V, tgt, ground) {
+  const b = V.body;
+  V.altCmd = ground + 20;
+  if (!tgt) { V.moveCmd = V.dir * 0.5; return; }
+  const d = tgt.body.x - b.x;
+  const want = engageRange(V) * 0.6;
+  V.moveCmd = Math.abs(d) > want + 6 ? Math.sign(d) : Math.abs(d) < want - 10 ? -Math.sign(d) * 0.6 : 0;
+}
+
+// Bombers release when a bomb let go now would land on their target.
+function aiBomb(B, V, w) {
+  const tgt = V.ai && V.ai.target;
+  if (!tgt || tgt.destroyed || tgt.flier || w.rounds <= 0 || w.reload > 0) return;
+  if (Math.abs(bombImpactX(V, tgt.body.y) - tgt.body.x) < 2.5) dropBomb(B, V, w);
 }
 
 /* ---------- 12_battle.js ---------- */
@@ -3981,9 +5577,25 @@ function createBattle(level, opts = {}) {
     panOf: () => 0,
     onDestroyed: null,
   };
-  const squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  // Each squad design deploys in its own layer: land vehicles on the left, ships at the
+  // near edge of the sea. Ships stay in port on maps without sea.
+  // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
+  let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
+  B.loaned = !squad.length && cfg.fleet;
+  if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  let landX = 46, seaX = T.seaX0 + 16;
+  let airX = 60;
   squad.forEach((d, i) => {
-    const V = makeVehicle(d, 0, 46 - i * 15, 1, T);
+    const dom = domainOf(d);
+    const naval = seaDomain(dom);
+    const L = cropDesign(d).w * CELL;
+    const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
+    if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
+    const V = makeVehicle(d, 0, x, 1, T);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -4042,7 +5654,14 @@ function createBattle(level, opts = {}) {
 
 function spawnEnemy(B, t, mode, x) {
   const d = designFromTemplate(t);
+  // Ships spawn at sea; land vehicles on land (Part 2a).
+  const T = B.T;
+  if (T.seaX0 !== undefined) {
+    if (seaDomain(domainOf(d))) x = Math.max(x, T.seaX0 + 40);
+    else x = Math.min(x, T.seaX0 - 12);
+  }
   const V = makeVehicle(d, 1, x, -1, B.T);
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
   V.template = t;
   V.speedMul = B.cfg.speedMul;
@@ -4103,12 +5722,18 @@ function updateBattle(B, dt) {
     if (V.escort) { /* escortThink runs below */ }
     else if (V === B.me && !B.demo) {
       if (V.ai.react > 0) V.ai.react -= dt;
-    } else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
+    } else if (V.flier) airThink(B, V, dt);
+    else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
     else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
+    if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
+  for (const V of B.units) if (V.flier) airChecks(B, V);
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 
@@ -4134,7 +5759,7 @@ function updateBattle(B, dt) {
       }
     }
     // Tall vehicles push over trees.
-    if (Math.abs(V.speed) > 0.8) {
+    if (Math.abs(V.speed) > 0.8 && !V.hull) {
       for (const tr of B.T.trees) {
         if (tr.alive && Math.abs(tr.x - V.body.x) < V.len / 2 && V.body.m > 3000) breakTree(B, tr, Math.sign(V.speed) || 1);
       }
@@ -4142,6 +5767,7 @@ function updateBattle(B, dt) {
     if (!V.destroyed) runWeapons(B, V, dt, V !== B.me || B.demo);
   }
   stepShells(B, dt);
+  stepUnderwater(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -4208,9 +5834,11 @@ function takeVehicle(B, V) {
 // Returns a short reason when it can't.
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
+  if (V.flier) return fireForward(B, V);
   const w = mainWeapon(V);
-  if (!w) return 'No gun';
+  if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
+  if (gunUnderWater(B, V, w)) return 'Gun under water';
   if (V.shells <= 0) return 'Out of shells';
   aimWeapon(V, w, tx, ty, _aim);
   if (!_aim.ok) return _aim.reason || 'Out of arc';
@@ -4228,9 +5856,10 @@ function autoTarget(B) {
   const V = B.me;
   if (B.target && !B.target.destroyed && B.target.seen) return B.target;
   const w = mainWeapon(V);
-  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200);
+  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200, (U) => V.flier || !U.flier);
 }
 
+const _tp = { x: 0, y: 0 };
 // Keep the controlled vehicle's gun pointed at its target (or at the aim point while aiming).
 function trainPlayerGun(B, dt, aimX, aimY) {
   const V = B.me;
@@ -4239,7 +5868,7 @@ function trainPlayerGun(B, dt, aimX, aimY) {
   let tx = aimX, ty = aimY;
   if (tx === undefined) {
     const T = autoTarget(B);
-    if (T) { tx = T.body.x; ty = T.body.y + T.height * 0.15; }
+    if (T) { aimPoint(B, T, _tp); tx = _tp.x; ty = _tp.y; }
     else { tx = V.body.x + V.dir * 60; ty = B.T.height(V.body.x + V.dir * 60) + 1.5; }
   }
   aimWeapon(V, w, tx, ty, _aim);
@@ -4293,6 +5922,9 @@ function bevel(g, x, y, w, h, base, k) {
   g.fillRect(x, y + h - b, w, b);
   g.fillRect(x + w - b, y, b, h);
 }
+
+// Parts whose drawn shape isn't their full box get no outline.
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
 function drawPart(g, p, x, y, cs, side, seed) {
@@ -4361,6 +5993,169 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.fillStyle = 'rgba(20,20,20,0.5)'; g.beginPath(); g.arc(x + cs * 0.26, y - cs * 0.4, cs * 0.18, 0, Math.PI * 2); g.fill();
       break;
     }
+    // Ship parts (Part 2a).
+    case 'hull':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
+      g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w, y + h * 0.5); g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.4)';
+      for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w * (0.12 + k * 0.25), y + h * 0.5 - cs * 0.12, r, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'bow':
+      g.fillStyle = shade(steel, 0.9);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = Math.max(1, cs * 0.1);
+      g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.stroke();
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
+      g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w * 0.65, y + h * 0.5); g.stroke();
+      break;
+    case 'keel':
+      bevel(g, x, y, w, h, '#5c3129', 1.4);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + h * 0.7, w, h * 0.3);
+      break;
+    case 'bulk':
+      bevel(g, x, y, w, h, shade(steel, 0.75), 1.4);
+      g.strokeStyle = PAL.amber; g.lineWidth = Math.max(1, cs * 0.07);
+      g.setLineDash([cs * 0.18, cs * 0.14]);
+      g.beginPath(); g.moveTo(x + w / 2, y + cs * 0.1); g.lineTo(x + w / 2, y + h - cs * 0.1); g.stroke();
+      g.setLineDash([]);
+      break;
+    case 'marine': {
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.fillRect(x + cs * 0.3, y + cs * 0.4, w - cs * 0.6, h - cs * 0.9);
+      g.fillStyle = shade(steel, 0.65);
+      for (let k = 0; k < 6; k++) { g.fillRect(x + cs * (0.45 + k * 0.55), y + cs * 0.55, cs * 0.3, h * 0.35); }
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w - cs * 0.9, y - cs * 1.2, cs * 0.5, cs * 1.3);
+      g.fillStyle = 'rgba(20,20,20,0.5)'; g.beginPath(); g.arc(x + w - cs * 0.65, y - cs * 1.3, cs * 0.3, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'prop': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.4, y, w * 0.2, h * 0.7);
+      g.fillStyle = '#b08d4a';
+      const cy = y + h * 0.72;
+      g.beginPath(); g.ellipse(x + w * 0.5, cy - cs * 0.28, cs * 0.14, cs * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(x + w * 0.5, cy + cs * 0.22, cs * 0.14, cs * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#6f5a30'; g.beginPath(); g.arc(x + w * 0.5, cy, cs * 0.1, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'phull':
+      bevel(g, x, y, w, h, shade(steel, 0.72), 1.5);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = Math.max(1, cs * 0.08);
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x, y + h * f); g.lineTo(x + w, y + h * f); g.stroke(); }
+      rivets(g, x, y, w, h, r * 1.2, 'rgba(0,0,0,0.5)');
+      break;
+    case 'ballast':
+      bevel(g, x, y, w, h, '#3c4a52', 1);
+      g.strokeStyle = 'rgba(160,200,220,0.5)'; g.lineWidth = Math.max(1, cs * 0.06);
+      g.strokeRect(x + cs * 0.25, y + cs * 0.25, w - cs * 0.5, h - cs * 0.5);
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.25 + k * 0.2), y + h - cs * 0.2, cs * 0.12, cs * 0.12);
+      break;
+    case 'emotor':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#1d2a38'; g.fillRect(x + cs * 0.2, y + cs * 0.2, w - cs * 0.4, h * 0.4);
+      g.fillStyle = PAL.amber; g.fillRect(x + cs * 0.3, y + cs * 0.3, cs * 0.15, cs * 0.2);
+      g.fillStyle = '#6a7a50';
+      for (let k = 0; k < 3; k++) g.fillRect(x + cs * (0.25 + k * 0.5), y + h * 0.62, cs * 0.35, h * 0.28);
+      break;
+    case 'torp':
+      g.fillStyle = shade(steel, 0.7);
+      roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.35); g.fill();
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w - h * 0.35, y + h * 0.5, h * 0.25, 0, Math.PI * 2); g.fill();
+      break;
+    case 'dc':
+      g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.75, w, h * 0.25);
+      g.fillStyle = '#3a3f47';
+      for (let k = 0; k < 3; k++) { g.fillRect(x + w * (0.05 + k * 0.32), y + h * 0.15, w * 0.26, h * 0.6); }
+      g.fillStyle = PAL.amber;
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.05 + k * 0.32), y + h * 0.4, w * 0.26, h * 0.08);
+      break;
+    case 'sonar':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.ellipse(x + w / 2, y + h * 0.5, w * 0.48, h * 0.42, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(159,211,255,0.7)'; g.lineWidth = 1;
+      for (const k of [0.15, 0.28]) { g.beginPath(); g.arc(x + w / 2, y + h * 0.5, w * k, -0.9, 0.9); g.stroke(); }
+      break;
+    // Aircraft parts (Part 2c).
+    case 'wing':
+      g.fillStyle = shade(steel, 0.95);
+      g.beginPath(); g.moveTo(x, y + h * 0.55); g.quadraticCurveTo(x + w * 0.2, y + h * 0.15, x + w * 0.55, y + h * 0.25);
+      g.lineTo(x + w, y + h * 0.55); g.lineTo(x + w, y + h * 0.7); g.lineTo(x, y + h * 0.7); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + w * 0.1, y + h * 0.62); g.lineTo(x + w * 0.95, y + h * 0.62); g.stroke();
+      break;
+    case 'tail':
+      g.fillStyle = shade(steel, 0.9);
+      g.beginPath(); g.moveTo(x + w * 0.1, y + h); g.lineTo(x + w * 0.2, y + h * 0.05); g.lineTo(x + w * 0.55, y + h * 0.05); g.lineTo(x + w, y + h); g.closePath(); g.fill();
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.25, y + h * 0.2, w * 0.25, h * 0.14);
+      g.fillStyle = shade(steel, 0.75); g.fillRect(x, y + h * 0.78, w, h * 0.12);
+      break;
+    case 'aero':
+      g.fillStyle = shade(steel, 0.8);
+      roundRect(g, x, y + h * 0.08, w, h * 0.84, h * 0.4); g.fill();
+      g.fillStyle = '#15181d';
+      for (let k = 0; k < 4; k++) g.fillRect(x + w * (0.15 + k * 0.2), y + h * 0.3, w * 0.08, h * 0.4);
+      g.fillStyle = 'rgba(20,20,20,0.5)'; g.fillRect(x + w * 0.05, y + h * 0.85, w * 0.3, h * 0.15);
+      break;
+    case 'jet':
+      g.fillStyle = shade(steel, 0.75);
+      g.beginPath(); g.moveTo(x, y + h * 0.3); g.lineTo(x + w * 0.85, y + h * 0.12); g.lineTo(x + w, y + h * 0.3); g.lineTo(x + w, y + h * 0.7); g.lineTo(x + w * 0.85, y + h * 0.88); g.lineTo(x, y + h * 0.7); g.closePath(); g.fill();
+      g.fillStyle = '#15181d'; g.fillRect(x, y + h * 0.35, w * 0.08, h * 0.3);
+      g.fillStyle = 'rgba(255,178,62,0.5)'; g.fillRect(x + w * 0.02, y + h * 0.42, w * 0.05, h * 0.16);
+      break;
+    case 'turb':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#7c828d'; g.lineWidth = 1;
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; g.beginPath(); g.moveTo(x + w * 0.3, y + h / 2); g.lineTo(x + w * 0.3 + Math.cos(a) * h * 0.28, y + h / 2 + Math.sin(a) * h * 0.28); g.stroke(); }
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.6, y + h * 0.3, w * 0.35, h * 0.4);
+      break;
+    case 'aprop':
+      g.fillStyle = '#5a5f68'; g.beginPath(); g.moveTo(x, y + h * 0.4); g.lineTo(x + w * 0.7, y + h * 0.45); g.lineTo(x + w * 0.7, y + h * 0.55); g.lineTo(x, y + h * 0.6); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(200,205,215,0.28)';
+      g.beginPath(); g.ellipse(x + w * 0.7, y + h / 2, w * 0.2, h * 0.5, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(40,42,48,0.7)'; g.lineWidth = Math.max(1, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.7, y + h * 0.05); g.lineTo(x + w * 0.7, y + h * 0.95); g.stroke();
+      break;
+    case 'rotor':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.fillStyle = 'rgba(200,205,215,0.25)';
+      g.beginPath(); g.ellipse(x + w / 2, y + h * 0.35, w * 0.62, h * 0.22, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.1);
+      g.beginPath(); g.moveTo(x - w * 0.1, y + h * 0.35); g.lineTo(x + w * 1.1, y + h * 0.35); g.stroke();
+      break;
+    case 'trotor':
+      g.fillStyle = 'rgba(200,205,215,0.3)'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.6, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1, cs * 0.08);
+      g.beginPath(); g.moveTo(x + w / 2, y - h * 0.05); g.lineTo(x + w / 2, y + h * 1.05); g.stroke();
+      break;
+    case 'bomb':
+      g.fillStyle = '#2b2d31'; g.fillRect(x, y, w, h * 0.2);
+      g.fillStyle = '#3d423a';
+      for (let k = 0; k < 2; k++) { g.beginPath(); g.ellipse(x + w * (0.27 + k * 0.46), y + h * 0.6, w * 0.2, h * 0.32, 0, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'ac20': case 'aa40':
+      g.fillStyle = shade(steel, 0.7);
+      roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
+      if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
+      break;
+    case 'thrust':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.28, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#7c828d'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + w / 2 - cs * 0.25, y + h / 2); g.lineTo(x + w / 2 + cs * 0.25, y + h / 2); g.stroke();
+      break;
+    case 'ngun':
+      // Gun house; the twin barrels are drawn live.
+      g.fillStyle = shade(steel, 0.8);
+      g.beginPath();
+      g.moveTo(x + w * 0.05, y + h); g.lineTo(x + w * 0.05, y + h * 0.45); g.quadraticCurveTo(x + w * 0.1, y + h * 0.15, x + w * 0.4, y + h * 0.15);
+      g.lineTo(x + w * 0.8, y + h * 0.2); g.lineTo(x + w * 0.95, y + h * 0.5); g.lineTo(x + w * 0.95, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.15)'; g.lineWidth = Math.max(1, cs * 0.08);
+      g.beginPath(); g.moveTo(x + w * 0.4, y + h * 0.15); g.lineTo(x + w * 0.8, y + h * 0.2); g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + w * 0.15, y + h * 0.6, w * 0.7, h * 0.08);
+      rivets(g, x + w * 0.05, y + h * 0.3, w * 0.9, h * 0.7, r, 'rgba(0,0,0,0.45)');
+      break;
     case 'radiator':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.strokeStyle = '#15181d'; g.lineWidth = 1;
@@ -4417,7 +6212,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.strokeStyle = '#c9d1dc'; g.lineWidth = 1;
       g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.22, 0, Math.PI * 2); g.stroke();
       break;
-    case 'fuel_s': case 'fuel_ss':
+    case 'fuel_s': case 'fuel_ss': case 'fuel_l':
       g.fillStyle = d.id === 'fuel_s' ? '#56613a' : '#4c5530';
       roundRect(g, x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84, cs * 0.1); g.fill();
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
@@ -4454,7 +6249,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
   }
   g.strokeStyle = 'rgba(8,10,14,0.55)';
   g.lineWidth = 1;
-  if (!art.get(d.id) && d.id !== 'wheel_s' && d.id !== 'wheel_l' && d.id !== 'slope40' && d.id !== 'frame' && d.cat !== 'weapon' && d.id !== 'optics') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   g.restore();
 }
 
@@ -4526,6 +6321,7 @@ const view = {
 };
 
 function drawVehicle(g, V) {
+  if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
   const b = V.body;
@@ -4551,7 +6347,7 @@ function drawVehicle(g, V) {
   }
   // Barrels, drawn live.
   for (const w of V.weapons) {
-    if (!V.parts[w.part].alive) continue;
+    if (!V.parts[w.part].alive || w.def.secondary) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -4566,12 +6362,15 @@ function drawVehicle(g, V) {
     if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
     g.strokeStyle = V.destroyed ? '#26282c' : '#30343b';
     g.lineCap = 'butt';
-    g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
-    g.beginPath(); g.moveTo(view.sx(x0), view.sy(y0)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
-    if (!d.auto && d.cal >= 75) {
-      g.lineWidth = Math.max(2.5, (0.1 + d.cal / 700) * S);
-      const bx = x1 - Math.cos(ang) * 0.3, by = y1 - Math.sin(ang) * 0.3;
-      g.beginPath(); g.moveTo(view.sx(bx), view.sy(by)); g.lineTo(view.sx(x1), view.sy(y1)); g.stroke();
+    for (let k = 0; k < (d.twin ? 2 : 1); k++) {
+      const ox = d.twin ? -Math.sin(ang) * TWIN_GAP * (k ? -1 : 1) : 0, oy = d.twin ? Math.cos(ang) * TWIN_GAP * (k ? -1 : 1) : 0;
+      g.lineWidth = Math.max(1.5, (d.auto ? 0.07 : 0.06 + d.cal / 900) * S);
+      g.beginPath(); g.moveTo(view.sx(x0 + ox), view.sy(y0 + oy)); g.lineTo(view.sx(x1 + ox), view.sy(y1 + oy)); g.stroke();
+      if (!d.auto && d.cal >= 75) {
+        g.lineWidth = Math.max(2.5, (0.1 + d.cal / 700) * S);
+        const bx = x1 - Math.cos(ang) * 0.3, by = y1 - Math.sin(ang) * 0.3;
+        g.beginPath(); g.moveTo(view.sx(bx + ox), view.sy(by + oy)); g.lineTo(view.sx(x1 + ox), view.sy(y1 + oy)); g.stroke();
+      }
     }
   }
 }
@@ -4649,8 +6448,18 @@ function drawTrees(g, B) {
 function drawShells(g) {
   g.lineCap = 'round';
   shells.forEachAlive((s) => {
-    const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
     const bx = view.sx(s.x), by = view.sy(s.y);
+    if (s.def.secondary === 'bomb') {
+      // A falling bomb: body along its path, fins at the back.
+      const a = Math.atan2(-s.vy, s.vx), S = view.S;
+      g.save(); g.translate(bx, by); g.rotate(a);
+      g.fillStyle = '#2d3036';
+      g.beginPath(); g.ellipse(0, 0, 0.45 * S, 0.16 * S, 0, 0, Math.PI * 2); g.fill();
+      g.fillRect(-0.62 * S, -0.16 * S, 0.14 * S, 0.32 * S);
+      g.restore();
+      return;
+    }
+    const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
     if (!s.mg) {
       g.strokeStyle = 'rgba(255,178,62,0.35)'; g.lineWidth = 5;
       g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
@@ -4695,6 +6504,16 @@ function drawParticles(g) {
         g.globalAlpha = 1;
         g.fillStyle = '#3a3026';
         g.fillRect(x - p.size * S / 2, y - p.size * S / 2, p.size * S, p.size * S);
+        break;
+      case FX_SPRAY:
+        g.globalAlpha = 0.85 * (1 - k);
+        g.fillStyle = '#DCEBF2';
+        g.beginPath(); g.arc(x, y, Math.max(1, p.size * S * 0.5), 0, Math.PI * 2); g.fill();
+        break;
+      case FX_BUBBLE:
+        g.globalAlpha = 0.6 * (1 - k);
+        g.strokeStyle = '#CFE6F0'; g.lineWidth = 1;
+        g.beginPath(); g.arc(x, y, Math.max(1, p.size * S), 0, Math.PI * 2); g.stroke();
         break;
       case FX_RING:
         g.globalAlpha = 0.6 * (1 - k);
@@ -4766,6 +6585,36 @@ function drawWeather(g, B) {
   }
 }
 
+// The sea (Part 2a): a translucent layer over everything below the surface, with a
+// small moving swell on top and darker water further down. Drawn over the ships, so
+// what sits below the waterline reads as under water.
+function drawWater(g, B) {
+  const T = B.T;
+  if (T.seaX0 === undefined) return;
+  const { w, h } = layout;
+  const x0 = Math.max(-4, view.sx(T.seaX0));
+  const sy = view.sy(T.sea);
+  if (x0 > w || sy > h) return;
+  const t = B.time;
+  const S = view.S;
+  const step = 10;
+  const wave = (x) => sy - Math.sin(view.wx(x) * 0.45 + t * 1.6) * 0.14 * S - Math.sin(view.wx(x) * 0.17 - t * 0.9) * 0.08 * S;
+  g.fillStyle = 'rgba(26,64,94,0.56)';
+  g.beginPath();
+  g.moveTo(x0, h);
+  for (let x = x0; x <= w + step; x += step) g.lineTo(x, wave(x));
+  g.lineTo(w + step, h);
+  g.closePath();
+  g.fill();
+  const deep = view.sy(T.sea - 5);
+  if (deep < h) { g.fillStyle = 'rgba(8,22,38,0.35)'; g.fillRect(x0, deep, w - x0 + step, h - deep); }
+  g.strokeStyle = 'rgba(205,228,238,0.6)';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  for (let x = x0; x <= w + step; x += step) { if (x === x0) g.moveTo(x, wave(x)); else g.lineTo(x, wave(x)); }
+  g.stroke();
+}
+
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
   drawBackground(g, view.cx * view.S * 0.25);
@@ -4780,6 +6629,8 @@ function renderBattle(g, B) {
     drawVehicle(g, V);
   }
   drawDebris(g);
+  drawUnderwater(g);
+  drawWater(g, B);
   drawShells(g);
   drawParticles(g);
   drawWeather(g, B);
@@ -4963,6 +6814,14 @@ function enterFullscreen() {
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
+const TEST_RANGE_HOW = {
+  land: 'Mud, hills and a trench.',
+  sea: 'Open water off a beach.',
+  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
+  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
+};
+// The test range that suits a design's domain.
+const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
 const DEFAULT_ZOOM = 0.75;
 const MIN_AUTO_ZOOM = 0.55;     // how far the follow camera may pull back to frame a target
@@ -4975,6 +6834,7 @@ SCREENS.battle = {
   frozen: false,
   aim: null,
   drive: 0,
+  climb: 0,
   controls: [],
   c: {},
   resultShown: false,
@@ -4984,9 +6844,9 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
-      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig() })
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
@@ -5000,12 +6860,16 @@ SCREENS.battle = {
     game.frozen = false;
     this.aim = null;
     this.drive = 0;
+    this.climb = 0;
     this.resultShown = false;
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
     audio.playTheme('battle');
     this.showHowTo();
+    if (B.loaned) ui.toast(`Sea battle: a fleet is lent to you (${B.squad.map((V) => V.name).join(', ')}).`, 4000);
+    else if (B.ashore.length) ui.toast(`Sea battle: ${B.ashore.map((d) => d.name).join(', ')} stay${B.ashore.length > 1 ? '' : 's'} ashore.`, 3500);
+    if (B.inPort.length) ui.toast(`No sea on this map: ${B.inPort.map((d) => d.name).join(', ')} stay${B.inPort.length > 1 ? '' : 's'} in port.`, 3500);
   },
 
   // Two-line how-to at the start of each level (design/06 acceptance: level 1 with only this).
@@ -5014,7 +6878,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? 'Mud, hills and a trench. Pause to go back to the Workshop.' : B.cfg.how;
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -5050,7 +6914,9 @@ SCREENS.battle = {
       move: (p) => this.fireDrag(p),
       up: (p, cancelled) => this.fireUp(p, cancelled),
     });
-    C.alt = makeControl('alt', { label: 'Alt', hidden: true });
+    C.alt = makeControl('alt', { label: 'Alt', hidden: true, up: (p, x) => { if (!x) this.altFire(); } });
+    C.up = makeControl('up', { glyph: 'up', hidden: true, down: drive, up: drive });
+    C.down = makeControl('down', { glyph: 'down', hidden: true, down: drive, up: drive });
     C.swap = makeControl('swap', { label: 'Swap', up: (p, x) => { if (!x) this.swap(); } });
     C.special = makeControl('special', { label: 'Smoke', up: (p, x) => { if (!x) this.smoke(); } });
     C.chips = ORDERS.map((o, i) => makeControl('order' + i, { shape: 'rect', label: o, pad: 2, up: (p, x) => { if (!x) this.setOrder(o); } }));
@@ -5059,7 +6925,7 @@ SCREENS.battle = {
     C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
     C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
     C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
-    this.controls = [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
   },
 
   layout() {
@@ -5101,6 +6967,12 @@ SCREENS.battle = {
     C.left.x = mx(lx); C.left.y = padY; C.left.r = Rp;
     C.right.x = mx(lx + Rp * 2 + 18); C.right.y = padY; C.right.r = Rp;
     if (L) { const t = C.left.x; C.left.x = C.right.x; C.right.x = t; }
+    // ▲ ▼ (climb and dive) sit above the middle of the pad, shown only for vehicles that use them.
+    const midX = (C.left.x + C.right.x) / 2;
+    C.down.r = C.up.r = r2;
+    C.down.x = C.up.x = midX;
+    C.down.y = padY - Rp - r2 - 6;
+    C.up.y = C.down.y - r2 * 2 - 6;
     C.recenter.w = 92; C.recenter.h = 30;
     C.recenter.x = w / 2 - 46; C.recenter.y = top + barH + 8;
   },
@@ -5112,6 +6984,11 @@ SCREENS.battle = {
     const r = this.c.right.pressCount > 0 || k.has('KeyD') || k.has('ArrowRight');
     this.c.left.held = k.has('KeyA') || k.has('ArrowLeft');
     this.c.right.held = k.has('KeyD') || k.has('ArrowRight');
+    const up = this.c.up.pressCount > 0 || k.has('KeyW') || k.has('ArrowUp');
+    const down = this.c.down.pressCount > 0 || k.has('KeyS') || k.has('ArrowDown');
+    this.c.up.held = k.has('KeyW') || k.has('ArrowUp');
+    this.c.down.held = k.has('KeyS') || k.has('ArrowDown');
+    this.climb = up && down ? 0 : up ? 1 : down ? -1 : 0;
     const before = this.drive;
     this.drive = l && r ? 0 : l ? -1 : r ? 1 : 0;      // both together = halt/brake
     if (this.B && this.drive !== before && this.drive !== 0) audio.sfx('engineRev', this.B.panOf(this.B.me.body.x));
@@ -5195,9 +7072,15 @@ SCREENS.battle = {
     const B = this.B;
     if (this.frozen || B.me.destroyed) return;
     const T = autoTarget(B);
-    if (T) { this.say(playerFire(B, T.body.x, T.body.y + T.height * 0.15, false)); return; }
+    if (T) { const a = aimPoint(B, T, { x: 0, y: 0 }); this.say(playerFire(B, a.x, a.y, false)); return; }
     const x = B.me.body.x + B.me.dir * 60;
     this.say(playerFire(B, x, B.T.height(x) + 1.5, false));
+  },
+
+  altFire() {
+    if (this.frozen || this.B.me.destroyed) return;
+    const r = playerSecondary(this.B);
+    if (r) this.say(r);
   },
 
   smoke() {
@@ -5256,7 +7139,8 @@ SCREENS.battle = {
   },
 
   key(code, down) {
-    if (/^(KeyA|KeyD|ArrowLeft|ArrowRight)$/.test(code)) { this.updateDrive(); return; }
+    if (/^(KeyA|KeyD|KeyW|KeyS|ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/.test(code)) { this.updateDrive(); return; }
+    if (code === 'KeyF') { this.c.alt.held = down; if (down) this.altFire(); return; }
     const hold = (c) => { c.held = down; if (!down) c.releasedAt = performance.now(); };
     if (code === 'Space') { hold(this.c.fire); if (down) this.fireAuto(); return; }
     if (code === 'KeyE' || code === 'Tab') { hold(this.c.swap); if (down) this.swap(); return; }
@@ -5272,7 +7156,31 @@ SCREENS.battle = {
   update(dt, simRunning) {
     const B = this.B;
     if (!B) return;
-    B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    const me0 = B.me;
+    if (me0.flier) {
+      // Aircraft: ◀ ▶ throttle, ▲ ▼ pitch (let go: level flight). Helicopters: ◀ ▶ move, ▲ ▼ height.
+      if (!me0.destroyed && simRunning && !this.frozen) {
+        if (me0.domain === 'air') {
+          me0.throttle = clamp(me0.throttle + this.drive * dt * 0.6, 0, 1);
+          me0.pitchOrder = this.climb || null;
+          if (!this.climb) me0.gammaCmd = 0;
+        } else {
+          me0.moveCmd = this.drive;
+          const floor = B.T.height(me0.body.x) + 0.5;
+          const from = me0.altCmd === undefined || me0.altCmd === null ? me0.body.y : me0.altCmd;
+          if (this.climb) me0.altCmd = Math.max(floor, from + this.climb * CLIMB_RATE * dt);
+        }
+      }
+    } else B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    // Submarines: ▲ ▼ move the depth order; above the surfaced level it means "surface".
+    const me = B.me;
+    if (me.ballast && !me.destroyed && simRunning && !this.frozen && this.climb) {
+      const surfaced = B.T.sea - (me.stats.waterline - me.com.y);
+      const floor = B.T.height(me.body.x) + me.com.y + 1;
+      const from = me.depthCmd === null || me.depthCmd === undefined ? Math.min(me.body.y, surfaced) : me.depthCmd;
+      const next = Math.max(floor, from + this.climb * DIVE_RATE * dt);
+      me.depthCmd = next >= surfaced ? null : next;
+    }
     if (simRunning && !this.frozen) {
       // Level clear: time slows to 30% for 0.6 s (design/03 §5).
       const slow = B.result === 'win' && B.resultT < 0.6 ? 0.3 : 1;
@@ -5288,6 +7196,15 @@ SCREENS.battle = {
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
+    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    C.alt.hidden = !sec.length;
+    if (sec.length) {
+      const n = sec.reduce((a, w) => a + w.rounds, 0);
+      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
+      C.alt.disabled = this.frozen || n === 0;
+    }
+    C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -5308,6 +7225,14 @@ SCREENS.battle = {
       fit = Math.max(MIN_AUTO_ZOOM, (layout.w * 0.8) / span / base);
       midX = (me.x + T.body.x) / 2;
     }
+    // In the air, pull back far enough to keep the ground under you in view.
+    let midY = me.y + 2;
+    if (B.me.flier && !B.me.destroyed) {
+      const ground = Math.max(B.T.height(me.x), seaAt(B.T, me.x) ? B.T.sea : -Infinity);
+      const alt = me.y - ground;
+      fit = Math.min(fit, Math.max(0.5, (layout.h * 0.7) / (alt + 14) / base));
+      midY = (me.y + ground) / 2 + 2;
+    }
     cam.fit = cam.fit === undefined ? fit : cam.fit + (fit - cam.fit) * (1 - Math.pow(0.2, dt));
     view.S = this.scale();
     const viewW = layout.w / view.S;
@@ -5315,7 +7240,7 @@ SCREENS.battle = {
       const k = 1 - Math.pow(0.03, dt);
       const wantX = T && !cam.manual && fit < cam.zoom ? midX : me.x + B.me.dir * viewW * 0.18;
       cam.x += (wantX - cam.x) * k;
-      cam.y += (me.y + 2 - cam.y) * k;
+      cam.y += (midY - cam.y) * k;
     }
     cam.x = clamp(cam.x, viewW * 0.3, B.T.length - viewW * 0.3);
     view.cx = cam.x;
@@ -5518,7 +7443,33 @@ SCREENS.battle = {
     }
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
-    for (const c of [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    for (const c of [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    // Aircraft: throttle, height over the ground and a stall warning. Helicopters: height and order.
+    if (B.me.flier && !C.up.hidden) {
+      const me = B.me;
+      const ground = Math.max(B.T.height(me.body.x), seaAt(B.T, me.body.x) ? B.T.sea : -Infinity);
+      const alt = Math.round(me.body.y - ground);
+      const text = me.domain === 'air' ? `Throttle ${Math.round(me.throttle * 100)}% · height ${alt} m`
+        : `Height ${alt} m · order ${Math.round((me.altCmd === undefined || me.altCmd === null ? me.body.y : me.altCmd) - ground)} m`;
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = PAL.linen;
+      g.fillText(text, C.up.x, C.up.y - C.up.r - 4);
+      if (me.domain === 'air' && !me.destroyed && Math.abs((me.alpha || 0) * 180 / Math.PI) > STALL_DEG) {
+        g.fillStyle = PAL.danger; g.font = `700 16px ${FONT_UI}`;
+        g.fillText('STALL', C.up.x, C.up.y - C.up.r - 20);
+      }
+    }
+    // Submarine depth: metres below the surface, and the order.
+    if (B.me.ballast && !C.up.hidden) {
+      const me = B.me;
+      const depth = Math.max(0, B.T.sea - (me.body.y + (me.bounds.maxY - me.com.y)));
+      const order = me.depthCmd === null || me.depthCmd === undefined ? 'surface' : `${Math.max(0, Math.round(B.T.sea - me.depthCmd - (me.bounds.maxY - me.com.y)))} m`;
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = PAL.linen;
+      g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
+    }
     const mw = mainWeapon(B.me);
     if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
   },
@@ -5540,6 +7491,10 @@ SCREENS.battle = {
     g.beginPath();
     for (let i = 0; i < T.n; i += 8) { const x = i * CELL; if (i === 0) g.moveTo(X(x), Y(T.h[i])); else g.lineTo(X(x), Y(T.h[i])); }
     g.stroke();
+    if (T.seaX0 !== undefined) {
+      g.strokeStyle = 'rgba(127,176,234,0.8)';
+      g.beginPath(); g.moveTo(X(T.seaX0), Y(T.sea)); g.lineTo(X(T.length), Y(T.sea)); g.stroke();
+    }
     for (const V of B.units) {
       if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
       g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;
@@ -5660,7 +7615,7 @@ function findDesign(id) {
 // Everything the player can field: starting templates, saved designs, captured blueprints.
 function designLibrary() {
   const out = [];
-  for (const id of ['medium', 'light', 'scout', 'assault', 'truck']) out.push({ id, src: 'Starting template', design: Object.assign(designFromTemplate(id), { family: TEMPLATES[id].name, mark: 1 }) });
+  for (const id of STARTING_TEMPLATES) out.push({ id, src: 'Starting template', design: Object.assign(designFromTemplate(id), { family: TEMPLATES[id].name, mark: 1 }) });
   for (const d of save.designs.list) out.push({ id: d.id, src: 'Your design', design: JSON.parse(JSON.stringify(d)) });
   for (const b of save.profile.blueprints) if (TEMPLATES[b.id] && !out.some((o) => o.id === b.id)) out.push({ id: b.id, src: `Blueprint · level ${b.level}`, design: Object.assign(designFromTemplate(b.id), { family: b.name, mark: 1 }) });
   return out;
@@ -5698,6 +7653,8 @@ SCREENS.workshop = {
     top.appendChild(el('h2', 'ws-title', 'Workshop'));
     top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
     top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
+    const lc = levelConfig(level);
+    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle: ships and submarines only' : lc.sea ? 'Map has sea' : 'No sea: ships stay in port'));
     r.appendChild(top);
 
     // Squad slots.
@@ -5709,7 +7666,8 @@ SCREENS.workshop = {
       card.appendChild(designThumb(o.design, 120, 44));
       card.appendChild(el('b', '', markName(o.design)));
       const st = statsOf(o.design);
-      card.appendChild(el('small', '', `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · cost ${costOf(o.design)}`));
+      const naval = seaDomain(domainOf(o.design));
+      card.appendChild(el('small', '', naval ? `${DOMAIN_NAMES[domainOf(o.design)]} · ${(st.mass / 1000).toFixed(1)} t · reserve ${Math.round(st.reserve * 100)}% · cost ${costOf(o.design)}` : `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t · cost ${costOf(o.design)}`));
       card.addEventListener('click', () => { audio.sfx('tap'); this.slot = i; this.build(); });
       slots.appendChild(card);
     });
@@ -5724,7 +7682,7 @@ SCREENS.workshop = {
       pick.type = 'button';
       pick.appendChild(designThumb(o.design, 104, 38));
       pick.appendChild(el('b', '', markName(o.design)));
-      pick.appendChild(el('small', '', `${o.src} · cost ${costOf(o.design)}`));
+      pick.appendChild(el('small', '', `${o.src}${seaDomain(domainOf(o.design)) ? ` · ${DOMAIN_NAMES[domainOf(o.design)].toLowerCase()}` : ''} · cost ${costOf(o.design)}`));
       pick.addEventListener('click', () => {
         audio.sfx('order');
         p.squad[this.slot] = o.id;
@@ -5825,12 +7783,14 @@ SCREENS.designer = {
   // Put a design into a class-sized grid, bottom-aligned.
   load(design, base, owned) {
     const d0 = cropDesign(design);
-    const cls = d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
+    const dom = domainOf(d0);
+    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : airDomain(dom) ? dom : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
     const C = CLASSES[cls];
-    const ox = 1, oy = C.h - d0.h;
+    const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
+    const ox = 1, oy = H - d0.h;
     this.st = {
       cls,
-      d: { w: C.w, h: C.h, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
@@ -5839,10 +7799,13 @@ SCREENS.designer = {
     this.msg = '';
   },
 
-  scratch() {
-    const C = CLASSES.light;
+  // An empty grid with a starter frame (ground) or a starter keel (ship).
+  scratch(cls = 'light') {
+    const C = CLASSES[cls];
     const cells = [];
-    for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
+    if (cls === 'ship') for (let x = 4; x < 20; x += 2) cells.push(['keel', x, C.h - 1]);
+    else if (cls === 'air') { for (let x = 4; x < 16; x++) cells.push(['frame', x, C.h - 5]); cells.push(['wing', 8, C.h - 4]); }
+    else for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
     return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
   },
 
@@ -5863,6 +7826,7 @@ SCREENS.designer = {
       if (hTouch || vTouch) touches = true;
     }
     if (P.loco && y + P.h !== d.h) return 'Wheels and tracks go on the bottom row.';
+    if (P.keel && y + P.h !== d.h) return 'Keels go on the bottom row.';
     if (others && !touches) return 'Parts must touch the rest of the vehicle.';
     return '';
   },
@@ -6129,24 +8093,60 @@ SCREENS.designer = {
     const st = rep.st;
     this.chips.textContent = '';
     const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
+    const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
-    chip(`${st.powerToWeight.toFixed(1)} kW/t`);
-    chip(`${rep.speeds.Plains} km/h`);
+    const air = airDomain(rep.domain);
+    if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
+    else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
+    else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
+    chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
     // Stats drawer: numbers only.
     const S = this.stats;
     S.textContent = '';
     const head = (t) => S.appendChild(el('div', 'dz-h', t));
     const row = (k, v) => { const r = el('div', 'dz-row'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); S.appendChild(r); };
-    head('Stats');
+    head(`Stats · ${DOMAIN_NAMES[rep.domain]}`);
     row('Mass', `${(st.mass / 1000).toFixed(2)} t`);
     row('Centre of mass', `${st.com.x.toFixed(1)}, ${st.com.y.toFixed(1)} m`);
     row('Power', `${st.power} kW made, ${st.drawn} kW drawn`);
     row('Power to weight', `${st.powerToWeight.toFixed(1)} kW/t`);
-    row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
-    row('Tip angle', `${Math.round(st.tipAngle)}°`);
-    row('Climb limit', `${rep.climb}°`);
+    if (naval && st.hull) {
+      row('Hull length', `${st.hull.length.toFixed(1)} m`);
+      row('Beam', `${st.hull.beam.toFixed(1)} m`);
+      row('Displacement, hull full', `${(st.dispMax / 1000).toFixed(1)} t`);
+      row('Draft', `${st.draft.toFixed(2)} m`);
+      row('Freeboard', `${st.freeboard.toFixed(2)} m`);
+      row('Reserve buoyancy', `${Math.round(st.reserve * 100)}%`);
+      row('Centre of buoyancy (B)', `${st.cob.x.toFixed(1)}, ${st.cob.y.toFixed(1)} m`);
+      row('Centre of mass from B', `${Math.abs(st.com.x - st.cob.x).toFixed(2)} m ${st.com.x >= st.cob.x ? 'forward' : 'aft'}`);
+      if (rep.domain === 'sub') {
+        row('Ballast tanks hold', `${(st.ballastCap / 1000).toFixed(1)} t`);
+        row('Ballast to dive', `${(Math.max(0, st.diveNeed) / 1000).toFixed(1)} t`);
+        row('Electric power', `${st.electric} kW`);
+      }
+    } else if (rep.domain === 'air') {
+      row('Wing area', `${st.wingArea} m²`);
+      row('Tail area', `${st.tailArea} m²`);
+      row('Stall speed', `${Math.round(st.stallSpeed * 3.6)} km/h`);
+      if (st.jetThrust) row('Jet thrust', `${(st.jetThrust / 1000).toFixed(0)} kN`);
+      row('Thrust at stall speed', `${((st.thrustAtStall || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
+      if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
+      if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'heli') {
+      row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
+      row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift to weight', ((st.rotorLift || 0) / st.weight).toFixed(2));
+    } else {
+      row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
+      row('Tip angle', `${Math.round(st.tipAngle)}°`);
+      row('Climb limit', `${rep.climb}°`);
+    }
     row('Crew space', `${st.crew}`);
     row('Fuel', `${st.fuel} L`);
     row('Shells', `${st.shells + 10}`);
@@ -6196,12 +8196,13 @@ SCREENS.designer = {
     const c = ui.card('New design');
     const col = el('div', 'card-col');
     let close = null;
-    for (const id of ['scout', 'light', 'medium', 'assault', 'truck']) {
+    for (const id of STARTING_TEMPLATES) {
       col.appendChild(button(`Template: ${TEMPLATES[id].name} Mk.I`, () => { close(); this.load(designFromTemplate(id), null, true); this.build(); }));
     }
-    col.appendChild(button('Randomise (light)', () => { close(); this.randomise('light'); }));
-    col.appendChild(button('Randomise (heavy)', () => { close(); this.randomise('heavy'); }));
-    col.appendChild(button('Scratch build', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
+    for (const cls of Object.keys(CLASSES)) col.appendChild(button(`Randomise (${CLASSES[cls].name.toLowerCase()})`, () => { close(); this.randomise(cls); }));
+    col.appendChild(button('Scratch build (ground)', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -6211,7 +8212,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = cls === 'heavy' ? 'Heavy design' : 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -6326,16 +8327,18 @@ SCREENS.designer = {
     g.stroke();
     g.strokeStyle = BLUEPRINT.line;
     g.strokeRect(ox + 0.5, oy + 0.5, d.w * cs, d.h * cs);
-    // Ground line under the bottom row.
-    g.fillStyle = 'rgba(214,238,255,0.25)';
-    g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
+    // Ground line under the bottom row (land designs).
+    if (!this.rep || this.rep.domain === 'ground') {
+      g.fillStyle = 'rgba(214,238,255,0.25)';
+      g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
+    }
     // Parts: structure first.
     const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
     for (const i of order) {
       if (this.move && this.move.idx === i) continue;
       const c = d.cells[i];
       drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
+      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
         // Barrel preview at zero elevation.
         const P = PARTS[c.p];
         const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
@@ -6376,13 +8379,43 @@ SCREENS.designer = {
     g.restore();
   },
 
-  // Balance markers (design/01 §8.6): centre of mass, contact base, tip angle.
+  // Balance markers (design/01 §8.6): centre of mass, contact base and tip angle (ground),
+  // waterline and centre of buoyancy (ships).
   drawBalance(g, ox, oy, cs) {
     const rep = this.rep;
     if (!rep || !rep.st.mass) return;
     const st = rep.st, d = this.st.d;
     const px = ox + (st.com.x / CELL) * cs;
     const py = oy + (d.h - st.com.y / CELL) * cs;
+    if (seaDomain(rep.domain) && st.hull) {
+      // Waterline across the grid, with the water below it tinted.
+      const wy = oy + (d.h - st.waterline / CELL) * cs;
+      g.fillStyle = 'rgba(127,211,255,0.12)';
+      g.fillRect(ox, wy, d.w * cs, oy + d.h * cs - wy);
+      g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+      g.setLineDash([8, 5]);
+      g.beginPath(); g.moveTo(ox, wy); g.lineTo(ox + d.w * cs, wy); g.stroke();
+      g.setLineDash([]);
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'right'; g.textBaseline = 'bottom';
+      g.fillStyle = BLUEPRINT.valid;
+      g.fillText(st.reserve > 0 ? `waterline · draft ${st.draft.toFixed(2)} m` : 'hull under water', Math.min(ox + d.w * cs, this.gridRect.x + this.gridRect.w) - 4, wy - 2);
+      g.textAlign = 'left';
+      // Centre of buoyancy: a ring with a cross.
+      const bx = ox + (st.cob.x / CELL) * cs, by = oy + (d.h - st.cob.y / CELL) * cs;
+      if (st.reserve > 0) {
+        g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+        g.beginPath(); g.arc(bx, by, 6, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(bx - 9, by); g.lineTo(bx + 9, by); g.moveTo(bx, by - 9); g.lineTo(bx, by + 9); g.stroke();
+        g.textBaseline = 'top';
+        g.fillText('B', bx + 8, by + 3);
+        // Vertical line from the centre of mass: the horizontal gap between them is the trim moment.
+        g.setLineDash([3, 4]);
+        g.strokeStyle = 'rgba(255,178,62,0.6)';
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px, by); g.stroke();
+        g.setLineDash([]);
+      }
+    }
     // Contact base.
     let x0 = Infinity, x1 = -Infinity;
     for (const c of d.cells) { const P = PARTS[c.p]; if (P.loco) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x + P.w); } }
@@ -6404,7 +8437,17 @@ SCREENS.designer = {
     g.font = `700 12px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
-    g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
+    if (rep.domain === 'air' && st.col) {
+      // Centre of lift: a ring with an L.
+      const lx = ox + (st.col.x / CELL) * cs, ly = oy + (d.h - st.col.y / CELL) * cs;
+      g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+      g.beginPath(); g.arc(lx, ly, 6, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(lx, ly - 10); g.lineTo(lx, ly + 10); g.stroke();
+      g.fillStyle = BLUEPRINT.valid; g.textBaseline = 'top';
+      g.fillText('L', lx + 8, ly + 3);
+      g.textBaseline = 'middle';
+    }
+    if (rep.domain === 'ground') g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
   },
 };
 

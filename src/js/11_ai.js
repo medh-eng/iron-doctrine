@@ -20,10 +20,14 @@ function spotRange(B, O, V) {
   let r = SPOT_BASE * O.spot * sightFactor(B, O);
   if (B.T.inForest(V.body.x)) r *= 1 - TERRAIN[T_FOREST].conceal;
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
+  if (V.flier) r *= AIR_SPOT;
+  if (O.flier) r *= AIR_SIGHT;
   return r;
 }
 
 // Every 0.25 s: who can each side see? Wrecks stay visible once seen.
+// A submerged submarine is only found by sonar (design/05 §4); a submerged observer
+// sees only through a periscope above the water, or by sonar.
 function updateSpotting(B) {
   for (const V of B.units) {
     if (V.destroyed && V.seen) continue;
@@ -31,14 +35,29 @@ function updateSpotting(B) {
     for (const O of B.units) {
       if (O.side === V.side || O.destroyed || O.crew <= 0) continue;
       const d = Math.abs(O.body.x - V.body.x);
+      if (O.sonar && d <= O.sonar && seaAt(B.T, V.body.x)) { seen = true; if (V.submerged && !V.pinged && O.side === 0) { V.pinged = true; audio.sfx('ping', B.panOf(V.body.x)); } break; }
+      if (V.submerged || (O.submerged && !periscopeUp(B, O))) continue;
       if (d > spotRange(B, O, V)) continue;
       if (smokeBlocks(O.body.x, O.body.y + O.height, V.body.x, V.body.y + V.height * 0.5)) continue;
       seen = true;
       break;
     }
+    if (!seen) V.pinged = false;
     V.seen = seen || (V.destroyed && V.seen);
     if (seen) { V.lastSeenX = V.body.x; V.everSeen = true; }
   }
+}
+
+// A submerged vehicle can look out if a live periscope (optics) is above the surface.
+function periscopeUp(B, O) {
+  const tmp = { x: 0, y: 0 };
+  for (const p of O.parts) {
+    if (!p.alive || !p.def.spot) continue;
+    gridToLocal(O, (p.x + 0.5) * CELL, (O.design.h - p.y) * CELL, tmp);
+    localToWorld(O, tmp.x, tmp.y, tmp);
+    if (tmp.y > B.T.sea) return true;
+  }
+  return false;
 }
 
 function nearestTarget(B, V, maxRange, filter) {
@@ -54,14 +73,15 @@ function nearestTarget(B, V, maxRange, filter) {
 
 function mainWeapon(V) {
   let best = null;
-  for (const w of V.weapons) if (!w.def.auto && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
+  for (const w of V.weapons) if (!w.def.auto && !w.def.secondary && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
   return best;
 }
 
-// Target point on a vehicle: a little above its centre of mass.
-function aimPoint(U, out) {
+// Target point on a vehicle: a little above its centre of mass; on a floating ship, the waterline.
+function aimPoint(B, U, out) {
   out.x = U.body.x;
   out.y = U.body.y + U.height * 0.15;
+  if (U.hull && seaAt(B.T, U.body.x) && !U.destroyed) out.y = Math.min(out.y, B.T.sea - 0.1);
   return out;
 }
 
@@ -69,7 +89,7 @@ function aimPoint(U, out) {
 function trainWeapon(V, w, angle, face, dt) {
   if (w.face === undefined) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); w.swing = 0; }
   if (face !== w.face) {
-    if (!w.turret) return false;
+    if (!w.turret && !weaponArc(V, w).both) return false;
     w.face = face;
     w.swing = TURRET_SWING;
   }
@@ -91,11 +111,14 @@ function runWeapons(B, V, dt, aiControlled) {
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
+    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
+    if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
-      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? null : (U) => U.soft);
+      const T = nearestTarget(B, V, weaponRange(d), aiControlled ? (U) => !U.flier || d.aa : (U) => U.soft && (!U.flier || d.aa));
       if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
-      aimPoint(T, tmp);
+      aimPoint(B, T, tmp);
+      leadTarget(V, w, T, tmp);
       aimWeapon(V, w, tmp.x, tmp.y, _aim);
       const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
       if (!_aim.ok || !ready || w.reload > 0) continue;
@@ -108,7 +131,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!aiControlled) continue;
     const tgt = V.ai && V.ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen) continue;
-    aimPoint(tgt, tmp);
+    aimPoint(B, tgt, tmp);
     aimWeapon(V, w, tmp.x, tmp.y, _aim);
     const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
     if (B.cfg.holdFire && V.side === 1) continue;
@@ -137,12 +160,12 @@ function squadThink(B, V, dt) {
   else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
   else if (B.order === 'Back') goal = me.body.x - dir * 30 * slot;
   V.throttle = goal === null ? 0 : Math.abs(goal - V.body.x) < 2 ? 0 : clamp((goal - V.body.x) * 0.25, -1, 1);
+  if (V.ballast) V.depthCmd = me.ballast ? me.depthCmd : patrolDepth(B, V);
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
-  const mw = mainWeapon(V);
-  const range = mw ? weaponRange(mw.def) : 0;
+  const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen) tgt = B.target;
-  else tgt = nearestTarget(B, V, range);
+  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;
 }
@@ -150,9 +173,9 @@ function squadThink(B, V, dt) {
 // ---------- enemy tactics
 function enemyThink(B, V, dt) {
   const ai = V.ai;
-  const mw = mainWeapon(V);
-  const range = mw ? weaponRange(mw.def) : V.weapons.length ? weaponRange(V.weapons[0].def) : 0;
-  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2));
+  const range = engageRange(V);
+  const tgt = nearestTarget(B, V, Math.max(range, SPOT_BASE * 2), (U) => canEngage(V, U));
+  if (V.ballast) V.depthCmd = patrolDepth(B, V);
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const x = V.body.x;
@@ -173,9 +196,21 @@ function enemyThink(B, V, dt) {
     if (d > want + 8) V.throttle = 0.8 * toward;
     else if (d < want - 15) V.throttle = -0.5 * toward;
     else V.throttle = 0;
+  } else if (ai.lastX !== undefined && Math.abs(ai.lastX - x) > 6) {
+    V.throttle = 0.6 * Math.sign(ai.lastX - x);   // search where the enemy was last seen
   } else {
+    ai.lastX = undefined;
     V.throttle = 0.5 * V.dir;           // advance
   }
+  if (tgt) ai.lastX = tgt.body.x;
+}
+
+// Submarines on patrol run 5 m under (their top), clear of the seabed.
+function patrolDepth(B, V) {
+  const T = B.T;
+  const top = V.bounds.maxY - V.com.y;
+  const floor = Math.min(T.height(V.body.x - 8), T.height(V.body.x), T.height(V.body.x + 8)) + V.com.y + 1.5;
+  return Math.max(floor, T.sea - 5 - top);
 }
 
 // The escort truck drives for the depot and waits while an enemy is close ahead.
@@ -205,7 +240,7 @@ function mobilityNotes(B, V, dt) {
     V.bogNoteT = B.time;
     const ter = B.T.terrainAt(V.body.x);
     const slope = Math.abs(Math.atan(B.T.slope(V.body.x)) * 180 / Math.PI);
-    const text = ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
+    const text = V.hull ? (seaAt(B.T, V.body.x) && B.T.height(V.body.x) < B.T.sea - V.stats.draft ? 'Stopped' : 'Aground') : ter.soft >= 0.5 ? 'Bogged down' : slope > 8 ? `Stalled on a ${Math.round(slope)}° slope` : V.fuel <= 0 && V.fuelMax > 0 ? 'Out of fuel' : 'Stopped';
     if (V.side === 0) floatText(text, V.body.x, V.body.y + V.height + 1, false);
   }
 }

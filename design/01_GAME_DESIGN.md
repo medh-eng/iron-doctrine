@@ -175,11 +175,15 @@ Platoons arrive as reinforcement waves whenever the on-screen unit cap allows.
 **Ships and submarines**
 - Buoyancy comes from hull cells below the waterline, and draft rises with mass.
 - Holed hull cells flood, so the ship lists and can sink.
+- As built in v0.2.0: watertight parts are the hull and bow sections, keel, bulkheads and the marine diesel. A shell that goes through a hull part below the waterline leaves a hole; a destroyed one is a wide breach. Water fills the compartment from the bottom up; bulkheads and the keel stop it. A ship whose highest point goes under, or that rolls past about 75°, is out ("Sunk", "Capsized"). A land vehicle whose crew compartments go under is "Flooded".
+- Side view: ships drive forward and reverse like ground vehicles; they don't turn around.
+- Submarines (v0.2.1): ▲ ▼ set a depth order; the ballast tanks hold it and keep the boat level. Submerged, only electric motors drive, and the boat is hidden from everything but sonar.
 - Submarines trim with ballast tanks.
 
 **Aircraft and helicopters**
 - Aircraft get lift from wing cells against their mass, and thrust against drag. They stall below minimum speed.
 - Helicopters get lift from the rotor against their mass.
+- As built in v0.2.2: aircraft squad members start in the air on any map (45 m up, helicopters 18 m). A design whose centre of mass is behind its centre of lift is unstable and can pitch up into a stall; the Drafting Office says so as a fact.
 
 **Destroyed parts** detach and fly off as debris. A tank can lose its turret and keep driving.
 
@@ -257,7 +261,7 @@ Side-view grid; one cell = 0.5 m. Parts occupy one or more cells and can be flip
 | Light ground | 16×8 |
 | Heavy ground | 28×12 |
 | Aircraft | 32×12 |
-| Ship | up to 80×24 |
+| Ship | 44×16 (was planned up to 80×24; 44×16 keeps cells readable on a phone) |
 
 **Placement rules:**
 - all parts must connect to the structure
@@ -459,10 +463,15 @@ One new idea every 2–3 levels:
 | 11 | Rain and dusk visibility |
 | 12 | Gaps and bridges: vehicle length matters |
 | 13 | Anti-tank guns in bunkers |
+| 14 | Coastal gunboats (Part 2a): the sea begins at 300 m; gunboats sail in and shell the shore |
+| 17 | Air raid (Part 2c): fighters, then a bomber and a helicopter, with a light tank on the ground. Only heavy machine guns, autocannons and AA guns reach aircraft |
+| 16 | Submarine hunt (Part 2b): a sea battle. Only ships and submarines deploy; with none in the squad, 2 Destroyers and a Gunboat are lent |
 | 15 | Night: sensors matter. +1 life |
 | 16+ | Mixes of earlier ideas with rising numbers; every 5th level is a named boss with a blueprint |
 
-Part 2 adds ladder levels with aircraft (you need AA), coastal gunboats and a submarine level.
+Part 2 adds ladder levels with aircraft (you need AA), coastal gunboats and a submarine level. Level 14 became "Coastal gunboats" in v0.2.0. From level 16 on, about a quarter of the maps have a coast with a gunboat or two (a destroyer from level 28).
+
+**Ships in the squad:** a squad design with a hull deploys at the near edge of the sea. On a map without sea it stays in port (a toast says so) and the rest of the squad fights. The Workshop shows whether the next level has sea.
 
 ### 14.3 Caps
 

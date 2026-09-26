@@ -3,6 +3,14 @@
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
+const TEST_RANGE_HOW = {
+  land: 'Mud, hills and a trench.',
+  sea: 'Open water off a beach.',
+  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
+  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
+};
+// The test range that suits a design's domain.
+const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
 const DEFAULT_ZOOM = 0.75;
 const MIN_AUTO_ZOOM = 0.55;     // how far the follow camera may pull back to frame a target
@@ -15,6 +23,7 @@ SCREENS.battle = {
   frozen: false,
   aim: null,
   drive: 0,
+  climb: 0,
   controls: [],
   c: {},
   resultShown: false,
@@ -24,9 +33,9 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
-      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig() })
+      ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
@@ -40,12 +49,16 @@ SCREENS.battle = {
     game.frozen = false;
     this.aim = null;
     this.drive = 0;
+    this.climb = 0;
     this.resultShown = false;
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
     audio.playTheme('battle');
     this.showHowTo();
+    if (B.loaned) ui.toast(`Sea battle: a fleet is lent to you (${B.squad.map((V) => V.name).join(', ')}).`, 4000);
+    else if (B.ashore.length) ui.toast(`Sea battle: ${B.ashore.map((d) => d.name).join(', ')} stay${B.ashore.length > 1 ? '' : 's'} ashore.`, 3500);
+    if (B.inPort.length) ui.toast(`No sea on this map: ${B.inPort.map((d) => d.name).join(', ')} stay${B.inPort.length > 1 ? '' : 's'} in port.`, 3500);
   },
 
   // Two-line how-to at the start of each level (design/06 acceptance: level 1 with only this).
@@ -54,7 +67,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? 'Mud, hills and a trench. Pause to go back to the Workshop.' : B.cfg.how;
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -90,7 +103,9 @@ SCREENS.battle = {
       move: (p) => this.fireDrag(p),
       up: (p, cancelled) => this.fireUp(p, cancelled),
     });
-    C.alt = makeControl('alt', { label: 'Alt', hidden: true });
+    C.alt = makeControl('alt', { label: 'Alt', hidden: true, up: (p, x) => { if (!x) this.altFire(); } });
+    C.up = makeControl('up', { glyph: 'up', hidden: true, down: drive, up: drive });
+    C.down = makeControl('down', { glyph: 'down', hidden: true, down: drive, up: drive });
     C.swap = makeControl('swap', { label: 'Swap', up: (p, x) => { if (!x) this.swap(); } });
     C.special = makeControl('special', { label: 'Smoke', up: (p, x) => { if (!x) this.smoke(); } });
     C.chips = ORDERS.map((o, i) => makeControl('order' + i, { shape: 'rect', label: o, pad: 2, up: (p, x) => { if (!x) this.setOrder(o); } }));
@@ -99,7 +114,7 @@ SCREENS.battle = {
     C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
     C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
     C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
-    this.controls = [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
   },
 
   layout() {
@@ -141,6 +156,12 @@ SCREENS.battle = {
     C.left.x = mx(lx); C.left.y = padY; C.left.r = Rp;
     C.right.x = mx(lx + Rp * 2 + 18); C.right.y = padY; C.right.r = Rp;
     if (L) { const t = C.left.x; C.left.x = C.right.x; C.right.x = t; }
+    // ▲ ▼ (climb and dive) sit above the middle of the pad, shown only for vehicles that use them.
+    const midX = (C.left.x + C.right.x) / 2;
+    C.down.r = C.up.r = r2;
+    C.down.x = C.up.x = midX;
+    C.down.y = padY - Rp - r2 - 6;
+    C.up.y = C.down.y - r2 * 2 - 6;
     C.recenter.w = 92; C.recenter.h = 30;
     C.recenter.x = w / 2 - 46; C.recenter.y = top + barH + 8;
   },
@@ -152,6 +173,11 @@ SCREENS.battle = {
     const r = this.c.right.pressCount > 0 || k.has('KeyD') || k.has('ArrowRight');
     this.c.left.held = k.has('KeyA') || k.has('ArrowLeft');
     this.c.right.held = k.has('KeyD') || k.has('ArrowRight');
+    const up = this.c.up.pressCount > 0 || k.has('KeyW') || k.has('ArrowUp');
+    const down = this.c.down.pressCount > 0 || k.has('KeyS') || k.has('ArrowDown');
+    this.c.up.held = k.has('KeyW') || k.has('ArrowUp');
+    this.c.down.held = k.has('KeyS') || k.has('ArrowDown');
+    this.climb = up && down ? 0 : up ? 1 : down ? -1 : 0;
     const before = this.drive;
     this.drive = l && r ? 0 : l ? -1 : r ? 1 : 0;      // both together = halt/brake
     if (this.B && this.drive !== before && this.drive !== 0) audio.sfx('engineRev', this.B.panOf(this.B.me.body.x));
@@ -235,9 +261,15 @@ SCREENS.battle = {
     const B = this.B;
     if (this.frozen || B.me.destroyed) return;
     const T = autoTarget(B);
-    if (T) { this.say(playerFire(B, T.body.x, T.body.y + T.height * 0.15, false)); return; }
+    if (T) { const a = aimPoint(B, T, { x: 0, y: 0 }); this.say(playerFire(B, a.x, a.y, false)); return; }
     const x = B.me.body.x + B.me.dir * 60;
     this.say(playerFire(B, x, B.T.height(x) + 1.5, false));
+  },
+
+  altFire() {
+    if (this.frozen || this.B.me.destroyed) return;
+    const r = playerSecondary(this.B);
+    if (r) this.say(r);
   },
 
   smoke() {
@@ -296,7 +328,8 @@ SCREENS.battle = {
   },
 
   key(code, down) {
-    if (/^(KeyA|KeyD|ArrowLeft|ArrowRight)$/.test(code)) { this.updateDrive(); return; }
+    if (/^(KeyA|KeyD|KeyW|KeyS|ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/.test(code)) { this.updateDrive(); return; }
+    if (code === 'KeyF') { this.c.alt.held = down; if (down) this.altFire(); return; }
     const hold = (c) => { c.held = down; if (!down) c.releasedAt = performance.now(); };
     if (code === 'Space') { hold(this.c.fire); if (down) this.fireAuto(); return; }
     if (code === 'KeyE' || code === 'Tab') { hold(this.c.swap); if (down) this.swap(); return; }
@@ -312,7 +345,31 @@ SCREENS.battle = {
   update(dt, simRunning) {
     const B = this.B;
     if (!B) return;
-    B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    const me0 = B.me;
+    if (me0.flier) {
+      // Aircraft: ◀ ▶ throttle, ▲ ▼ pitch (let go: level flight). Helicopters: ◀ ▶ move, ▲ ▼ height.
+      if (!me0.destroyed && simRunning && !this.frozen) {
+        if (me0.domain === 'air') {
+          me0.throttle = clamp(me0.throttle + this.drive * dt * 0.6, 0, 1);
+          me0.pitchOrder = this.climb || null;
+          if (!this.climb) me0.gammaCmd = 0;
+        } else {
+          me0.moveCmd = this.drive;
+          const floor = B.T.height(me0.body.x) + 0.5;
+          const from = me0.altCmd === undefined || me0.altCmd === null ? me0.body.y : me0.altCmd;
+          if (this.climb) me0.altCmd = Math.max(floor, from + this.climb * CLIMB_RATE * dt);
+        }
+      }
+    } else B.me.throttle = B.me.destroyed ? 0 : this.drive;
+    // Submarines: ▲ ▼ move the depth order; above the surfaced level it means "surface".
+    const me = B.me;
+    if (me.ballast && !me.destroyed && simRunning && !this.frozen && this.climb) {
+      const surfaced = B.T.sea - (me.stats.waterline - me.com.y);
+      const floor = B.T.height(me.body.x) + me.com.y + 1;
+      const from = me.depthCmd === null || me.depthCmd === undefined ? Math.min(me.body.y, surfaced) : me.depthCmd;
+      const next = Math.max(floor, from + this.climb * DIVE_RATE * dt);
+      me.depthCmd = next >= surfaced ? null : next;
+    }
     if (simRunning && !this.frozen) {
       // Level clear: time slows to 30% for 0.6 s (design/03 §5).
       const slow = B.result === 'win' && B.resultT < 0.6 ? 0.3 : 1;
@@ -328,6 +385,15 @@ SCREENS.battle = {
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
+    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    C.alt.hidden = !sec.length;
+    if (sec.length) {
+      const n = sec.reduce((a, w) => a + w.rounds, 0);
+      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
+      C.alt.disabled = this.frozen || n === 0;
+    }
+    C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -348,6 +414,14 @@ SCREENS.battle = {
       fit = Math.max(MIN_AUTO_ZOOM, (layout.w * 0.8) / span / base);
       midX = (me.x + T.body.x) / 2;
     }
+    // In the air, pull back far enough to keep the ground under you in view.
+    let midY = me.y + 2;
+    if (B.me.flier && !B.me.destroyed) {
+      const ground = Math.max(B.T.height(me.x), seaAt(B.T, me.x) ? B.T.sea : -Infinity);
+      const alt = me.y - ground;
+      fit = Math.min(fit, Math.max(0.5, (layout.h * 0.7) / (alt + 14) / base));
+      midY = (me.y + ground) / 2 + 2;
+    }
     cam.fit = cam.fit === undefined ? fit : cam.fit + (fit - cam.fit) * (1 - Math.pow(0.2, dt));
     view.S = this.scale();
     const viewW = layout.w / view.S;
@@ -355,7 +429,7 @@ SCREENS.battle = {
       const k = 1 - Math.pow(0.03, dt);
       const wantX = T && !cam.manual && fit < cam.zoom ? midX : me.x + B.me.dir * viewW * 0.18;
       cam.x += (wantX - cam.x) * k;
-      cam.y += (me.y + 2 - cam.y) * k;
+      cam.y += (midY - cam.y) * k;
     }
     cam.x = clamp(cam.x, viewW * 0.3, B.T.length - viewW * 0.3);
     view.cx = cam.x;
@@ -558,7 +632,33 @@ SCREENS.battle = {
     }
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
-    for (const c of [C.left, C.right, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    for (const c of [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    // Aircraft: throttle, height over the ground and a stall warning. Helicopters: height and order.
+    if (B.me.flier && !C.up.hidden) {
+      const me = B.me;
+      const ground = Math.max(B.T.height(me.body.x), seaAt(B.T, me.body.x) ? B.T.sea : -Infinity);
+      const alt = Math.round(me.body.y - ground);
+      const text = me.domain === 'air' ? `Throttle ${Math.round(me.throttle * 100)}% · height ${alt} m`
+        : `Height ${alt} m · order ${Math.round((me.altCmd === undefined || me.altCmd === null ? me.body.y : me.altCmd) - ground)} m`;
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = PAL.linen;
+      g.fillText(text, C.up.x, C.up.y - C.up.r - 4);
+      if (me.domain === 'air' && !me.destroyed && Math.abs((me.alpha || 0) * 180 / Math.PI) > STALL_DEG) {
+        g.fillStyle = PAL.danger; g.font = `700 16px ${FONT_UI}`;
+        g.fillText('STALL', C.up.x, C.up.y - C.up.r - 20);
+      }
+    }
+    // Submarine depth: metres below the surface, and the order.
+    if (B.me.ballast && !C.up.hidden) {
+      const me = B.me;
+      const depth = Math.max(0, B.T.sea - (me.body.y + (me.bounds.maxY - me.com.y)));
+      const order = me.depthCmd === null || me.depthCmd === undefined ? 'surface' : `${Math.max(0, Math.round(B.T.sea - me.depthCmd - (me.bounds.maxY - me.com.y)))} m`;
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = PAL.linen;
+      g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
+    }
     const mw = mainWeapon(B.me);
     if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
   },
@@ -580,6 +680,10 @@ SCREENS.battle = {
     g.beginPath();
     for (let i = 0; i < T.n; i += 8) { const x = i * CELL; if (i === 0) g.moveTo(X(x), Y(T.h[i])); else g.lineTo(X(x), Y(T.h[i])); }
     g.stroke();
+    if (T.seaX0 !== undefined) {
+      g.strokeStyle = 'rgba(127,176,234,0.8)';
+      g.beginPath(); g.moveTo(X(T.seaX0), Y(T.sea)); g.lineTo(X(T.length), Y(T.sea)); g.stroke();
+    }
     for (const V of B.units) {
       if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
       g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;

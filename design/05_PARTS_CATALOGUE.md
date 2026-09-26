@@ -28,7 +28,9 @@ These are starting values. Tune them freely for feel and balance, but never show
 | crew2 | Crew compartment | 2×2 | 300 | 80 | 10 | M3 | 2 crew slots | P1 |
 | turret | Turret ring | 3×1 | 250 | 90 | 20 | M3 | Needed for turrets; −5 kW traverse | P1 |
 | hull | Ship hull section | 2×2 | 600 | 150 | 10 | M4 W1 | Buoyancy below the waterline | P2 |
+| bow | Bow section | 2×2 | 450 | 130 | 10 | M3 W1 | Raked bow; watertight, displaces half its cells (added in 2a) | P2 |
 | keel | Keel | 2×1 | 500 | 120 | 10 | M3 | Lowers centre of mass; ships need one | P2 |
+| phull | Pressure hull section | 2×2 | 2200 | 220 | 25 | M8 | Heavy watertight hull for submarines (added in 2b) | P2 |
 | bulk | Watertight bulkhead | 1×2 | 200 | 100 | 10 | M2 | Stops flooding spreading | P2 |
 | wing | Wing section | 2×1 | 90 | 30 | 2 | M1 W1 | Lift area 6 m² | P2 |
 | tail | Tail unit | 2×2 | 60 | 30 | 2 | M1 W1 | Pitch stability; aircraft need one | P2 |
@@ -179,6 +181,21 @@ These are starting values. Tune them freely for feel and balance, but never show
 - **Reserve buoyancy** = (total hull volume − mass ÷ 1000) ÷ total hull volume.
 - **Flooding:** a destroyed hull cell below the waterline takes in water at 0.5 t/s. The water spreads to neighbouring hull cells unless a bulkhead is in the way.
 
+**As built in 2a** (tuning data in `07_data.js`):
+- Watertight parts: hull, bow (half its cells), keel, bulkhead, marine diesel. Hull length is measured over them; beam = length × 0.18, clamped to 2.5–12 m, fixed for the battle.
+- Waterline, draft, freeboard and centre of buoyancy are found by filling the hull rows from the bottom until the water displaced weighs as much as the ship. Reserve buoyancy uses the whole watertight volume. A design whose mass exceeds it is invalid ("It sinks").
+- Rules: a keel on the lowest row, a propeller with a cell below the waterline, an engine, crew. Warnings name parts below the waterline that aren't watertight, and a hull without bulkheads.
+- **Speed at sea:** thrust = engine power × 0.6 (`PROP_EFF`) ÷ max(v, 1.5 m/s), while a propeller is in the water; reverse × 0.45. Hull resistance = 0.5 × 1000 × 0.35 (`SHIP_CD`) × A × v², where A = displaced volume ÷ hull length, so a heavier ship sits deeper and is slower. In battle the resistance is × 8 (= 1 ÷ `BATTLE_SPEED_SCALE`³) so ships run at half their sheet speed, like ground caps. Gunboat: 33 km/h on the sheet; Destroyer: 46 km/h.
+- **Flooding:** 0.5 t/s per destroyed watertight cell below the surface (scaled by how deep the cell is), plus 0.35 t/s (`HOLE_RATE`) per shell hole below the surface (up to 3 holes remembered per part). Only hull, bow and marine diesel parts take water; keels and bulkheads stop it. Water fills the lowest parts of the compartment first and weighs on them where they are, so the ship trims towards the flooded end.
+- **Manoeuvre thruster:** 15 kN each of extra stopping and reversing force.
+- **Naval gun, twin:** both barrels fire together; battle numbers muzzle 120 m/s, 150 damage, bursting charge 70 within 2.2 m. Recoil counts both barrels.
+- **Submarines (2b):** ballast tanks make a hull a submarine. Ballast to dive = full watertight displacement − mass; the tanks must hold at least that (the Drafting Office says so if they don't). Each tank floods or blows at 1.5 t/s (`BALLAST_RATE`). Depth keeping: tank water = level trim + 1.5 t per metre above the order + 5 t per m/s of climb, and fore/aft tanks trade water to hold the boat level. The whole hull under water = submerged: only electric motors drive, and the boat can't see except through a periscope (optics) above the water or by sonar. The ▲ ▼ order moves 2 m/s. A submarine is lost when, with its tanks blown, flood water still makes it heavier than its hull displaces. Submarine template: 31.7 t, reserve 30% surfaced, needs 13.3 t of its 16 t ballast; 29 km/h surfaced, 19 km/h submerged.
+- **Torpedo (battle numbers):** 16 m/s, runs its range (4 km sheet = 200 m), at the target's keel depth; bursts on contact for 320 damage within 3.2 m. 2 per tube, 30 s reload.
+- **Depth charge:** rolls off the stern, sinks at 3 m/s, bursts at the set depth (the submarine under you, else 8 m) or on contact: 240 damage within 6 m. 6 per rack, 4 s between drops.
+- **Sonar:** 2 km sheet = 100 m in battle; finds anything in the water, including submerged submarines.
+- **Heave damping** acts on cells cutting the surface; cells deep under feel quadratic drag only.
+- **Water and shells:** bullets stop at the surface; high explosive bursts on it; shells slow to 20% and stop 1.5 m down. Auto-aim at a floating ship aims 0.1 m below its waterline.
+
 ### 7.4 Aircraft
 
 - **Lift** = 0.5 × 1.225 × v² × S × CL.
@@ -186,6 +203,28 @@ These are starting values. Tune them freely for feel and balance, but never show
   - Beyond 12° the wing stalls.
 - **Stall speed** = √(2 m g ÷ (1.225 × S × 1.2)).
 - **Helicopter:** maximum rotor lift = 25 kN per rotor at full power, which needs at least 400 kW available.
+
+**As built in 2c** (tuning data in `07_data.js`, physics in `09d_physics_air.js`):
+- Wing area 6 m² per wing section; lift acts at the centre of lift (the wing sections' centroid), from the airflow at that point. CL = 0.1 per degree to 1.2 at 12°; beyond, it falls by 0.07 per degree.
+- Tail unit: 3 m² with CL = 0.08 per degree (no stall), at the tails' centroid; the elevator adds up to ±25° at full ▲ or ▼. Aircraft need a tail and a jet or an air propeller.
+- Drag: 0.5 ρ v² × (0.01 × wing area + 0.1 × height × 1.2 m) × drag rise, plus induced drag 0.06 × CL² × wing area. Drag rise above 230 m/s: × (1 + ((v − 230) ÷ 30)²).
+- Thrust: jets 25 kN each at full throttle; engines with an air propeller: power × 0.8 ÷ max(v, 8 m/s).
+- Battle scale: air speeds × 0.25 (`AIR_SPEED_SCALE`): air density ÷ 0.25² and propeller power × 0.25, so lift, drag and thrust at the scaled speed match the sheet.
+- Autopilot: with no ▲ ▼ the elevator holds level flight (proportional, pitch-rate damping and a trim that builds up). Past the vertical in a loop the aircraft rolls level facing the other way.
+- Helicopter: rotor lift along the mast, the collective holds the height order (▲ ▼ move it 6 m/s); ◀ ▶ tilt the body 15°; drag area 3 m². Without a tail rotor the body spins.
+- A flier touching the ground faster than 7 m/s, or tilted beyond about 45°, crashes; one that comes down on the sea ditches.
+- Aircraft are seen from 2× as far and see 1.5× as far.
+- Autocannon 20 mm and AA gun 40 mm, heavy machine gun: can engage aircraft, aiming ahead of them; on the ground their mounts swing −5° to 85° both ways. 40 mm shells burst within 3 m of an aircraft (30 damage within 3 m) or at the end of their range.
+- Bomb rack: 4 × 250 kg bombs (each 200 damage within 5 m); dropping one takes 250 kg off the aircraft.
+- Fixed guns on aircraft point along the nose (±4°); a helicopter's chin gun swings −50° to 12°.
+
+**Aircraft templates:**
+
+| Template | Size | Build | Numbers |
+|---|---|---|---|
+| Fighter | 17×6 | frames, aero engine and propeller, 3 wing sections, tail, cockpit, 2 HMGs | 2.4 t, stall 152 km/h, top 502 km/h |
+| Bomber | 28×7 | 2 aero engines, 5 wing sections, 2 bomb racks, HMG turret | 6.5 t, stall 193 km/h |
+| Scout helicopter | 11×4 | rotor, tail rotor, aero engine, cabin, chin HMG | 2.1 t, rotor lift 25 kN vs weight 20.6 kN, 197 km/h |
 
 ### 7.5 Reliability
 
@@ -218,6 +257,13 @@ Build these as real part grids. Rough targets:
 | Medium tank | 14×7 | 5 track segments, diesel engine M, turret with 75 mm cannon + MG, 40 mm front and 20 mm sides, ammo rack, 2 fuel tanks | about 18 t |
 | Assault gun | 13×5 | 5 track segments, diesel engine M, fixed 105 mm cannon, 80 mm sloped front, no turret | about 20 t |
 | Supply truck | 11×5 | 3 off-road wheels, petrol engine S, cargo bay, timber frame | used in escort levels |
+
+**Ships (Part 2a):**
+
+| Template | Size | Build | Mass |
+|---|---|---|---|
+| Gunboat | 26×9 | keel, one hull layer with 2 bulkheads, bow, 1 propeller, diesel engine M on deck, bridge, turret with 37 mm cannon, HMG | 15.0 t, draft 0.64 m, reserve 60% |
+| Destroyer | 42×14 | keel, two hull layers with 3 bulkheads, marine diesel in the hull, 2 propellers, forward twin 120 mm turret, aft 75 mm turret, 3 HMGs, fire control | 49.3 t, draft 0.87 m, reserve 65% |
 
 **Enemy set for the ladder:**
 - supply truck

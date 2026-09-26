@@ -37,9 +37,25 @@ function createBattle(level, opts = {}) {
     panOf: () => 0,
     onDestroyed: null,
   };
-  const squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  // Each squad design deploys in its own layer: land vehicles on the left, ships at the
+  // near edge of the sea. Ships stay in port on maps without sea.
+  // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
+  let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
+  B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
+  B.loaned = !squad.length && cfg.fleet;
+  if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  let landX = 46, seaX = T.seaX0 + 16;
+  let airX = 60;
   squad.forEach((d, i) => {
-    const V = makeVehicle(d, 0, 46 - i * 15, 1, T);
+    const dom = domainOf(d);
+    const naval = seaDomain(dom);
+    const L = cropDesign(d).w * CELL;
+    const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
+    if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
+    const V = makeVehicle(d, 0, x, 1, T);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -98,7 +114,14 @@ function createBattle(level, opts = {}) {
 
 function spawnEnemy(B, t, mode, x) {
   const d = designFromTemplate(t);
+  // Ships spawn at sea; land vehicles on land (Part 2a).
+  const T = B.T;
+  if (T.seaX0 !== undefined) {
+    if (seaDomain(domainOf(d))) x = Math.max(x, T.seaX0 + 40);
+    else x = Math.min(x, T.seaX0 - 12);
+  }
   const V = makeVehicle(d, 1, x, -1, B.T);
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
   V.template = t;
   V.speedMul = B.cfg.speedMul;
@@ -159,12 +182,18 @@ function updateBattle(B, dt) {
     if (V.escort) { /* escortThink runs below */ }
     else if (V === B.me && !B.demo) {
       if (V.ai.react > 0) V.ai.react -= dt;
-    } else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
+    } else if (V.flier) airThink(B, V, dt);
+    else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
     else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
+    if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
+  for (const V of B.units) if (V.flier) airChecks(B, V);
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 
@@ -190,7 +219,7 @@ function updateBattle(B, dt) {
       }
     }
     // Tall vehicles push over trees.
-    if (Math.abs(V.speed) > 0.8) {
+    if (Math.abs(V.speed) > 0.8 && !V.hull) {
       for (const tr of B.T.trees) {
         if (tr.alive && Math.abs(tr.x - V.body.x) < V.len / 2 && V.body.m > 3000) breakTree(B, tr, Math.sign(V.speed) || 1);
       }
@@ -198,6 +227,7 @@ function updateBattle(B, dt) {
     if (!V.destroyed) runWeapons(B, V, dt, V !== B.me || B.demo);
   }
   stepShells(B, dt);
+  stepUnderwater(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -264,9 +294,11 @@ function takeVehicle(B, V) {
 // Returns a short reason when it can't.
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
+  if (V.flier) return fireForward(B, V);
   const w = mainWeapon(V);
-  if (!w) return 'No gun';
+  if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
+  if (gunUnderWater(B, V, w)) return 'Gun under water';
   if (V.shells <= 0) return 'Out of shells';
   aimWeapon(V, w, tx, ty, _aim);
   if (!_aim.ok) return _aim.reason || 'Out of arc';
@@ -284,9 +316,10 @@ function autoTarget(B) {
   const V = B.me;
   if (B.target && !B.target.destroyed && B.target.seen) return B.target;
   const w = mainWeapon(V);
-  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200);
+  return nearestTarget(B, V, w ? weaponRange(w.def) * 1.2 : 200, (U) => V.flier || !U.flier);
 }
 
+const _tp = { x: 0, y: 0 };
 // Keep the controlled vehicle's gun pointed at its target (or at the aim point while aiming).
 function trainPlayerGun(B, dt, aimX, aimY) {
   const V = B.me;
@@ -295,7 +328,7 @@ function trainPlayerGun(B, dt, aimX, aimY) {
   let tx = aimX, ty = aimY;
   if (tx === undefined) {
     const T = autoTarget(B);
-    if (T) { tx = T.body.x; ty = T.body.y + T.height * 0.15; }
+    if (T) { aimPoint(B, T, _tp); tx = _tp.x; ty = _tp.y; }
     else { tx = V.body.x + V.dir * 60; ty = B.T.height(V.body.x + V.dir * 60) + 1.5; }
   }
   aimWeapon(V, w, tx, ty, _aim);
@@ -377,6 +410,136 @@ function howitzerCheck() {
     aimWeapon(H, w, tx, B.T.height(tx) + 1, _aim);
     out[d] = _aim.ok;
   }
+  return out;
+}
+
+// Ships (design/06 Part 2 acceptance): over-armoured ships sit low and slow down; a holed
+// ship lists and bulkheads contain the water; without bulkheads it sinks; the drive pad drives it.
+function navalCheck() {
+  const T = makeTerrain({ seed: 7, length: 520, hills: 0.2, rough: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 14 } });
+  const B = { T, panOf: () => 0 };
+  const run = (d, throttle, secs, holes = []) => {
+    const V = makeVehicle(d, 0, 150, 1, T);
+    for (const [x, y] of holes) { const i = V.parts.findIndex((p) => p.x === x && p.y === y); V.parts[i].alive = false; V.alive[i] = 0; }
+    rebuildVehicle(V);
+    V.throttle = throttle;
+    for (let t = 0; t < secs; t += SIM_STEP) { stepVehicle(V, T, SIM_STEP); stepFlooding(B, V, SIM_STEP); }
+    const tmp = { x: 0, y: 0 };
+    let low = Infinity, top = -Infinity;
+    for (const [gx, gy] of [[V.bounds.minX, V.bounds.minY], [V.bounds.maxX, V.bounds.minY], [V.bounds.minX, V.bounds.maxY], [V.bounds.maxX, V.bounds.maxY]]) {
+      gridToLocal(V, gx, gy, tmp); localToWorld(V, tmp.x, tmp.y, tmp);
+      low = Math.min(low, tmp.y); top = Math.max(top, tmp.y);
+    }
+    const wet = V.parts.filter((p) => p.water > 1).map((p) => p.x);
+    return { dx: V.body.x - 150, speed: V.speed, draft: T.sea - low, sunk: top < T.sea, angle: (V.body.a * 180) / Math.PI, wet };
+  };
+  const base = designFromTemplate('gunboat');
+  const heavy = designFromTemplate('gunboat');
+  heavy.cells = heavy.cells.map((c) => (c.p === 'plate' ? { p: 'arm80', x: c.x, y: c.y } : c)).concat([12, 13, 14, 19, 20].map((x) => ({ p: 'arm80', x, y: 4 })));
+  const open = designFromTemplate('gunboat');
+  open.cells = open.cells.filter((c) => !(c.y === 6 && (c.p === 'hull' || c.p === 'bulk')));
+  for (let x = 4; x < 24; x += 2) open.cells.push({ p: 'hull', x, y: 6 });
+  return {
+    valid: validateDesign(heavy).ok && validateDesign(open).ok,
+    base: run(base, 1, 25),
+    heavy: run(heavy, 1, 25),
+    holed: run(base, 0, 30, [[6, 6]]),
+    open: run(open, 0, 40, [[6, 6]]),
+    reverse: run(designFromTemplate('destroyer'), -1, 8),
+  };
+}
+
+// Submarines (Part 2b): dive to the ordered depth and surface again; a torpedo holes and
+// floods a gunboat; a depth charge damages a submarine under the destroyer.
+function subCheck() {
+  const T = makeTerrain({ seed: 7, length: 520, hills: 0.2, rough: 0.2, mud: 0, forest: 0, gaps: 0, sea: { from: 50, depth: 22 } });
+  const V = makeVehicle(designFromTemplate('sub'), 0, 200, 1, T);
+  const top = () => V.body.y + (V.bounds.maxY - V.com.y) - T.sea;
+  const run = (secs) => { for (let t = 0; t < secs; t += SIM_STEP) { subControl(V, T, SIM_STEP); stepVehicle(V, T, SIM_STEP); } };
+  const out = { valid: validateDesign(designFromTemplate('sub')).ok };
+  V.depthCmd = T.sea - 8;
+  run(25);
+  out.dived = { top: top(), com: V.body.y - T.sea, angle: (V.body.a * 180) / Math.PI, submerged: V.submerged };
+  V.depthCmd = null;
+  run(25);
+  out.surfaced = { top: top(), submerged: V.submerged };
+  // Weapons in a sea battle.
+  const B = createBattle(16);
+  const me = B.me;
+  const gb = B.units.find((u) => u.template === 'gunboat');
+  const water = (U) => U.parts.reduce((a, p) => a + (p.water || 0), 0);
+  const hp = (U) => U.parts.reduce((a, p) => a + (p.alive ? p.hp : 0), 0);
+  const hp0 = hp(gb);
+  me.body.x = gb.body.x - 80;
+  for (const U of B.squad) if (U !== me) U.body.x = Math.min(U.body.x, 90);
+  const tw = me.weapons.find((w) => w.def.secondary === 'torpedo');
+  tw.reload = 0; tw.rounds = 2;
+  torpedoes.forEachAlive((t) => { t.alive = false; });
+  launchTorpedo(B, me, tw, gb);
+  for (let t = 0; t < 12; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.torpedo = { hpLost: hp0 - hp(gb), water: water(gb), destroyed: gb.destroyed };
+  const sub = B.units.find((u) => u.template === 'sub' && !u.destroyed) || spawnEnemy(B, 'sub', 'fixed', 400);
+  sub.depthCmd = B.T.sea - 8;
+  for (let t = 0; t < 10; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  const hs = hp(sub);
+  me.body.x = sub.body.x;
+  const dc = me.weapons.find((w) => w.def.secondary === 'depth');
+  dc.reload = 0;
+  dropCharge(B, me, dc, sub.body.y);
+  for (let t = 0; t < 8; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.charge = { hpLost: hs - hp(sub), destroyed: sub.destroyed };
+  return out;
+}
+
+// Aircraft (design/06 Part 2 acceptance): a fighter holds level flight and loops round;
+// too little wing for its weight stalls and comes down; a helicopter lifts off, an overweight
+// one can't; a bomb dropped over a truck destroys it.
+function airCheck() {
+  const T = makeTerrain({ seed: 3, length: 900, hills: 0.1, rough: 0.1, mud: 0, forest: 0, gaps: 0 });
+  const run = (d, secs, setup, each) => {
+    const V = makeVehicle(d, 0, 100, 1, T);
+    setup(V);
+    let minAlt = Infinity, maxAlpha = 0, flipped = false;
+    for (let t = 0; t < secs; t += SIM_STEP) {
+      if (each) each(V, t);
+      flightControl(V, T, SIM_STEP);
+      stepVehicle(V, T, SIM_STEP);
+      if (V.dir < 0) flipped = true;
+      minAlt = Math.min(minAlt, V.body.y - T.height(V.body.x));
+      maxAlpha = Math.max(maxAlpha, Math.abs(((V.alpha || 0) * 180) / Math.PI));
+    }
+    return { alt: V.body.y - T.height(V.body.x), minAlt, maxAlpha, flipped };
+  };
+  const heavy = designFromTemplate('fighter');
+  heavy.cells = heavy.cells.filter((c) => !(c.p === 'wing' && c.x !== 8));
+  for (const x of [2, 3, 4, 5, 6, 7]) heavy.cells.push({ p: 'arm80', x, y: 2 });
+  const fatHeli = designFromTemplate('heli');
+  fatHeli.cells.push({ p: 'arm80', x: 9, y: 1 });
+  const out = {
+    valid: validateDesign(heavy).ok && validateDesign(fatHeli).ok,
+    level: run(designFromTemplate('fighter'), 20, (V) => launchFlier(V, T, 60)),
+    loop: run(designFromTemplate('fighter'), 12, (V) => { launchFlier(V, T, 60); V.throttle = 1; }, (V, t) => { V.pitchOrder = t > 2 && V.dir > 0 ? 1 : null; }),
+    stall: run(heavy, 40, (V) => { launchFlier(V, T, 60); V.throttle = 1; }),
+    heli: run(designFromTemplate('heli'), 10, () => {}, (V) => { V.altCmd = T.height(V.body.x) + 20; }),
+    fatHeli: run(fatHeli, 10, () => {}, (V) => { V.altCmd = T.height(V.body.x) + 20; }),
+  };
+  // A bomb from level flight at 40 m onto a parked truck.
+  const B = createBattle(1);
+  const truck = B.units.find((u) => u.side === 1);
+  const bomber = makeVehicle(designFromTemplate('bomber'), 0, truck.body.x - 90, 1, B.T);
+  launchFlier(bomber, B.T, 40);
+  bomber.ai = makeAI('squad', B.cfg);
+  bomber.ai.target = truck;
+  B.units.push(bomber);
+  B.revealAll = true;
+  truck.seen = true;
+  let dropped = 0;
+  for (let t = 0; t < 12 && !truck.destroyed; t += SIM_STEP) {
+    bomber.gammaCmd = 0;
+    for (const w of bomber.weapons) if (w.def.secondary === 'bomb' && Math.abs(bombImpactX(bomber, truck.body.y) - truck.body.x) < 2 && dropBomb(B, bomber, w)) dropped++;
+    updateBattle(B, SIM_STEP);
+  }
+  out.bomb = { dropped, destroyed: truck.destroyed };
   return out;
 }
 

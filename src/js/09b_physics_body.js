@@ -54,9 +54,14 @@ function makeVehicle(design, side, x, dir, terrain) {
   rebuildVehicle(V, true);
   V.fuel = V.fuelMax;
   V.shells = V.shellsMax;
-  // Rest on the ground: lowest contact touching the terrain.
+  // Rest on the ground: lowest contact touching the terrain. Ships float level on their waterline.
   const b = V.body;
   b.x = x;
+  if (V.hull && seaAt(terrain, x - V.len / 2) && terrain.height(x) < terrain.sea - V.stats.draft) {
+    b.a = 0;
+    b.y = terrain.sea - (V.stats.waterline - V.com.y);
+    return V;
+  }
   b.a = Math.atan(terrain.slope(x));
   let low = Infinity;
   for (const c of V.contacts) low = Math.min(low, c.ly - c.r);
@@ -95,6 +100,14 @@ function worldToGrid(V, wx, wy, out) {
 // Keeps the world position of the parts unchanged when the centre of mass moves.
 function rebuildVehicle(V, first) {
   const D = V.design;
+  // Every part shot away: nothing left to simulate.
+  if (!V.parts.some((p) => p.alive)) {
+    V.gone = true;
+    V.contacts = []; V.weapons = []; V.wcells = null; V.props = null;
+    V.canDrive = false; V.immobile = true; V.crew = 0;
+    V.dirty = true;
+    return;
+  }
   const st = statsOf(D, V.alive);
   const b = V.body;
   if (!first && st.mass > 0) {
@@ -106,11 +119,12 @@ function rebuildVehicle(V, first) {
   V.com.x = st.com.x;
   V.com.y = st.com.y;
   V.stats = st;
-  b.m = Math.max(st.mass, 1);
+  b.m = Math.max(st.mass - (V.dropped || 0), 1);
+  if (V.domain === undefined) { V.domain = domainOf(D); V.flier = airDomain(V.domain); }
   V.grid = occupancy(D, V.alive);
 
   let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0, jets = 0;
   const contacts = [];
   const weapons = [];
   V.night = 0;
@@ -130,8 +144,11 @@ function rebuildVehicle(V, first) {
     if (d.spot) spot = Math.max(spot, d.spot);
     if (d.night) V.night = Math.max(V.night || 0, d.night);
     if (d.accuracy) fc = Math.max(fc, d.accuracy);
+    if (d.sonar) sonar = Math.max(sonar, d.sonar * BATTLE_DISTANCE_SCALE);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
+    if (d.propeller || d.airprop || d.jet || d.rotor) loco++;
+    if (d.jet) jets++;
     if (d.loco) {
       loco++;
       const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
@@ -142,7 +159,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false,
+        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
       });
     }
   });
@@ -168,13 +185,14 @@ function rebuildVehicle(V, first) {
   V.c = (2 * SUSPENSION_DAMP * Math.sqrt(K * b.m)) / Math.max(V.nLoco, 3);
   V.power = engines;
   V.crew = crew;
-  V.canDrive = engines > 0 && crew > 0 && loco > 0;
+  V.canDrive = (engines > 0 || jets > 0) && crew > 0 && loco > 0;
   V.immobile = !V.canDrive;
   V.fuelMax = fuelMax;
   V.fuel = Math.min(V.fuel, fuelMax);
   V.shellsMax = Math.max(V.shellsMax, shellsMax);
   V.spot = spot;
   V.fc = fc;
+  V.sonar = sonar;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };
@@ -183,9 +201,14 @@ function rebuildVehicle(V, first) {
   V.radius = Math.hypot(V.len, V.height) / 2 + 0.5;
   V.soft = V.parts.every((p) => !p.alive || p.def.armor <= 15);
   V.dirty = true;
+  buildWaterParts(V);
+  buildAirParts(V);
 }
 
+const _wf = { fx: 0, fy: 0, tq: 0 };
+
 function stepVehicle(V, T, dt) {
+  if (V.gone) return;
   const b = V.body;
   const h = dt / PHYS_SUBSTEPS;
   const st = V.stats;
@@ -263,9 +286,19 @@ function stepVehicle(V, T, dt) {
       fx += tx * F; fy += ty * F;
       tq += c.rx * ty * F - c.ry * tx * F;
     }
-    // Air drag.
+    // Water: buoyancy, flooding, hull drag and propellers (09c).
+    if (seaAt(T, b.x + V.radius) && b.y - V.radius < T.sea) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      waterForces(V, T, ca, sa, throttle, h, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    }
+    // Aircraft and helicopters: lift, thrust and drag (09d). Everything else: air drag.
     const v2 = b.vx * b.vx + b.vy * b.vy;
-    if (v2 > 0.01) {
+    if (V.flier) {
+      _wf.fx = fx; _wf.fy = fy; _wf.tq = tq;
+      airForces(V, T, ca, sa, _wf);
+      fx = _wf.fx; fy = _wf.fy; tq = _wf.tq;
+    } else if (v2 > 0.01) {
       const v = Math.sqrt(v2);
       const fd = 0.5 * 1.225 * 0.9 * dragA * v2;
       fx -= (fd * b.vx) / v; fy -= (fd * b.vy) / v;
@@ -281,6 +314,11 @@ function stepVehicle(V, T, dt) {
   }
   // Keep inside the battlefield.
   const lo = 3 + V.len / 2, hi = T.length - 3 - V.len / 2;
+  if (V.flier && ((b.x < lo && b.vx < 0) || (b.x > hi && b.vx > 0))) {
+    // Fliers turn back at the edge of the battlefield.
+    b.vx = -b.vx;
+    if (Math.sign(b.vx) !== V.dir) flipFlier(V);
+  }
   if (b.x < lo) { b.x = lo; if (b.vx < 0) b.vx = 0; }
   if (b.x > hi) { b.x = hi; if (b.vx > 0) b.vx = 0; }
   if (b.a > Math.PI) b.a -= Math.PI * 2;
@@ -298,8 +336,10 @@ function stepVehicle(V, T, dt) {
 function separateVehicles(list) {
   for (let i = 0; i < list.length; i++) {
     const A = list[i];
+    if (A.gone) continue;
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
+      if (B.gone) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;

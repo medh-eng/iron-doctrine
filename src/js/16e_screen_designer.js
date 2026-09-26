@@ -52,12 +52,14 @@ SCREENS.designer = {
   // Put a design into a class-sized grid, bottom-aligned.
   load(design, base, owned) {
     const d0 = cropDesign(design);
-    const cls = d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
+    const dom = domainOf(d0);
+    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : airDomain(dom) ? dom : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
     const C = CLASSES[cls];
-    const ox = 1, oy = C.h - d0.h;
+    const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
+    const ox = 1, oy = H - d0.h;
     this.st = {
       cls,
-      d: { w: C.w, h: C.h, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
@@ -66,10 +68,13 @@ SCREENS.designer = {
     this.msg = '';
   },
 
-  scratch() {
-    const C = CLASSES.light;
+  // An empty grid with a starter frame (ground) or a starter keel (ship).
+  scratch(cls = 'light') {
+    const C = CLASSES[cls];
     const cells = [];
-    for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
+    if (cls === 'ship') for (let x = 4; x < 20; x += 2) cells.push(['keel', x, C.h - 1]);
+    else if (cls === 'air') { for (let x = 4; x < 16; x++) cells.push(['frame', x, C.h - 5]); cells.push(['wing', 8, C.h - 4]); }
+    else for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
     return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
   },
 
@@ -90,6 +95,7 @@ SCREENS.designer = {
       if (hTouch || vTouch) touches = true;
     }
     if (P.loco && y + P.h !== d.h) return 'Wheels and tracks go on the bottom row.';
+    if (P.keel && y + P.h !== d.h) return 'Keels go on the bottom row.';
     if (others && !touches) return 'Parts must touch the rest of the vehicle.';
     return '';
   },
@@ -356,24 +362,60 @@ SCREENS.designer = {
     const st = rep.st;
     this.chips.textContent = '';
     const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
+    const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
-    chip(`${st.powerToWeight.toFixed(1)} kW/t`);
-    chip(`${rep.speeds.Plains} km/h`);
+    const air = airDomain(rep.domain);
+    if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
+    else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
+    else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
+    chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
     // Stats drawer: numbers only.
     const S = this.stats;
     S.textContent = '';
     const head = (t) => S.appendChild(el('div', 'dz-h', t));
     const row = (k, v) => { const r = el('div', 'dz-row'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); S.appendChild(r); };
-    head('Stats');
+    head(`Stats · ${DOMAIN_NAMES[rep.domain]}`);
     row('Mass', `${(st.mass / 1000).toFixed(2)} t`);
     row('Centre of mass', `${st.com.x.toFixed(1)}, ${st.com.y.toFixed(1)} m`);
     row('Power', `${st.power} kW made, ${st.drawn} kW drawn`);
     row('Power to weight', `${st.powerToWeight.toFixed(1)} kW/t`);
-    row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
-    row('Tip angle', `${Math.round(st.tipAngle)}°`);
-    row('Climb limit', `${rep.climb}°`);
+    if (naval && st.hull) {
+      row('Hull length', `${st.hull.length.toFixed(1)} m`);
+      row('Beam', `${st.hull.beam.toFixed(1)} m`);
+      row('Displacement, hull full', `${(st.dispMax / 1000).toFixed(1)} t`);
+      row('Draft', `${st.draft.toFixed(2)} m`);
+      row('Freeboard', `${st.freeboard.toFixed(2)} m`);
+      row('Reserve buoyancy', `${Math.round(st.reserve * 100)}%`);
+      row('Centre of buoyancy (B)', `${st.cob.x.toFixed(1)}, ${st.cob.y.toFixed(1)} m`);
+      row('Centre of mass from B', `${Math.abs(st.com.x - st.cob.x).toFixed(2)} m ${st.com.x >= st.cob.x ? 'forward' : 'aft'}`);
+      if (rep.domain === 'sub') {
+        row('Ballast tanks hold', `${(st.ballastCap / 1000).toFixed(1)} t`);
+        row('Ballast to dive', `${(Math.max(0, st.diveNeed) / 1000).toFixed(1)} t`);
+        row('Electric power', `${st.electric} kW`);
+      }
+    } else if (rep.domain === 'air') {
+      row('Wing area', `${st.wingArea} m²`);
+      row('Tail area', `${st.tailArea} m²`);
+      row('Stall speed', `${Math.round(st.stallSpeed * 3.6)} km/h`);
+      if (st.jetThrust) row('Jet thrust', `${(st.jetThrust / 1000).toFixed(0)} kN`);
+      row('Thrust at stall speed', `${((st.thrustAtStall || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
+      if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
+      if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'heli') {
+      row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
+      row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift to weight', ((st.rotorLift || 0) / st.weight).toFixed(2));
+    } else {
+      row('Ground pressure', Number.isFinite(st.pressure) ? `${Math.round(st.pressure)} kPa` : '—');
+      row('Tip angle', `${Math.round(st.tipAngle)}°`);
+      row('Climb limit', `${rep.climb}°`);
+    }
     row('Crew space', `${st.crew}`);
     row('Fuel', `${st.fuel} L`);
     row('Shells', `${st.shells + 10}`);
@@ -423,12 +465,13 @@ SCREENS.designer = {
     const c = ui.card('New design');
     const col = el('div', 'card-col');
     let close = null;
-    for (const id of ['scout', 'light', 'medium', 'assault', 'truck']) {
+    for (const id of STARTING_TEMPLATES) {
       col.appendChild(button(`Template: ${TEMPLATES[id].name} Mk.I`, () => { close(); this.load(designFromTemplate(id), null, true); this.build(); }));
     }
-    col.appendChild(button('Randomise (light)', () => { close(); this.randomise('light'); }));
-    col.appendChild(button('Randomise (heavy)', () => { close(); this.randomise('heavy'); }));
-    col.appendChild(button('Scratch build', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
+    for (const cls of Object.keys(CLASSES)) col.appendChild(button(`Randomise (${CLASSES[cls].name.toLowerCase()})`, () => { close(); this.randomise(cls); }));
+    col.appendChild(button('Scratch build (ground)', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -438,7 +481,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = cls === 'heavy' ? 'Heavy design' : 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -553,16 +596,18 @@ SCREENS.designer = {
     g.stroke();
     g.strokeStyle = BLUEPRINT.line;
     g.strokeRect(ox + 0.5, oy + 0.5, d.w * cs, d.h * cs);
-    // Ground line under the bottom row.
-    g.fillStyle = 'rgba(214,238,255,0.25)';
-    g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
+    // Ground line under the bottom row (land designs).
+    if (!this.rep || this.rep.domain === 'ground') {
+      g.fillStyle = 'rgba(214,238,255,0.25)';
+      g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
+    }
     // Parts: structure first.
     const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
     for (const i of order) {
       if (this.move && this.move.idx === i) continue;
       const c = d.cells[i];
       drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke') {
+      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
         // Barrel preview at zero elevation.
         const P = PARTS[c.p];
         const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
@@ -603,13 +648,43 @@ SCREENS.designer = {
     g.restore();
   },
 
-  // Balance markers (design/01 §8.6): centre of mass, contact base, tip angle.
+  // Balance markers (design/01 §8.6): centre of mass, contact base and tip angle (ground),
+  // waterline and centre of buoyancy (ships).
   drawBalance(g, ox, oy, cs) {
     const rep = this.rep;
     if (!rep || !rep.st.mass) return;
     const st = rep.st, d = this.st.d;
     const px = ox + (st.com.x / CELL) * cs;
     const py = oy + (d.h - st.com.y / CELL) * cs;
+    if (seaDomain(rep.domain) && st.hull) {
+      // Waterline across the grid, with the water below it tinted.
+      const wy = oy + (d.h - st.waterline / CELL) * cs;
+      g.fillStyle = 'rgba(127,211,255,0.12)';
+      g.fillRect(ox, wy, d.w * cs, oy + d.h * cs - wy);
+      g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+      g.setLineDash([8, 5]);
+      g.beginPath(); g.moveTo(ox, wy); g.lineTo(ox + d.w * cs, wy); g.stroke();
+      g.setLineDash([]);
+      g.font = `700 12px ${FONT_UI}`;
+      g.textAlign = 'right'; g.textBaseline = 'bottom';
+      g.fillStyle = BLUEPRINT.valid;
+      g.fillText(st.reserve > 0 ? `waterline · draft ${st.draft.toFixed(2)} m` : 'hull under water', Math.min(ox + d.w * cs, this.gridRect.x + this.gridRect.w) - 4, wy - 2);
+      g.textAlign = 'left';
+      // Centre of buoyancy: a ring with a cross.
+      const bx = ox + (st.cob.x / CELL) * cs, by = oy + (d.h - st.cob.y / CELL) * cs;
+      if (st.reserve > 0) {
+        g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+        g.beginPath(); g.arc(bx, by, 6, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(bx - 9, by); g.lineTo(bx + 9, by); g.moveTo(bx, by - 9); g.lineTo(bx, by + 9); g.stroke();
+        g.textBaseline = 'top';
+        g.fillText('B', bx + 8, by + 3);
+        // Vertical line from the centre of mass: the horizontal gap between them is the trim moment.
+        g.setLineDash([3, 4]);
+        g.strokeStyle = 'rgba(255,178,62,0.6)';
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px, by); g.stroke();
+        g.setLineDash([]);
+      }
+    }
     // Contact base.
     let x0 = Infinity, x1 = -Infinity;
     for (const c of d.cells) { const P = PARTS[c.p]; if (P.loco) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x + P.w); } }
@@ -631,6 +706,16 @@ SCREENS.designer = {
     g.font = `700 12px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
-    g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
+    if (rep.domain === 'air' && st.col) {
+      // Centre of lift: a ring with an L.
+      const lx = ox + (st.col.x / CELL) * cs, ly = oy + (d.h - st.col.y / CELL) * cs;
+      g.strokeStyle = BLUEPRINT.valid; g.lineWidth = 2;
+      g.beginPath(); g.arc(lx, ly, 6, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(lx, ly - 10); g.lineTo(lx, ly + 10); g.stroke();
+      g.fillStyle = BLUEPRINT.valid; g.textBaseline = 'top';
+      g.fillText('L', lx + 8, ly + 3);
+      g.textBaseline = 'middle';
+    }
+    if (rep.domain === 'ground') g.fillText(`tip ${Math.round(st.tipAngle)}°`, px + 11, py);
   },
 };
