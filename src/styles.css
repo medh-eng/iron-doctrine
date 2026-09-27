@@ -459,3 +459,33 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .bp-medal-txt { display: flex; flex-direction: column; }
 .bp-medal-txt b { font-size: 13px; }
 .bp-medal-txt small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+
+/* Battle Simulator (step 2.6): the Workshop layout, scrolling as one page */
+.workshop.sim { pointer-events: auto; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; background: rgba(9, 22, 36, 0.55); }
+.sim > * { flex: none; }
+.sim-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; }
+.sim-wrap { flex-wrap: wrap; overflow: visible; }
+.sim-label { font-size: 13px; min-width: 76px; color: rgba(214, 238, 255, 0.85); }
+.sim-chip.on { background: rgba(255, 178, 62, 0.28); box-shadow: inset 0 0 0 1px var(--amber); }
+.sim-count { font-size: 14px; }
+.sim-line { overflow-x: auto; touch-action: pan-x; }
+.sim-slot { flex: 0 0 140px; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; position: relative; }
+.sim-slot b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sim-idle { opacity: 0.5; }
+.sim .ws-lib { flex: none; }
+.sim .ws-pick { flex: 0 0 140px; }
+.sim-fight { flex-shrink: 0; }
+
+/* Command wheel (design/02 §3.4) */
+.cmd-wheel { position: absolute; width: 0; height: 0; z-index: 5; }
+.cmd-wheel .btn { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; width: 104px; padding: 0 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+.cmd-wheel .cmd-close { left: 76px; top: -98px; width: 44px; background: rgba(9, 22, 36, 0.9); border-color: var(--amber); }
+.cmd-name { position: absolute; left: -110px; top: -98px; width: 170px; transform: translateY(-50%); font-size: 13px; font-weight: 700; color: var(--linen); text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-wheel .btn:disabled { opacity: 0.4; }
+
+/* Reserve drawer (design/02 §3.1) */
+.rsv-list { display: flex; flex-direction: column; gap: 6px; min-width: min(420px, 80vw); max-height: 52vh; overflow-y: auto; }
+.rsv-row { display: flex; align-items: center; gap: 8px; }
+.rsv-num { color: var(--amber); font-weight: 700; width: 16px; }
+.rsv-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rsv-name small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }

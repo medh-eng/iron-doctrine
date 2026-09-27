@@ -38,6 +38,8 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 08_design.js           designer model: grid, domainOf, validation, stats, marks
 09a–09d_physics_*.js   terrain, rigid bodies, water (ships, submarines), air (aircraft, helicopters)
 10a–10e_*.js           combat, effects, naval weapons, air weapons, systems (missiles, rockets, heat, breakdowns, repair)
+12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
+16g_screen_simulator.js the Battle Simulator screen (01 §15)
 11_ai.js, 11b_ai_air.js  captain and enemy AI, air AI
 12_battle.js           battle setup, squads, results
 12b_battle_render.js   battle drawing; drawPart() is where part art is used

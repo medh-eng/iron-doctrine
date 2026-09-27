@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.6';
+const GAME_VERSION = '0.2.7';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -68,6 +68,8 @@ const DEFAULT_PROFILE = {
   requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
   squad: [],               // design ids fielded in the ladder (v2)
   stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
+  // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
+  sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [] },
 };
 
 // Saved designs (v2). Stored under irondoctrine.designs.
@@ -1275,6 +1277,12 @@ const input = {
     canvas.addEventListener('pointercancel', (e) => this.up(e, true));
     canvas.addEventListener('lostpointercapture', (e) => { if (this.pointers.has(e.pointerId)) this.up(e, true); });
     canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    // Right-click: the screen's context action (the battle's command wheel).
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const scr = screens.cur;
+      if (scr && scr.world && scr.world.contextMenu) { const [x, y] = this.local(e); scr.world.contextMenu(x, y); }
+    });
     window.addEventListener('keydown', (e) => this.keyDown(e));
     window.addEventListener('keyup', (e) => this.keyUp(e));
   },
@@ -2518,6 +2526,31 @@ const MEDALS = [
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
+// ---------- Battle Simulator (design/01 §15): a battlefield from the player's choices.
+const SIM_FIELDS = { inland: 'Inland', coast: 'Coast', sea: 'Open sea' };
+const SIM_WEATHER = { clear: 'Clear', rain: 'Rain' };
+const SIM_LIGHT = { day: 'Day', dusk: 'Dusk', night: 'Night' };
+// Enemy picks when the player leaves the force to the Simulator, by battlefield.
+const SIM_MIXED = {
+  inland: ['medium', 'light', 'assault', 'mgcar', 'scout', 'hunter'],
+  coast: ['medium', 'light', 'gunboat', 'assault', 'destroyer', 'mgcar'],
+  sea: ['gunboat', 'destroyer', 'sub', 'gunboat', 'destroyer'],
+};
+
+function simulatorConfig(o) {
+  const c = levelConfig(3);
+  Object.assign(c, {
+    name: `${SIM_FIELDS[o.field] || 'Inland'} · ${SIM_WEATHER[o.weather] || 'Clear'} · ${SIM_LIGHT[o.light] || 'Day'}`,
+    goal: { type: 'destroy', text: 'Destroy the enemy force' },
+    seed: o.seed, enemies: [], length: 560, hills: 0.45, forest: 1, mud: 1, gaps: 0,
+    weather: o.weather === 'rain' ? 'rain' : 'clear', light: SIM_LIGHT[o.light] ? o.light : 'day',
+    how: 'Three ships a side on the field; the rest wait in reserve. Long-press (or right-click) a ship or its card for orders.',
+  });
+  if (o.field === 'coast') c.sea = { from: Math.round(c.length * 0.62), depth: 14 };
+  if (o.field === 'sea') Object.assign(c, { fleet: true, length: 640, hills: 0.2, forest: 0, mud: 0, sea: { from: 40, depth: 24 } });
+  return c;
+}
+
 function testDriveConfig(range = 'land') {
   const c = {
     level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
@@ -3817,6 +3850,8 @@ function separateVehicles(list) {
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
       if (B.gone) continue;
+      // A ship pulling back passes its own side's ships (they make room on the road).
+      if (A.side === B.side && (A.pulling || B.pulling)) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;
@@ -5763,7 +5798,8 @@ function squadThink(B, V, dt) {
   const slot = B.squad.indexOf(V) < B.squad.indexOf(me) ? B.squad.indexOf(V) + 1 : B.squad.indexOf(V);
   const dir = 1;                      // the squad advances to the right
   let goal = null;
-  if (ai.hold !== null) goal = ai.hold;
+  if (V.pulling) goal = null;                       // pulling back: stepReserves drives it off the rear edge
+  else if (ai.hold !== null) goal = ai.hold;
   else if (B.order === 'Follow') goal = me.body.x - dir * 12 * slot;
   else if (B.order === 'Escort') goal = me.body.x + dir * (slot === 1 ? 10 : -10);
   else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
@@ -5773,7 +5809,10 @@ function squadThink(B, V, dt) {
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
   const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  // A "Fire at" order from the command wheel comes first, then the Attack order's target.
+  if (ai.fireAt && (ai.fireAt.destroyed || !ai.fireAt.seen)) ai.fireAt = null;
+  if (ai.fireAt && canEngage(V, ai.fireAt)) tgt = ai.fireAt;
+  else if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
   else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;
@@ -5953,6 +5992,14 @@ function createBattle(level, opts = {}) {
   squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  // Three on the field (design/01 §10.3): the rest of the line-up waits in reserve.
+  if (opts.reserves) {
+    const force = (opts.enemyForce || []).map((t) => (typeof t === 'string' ? designFromTemplate(t) : t)).filter((d) => canDeploy(B, d));
+    setupReserves(B, squad.slice(FIELD_MAX), force.slice(FIELD_MAX));
+    squad = squad.slice(0, FIELD_MAX);
+    B.enemyField = force.slice(0, FIELD_MAX);
+    B.goalTotal = force.length;
+  }
   let landX = 46, seaX = T.seaX0 + 16;
   let airX = 60;
   squad.forEach((d, i) => {
@@ -5983,6 +6030,11 @@ function createBattle(level, opts = {}) {
     let best = T.length * 0.45, bh = -Infinity;
     for (let x = T.length * 0.38; x < T.length * 0.62; x += 2) if (T.height(x) > bh) { bh = T.height(x); best = x; }
     B.zone = { x0: best - 12, x1: best + 12 };
+  }
+
+  if (B.rotation) {
+    B.enemySlots = B.enemyField.map((d, k) => spawnEnemy(B, d, 'attack', T.length - 50 - k * 18));
+    delete B.enemyField;
   }
 
   // Enemies: wave 0 now, later waves from the right edge every cfg.wave seconds.
@@ -6019,8 +6071,9 @@ function createBattle(level, opts = {}) {
   return B;
 }
 
+// t: a template id, or a design (Battle Simulator forces).
 function spawnEnemy(B, t, mode, x) {
-  const d = designFromTemplate(t);
+  const d = typeof t === 'string' ? designFromTemplate(t) : t;
   // Ships spawn at sea; land vehicles on land (Part 2a).
   const T = B.T;
   if (T.seaX0 !== undefined) {
@@ -6030,7 +6083,7 @@ function spawnEnemy(B, t, mode, x) {
   const V = makeVehicle(d, 1, x, -1, B.T);
   if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
-  V.template = t;
+  V.template = typeof t === 'string' ? t : d.id;
   V.speedMul = B.cfg.speedMul;
   if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
   if (t === B.cfg.boss) { V.boss = true; V.name = B.cfg.bossName || d.name; }
@@ -6096,6 +6149,7 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  stepReserves(B, dt);
   for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
@@ -6175,7 +6229,10 @@ function updateBattle(B, dt) {
   if (B.escort && !B.escort.destroyed) escortThink(B, B.escort);
 
   // Objectives.
-  if (!B.result && !B.test) {
+  if (!B.result && !B.test && B.rotation) {
+    if (sideBeaten(B, 1)) { B.result = 'win'; B.resultT = 0; }
+    else if (sideBeaten(B, 0)) { B.result = 'lost'; B.resultT = 0; }
+  } else if (!B.result && !B.test) {
     const g = B.cfg.goal;
     if (g.type === 'hold' && B.zone) {
       const inside = B.squad.some((V) => !V.destroyed && V.body.x >= B.zone.x0 && V.body.x <= B.zone.x1);
@@ -6245,8 +6302,8 @@ function trainPlayerGun(B, dt, aimX, aimY) {
 }
 
 // Smoke launcher: a screen in front of the vehicle.
-function playerSmoke(B) {
-  const V = B.me;
+// Smoke from one of your ships (the one you drive, or one given the order on the command wheel).
+function playerSmoke(B, V = B.me) {
   if (!V.smoke) return 'No smoke launcher';
   V.smoke--;
   const x = V.body.x + V.dir * 8;
@@ -7102,6 +7159,177 @@ function renderBattle(g, B) {
   drawWeather(g, B);
 }
 
+/* ---------- 12c_reserves.js ---------- */
+/* ==== 12c RESERVES ==== */
+// Three on the field (design/01 §10.3). In battles created with opts.reserves (the Battle
+// Simulator; later the campaign) each side keeps at most FIELD_MAX ships in battle. The rest
+// wait in line and enter from their own rear edge ENTRY_DELAY seconds after a slot frees up:
+// a ship destroyed, or pulled back off the rear edge. Pulled-back ships keep their damage,
+// fuel and shells and join the end of the line. A side loses when it has no ship on the
+// field, none on the way in and none in reserve. The Gauntlet keeps its v1 waves.
+
+const FIELD_MAX = 3;
+const ENTRY_DELAY = 5;            // seconds between a slot freeing up and the next ship entering
+const EDGE_EXIT = 6;              // metres from the rear edge at which a pulling-back ship leaves
+const AIR_EXIT_SECS = 3;          // aircraft pulling back fly off after this long
+const ENEMY_PULL_HEALTH = 0.35;   // enemy captains pull back below this share of hit points
+
+function vehicleHealth(V) {
+  let hp = 0;
+  for (const p of V.parts) if (p.alive) hp += p.hp;
+  return V.hpMax ? hp / V.hpMax : 0;
+}
+
+// A reserve entry: the design, plus the state of a ship that has pulled back.
+function reserveEntry(design, V) {
+  const e = { design, name: markName(design), health: 1, hp: null, fuel: null, shells: null };
+  if (V) {
+    e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
+    e.health = vehicleHealth(V);
+    e.fuel = V.fuel; e.shells = V.shells;
+  }
+  return e;
+}
+
+// Can this design fight on this battlefield? (ships need sea; sea battles take no land units)
+function canDeploy(B, d) {
+  const naval = seaDomain(domainOf(d));
+  if (naval && B.T.seaX0 === undefined) return false;
+  if (!naval && B.cfg.fleet && !airDomain(domainOf(d))) return false;
+  return true;
+}
+
+function setupReserves(B, squadRest, enemyRest) {
+  B.rotation = true;
+  B.reserve = [squadRest.filter((d) => canDeploy(B, d)).map((d) => reserveEntry(d)), enemyRest.filter((d) => canDeploy(B, d)).map((d) => reserveEntry(d))];
+  B.entering = [];
+  B.pulledBack = [0, 0];
+  B.lostShips = [];
+}
+
+// Where a side's reinforcements enter: their own rear edge, in their own layer.
+function entryX(B, side, d) {
+  const T = B.T, dom = domainOf(d);
+  const L = cropDesign(d).w * CELL;
+  if (side === 0) {
+    if (airDomain(dom)) return 30;
+    if (seaDomain(dom)) return T.seaX0 + 10 + L / 2;
+    return 14;
+  }
+  if (airDomain(dom)) return T.length - 30;
+  if (seaDomain(dom)) return T.length - 10 - L / 2;
+  return T.seaX0 !== undefined ? T.seaX0 - 14 : T.length - 14;
+}
+
+function restoreDamage(V, e) {
+  if (!e.hp) return;
+  let lost = false;
+  V.parts.forEach((p, i) => {
+    if (e.hp[i] <= 0) { p.alive = false; V.alive[i] = 0; lost = true; } else p.hp = e.hp[i];
+  });
+  if (lost) rebuildVehicle(V);
+  if (e.fuel !== null) V.fuel = e.fuel;
+  if (e.shells !== null) V.shells = e.shells;
+}
+
+function enterFromReserve(B, side, slot) {
+  const e = B.reserve[side].shift();
+  if (!e) return null;
+  const x = entryX(B, side, e.design);
+  let V;
+  if (side === 0) {
+    V = makeVehicle(e.design, 0, x, 1, B.T);
+    if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : 45);
+    V.ai = makeAI('squad', B.cfg);
+    V.label = String(slot + 1);
+    B.units.push(V);
+    B.squad[slot] = V;
+    if (B.me.destroyed || B.me.withdrawn) takeVehicle(B, V);
+  } else {
+    V = spawnEnemy(B, e.design, 'attack', x);
+    B.enemySlots[slot] = V;
+  }
+  restoreDamage(V, e);
+  if (!B.demo) floatText(side === 0 ? `${V.name} enters` : 'Enemy reinforcement', V.body.x, V.body.y + V.height + 1.5, side === 1);
+  return V;
+}
+
+// Order a ship back to reserve (design/02 §3.4 "Pull back"). Returns a reason when it can't.
+function pullBack(B, V) {
+  if (!B.rotation) return 'No reserve line in this battle';
+  if (V.destroyed || V.withdrawn) return 'Out of action';
+  if (V.pulling) return '';
+  V.pulling = true;
+  V.pullT = 0;
+  V.ai.hold = null;
+  V.ai.fireAt = null;
+  if (V === B.me) {
+    const next = B.squad.find((U) => U !== V && !U.destroyed && !U.pulling);
+    if (next) takeVehicle(B, next);
+  }
+  return '';
+}
+
+function withdraw(B, V) {
+  const side = V.side;
+  B.reserve[side].push(reserveEntry(V.design, V));
+  B.pulledBack[side]++;
+  V.withdrawn = true;
+  V.destroyed = true;              // out of the fight: no longer targeted or simulated
+  V.gone = true;
+  V.throttle = 0;
+  const i = B.units.indexOf(V);
+  if (i >= 0) B.units.splice(i, 1);
+  if (B.target === V) B.target = null;
+  const slots = side === 0 ? B.squad : B.enemySlots;
+  const slot = slots.indexOf(V);
+  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+  if (V === B.me) {
+    const next = B.squad.find((U) => !U.destroyed);
+    if (next) takeVehicle(B, next);
+  }
+}
+
+// Once per frame, after the captains have chosen their throttle.
+function stepReserves(B, dt) {
+  if (!B.rotation) return;
+  const T = B.T;
+  for (const side of [0, 1]) {
+    const slots = side === 0 ? B.squad : B.enemySlots;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const V = slots[slot];
+      if (!V) continue;
+      if (V.destroyed && !V.withdrawn && !V.replaced) {
+        V.replaced = true;
+        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+        continue;
+      }
+      if (V.destroyed) continue;
+      // Enemy captains pull back badly damaged ships while they have others waiting.
+      if (side === 1 && !V.pulling && B.reserve[1].length && vehicleHealth(V) < ENEMY_PULL_HEALTH) pullBack(B, V);
+      if (!V.pulling) continue;
+      V.pullT += dt;
+      if (V !== B.me) V.throttle = side === 0 ? -1 : 1;
+      const out = V.flier ? V.pullT > AIR_EXIT_SECS : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
+      if (out) withdraw(B, V);
+    }
+  }
+  for (let i = B.entering.length - 1; i >= 0; i--) {
+    const en = B.entering[i];
+    if (B.time < en.at) continue;
+    B.entering.splice(i, 1);
+    enterFromReserve(B, en.side, en.slot);
+  }
+}
+
+// A side is beaten when it has nothing left to fight with.
+function sideBeaten(B, side) {
+  const slots = side === 0 ? B.squad : B.enemySlots;
+  if (slots.some((V) => V && !V.destroyed)) return false;
+  if (B.entering.some((en) => en.side === side)) return false;
+  return !B.reserve[side].length;
+}
+
 /* ---------- 16a_screens.js ---------- */
 /* ==== 16 SCREENS ==== */
 // Screen manager, the title screen, and pause/settings/fullscreen helpers.
@@ -7172,6 +7400,7 @@ SCREENS.title = {
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
+    row2.appendChild(button('Battle Simulator', () => screens.go('simulator'), 'btn btn-primary'));
     row2.appendChild(button('Workshop', () => screens.go('workshop')));
     row2.appendChild(button('Blueprints', () => screens.go('blueprints')));
     row2.appendChild(button('Settings', () => ui.openSettings()));
@@ -7310,7 +7539,9 @@ SCREENS.battle = {
     for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
-      : createBattle(this.level, { squad: ladder.squadDesigns() });
+      : opts.sim
+        ? createBattle(0, { squad: opts.sim.squad(), cfg: simulatorConfig(opts.sim), reserves: true, enemyForce: opts.sim.enemy() })
+        : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
     B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
@@ -7325,6 +7556,8 @@ SCREENS.battle = {
     this.drive = 0;
     this.climb = 0;
     this.resultShown = false;
+    this.pick = null;
+    this.closeWheel();
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
@@ -7340,7 +7573,7 @@ SCREENS.battle = {
     const B = this.B;
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
-    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
     const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
@@ -7352,12 +7585,14 @@ SCREENS.battle = {
 
   exit() {
     game.frozen = false;
+    this.closeWheel();
     this.B = null;
     if (this.howEl) { this.howEl.remove(); this.howEl = null; }
     uiLayer.classList.remove('has-howto');
   },
 
   pauseOpts() {
+    if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
       restart: () => this.enter(this.opts),
@@ -7387,8 +7622,17 @@ SCREENS.battle = {
     C.pause = makeControl('pause', { shape: 'rect', glyph: 'pause', pad: 4, up: (p, x) => { if (!x) togglePause(); } });
     C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
     C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
-    C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
-    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+    // Ship cards: tap to drive; long-press for the command wheel (design/02 §3.1, §3.4).
+    C.cards = [0, 1, 2].map((i) => {
+      const cd = makeControl('card' + i, {
+        shape: 'rect', pad: 2,
+        down: () => { cd.downAt = performance.now(); cd.longDone = false; },
+        up: (p, x) => { if (!x && !cd.longDone) this.takeControl(i); cd.downAt = 0; },
+      });
+      return cd;
+    });
+    C.reserve = makeControl('reserve', { shape: 'rect', label: 'Reserve', pad: 2, hidden: true, up: (p, x) => { if (!x) this.openReserve(); } });
+    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.reserve, C.time, C.pause, C.settings];
   },
 
   layout() {
@@ -7403,6 +7647,7 @@ SCREENS.battle = {
     let bx = w - safe.r - 6;
     for (const b of [C.settings, C.pause, C.time]) { bx -= 44; b.x = bx; b.y = top + 3; b.w = 42; b.h = 28; bx -= 4; }
     for (let i = 0; i < 3; i++) { const cd = C.cards[i]; cd.x = safe.l + 6 + i * 50; cd.y = top + 3; cd.w = 46; cd.h = 28; }
+    C.reserve.x = C.cards[2].x + 52; C.reserve.y = top + 3; C.reserve.w = 78; C.reserve.h = 28;
     this.mini = { x: C.time.x - 10 - clamp(w * 0.18, 90, 200), y: top + 5, w: clamp(w * 0.18, 90, 200), h: 24 };
 
     const R = (FIRE_DIAMETER / 2) * s;
@@ -7490,6 +7735,112 @@ SCREENS.battle = {
 
   recenter() { this.cam.follow = true; audio.sfx('tap'); },
 
+  // ---------- command wheel (design/02 §3.4): orders for one of your ships
+  openWheel(V) {
+    const B = this.B;
+    if (!B || !V || V.destroyed || V.side !== 0 || B.demo) return;
+    this.closeWheel();
+    const r = el('div', 'cmd-wheel');
+    // Two columns of three orders, with a close button above, kept clear of the screen edges.
+    r.style.left = `${clamp(view.sx(V.body.x), layout.safe.l + 116, layout.w - layout.safe.r - 116)}px`;
+    r.style.top = `${clamp(view.sy(V.body.y + V.height / 2), layout.safe.t + 124, layout.h - layout.safe.b - 80)}px`;
+    const items = [
+      ['Drive', () => this.takeControl(B.squad.indexOf(V))],
+      ['Move to', () => this.startPick(V, 'move')],
+      ['Fire at', () => this.startPick(V, 'fire')],
+      ['Hold', () => { V.ai.hold = V.body.x; V.ai.fireAt = null; this.orderDone(V, 'Hold'); }],
+      ['Pull back', () => { const why = pullBack(B, V); if (why) this.say(why); else this.orderDone(V, 'Pulling back'); }, !B.rotation],
+      ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
+    ];
+    items.forEach(([label, fn, off], i) => {
+      const b = button(label, () => { this.closeWheel(); fn(); }, 'btn btn-small cmd-item');
+      b.disabled = !!off;
+      b.style.left = `${i < 3 ? -56 : 56}px`;
+      b.style.top = `${((i % 3) - 1) * 50}px`;
+      r.appendChild(b);
+    });
+    const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
+    x.setAttribute('aria-label', `Close orders for ${V.name}`);
+    r.appendChild(x);
+    r.appendChild(el('div', 'cmd-name', V.name));
+    uiLayer.appendChild(r);
+    this.wheel = r;
+    input.releaseAll();
+    audio.sfx('toggleOn');
+    haptic('tap');
+  },
+
+  closeWheel() { if (this.wheel) { this.wheel.remove(); this.wheel = null; } },
+
+  // Move to / Fire at: the next tap on the world picks the point or the target.
+  startPick(V, kind) {
+    this.pick = { V, kind };
+    ui.toast(kind === 'move' ? `${V.name}: tap where to go.` : `${V.name}: tap an enemy to fire at.`, 2200);
+  },
+
+  finishPick(wx, wy, hit) {
+    const B = this.B;
+    const { V, kind } = this.pick;
+    this.pick = null;
+    if (V.destroyed) return;
+    if (kind === 'move') {
+      const x = clamp(wx, 5, B.T.length - 5);
+      V.ai.hold = x;
+      V.pulling = false;
+      this.orderDone(V, 'Moving', x, B.T.height(x) + 3);
+      return;
+    }
+    const U = B.units.find((E) => E.side === 1 && !E.destroyed && E.seen && hit(E));
+    if (!U) { this.say('No enemy there'); return; }
+    V.ai.fireAt = U;
+    this.orderDone(V, 'Fire at', U.body.x, U.body.y + U.height + 1.5);
+  },
+
+  orderDone(V, label, x, y) {
+    audio.sfx('order');
+    haptic('tap');
+    floatText(label, x !== undefined ? x : V.body.x, y !== undefined ? y : V.body.y + V.height + 1);
+  },
+
+  // ---------- reserve drawer (design/02 §3.1): the line-up, reorder, "Send in"
+  openReserve() {
+    const B = this.B;
+    if (!B || !B.rotation) return;
+    const c = ui.card('Reserve line-up', 'card-reserve');
+    const list = el('div', 'rsv-list');
+    c.appendChild(list);
+    const btns = el('div', 'card-row');
+    let close = null;
+    const build = (sending) => {
+      list.textContent = '';
+      const R = B.reserve[0];
+      if (!R.length) list.appendChild(el('p', 'card-text', 'No ships in reserve.'));
+      R.forEach((e, i) => {
+        const row = el('div', 'rsv-row');
+        row.appendChild(el('span', 'rsv-num', String(i + 1)));
+        const t = el('span', 'rsv-name');
+        t.appendChild(el('b', '', e.name));
+        t.appendChild(el('small', '', `hull ${Math.round(e.health * 100)}%`));
+        row.appendChild(t);
+        if (i > 0) row.appendChild(button('▲', () => { R.splice(i - 1, 0, R.splice(i, 1)[0]); build(); }, 'btn btn-small'));
+        row.appendChild(button('Send in', () => { R.unshift(R.splice(i, 1)[0]); build(true); }, 'btn btn-small'));
+        list.appendChild(row);
+      });
+      if (sending) {
+        list.appendChild(el('p', 'card-text', `${R[0].name} goes in next. Which ship pulls back for it?`));
+        const row = el('div', 'card-row');
+        for (const V of B.squad) {
+          if (!V.destroyed && !V.pulling) row.appendChild(button(`Pull back ${V.name}`, () => { pullBack(B, V); this.orderDone(V, 'Pulling back'); close(); }, 'btn btn-small'));
+        }
+        list.appendChild(row);
+      }
+    };
+    build();
+    btns.appendChild(button('Close', () => close(), 'btn btn-primary', 'back'));
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
   toggleTime() {
     this.frozen = !this.frozen;
     game.frozen = this.frozen;
@@ -7552,6 +7903,12 @@ SCREENS.battle = {
     if (r) this.say(r); else { audio.sfx('smoke', this.B.panOf(this.B.me.body.x)); haptic('tap'); }
   },
 
+  ownShipAt(x, y) {
+    const B = this.B;
+    const wx = view.wx(x), wy = view.wy(y);
+    return B.squad.find((V) => !V.destroyed && Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5) || null;
+  },
+
   // ---------- camera
   // While following, the camera may pull back to frame the target, unless you pinched a zoom yourself.
   scale() { return BASE_PX_PER_M * (layout.h / 360) * (this.cam.follow && !this.cam.manual ? Math.min(this.cam.zoom, this.cam.fit || 9) : this.cam.zoom); },
@@ -7562,6 +7919,8 @@ SCREENS.battle = {
       const B = S.B;
       const wx = view.wx(x), wy = view.wy(y);
       const hit = (V) => Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5;
+      if (S.wheel) { S.closeWheel(); return; }
+      if (S.pick) { S.finishPick(wx, wy, hit); return; }
       for (let i = 0; i < B.squad.length; i++) if (!B.squad[i].destroyed && hit(B.squad[i])) { S.takeControl(i); return; }
       for (const V of B.units) {
         if (V.side !== 1 || V.destroyed || !V.seen || !hit(V)) continue;
@@ -7572,10 +7931,14 @@ SCREENS.battle = {
         return;
       }
     },
+    // Desktop: right-click one of your ships for its command wheel.
+    contextMenu(x, y) { const S = SCREENS.battle; const own = S.ownShipAt(x, y); if (own) S.openWheel(own); },
     doubleTap() { const c = SCREENS.battle.cam; c.zoom = DEFAULT_ZOOM; c.manual = false; audio.sfx('tap'); },
-    longPress(x) {
+    longPress(x, y) {
       const S = SCREENS.battle;
       const B = S.B;
+      const own = S.ownShipAt(x, y);
+      if (own) { S.openWheel(own); return; }
       const wx = clamp(view.wx(x), 5, B.T.length - 5);
       let k = 0;
       for (const V of B.squad) if (V !== B.me && !V.destroyed) { V.ai.hold = wx + (k++ ? -7 : 0); }
@@ -7654,7 +8017,13 @@ SCREENS.battle = {
     this.updateCamera(dt);
     const C = this.c;
     for (let i = 0; i < 5; i++) C.chips[i].lit = ORDERS[i] === B.order;
-    for (let i = 0; i < 3; i++) { C.cards[i].lit = B.squad[i] === B.me; C.cards[i].disabled = !B.squad[i] || B.squad[i].destroyed; }
+    for (let i = 0; i < 3; i++) {
+      const cd = C.cards[i];
+      cd.lit = B.squad[i] === B.me; cd.disabled = !B.squad[i] || B.squad[i].destroyed;
+      if (cd.pressCount > 0 && cd.downAt && !cd.longDone && performance.now() - cd.downAt >= LONG_PRESS_MS) { cd.longDone = true; this.openWheel(B.squad[i]); }
+    }
+    C.reserve.hidden = !B.rotation;
+    if (B.rotation) C.reserve.label = `Reserve ${B.reserve[0].length}`;
     C.recenter.hidden = this.cam.follow;
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
@@ -7725,7 +8094,20 @@ SCREENS.battle = {
     let close = null;
     const secs = Math.round(B.time);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    if (win) {
+    if (this.opts.sim) {
+      // Battle Simulator (design/01 §15): facts only, no campaign effects.
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', `${B.goalDone} of ${B.goalTotal}`);
+      row('Your ships lost', B.stats.lost);
+      row('Pulled back (yours / theirs)', `${B.pulledBack[0]} / ${B.pulledBack[1]}`);
+      row('Shots fired, penetrations', `${B.stats.shots}, ${B.stats.pens}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+      btns.appendChild(button('Simulator', () => { close(); screens.go('simulator'); }));
+      btns.appendChild(button('Fight again', () => { close(); this.enter(this.opts); }, 'btn btn-primary'));
+    } else if (win) {
       const res = ladder.onWin(B);
       haptic('clear');
       audio.sfx('fanfare');
@@ -7873,13 +8255,15 @@ SCREENS.battle = {
       g.fillStyle = PAL.linen;
       g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
     }
+    if (!C.reserve.hidden) drawControl(g, C.reserve, nowMs, 1);
     // Objective with a progress bar.
-    const left = C.cards[2].x + C.cards[2].w + 10;
+    const left = (C.reserve.hidden ? C.cards[2].x + C.cards[2].w : C.reserve.x + C.reserve.w) + 10;
     const right = this.mini.x - 10;
     if (right - left > 70) {
       const goal = B.cfg.goal;
       let text, f;
       if (B.test) { text = `Test drive · ${Math.round(B.me.body.x)} m`; f = B.me.body.x / B.T.length; }
+      else if (B.rotation) { text = `Enemy ${B.goalTotal - B.goalDone}/${B.goalTotal} · reserve ${B.reserve[1].length}`; f = B.goalDone / Math.max(1, B.goalTotal); }
       else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
       else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
       else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
@@ -7889,7 +8273,7 @@ SCREENS.battle = {
       g.fillText(text, left, safe.t + 9, right - left);
       g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
       g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
-      if (!B.test) {
+      if (!B.test && !this.opts.sim) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
         g.font = `700 12px ${FONT_UI}`;
@@ -9048,6 +9432,149 @@ SCREENS.blueprints = {
 
   update() {},
   render(g) { SCREENS.workshop.render(g); },
+};
+
+/* ---------- 16g_screen_simulator.js ---------- */
+/* ==== 16g SCREEN: BATTLE SIMULATOR ==== */
+// The Battle Simulator (design/01 §15, design/06 step 2.6): pick your line-up (any number;
+// three fight at a time, the rest wait in reserve in this order), a battlefield, weather and
+// time of day, and the enemy force; then fight. No campaign effects: the result card shows
+// facts only. Choices are remembered in save.profile.sim.
+
+const SIM_SIZE_MAX = 9;
+
+SCREENS.simulator = {
+  root: null,
+
+  enter() {
+    this.build();
+    audio.playTheme('title');
+  },
+
+  exit() { if (this.root) this.root.remove(); this.root = null; },
+
+  opts() { return save.profile.sim; },
+
+  // Enemy templates the player can pick (fixed positions such as bunkers are left out).
+  enemyChoices() { return Object.keys(TEMPLATES).filter((id) => !TEMPLATES[id].fixed); },
+
+  // The battle's inputs, read when the battle starts (and again on "Fight again").
+  battleArg() {
+    const o = this.opts();
+    const lib = designLibrary();
+    return {
+      sim: {
+        field: o.field, weather: o.weather, light: o.light, seed: (Date.now() & 0xffff) + 1,
+        squad: () => o.lineup.map((id) => lib.find((d) => d.id === id)).filter(Boolean).map((d) => JSON.parse(JSON.stringify(d.design))),
+        enemy: () => {
+          const pool = o.enemy.length ? o.enemy : SIM_MIXED[o.field] || SIM_MIXED.inland;
+          const n = o.enemy.length ? o.enemy.length : o.size;
+          const out = [];
+          for (let i = 0; i < n; i++) out.push(designFromTemplate(pool[i % pool.length]));
+          return out;
+        },
+      },
+    };
+  },
+
+  build() {
+    if (this.root) this.root.remove();
+    const o = this.opts();
+    const lib = designLibrary();
+    const find = (id) => lib.find((d) => d.id === id);
+    o.lineup = o.lineup.filter((id) => find(id));
+    const set = (k, v) => { o[k] = v; save.touch('profile'); audio.sfx('tap'); this.build(); };
+
+    const r = el('div', 'workshop sim');
+    this.root = r;
+    const top = el('div', 'ws-top');
+    top.appendChild(button('‹ Title', () => screens.go('title'), 'btn btn-small', 'back'));
+    top.appendChild(el('h2', 'ws-title', 'Battle Simulator'));
+    top.appendChild(el('span', 'ws-fact', 'No campaign effects'));
+    r.appendChild(top);
+    const fightSlot = el('span', 'sim-fight');
+    top.appendChild(fightSlot);
+
+    // Battlefield, weather and time of day.
+    const chips = (label, key, names) => {
+      const row = el('div', 'sim-row');
+      row.appendChild(el('span', 'sim-label', label));
+      for (const [k, name] of Object.entries(names)) {
+        const b = button(name, () => set(key, k), 'btn btn-small sim-chip' + (o[key] === k ? ' on' : ''));
+        b.setAttribute('aria-pressed', String(o[key] === k));
+        row.appendChild(b);
+      }
+      return row;
+    };
+    r.appendChild(chips('Battlefield', 'field', SIM_FIELDS));
+    r.appendChild(chips('Weather', 'weather', SIM_WEATHER));
+    r.appendChild(chips('Time', 'light', SIM_LIGHT));
+
+    // Your line-up, in order.
+    const fits = (d) => {
+      const naval = seaDomain(domainOf(d));
+      if (naval) return o.field !== 'inland';
+      return o.field !== 'sea' || airDomain(domainOf(d));
+    };
+    const idle = o.lineup.filter((id) => !fits(find(id).design)).length;
+    r.appendChild(el('div', 'ws-label', `Your line-up: ${o.lineup.length} ships · the first 3 start, the rest wait in reserve in this order${idle ? ` · ${idle} can't fight on this battlefield` : ''}`));
+    const line = el('div', 'ws-slots sim-line');
+    o.lineup.forEach((id, i) => {
+      const d = find(id).design;
+      const card = el('div', 'ws-card sim-slot' + (fits(d) ? '' : ' sim-idle'));
+      card.appendChild(el('span', 'ws-num', String(i + 1)));
+      card.appendChild(designThumb(d, 104, 38));
+      card.appendChild(el('b', '', markName(d)));
+      const btns = el('div', 'ws-btns');
+      if (i > 0) btns.appendChild(button('▲', () => { o.lineup.splice(i - 1, 0, o.lineup.splice(i, 1)[0]); set('lineup', o.lineup); }, 'btn btn-small'));
+      btns.appendChild(button('✕', () => { o.lineup.splice(i, 1); set('lineup', o.lineup); }, 'btn btn-small', 'back'));
+      card.appendChild(btns);
+      line.appendChild(card);
+    });
+    if (!o.lineup.length) line.appendChild(el('p', 'card-text', 'Tap designs below to add them.'));
+    r.appendChild(line);
+
+    r.appendChild(el('div', 'ws-label', 'Your designs · tap to add to the line-up'));
+    const list = el('div', 'ws-lib');
+    for (const d of lib) {
+      const pick = el('button', 'ws-card ws-pick');
+      pick.type = 'button';
+      pick.appendChild(designThumb(d.design, 104, 38));
+      pick.appendChild(el('b', '', markName(d.design)));
+      pick.appendChild(el('small', '', `${d.src} · ${DOMAIN_NAMES[domainOf(d.design)]} · cost ${costOf(d.design)}`));
+      pick.addEventListener('click', () => { audio.sfx('order'); o.lineup.push(d.id); set('lineup', o.lineup); });
+      list.appendChild(pick);
+    }
+    r.appendChild(list);
+
+    // Enemy force: a number of ships picked by the Simulator for this battlefield, or your own picks.
+    const er = el('div', 'sim-row');
+    er.appendChild(el('span', 'sim-label', 'Enemy'));
+    if (!o.enemy.length) {
+      er.appendChild(button('−', () => set('size', Math.max(1, o.size - 1)), 'btn btn-small'));
+      er.appendChild(el('b', 'sim-count', `${o.size} ships, mixed for the battlefield`));
+      er.appendChild(button('+', () => set('size', Math.min(SIM_SIZE_MAX, o.size + 1)), 'btn btn-small'));
+    } else {
+      er.appendChild(el('b', 'sim-count', `${o.enemy.length}: ${o.enemy.map((id) => TEMPLATES[id].name).join(', ')}`));
+      er.appendChild(button('Clear', () => set('enemy', []), 'btn btn-small', 'back'));
+    }
+    r.appendChild(er);
+    r.appendChild(el('div', 'ws-label', 'Or pick the enemy yourself · tap to add'));
+    const en = el('div', 'sim-row sim-wrap');
+    for (const id of this.enemyChoices()) {
+      en.appendChild(button(TEMPLATES[id].name, () => { if (o.enemy.length < SIM_SIZE_MAX) { o.enemy.push(id); set('enemy', o.enemy); } else audio.sfx('error'); }, 'btn btn-small sim-chip'));
+    }
+    r.appendChild(en);
+
+    const ready = o.lineup.some((id) => fits(find(id).design));
+    const go = button('Fight', () => {
+      if (!ready) { audio.sfx('error'); ui.toast('Add a ship that can fight on this battlefield.'); return; }
+      screens.go('battle', this.battleArg());
+    }, 'btn btn-primary');
+    if (!ready) go.classList.add('btn-disabled');
+    fightSlot.appendChild(go);
+    uiLayer.insertBefore(r, ui.toastBox);
+  },
 };
 
 /* ---------- 17_main.js ---------- */

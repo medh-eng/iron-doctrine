@@ -166,7 +166,8 @@ function squadThink(B, V, dt) {
   const slot = B.squad.indexOf(V) < B.squad.indexOf(me) ? B.squad.indexOf(V) + 1 : B.squad.indexOf(V);
   const dir = 1;                      // the squad advances to the right
   let goal = null;
-  if (ai.hold !== null) goal = ai.hold;
+  if (V.pulling) goal = null;                       // pulling back: stepReserves drives it off the rear edge
+  else if (ai.hold !== null) goal = ai.hold;
   else if (B.order === 'Follow') goal = me.body.x - dir * 12 * slot;
   else if (B.order === 'Escort') goal = me.body.x + dir * (slot === 1 ? 10 : -10);
   else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
@@ -176,7 +177,10 @@ function squadThink(B, V, dt) {
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
   const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  // A "Fire at" order from the command wheel comes first, then the Attack order's target.
+  if (ai.fireAt && (ai.fireAt.destroyed || !ai.fireAt.seen)) ai.fireAt = null;
+  if (ai.fireAt && canEngage(V, ai.fireAt)) tgt = ai.fireAt;
+  else if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
   else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;

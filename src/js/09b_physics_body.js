@@ -360,6 +360,8 @@ function separateVehicles(list) {
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
       if (B.gone) continue;
+      // A ship pulling back passes its own side's ships (they make room on the road).
+      if (A.side === B.side && (A.pulling || B.pulling)) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;

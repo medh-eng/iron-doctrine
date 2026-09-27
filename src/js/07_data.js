@@ -239,6 +239,31 @@ const MEDALS = [
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
+// ---------- Battle Simulator (design/01 §15): a battlefield from the player's choices.
+const SIM_FIELDS = { inland: 'Inland', coast: 'Coast', sea: 'Open sea' };
+const SIM_WEATHER = { clear: 'Clear', rain: 'Rain' };
+const SIM_LIGHT = { day: 'Day', dusk: 'Dusk', night: 'Night' };
+// Enemy picks when the player leaves the force to the Simulator, by battlefield.
+const SIM_MIXED = {
+  inland: ['medium', 'light', 'assault', 'mgcar', 'scout', 'hunter'],
+  coast: ['medium', 'light', 'gunboat', 'assault', 'destroyer', 'mgcar'],
+  sea: ['gunboat', 'destroyer', 'sub', 'gunboat', 'destroyer'],
+};
+
+function simulatorConfig(o) {
+  const c = levelConfig(3);
+  Object.assign(c, {
+    name: `${SIM_FIELDS[o.field] || 'Inland'} · ${SIM_WEATHER[o.weather] || 'Clear'} · ${SIM_LIGHT[o.light] || 'Day'}`,
+    goal: { type: 'destroy', text: 'Destroy the enemy force' },
+    seed: o.seed, enemies: [], length: 560, hills: 0.45, forest: 1, mud: 1, gaps: 0,
+    weather: o.weather === 'rain' ? 'rain' : 'clear', light: SIM_LIGHT[o.light] ? o.light : 'day',
+    how: 'Three ships a side on the field; the rest wait in reserve. Long-press (or right-click) a ship or its card for orders.',
+  });
+  if (o.field === 'coast') c.sea = { from: Math.round(c.length * 0.62), depth: 14 };
+  if (o.field === 'sea') Object.assign(c, { fleet: true, length: 640, hills: 0.2, forest: 0, mud: 0, sea: { from: 40, depth: 24 } });
+  return c;
+}
+
 function testDriveConfig(range = 'land') {
   const c = {
     level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,

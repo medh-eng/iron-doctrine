@@ -67,6 +67,7 @@ SCREENS.title = {
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
+    row2.appendChild(button('Battle Simulator', () => screens.go('simulator'), 'btn btn-primary'));
     row2.appendChild(button('Workshop', () => screens.go('workshop')));
     row2.appendChild(button('Blueprints', () => screens.go('blueprints')));
     row2.appendChild(button('Settings', () => ui.openSettings()));

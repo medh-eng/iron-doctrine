@@ -46,6 +46,14 @@ function createBattle(level, opts = {}) {
   squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  // Three on the field (design/01 §10.3): the rest of the line-up waits in reserve.
+  if (opts.reserves) {
+    const force = (opts.enemyForce || []).map((t) => (typeof t === 'string' ? designFromTemplate(t) : t)).filter((d) => canDeploy(B, d));
+    setupReserves(B, squad.slice(FIELD_MAX), force.slice(FIELD_MAX));
+    squad = squad.slice(0, FIELD_MAX);
+    B.enemyField = force.slice(0, FIELD_MAX);
+    B.goalTotal = force.length;
+  }
   let landX = 46, seaX = T.seaX0 + 16;
   let airX = 60;
   squad.forEach((d, i) => {
@@ -76,6 +84,11 @@ function createBattle(level, opts = {}) {
     let best = T.length * 0.45, bh = -Infinity;
     for (let x = T.length * 0.38; x < T.length * 0.62; x += 2) if (T.height(x) > bh) { bh = T.height(x); best = x; }
     B.zone = { x0: best - 12, x1: best + 12 };
+  }
+
+  if (B.rotation) {
+    B.enemySlots = B.enemyField.map((d, k) => spawnEnemy(B, d, 'attack', T.length - 50 - k * 18));
+    delete B.enemyField;
   }
 
   // Enemies: wave 0 now, later waves from the right edge every cfg.wave seconds.
@@ -112,8 +125,9 @@ function createBattle(level, opts = {}) {
   return B;
 }
 
+// t: a template id, or a design (Battle Simulator forces).
 function spawnEnemy(B, t, mode, x) {
-  const d = designFromTemplate(t);
+  const d = typeof t === 'string' ? designFromTemplate(t) : t;
   // Ships spawn at sea; land vehicles on land (Part 2a).
   const T = B.T;
   if (T.seaX0 !== undefined) {
@@ -123,7 +137,7 @@ function spawnEnemy(B, t, mode, x) {
   const V = makeVehicle(d, 1, x, -1, B.T);
   if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
-  V.template = t;
+  V.template = typeof t === 'string' ? t : d.id;
   V.speedMul = B.cfg.speedMul;
   if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
   if (t === B.cfg.boss) { V.boss = true; V.name = B.cfg.bossName || d.name; }
@@ -189,6 +203,7 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
+  stepReserves(B, dt);
   for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
@@ -268,7 +283,10 @@ function updateBattle(B, dt) {
   if (B.escort && !B.escort.destroyed) escortThink(B, B.escort);
 
   // Objectives.
-  if (!B.result && !B.test) {
+  if (!B.result && !B.test && B.rotation) {
+    if (sideBeaten(B, 1)) { B.result = 'win'; B.resultT = 0; }
+    else if (sideBeaten(B, 0)) { B.result = 'lost'; B.resultT = 0; }
+  } else if (!B.result && !B.test) {
     const g = B.cfg.goal;
     if (g.type === 'hold' && B.zone) {
       const inside = B.squad.some((V) => !V.destroyed && V.body.x >= B.zone.x0 && V.body.x <= B.zone.x1);
@@ -338,8 +356,8 @@ function trainPlayerGun(B, dt, aimX, aimY) {
 }
 
 // Smoke launcher: a screen in front of the vehicle.
-function playerSmoke(B) {
-  const V = B.me;
+// Smoke from one of your ships (the one you drive, or one given the order on the command wheel).
+function playerSmoke(B, V = B.me) {
   if (!V.smoke) return 'No smoke launcher';
   V.smoke--;
   const x = V.body.x + V.dir * 8;
@@ -426,6 +444,42 @@ function svgArtCheck() {
     shells.forEachAlive((sh) => { if (sh.shooter === V) { shell = { x: sh.x, y: sh.y }; sh.alive = false; } });
     out.muzzle.push({ dir, off: shell ? Math.hypot(shell.x - want.x, shell.y - want.y) : 99, kick: w.kick || 0 });
   }
+  return out;
+}
+
+// Step 2.6: three on the field. Both sides start with 3; a destroyed ship is replaced from
+// reserve after ENTRY_DELAY in line-up order; a pulled-back ship drives off its rear edge,
+// joins the end of the line and is replaced; an enemy pulls back a badly damaged ship;
+// the battle is won when the enemy has nothing left.
+function reserveCheck() {
+  const out = {};
+  const cfg = simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 77 });
+  const squad = ['medium', 'light', 'scout', 'assault', 'truck'].map(designFromTemplate);
+  const B = createBattle(0, { cfg, squad, reserves: true, enemyForce: ['light', 'light', 'mgcar', 'medium', 'scout'] });
+  const run = (secs) => { for (let t = 0; t < secs && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP); };
+  out.start = { field: B.squad.length, reserve: B.reserve[0].map((e) => e.design.id), enemies: B.enemySlots.length, enemyReserve: B.reserve[1].length };
+  knockOut(B, B.squad[0], null, 'test', true);
+  run(ENTRY_DELAY + 0.5);
+  out.replaced = { slot0: B.squad[0].design.id, reserve: B.reserve[0].map((e) => e.design.id), me: B.me === B.squad[0] || !B.me.destroyed };
+  const V = B.squad[1];
+  pullBack(B, V);
+  for (let t = 0; t < 90 && !V.withdrawn; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.pulled = { withdrawn: !!V.withdrawn, last: B.reserve[0].length ? B.reserve[0][B.reserve[0].length - 1].design.id : null };
+  run(ENTRY_DELAY + 0.5);
+  out.pulledReplaced = { slot1: B.squad[1].design.id, fromReserve: B.squad[1] !== V };
+  const E = B.enemySlots[0];
+  for (const p of E.parts) if (p.alive) p.hp = Math.max(1, p.hp * 0.2);
+  const waiting = B.reserve[1].length;
+  run(1);
+  out.enemyPulls = { waiting, pulling: !!E.pulling || !!E.withdrawn };
+  // Destroy the enemy as it arrives, until none are left.
+  for (let k = 0; k < 40 && !B.result; k++) {
+    for (const U of B.enemySlots) if (U && !U.destroyed) knockOut(B, U, null, 'test', true);
+    run(ENTRY_DELAY + 0.5);
+  }
+  out.result = B.result;
+  out.kills = B.goalDone;
+  out.total = B.goalTotal;
   return out;
 }
 

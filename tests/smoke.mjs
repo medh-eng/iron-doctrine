@@ -549,6 +549,51 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       steps.push('SVG art');
     }
 
+    // ---------- 9g. Step 2.6: three on the field, command wheel, reserve drawer, Battle Simulator
+    {
+      if (!vp.mobile) {
+        const rc = await G(() => window.__GAME__.reserveCheck());
+        check(rc.start.field === 3 && rc.start.enemies === 3 && rc.start.reserve.join() === 'assault,truck' && rc.start.enemyReserve === 2, `three on the field: wrong start ${JSON.stringify(rc.start)}`);
+        check(rc.replaced.slot0 === 'assault' && rc.replaced.reserve.join() === 'truck', `destroyed ship not replaced in line-up order ${JSON.stringify(rc.replaced)}`);
+        check(rc.pulled.withdrawn && rc.pulled.last === 'light' && rc.pulledReplaced.fromReserve && rc.pulledReplaced.slot1 === 'truck', `pull back did not rotate ${JSON.stringify([rc.pulled, rc.pulledReplaced])}`);
+        check(rc.enemyPulls.pulling, `enemy did not pull back a damaged ship ${JSON.stringify(rc.enemyPulls)}`);
+        check(rc.result === 'win' && rc.kills === rc.total, `battle not won when the enemy ran out ${JSON.stringify(rc)}`);
+      }
+      await G(() => window.__GAME__.go('title'));
+      await wait(200);
+      await tapButton('Battle Simulator');
+      await wait(300);
+      await shot('16-simulator');
+      await tapButton('Fight');
+      await wait(700);
+      check(await G(() => { const B = window.__GAME__.SCREENS.battle.B; return !!(B && B.rotation && B.squad.length === 3 && B.reserve[0].length === 1); }), 'Battle Simulator did not start a battle with reserves');
+      // Long-press ship card 2: the command wheel opens; Pull back orders that ship off the field.
+      const c2 = await ctrl('card1');
+      if (vp.mobile) { await touch('touchStart', [{ x: c2.cx, y: c2.cy, id: 7 }]); await wait(650); await touch('touchEnd', [{ x: c2.cx, y: c2.cy, id: 7 }]); }
+      else { await page.mouse.move(c2.cx, c2.cy); await page.mouse.down(); await wait(650); await page.mouse.up(); }
+      await wait(150);
+      check(await page.locator('.cmd-wheel').count() === 1, 'long-press on a ship card did not open the command wheel');
+      await shot('17-command-wheel');
+      await tapButton('Pull back');
+      check(await G(() => window.__GAME__.SCREENS.battle.B.squad[1].pulling === true), 'Pull back from the command wheel did nothing');
+      await tapCtrl('reserve');
+      await wait(200);
+      check(await page.locator('.card-reserve').count() === 1, 'reserve drawer did not open');
+      await shot('18-reserve-drawer');
+      await tapButton('Close');
+      if (!vp.mobile) {
+        // Right-click one of your ships for its wheel.
+        const at = await G(() => { const B = window.__GAME__.SCREENS.battle.B; const V = B.squad[0]; return { x: window.__GAME__.view.sx(V.body.x), y: window.__GAME__.view.sy(V.body.y + V.height / 2) }; });
+        await page.mouse.click(at.x, at.y, { button: 'right' });
+        await wait(150);
+        check(await page.locator('.cmd-wheel').count() === 1, 'right-click on your ship did not open the command wheel');
+        await page.mouse.click(640, 150);
+      }
+      await G(() => window.__GAME__.go('battle', { level: 1 }));
+      await wait(200);
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator');
+    }
+
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery
     if (!vp.mobile) {
       await G(() => window.__GAME__.ladder.start(10, true));
