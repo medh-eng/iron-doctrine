@@ -655,7 +655,21 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(500);
       await shot('23-world-map');
       // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.
-      const spot = await G(() => { const S = window.__GAME__.SCREENS.map, C = window.__GAME__.camp; const fl = S.selFleet(); for (let y = innerHeight - 70; y > 70; y -= 12) for (let x = 40; x < innerWidth - 60; x += 12) { const cx = S.toCellX(x), cy = S.toCellY(y); if (Math.hypot(cx - fl.x, cy - fl.y) < 3) continue; if (document.elementFromPoint(x, y) !== document.querySelector('canvas')) continue; if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) - x, S.sy(f.y) - y) < 60) || C.campaign.settlements.some((q) => Math.hypot(S.sx(q.x + 0.5) - x, S.sy(q.y + 0.5) - y) < 30)) continue; if (!C.planMove(fl, cx, cy).why) return { x, y, x0: fl.x, y0: fl.y }; } return null; });
+      const spot = await G(() => {
+        const S = window.__GAME__.SCREENS.map, C = window.__GAME__.camp, fl = S.selFleet();
+        S.panelOpen = false; S.refresh();
+        for (let r = 4; r < 14; r++) for (let a = 0; a < 24; a++) {
+          const cx = fl.x + Math.cos((a * Math.PI) / 12) * r, cy = fl.y + Math.sin((a * Math.PI) / 12) * r;
+          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(f.x - cx, f.y - cy) < 3)) continue;
+          if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < 2.5)) continue;
+          if (C.planMove(fl, cx, cy).why) continue;
+          // Put that cell in the clear left part of the screen.
+          const x = Math.round(innerWidth * 0.3), y = Math.round(innerHeight * 0.55);
+          S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
+          return { x, y, x0: fl.x, y0: fl.y };
+        }
+        return null;
+      });
       check(!!spot, 'no reachable spot on screen for the map tap test');
       if (spot) {
         if (vp.mobile) { await touch('touchStart', [{ x: spot.x, y: spot.y, id: 5 }]); await wait(50); await touch('touchEnd', [{ x: spot.x, y: spot.y, id: 5 }]); }
