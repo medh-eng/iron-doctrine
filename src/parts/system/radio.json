@@ -15,6 +15,18 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 3,
+    "bottom": 0
+  },
+  "anchors": {
+    "antenna": [
+      0.22,
+      -2.88
+    ]
+  },
   "stats": {
     "mass": 50,
     "hp": 15,
@@ -32,5 +44,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: radio set with a whip antenna rising 3 cells (as in the v1 drawing). Anchor 'antenna' = whip tip."
 }

@@ -299,7 +299,11 @@ SCREENS.designer = {
       drawPart(g, { def: P, scorch: 0 }, (64 - P.w * cs) / 2, (32 - P.h * cs) / 2 + (P.id === 'radio' ? 6 : 0), cs, 0, 1);
       b.appendChild(icon);
       const txt = el('span', 'dz-part-txt');
-      txt.appendChild(el('b', '', P.name));
+      const nm = el('b', '');
+      // Tier tag (design/06 step 2.5a): a plain fact about the part's technology level.
+      if (P.tier !== undefined) nm.appendChild(el('span', 'dz-tier', `T${P.tier}`));
+      nm.appendChild(document.createTextNode(P.name));
+      txt.appendChild(nm);
       txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
       b.appendChild(txt);
       if (this.st.brush === P.id) b.classList.add('on');

@@ -12,6 +12,38 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "dust": [
+      [
+        0.5,
+        1.0
+      ],
+      [
+        1.5,
+        1.0
+      ]
+    ]
+  },
+  "moving": {
+    "wheel_a": {
+      "pivot": [
+        0.5,
+        0.5
+      ]
+    },
+    "wheel_b": {
+      "pivot": [
+        1.5,
+        0.5
+      ]
+    }
+  },
   "stats": {
     "mass": 450,
     "hp": 70,
@@ -35,5 +67,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: steel-link belt with straight runs so segments tile edge to edge in a run; the two road wheels (role wheel) can spin with ground speed. Anchor 'dust' = where dust kicks up."
 }

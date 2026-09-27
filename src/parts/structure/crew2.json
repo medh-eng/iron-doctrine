@@ -15,6 +15,20 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        1.0,
+        0.5
+      ]
+    ]
+  },
   "stats": {
     "mass": 300,
     "hp": 80,
@@ -32,5 +46,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway crew compartment, two seated crew; interior bulkhead in P2, frame in P1, P3 interior stripe."
 }

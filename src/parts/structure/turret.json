@@ -15,6 +15,12 @@
     "w": 3,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
   "stats": {
     "mass": 250,
     "hp": 90,
@@ -34,5 +40,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: riveted turret ring (fixed flange in P1, bare bearing race, P2 collar). No moving group: traverse doesn't show in side view."
 }

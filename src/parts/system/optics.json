@@ -21,16 +21,10 @@
     "top": 0.5,
     "bottom": 0
   },
-  "mount": "hull_top",
-  "layer": "front",
   "anchors": {
-    "mount": [
-      0.5,
-      0.95
-    ],
     "eye": [
-      0.43,
-      -0.3
+      0.66,
+      -0.24
     ]
   },
   "stats": {
@@ -51,5 +45,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as sys_optics_std)."
+  "notes": "Imported from v1 07_data.js. Art: riveted observation cupola with vision slits and a periscope head (0.5-cell top overhang)."
 }

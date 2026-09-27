@@ -167,7 +167,7 @@ World     = { seed, day, hour, speed, terrain:(compact grid), weather:[...], set
   | Template | The vehicle JSON as it is (same format as the old `TEMPLATES`) |
 
   - Entries marked `planned: true` are skipped until their mechanic exists.
-  - `PART_ROWS`, `WEAPON_STATS` and `TEMPLATES` are then removed from `07_data.js`.
+  - `PART_ROWS`, `WEAPON_STATS` and `TEMPLATES` were removed from `07_data.js` in step 2.5a. Game parts also carry `tier`; within a category they are listed by tier, then mass.
 - **Art:**
   1. SVG from `PART_LIBRARY.svg` (step 2.5b)
   2. otherwise the legacy PNG route (`ART_MANIFEST`)
@@ -176,7 +176,6 @@ World     = { seed, day, hour, speed, terrain:(compact grid), weather:[...], set
 - **Tools:**
   - `node tools/check-parts.mjs`: format errors, balance, design summaries.
   - `node tools/preview-parts.mjs --part <id> | --vehicle <id> | --all [--scheme <id>]`: PNG sheets in `preview/`. Parts without art show as labelled blocks.
-  - `node tools/import-v1-parts.mjs`: the one-off copy from `07_data.js`. Delete it after step 2.5a.
 - **Art arrives** as foundry zips (07 §9). CLAUDE.md explains how to integrate them.
 
 ## 10. Test harness
