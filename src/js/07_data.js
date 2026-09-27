@@ -324,11 +324,11 @@ const FACTIONS = [
 ];
 // Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
 const SETTLEMENT_TYPES = {
-  village: { name: 'Village', money: 15, make: { wood: 6, metal: 4 }, store: 600, stock: { fuel: 60, ammo: 30, wood: 40, metal: 40, elec: 40, scrap: 40 }, price: 1.1, garrison: 2 },
-  city: { name: 'City', money: 50, make: { wood: 14, metal: 12 }, store: 2500, stock: { fuel: 200, ammo: 100, wood: 150, metal: 150, elec: 150, scrap: 150 }, price: 1.0, garrison: 4 },
-  metropolis: { name: 'Metropolis', money: 150, make: { wood: 24, metal: 24, elec: 6 }, store: 8000, stock: { fuel: 500, ammo: 250, wood: 400, metal: 400, elec: 400, scrap: 400 }, price: 0.95, garrison: 6 },
-  fort: { name: 'Fort', money: -20, make: {}, store: 1500, stock: { fuel: 250, ammo: 200, wood: 60, metal: 60, elec: 60, scrap: 60 }, price: 1.05, garrison: 8 },
-  citadel: { name: 'Citadel', money: -60, make: {}, store: 4000, stock: { fuel: 600, ammo: 500, wood: 200, metal: 200, elec: 200, scrap: 200 }, price: 1.0, garrison: 12 },
+  village: { name: 'Village', walls: 0, armor: 0, slots: 0, militia: 1, money: 15, make: { wood: 6, metal: 4 }, store: 600, stock: { fuel: 60, ammo: 30, wood: 40, metal: 40, elec: 40, scrap: 40 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', walls: 3000, armor: 40, slots: 2, militia: 2, money: 50, make: { wood: 14, metal: 12 }, store: 2500, stock: { fuel: 200, ammo: 100, wood: 150, metal: 150, elec: 150, scrap: 150 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', walls: 6000, armor: 60, slots: 4, militia: 3, money: 150, make: { wood: 24, metal: 24, elec: 6 }, store: 8000, stock: { fuel: 500, ammo: 250, wood: 400, metal: 400, elec: 400, scrap: 400 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', walls: 8000, armor: 90, slots: 4, militia: 3, money: -20, make: {}, store: 1500, stock: { fuel: 250, ammo: 200, wood: 60, metal: 60, elec: 60, scrap: 60 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', walls: 16000, armor: 120, slots: 8, militia: 5, money: -60, make: {}, store: 4000, stock: { fuel: 600, ammo: 500, wood: 200, metal: 200, elec: 200, scrap: 200 }, price: 1.0, garrison: 12 },
 };
 // Physical goods (01 §8.1): everything but money exists in one warehouse or hold. Units:
 // fuel 100 L, ammo 100 kg, wood and metal 100 kg, electronics 20 kg, scrap 100 kg.
@@ -372,6 +372,12 @@ const CONVOY_SIZE = 6, CONVOY_COMBAT = 2;    // ships in a convoy, of which comb
 const CONVOY_WAIT = 6;                       // hours a convoy waits at its loading point when there's nothing to load
 const CONVOY_REPLAN = 6;
 const RAID_PULL = 0.6;                       // AI fleets treat convoys as this much closer (raiding)                     // path steps before a convoy chasing a fleet looks again
+// Sieges (01 §11; 08 §7): walls and the keep (2 × the walls' HP) are fixed structures; weapon
+// parts go in emplacement slots; militia join the garrison; a captured settlement restarts
+// production after RESTART_DAYS and hands its captor PLUNDER of its production value.
+const SIEGE = { sections: 2, keepMul: 2, emplaceAcc: 1.2, wallRepair: 0.15, restartDays: 2, plunder: 0.25, plunderDays: 10, aiFrom: 4, aiEdge: 1.3, aiRest: 72 };
+const MILITIA = ['mgcar', 'scout', 'light'];  // militia designs, smallest first
+const AI_EMPLACE = ['mg', 'c37', 'c75'];      // what AI settlements mount in their slots
 const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
 const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;

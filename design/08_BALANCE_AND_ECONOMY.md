@@ -180,6 +180,13 @@ Base prices, in money per unit:
 
 **Defence:** emplacements get +20% accuracy (a stable platform). The keep has 2 × the walls' HP and is the win target (01 §11).
 
+**As built (v0.4.0), where this document was silent:**
+- Walls are 2 sections sharing the HP, built from the armour material nearest the rating (40 mm → arm40; 60 mm and up → arm80 until heavier materials exist). Damaged walls and keep mend 15% a day.
+- Militia: villages 1, cities 2, metropolises and forts 3, citadels 5 (armoured cars, then scouts, then light tanks). AI settlements mount MGs and 37 and 75 mm guns in their slots.
+- Plunder: 25% of (daily money + goods at base price) for 10 days.
+- Crafting and building carry a money fee of 10% of the goods' base value. Refining: 4 scrap → 1 electronics in 1 h at a city; 3 scrap in 0.75 h at a metropolis.
+- AI sieges from day 4: a land fleet 1.3 × stronger than a settlement's defence marches on it; after a siege it rests 3 days.
+
 ## 8. Fuel and ammo use
 
 **Map fuel** (units per hour, per ship) = Σ engine fuel L/h × 0.25 ÷ 100.

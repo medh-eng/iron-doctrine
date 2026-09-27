@@ -189,6 +189,10 @@ function dailyEconomy() {
       if (s.faction === campaign.faction) news.push(`${s.name} is now a ${SETTLEMENT_TYPES[s.type].name.toLowerCase()}.`);
     }
     if (s.faction === campaign.faction) income += settlementMoney(s);
+    // Walls mend over days; a captured settlement pays plunder for ten days (08 §6).
+    if (s.wallHp !== undefined && s.wallHp < 1) s.wallHp = Math.min(1, s.wallHp + SIEGE.wallRepair);
+    if (s.keepHp !== undefined && s.keepHp < 1) s.keepHp = Math.min(1, s.keepHp + SIEGE.wallRepair);
+    if (s.plunder >= campaign.day && s.faction === campaign.faction) income += plunderValue(s);
   }
   for (const o of campaign.officers) {
     if (!o.alive || o.faction !== campaign.faction) continue;

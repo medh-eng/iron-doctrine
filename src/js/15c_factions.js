@@ -1,10 +1,10 @@
 /* ==== 15c FACTIONS ==== */
 // The campaign clock, fog of war, contacts and the factions' strategic AI (design/01 §2.2,
 // §6, §13; design/09). One in-game hour per second at 1×. The clock stops itself on contact,
-// arrival and low fuel. Part 3 AI: each AI fleet patrols its faction's settlements and, from
-// day 2, intercepts a player fleet it can see and thinks it can beat. AI fleets don't burn
-// map fuel yet (their logistics come with the economy in Part 4), and AI factions don't fight
-// each other on the map yet.
+// arrival and low fuel. AI fleets patrol their faction's settlements; from day 2 they intercept
+// a player fleet they can see and think they can beat (convoys first: raiding); from day 4 a
+// strong land fleet marches on a weakly held settlement of yours and besieges it. AI fleets
+// don't burn map fuel yet, and AI factions don't fight each other on the map yet.
 
 const TICK_HOURS = 0.25;          // campaign sub-step
 const AI_THINK_HOURS = 3;
@@ -54,6 +54,17 @@ function aiThink(fl) {
     if (best) { fl.path = best.plan; fl.ai.target = best.P.id; return; }
   }
   fl.ai.target = null;
+  // Besiege a weakly held settlement of yours (01 §11, §13).
+  if (!fl.ai.siege) {
+    const t = aiSiegeTarget(fl);
+    const at = t && portCell(t, 'land');
+    const plan = at && fleetPath(world, fl.domain, fl.x, fl.y, at[0], at[1]);
+    if (plan) { fl.path = plan; fl.ai.siege = t.id; return; }
+  } else {
+    const t = byId('settlements', fl.ai.siege);
+    if (t && t.faction === campaign.faction) { if (!fl.path.length) { const p = fleetPath(world, fl.domain, fl.x, fl.y, t.x + 0.5, t.y + 0.5); if (p) fl.path = p; } return; }
+    fl.ai.siege = null;
+  }
   if (fl.path.length) return;
   // Patrol: another settlement of its own faction.
   const own = world.settlements.filter((s) => s.faction === fl.faction);
@@ -103,6 +114,16 @@ function campaignTick(dtReal) {
       if (!P.shipIds.length || P.cooldown > 0) continue;
       const E = campaign.fleets.find((fl) => fl.faction !== campaign.faction && fl.shipIds.length && !(fl.cooldown > 0) && relation(fl.faction, P.faction) === 'war' && Math.hypot(fl.x - P.x, fl.y - P.y) <= CONTACT_CELLS);
       if (E) { events.push({ stop: true, msg: `Contact: ${factionOf(E.faction).name} ${E.domain} fleet.`, contact: { mine: P.id, theirs: E.id } }); break; }
+    }
+    // An AI fleet reaching the settlement it marched on lays siege.
+    if (!events.some((e) => e.contact)) for (const fl of campaign.fleets) {
+      if (!fl.ai || !fl.ai.siege || !fl.shipIds.length) continue;
+      const s = byId('settlements', fl.ai.siege);
+      if (!s || s.faction !== campaign.faction) { fl.ai.siege = null; continue; }
+      if (Math.hypot(fl.x - s.x - 0.5, fl.y - s.y - 0.5) > 1.6) continue;
+      fl.ai.siege = null; fl.ai.restUntil = hoursNow() + SIEGE.aiRest; fl.path = [];
+      events.push({ stop: true, msg: `${s.name} is under siege by the ${factionOf(fl.faction).name}.`, contact: { siege: s.id, fleet: fl.id, defend: true } });
+      break;
     }
     if (campaign.hour >= 24) {
       while (campaign.hour >= 24) { campaign.hour -= 24; campaign.day++; }

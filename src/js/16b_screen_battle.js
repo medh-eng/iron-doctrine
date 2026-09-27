@@ -601,6 +601,8 @@ SCREENS.battle = {
       if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
       row('Time', time);
       c.appendChild(facts);
+      if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
+      if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
       btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
     } else if (this.opts.sim) {
       // Battle Simulator (design/01 §15): facts only, no campaign effects.

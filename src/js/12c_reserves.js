@@ -168,6 +168,7 @@ function stepReserves(B, dt) {
 
 // A side is beaten when it has nothing left to fight with.
 function sideBeaten(B, side) {
+  if (B.siege && B.siege.defender === side && B.siege.keep && B.siege.keep.destroyed) return true;   // the keep has fallen (01 §11)
   const slots = side === 0 ? B.squad : B.enemySlots;
   if (slots.some((V) => V && !V.destroyed)) return false;
   if (B.entering.some((en) => en.side === side)) return false;
