@@ -654,12 +654,27 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
       await wait(500);
       await shot('23-world-map');
+      // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.
+      const spot = await G(() => { const S = window.__GAME__.SCREENS.map, C = window.__GAME__.camp; const fl = S.selFleet(); for (let y = innerHeight - 70; y > 70; y -= 12) for (let x = 40; x < innerWidth - 60; x += 12) { const cx = S.toCellX(x), cy = S.toCellY(y); if (Math.hypot(cx - fl.x, cy - fl.y) < 3) continue; if (document.elementFromPoint(x, y) !== document.querySelector('canvas')) continue; if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) - x, S.sy(f.y) - y) < 60) || C.campaign.settlements.some((q) => Math.hypot(S.sx(q.x + 0.5) - x, S.sy(q.y + 0.5) - y) < 30)) continue; if (!C.planMove(fl, cx, cy).why) return { x, y, x0: fl.x, y0: fl.y }; } return null; });
+      check(!!spot, 'no reachable spot on screen for the map tap test');
+      if (spot) {
+        if (vp.mobile) { await touch('touchStart', [{ x: spot.x, y: spot.y, id: 5 }]); await wait(50); await touch('touchEnd', [{ x: spot.x, y: spot.y, id: 5 }]); }
+        else await page.mouse.click(spot.x, spot.y);
+        await wait(200);
+        check(await page.getByRole('button', { name: 'Move', exact: true }).count() === 1, 'tapping the map with a fleet selected did not show the move preview');
+        await shot('23b-move-preview');
+        await tapButton('Move');
+        await tapButton('Start ▶');
+        await wait(2500);
+        check(await G((sp) => { const f = window.__GAME__.SCREENS.map.selFleet(); return Math.hypot(f.x - sp.x0, f.y - sp.y0) > 0.2; }, spot), 'the fleet did not move after Move and Start');
+      }
       await G(() => {
         const g = window.__GAME__, C = g.camp;
         const land = C.playerFleets().find((f) => f.domain === 'land');
         const e = C.campaign.fleets.find((f) => f.faction !== C.campaign.faction && C.relation(f.faction, C.campaign.faction) === 'war' && f.domain === 'land');
         e.x = land.x + 1; e.y = land.y; e.path = []; e.cooldown = 0; land.cooldown = 0;
-        g.SCREENS.map.toggleClock();
+        e.x = land.x + 1; e.y = land.y; land.path = [];
+        C.campaign.running = true;
       });
       await page.locator('.card-prebattle').waitFor({ timeout: 4000 });
       await shot('24-contact');

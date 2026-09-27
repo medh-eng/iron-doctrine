@@ -442,7 +442,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .text-in { font: inherit; font-size: 16px; padding: 10px; border-radius: 8px; border: 1px solid var(--acetate-edge); background: rgba(0,0,0,0.3); color: var(--linen); min-width: 240px; -webkit-user-select: text; user-select: text; touch-action: auto; }
 .card-scroll { overflow-y: auto; touch-action: pan-y; }
 /* Full-screen DOM layers let touches through to the canvas except on their own controls. */
-#ui > .designer, #ui > .workshop, #ui > .title-screen { pointer-events: none; }
+#ui > .designer, #ui > .workshop, #ui > .title-screen, #ui > .mapui { pointer-events: none; }
 .dz-tabs { display: grid; grid-template-columns: repeat(3, 1fr); }
 .dz-tab { min-height: 30px; padding: 0 2px; }
 .dz-part-txt b { white-space: normal; line-height: 1.1; overflow: visible; }
@@ -514,7 +514,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .faction-txt small { font-size: 12px; font-weight: 400; color: rgba(230, 220, 195, 0.8); white-space: normal; }
 .mapui { position: absolute; inset: 0; pointer-events: none; }
 .mapui > * { pointer-events: auto; }
-.map-top { position: absolute; left: calc(var(--safe-l) + 6px); right: calc(var(--safe-r) + 6px); top: calc(var(--safe-t) + 4px); display: flex; gap: 6px; align-items: center; }
+.map-top { position: absolute; left: calc(var(--safe-l) + 6px); right: calc(var(--safe-r) + 6px); top: calc(var(--safe-t) + 4px); display: flex; gap: 6px; align-items: center; pointer-events: none; }
+.map-top > * { pointer-events: auto; }
+.map-move[hidden], .map-panel[hidden], .map-fact[hidden] { display: none; }
 .map-bottom { position: absolute; left: calc(var(--safe-l) + 6px); right: calc(var(--safe-r) + 6px); bottom: calc(var(--safe-b) + 6px); display: flex; gap: 6px; align-items: center; pointer-events: none; }
 .map-bottom > * { pointer-events: auto; }
 .map-spacer { flex: 1; pointer-events: none; }
@@ -532,3 +534,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .map-row { display: flex; gap: 4px; flex-wrap: wrap; }
 .map-move { position: absolute; left: calc(var(--safe-l) + 6px); bottom: calc(var(--safe-b) + 58px); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - min(310px, 42vw) - var(--safe-l) - var(--safe-r) - 24px); }
 .map-warn { color: #FFB23E; }
+.map-panel { position: absolute; }
+.map-close { position: absolute; right: 6px; top: 4px; min-width: 44px; padding: 0; }
+.map-title { padding-right: 52px; }
