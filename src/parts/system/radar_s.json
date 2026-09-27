@@ -1,0 +1,40 @@
+{
+  "id": "radar_s",
+  "name": "Search radar",
+  "family": "radar_s",
+  "variant": "std",
+  "category": "system",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 20,
+    "armor": 2,
+    "power": -25,
+    "rel": 0.998,
+    "radarAir": 8000,
+    "radarGround": 3000,
+    "lock": 0.12
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 6
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "radar"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

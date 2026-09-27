@@ -92,12 +92,12 @@ function airForces(V, T, ca, sa, out) {
     if (V.tailL) surfaceForce(V, V.tailL, V.tailArea, null, live ? -(V.pitchCmd || 0) * (ELEVATOR_DEG * Math.PI) / 180 : 0, ca, sa, out, false);
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.CdA * dragRise(v / AIR_SPEED_SCALE) * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.throttle > 0) {
-      const T = V.throttle * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
+      const T = V.throttle * (V.heatMul || 1) * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
       out.fx += V.dir * ca * T; out.fy += V.dir * sa * T;
     }
   } else {
     // Helicopter: rotor lift along the mast; drag on the body; attitude held by the tail rotor.
-    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift : 0;
+    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift * (V.heatMul || 1) : 0;
     out.fx += -sa * L; out.fy += ca * L;
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * HELI_CDA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.rotors) {

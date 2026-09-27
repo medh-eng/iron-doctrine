@@ -1,0 +1,51 @@
+{
+  "id": "rpod",
+  "name": "Rocket pod",
+  "family": "rpod",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 200,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 70,
+    "reload": 12,
+    "range": 1500,
+    "rounds": 2,
+    "salvo": 8,
+    "vel": 110,
+    "dmg": 50,
+    "spread": 2.2,
+    "cal": 70,
+    "heDmg": 25,
+    "heRadius": 1.5
+  },
+  "behaviour": {
+    "secondary": "rockets",
+    "heat": true
+  },
+  "cost": {
+    "metal": 3,
+    "wood": 1
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "rockets"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

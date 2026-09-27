@@ -1,0 +1,40 @@
+{
+  "id": "gen",
+  "name": "Auxiliary generator",
+  "family": "gen",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 40,
+    "armor": 5,
+    "power": 40,
+    "rel": 0.99,
+    "heat": 8,
+    "fuelUse": 10
+  },
+  "behaviour": {
+    "info": "Electrical power only"
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_petrol"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

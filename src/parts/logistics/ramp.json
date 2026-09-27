@@ -1,0 +1,35 @@
+{
+  "id": "ramp",
+  "name": "Landing ramp",
+  "family": "ramp",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 400,
+    "hp": 60,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "info": "Unloads onto a beach (campaign)"
+  },
+  "cost": {
+    "metal": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "hull_iron"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

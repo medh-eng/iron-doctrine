@@ -48,6 +48,27 @@ const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
 
+// Missiles, sensors and constraints (Part 2d). Battle numbers.
+// Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
+// A missile without a lock flies at a false point and misses.
+const MISSILE = {
+  atgm: { base: 0.6, turn: 1.6, life: 3.2, fuse: 0 },
+  sam: { base: 0.55, turn: 2.4, life: 5, fuse: 3, dmg: 90, radius: 4 },
+};
+const LOCK_FC = 0.2;              // added by a fire-control computer
+const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
+const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
+const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Heat (design/v1/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
+// in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
+// power and automatic fire rate; 20 s above 100% can start a fire.
+const ENGINE_COOLING = 30;
+const EXTRA_COOLING = 30;
+const OVERHEAT_FIRE_SECS = 20;
+// Reliability (design/v1/05 §7.5): checked every 30 s at 1/120 of the hourly breakdown rate.
+const BREAKDOWN_CHECK = 30;
+const REPAIR_RATE = 10;           // HP per second a repair workshop restores (to itself and allies within 12 m)
+
 // Parts come from the part library (src/parts, bundled by build.mjs as PART_LIBRARY;
 // design/04 §9). A game part is { id, name, cat, w, h, cost, tier, ...stats, ...behaviour };
 // 1×1 structure cells come from materials.json. Entries marked planned are skipped until
@@ -66,12 +87,12 @@ for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -86,7 +107,7 @@ const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Gauntlet ladder (v1 Proving Ground; design/01 §15 optional Gauntlet)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { hunter: 250, samsite: 400, fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -158,7 +179,7 @@ function levelConfig(level) {
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
-      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['samsite', 1, 'fixed', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
       how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
@@ -181,6 +202,9 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // Aircraft over some maps, with a SAM site; tank hunters with guided missiles (Part 2d).
+    if (rng.next() < 0.25) c.enemies.push([rng.pick(['fighter', 'fighter', 'heli', 'bomber']), 1 + rng.int(0, 1), 'air', rng.int(0, 2)], ['samsite', 1, 'fixed', 0]);
+    if (n >= 3 && rng.next() < 0.3) c.enemies.push(['hunter', 1 + rng.int(0, 1), 'attack', rng.int(0, 2)]);
     // A coast with gunboats on some maps (Part 2a).
     if (rng.next() < 0.25) {
       c.sea = { from: Math.round(c.length * 0.64), depth: 14 };

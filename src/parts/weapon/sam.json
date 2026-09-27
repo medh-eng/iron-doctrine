@@ -1,0 +1,47 @@
+{
+  "id": "sam",
+  "name": "Surface-to-air missile launcher",
+  "family": "sam",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 600,
+    "hp": 50,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 0,
+    "reload": 8,
+    "range": 6000,
+    "rounds": 2,
+    "vel": 70,
+    "dmg": 0,
+    "spread": 0,
+    "cal": 90
+  },
+  "behaviour": {
+    "secondary": "sam",
+    "needs": "radar"
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 8
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

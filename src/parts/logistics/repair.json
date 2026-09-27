@@ -1,0 +1,36 @@
+{
+  "id": "repair",
+  "name": "Repair workshop",
+  "family": "repair",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 600,
+    "hp": 60,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "repair": 10
+  },
+  "cost": {
+    "metal": 4,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "repair_bay"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

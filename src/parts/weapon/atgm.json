@@ -1,0 +1,51 @@
+{
+  "id": "atgm",
+  "name": "Guided anti-tank missile",
+  "family": "atgm",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 180,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 200,
+    "reload": 6,
+    "range": 2500,
+    "rounds": 4,
+    "vel": 45,
+    "dmg": 160,
+    "spread": 0,
+    "cal": 120,
+    "burst": 60,
+    "burstR": 1.4
+  },
+  "behaviour": {
+    "secondary": "atgm",
+    "needs": "fc",
+    "heat": true
+  },
+  "cost": {
+    "metal": 4,
+    "elec": 4
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

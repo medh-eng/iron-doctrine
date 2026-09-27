@@ -1,0 +1,40 @@
+{
+  "id": "ecm",
+  "name": "ECM suite",
+  "family": "ecm",
+  "variant": "std",
+  "category": "system",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 150,
+    "hp": 20,
+    "armor": 2,
+    "power": -30,
+    "rel": 0.998,
+    "heat": 10
+  },
+  "behaviour": {
+    "ecm": true
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 8
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "ecm"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

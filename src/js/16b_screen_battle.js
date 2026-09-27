@@ -3,12 +3,9 @@
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-const TEST_RANGE_HOW = {
-  land: 'Mud, hills and a trench.',
-  sea: 'Open water off a beach.',
-  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
-  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
-};
+const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket' };
+const TEST_RANGE_HOW = { land: 'Mud, hills and a trench.', sea: 'Open water off a beach.', air: 'Open air over hills.', heli: 'Open air over hills.' };
+const FLIGHT_HOW = { air: '▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.', heli: '◀ ▶ move, ▲ ▼ height.', sub: '▲ ▼ depth.' };
 // The test range that suits a design's domain.
 const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
@@ -33,7 +30,7 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : createBattle(this.level, { squad: ladder.squadDesigns() });
@@ -67,7 +64,7 @@ SCREENS.battle = {
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
     box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -385,11 +382,12 @@ SCREENS.battle = {
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
-    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    // Alt: the secondary weapon and what is left (SAMs fire by themselves).
+    const sec = B.me.weapons.filter((w) => w.def.secondary && w.def.secondary !== 'sam' && B.me.parts[w.part].alive);
     C.alt.hidden = !sec.length;
     if (sec.length) {
       const n = sec.reduce((a, w) => a + w.rounds, 0);
-      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      const label = `${ALT_LABEL[sec[0].def.secondary] || 'Alt'} ${n}`;
       if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
       C.alt.disabled = this.frozen || n === 0;
     }
@@ -660,7 +658,7 @@ SCREENS.battle = {
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
     }
     const mw = mainWeapon(B.me);
-    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
+    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.loaderShort && mw.def.cal >= 75 ? 1.6 : 1)), ghost);
   },
 
   // Minimap strip: terrain line, spotted units, camera window.

@@ -1,0 +1,40 @@
+{
+  "id": "cradio",
+  "name": "Command radio",
+  "family": "cradio",
+  "variant": "std",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 120,
+    "hp": 20,
+    "armor": 2,
+    "power": -4,
+    "rel": 0.998,
+    "crew": -1
+  },
+  "behaviour": {
+    "info": "+1 platoon under force orders (campaign); needs a radio operator"
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "radio"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}
