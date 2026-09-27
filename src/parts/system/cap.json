@@ -1,0 +1,45 @@
+{
+  "id": "cap",
+  "name": "Capacitor bank",
+  "family": "cap",
+  "variant": "std",
+  "category": "system",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 30,
+    "armor": 4,
+    "power": 0,
+    "rel": 0.998,
+    "capacity": 30,
+    "heat": 5
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 8,
+    "scrap": 8,
+    "money": 200
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lasers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing). Stores 30 MJ for energy weapons."
+}

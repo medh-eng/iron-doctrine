@@ -172,6 +172,7 @@ window.__GAME__ = {
   convoyCheck: () => convoyCheck(),
   siegeCheck: () => siegeCheck(),
   researchCheck: () => researchCheck(),
+  energyCheck: () => energyCheck(),
   camp: {
     get campaign() { return campaign; }, get world() { return world; },
     newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,

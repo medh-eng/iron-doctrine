@@ -30,7 +30,7 @@ function fireForward(B, V) {
     if (w.def.secondary || w.turret || !V.parts[w.part].alive) continue;
     any = true;
     if (w.reload > 0) { loading = true; continue; }
-    if (!w.def.auto && V.shells <= 0) continue;
+    if (!w.def.auto && !w.def.energy && V.shells <= 0) continue;
     w.angle = ang;
     fireWeapon(B, V, w, ang, 1);
     w.reload = w.def.auto ? (60 / w.def.rpm) * 3 : w.def.reload;

@@ -1,0 +1,66 @@
+{
+  "id": "c57",
+  "name": "Cannon 57 mm",
+  "family": "c57",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 380,
+    "hp": 50,
+    "armor": 8,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 70,
+    "dmg": 70,
+    "reload": 3.5,
+    "range": 1800,
+    "vel": 172,
+    "spread": 0.52,
+    "cal": 57,
+    "shells": 34,
+    "burst": 40,
+    "burstR": 1.3,
+    "heDmg": 50,
+    "heRadius": 2.5
+  },
+  "cost": {
+    "metal": 5,
+    "money": 40
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_medium"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

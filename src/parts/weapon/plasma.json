@@ -1,0 +1,68 @@
+{
+  "id": "plasma",
+  "name": "Plasma cannon",
+  "family": "plasma",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      1.0
+    ],
+    "muzzle": [
+      3,
+      1.0
+    ]
+  },
+  "stats": {
+    "mass": 900,
+    "hp": 80,
+    "armor": 14,
+    "power": -300,
+    "rel": 0.998,
+    "pen": 180,
+    "dmg": 260,
+    "reload": 5,
+    "range": 1800,
+    "vel": 110,
+    "spread": 0.8,
+    "cal": 0,
+    "shotHeat": 60
+  },
+  "behaviour": {
+    "energy": true,
+    "dtype": "plasma"
+  },
+  "cost": {
+    "metal": 10,
+    "elec": 12,
+    "scrap": 14,
+    "money": 560
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "plasma"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

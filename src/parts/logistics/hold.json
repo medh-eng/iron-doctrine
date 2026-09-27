@@ -1,0 +1,42 @@
+{
+  "id": "hold",
+  "name": "Steel cargo hold",
+  "family": "hold",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 3
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 500,
+    "hp": 90,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "cargo": 5000
+  },
+  "cost": {
+    "metal": 5,
+    "money": 35
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "cargo_2"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

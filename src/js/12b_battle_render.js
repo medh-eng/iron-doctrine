@@ -441,6 +441,33 @@ function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
       g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.06);
       for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x + (w * k) / 4, y + h * 0.1); g.lineTo(x + (w * k) / 4, y + h); g.stroke(); }
       break;
+    // Part 5 parts without art yet: plain code drawings.
+    case 'laser': case 'hlaser':
+      bevel(g, x, y, w, h, shade(steel, 0.7), 1);
+      g.fillStyle = '#1C2A33'; g.fillRect(x + w * 0.12, y + h * 0.3, w * 0.7, h * 0.4);
+      g.fillStyle = '#7FF3FF'; g.beginPath(); g.arc(x + w * 0.9, y + h / 2, h * 0.22, 0, Math.PI * 2); g.fill();
+      break;
+    case 'plasma': case 'plance':
+      bevel(g, x, y, w, h, shade(steel, 0.65), 1);
+      g.strokeStyle = '#B98CFF'; g.lineWidth = Math.max(1, cs * 0.1);
+      for (let k = 1; k < Math.max(3, d.w * 2); k++) { const xx = x + (w * k) / Math.max(3, d.w * 2); g.beginPath(); g.moveTo(xx, y + h * 0.2); g.lineTo(xx, y + h * 0.8); g.stroke(); }
+      g.fillStyle = '#F1E4FF'; g.beginPath(); g.arc(x + w * 0.9, y + h / 2, h * 0.16, 0, Math.PI * 2); g.fill();
+      break;
+    case 'flame':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#8A3B1C'; g.beginPath(); g.ellipse(x + w * 0.32, y + h / 2, w * 0.24, h * 0.36, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#FF9A2E'; g.fillRect(x + w * 0.85, y + h * 0.38, w * 0.15, h * 0.24);
+      break;
+    case 'cap':
+      bevel(g, x, y, w, h, shade(steel, 0.75), 1);
+      g.fillStyle = '#E8C547';
+      for (let k = 0; k < 4; k++) g.fillRect(x + w * (0.1 + k * 0.22), y + h * 0.25, w * 0.1, h * 0.5);
+      break;
+    case 'reactor':
+      bevel(g, x, y, w, h, '#2B3440', 1.4);
+      g.fillStyle = 'rgba(127,243,255,0.35)'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.34, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#BFFBFF'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.14, 0, Math.PI * 2); g.fill();
+      break;
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
@@ -678,6 +705,13 @@ function drawShells(g) {
       g.restore();
       return;
     }
+    if (s.plasma) {
+      // A plasma bolt: a violet glow with a white core.
+      const S = view.S;
+      g.fillStyle = 'rgba(190,120,255,0.35)'; g.beginPath(); g.arc(bx, by, 0.9 * S, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#F1E4FF'; g.beginPath(); g.arc(bx, by, 0.35 * S, 0, Math.PI * 2); g.fill();
+      return;
+    }
     const ax = view.sx(s.x - s.vx * 0.025), ay = view.sy(s.y - s.vy * 0.025);
     if (!s.mg) {
       g.strokeStyle = 'rgba(255,178,62,0.35)'; g.lineWidth = 5;
@@ -851,6 +885,7 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawEnergy(g);
   drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);

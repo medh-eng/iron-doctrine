@@ -207,6 +207,14 @@ function rebuildVehicle(V, first) {
     if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) bigGuns++; }
   }
   Object.assign(V, { radarAir, radarGround, radarLock, ecm, heatEngines, heatOther, radiators, engineCount, repair });
+  // Energy weapons and capacitors (10f): what the live parts draw and store (MJ → kJ).
+  let energyDraw = 0, capMax = 0;
+  for (const p of V.parts) if (p.alive) { if (p.def.energy) energyDraw -= p.def.power; if (p.def.capacity && p.def.cat === 'system') capMax += p.def.capacity * 1000; }
+  V.energyDraw = energyDraw;
+  if (V.capMax === undefined) V.cap = capMax;
+  V.capMax = capMax;
+  V.cap = Math.min(V.cap || 0, capMax);
+  if (V.heatPool === undefined) V.heatPool = 0;
   // Crew roles (design/05 §1): a driver and a gunner per main gun first; then loaders for
   // guns of 75 mm and up (else reload × 1.6); anyone left over commands (+15% sight).
   const spare = crew - 1 - gunners;

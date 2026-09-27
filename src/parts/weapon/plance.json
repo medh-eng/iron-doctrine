@@ -1,0 +1,68 @@
+{
+  "id": "plance",
+  "name": "Plasma lance",
+  "family": "plance",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 5,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      1.0
+    ],
+    "muzzle": [
+      5,
+      1.0
+    ]
+  },
+  "stats": {
+    "mass": 2000,
+    "hp": 120,
+    "armor": 20,
+    "power": -700,
+    "rel": 0.998,
+    "pen": 320,
+    "dmg": 520,
+    "reload": 9,
+    "range": 1400,
+    "vel": 120,
+    "spread": 0.6,
+    "cal": 0,
+    "shotHeat": 110
+  },
+  "behaviour": {
+    "energy": true,
+    "dtype": "plasma"
+  },
+  "cost": {
+    "metal": 18,
+    "elec": 22,
+    "scrap": 25,
+    "money": 1100
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "energy_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

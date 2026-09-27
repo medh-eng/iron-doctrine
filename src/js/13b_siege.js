@@ -130,7 +130,7 @@ function autoResolveSiege(contact) {
   const B = createSiegeBattle(contact, true);
   for (let t = 0; t < AUTO_SECS && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP);
   audio.quiet = quiet;
-  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti, beams, flames]) pool.forEachAlive((p) => { p.alive = false; });
   if (!B.result) {
     // Time runs out: the defenders hold.
     B.result = B.siege.defender === 0 ? 'win' : 'lost';

@@ -1,0 +1,63 @@
+{
+  "id": "flame",
+  "name": "Flamethrower",
+  "family": "flame",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 220,
+    "hp": 40,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "dmg": 30,
+    "range": 400,
+    "spread": 2,
+    "cal": 0,
+    "fuelBurn": 5
+  },
+  "behaviour": {
+    "fire": true,
+    "dtype": "fire"
+  },
+  "cost": {
+    "metal": 2,
+    "money": 30
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "flame"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing). Range 400 (20 m on the field) instead of the sheet 60, which would be 3 m. Burns 5 L of fuel per second while firing (0.05 map units)."
+}

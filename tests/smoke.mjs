@@ -692,6 +692,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         RS(rs.craftLocked && rs.research === '' && rs.spent === 2 && rs.twice !== '' && rs.known && rs.craftOpen === '', 'researching a node did not unlock its parts');
         RS(rs.perk === '' && rs.perkTwice && rs.money === 1.15 && rs.wider === '' && rs.cpLeft === 0 && rs.tooDear && rs.gaCap === 6, 'perks or Command Points wrong');
         RS(rs.crew.acc === 1.08 && rs.crew.react === 0.88 && rs.classLimit && rs.captureXp === 100, 'officer levels or Grand Admiral XP wrong');
+        const en = await G(() => window.__GAME__.energyCheck());
+        const EN = (c, what) => check(c, `${what} ${JSON.stringify(en)}`);
+        EN(en.laser.fired && en.laser.shells === 0 && en.laser.dmg > 0 && en.laser.heat > 0, 'the laser needs ammo or missed');
+        EN(en.rateOn === 1 && en.rateOff === 0 && en.rateCap === 1 && en.capUsed > 0 && en.hot.over >= 0.9 && en.hot.rate === 0, 'energy weapons are not limited by power and heat');
+        EN(en.plasma.bolt && en.plasma.straight && en.plasma.dtype === 'plasma', 'plasma bolt wrong');
+        EN(en.flame.fuel > 0 && en.flame.dmg > 0 && en.flame.particles > 0, 'the flamethrower did nothing');
+        EN(en.resist.compositeFire === 0.5 && en.resist.plateFire === 1 && en.stats.energy === 400 && en.stats.drawnSame, 'resistances or energy stats wrong');
         E(ec.migrate.ok && ec.migrate.v === 3 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

@@ -1,0 +1,66 @@
+{
+  "id": "c203",
+  "name": "Heavy gun 203 mm",
+  "family": "c203",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "wall"
+  ],
+  "footprint": {
+    "w": 6,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      1.0
+    ],
+    "muzzle": [
+      6,
+      1.0
+    ]
+  },
+  "stats": {
+    "mass": 6000,
+    "hp": 180,
+    "armor": 30,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 260,
+    "dmg": 420,
+    "reload": 14,
+    "range": 9000,
+    "vel": 140,
+    "spread": 0.45,
+    "cal": 203,
+    "shells": 16,
+    "burst": 300,
+    "burstR": 3,
+    "heDmg": 250,
+    "heRadius": 6
+  },
+  "cost": {
+    "metal": 45,
+    "elec": 2,
+    "money": 400
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "guns_super"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

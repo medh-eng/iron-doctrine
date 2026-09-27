@@ -244,6 +244,7 @@ function updateBattle(B, dt) {
     if (!V.destroyed) runWeapons(B, V, dt, V !== B.me || B.demo);
   }
   stepShells(B, dt);
+  stepFlames(B, dt);
   stepUnderwater(B, dt);
   stepSalvos(B, dt);
   stepMissiles(B, dt);
@@ -319,9 +320,9 @@ function playerFire(B, tx, ty, manual) {
   if (V.flier) return fireForward(B, V);
   const w = mainWeapon(V);
   if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
-  if (w.reload > 0) return 'Reloading';
+  if (w.reload > 0) return w.def.energy ? (V.energyRate === 0 ? 'Too hot to recharge' : 'Recharging') : 'Reloading';
   if (gunUnderWater(B, V, w)) return 'Gun under water';
-  if (V.shells <= 0) return 'Out of shells';
+  if (V.shells <= 0 && !w.def.energy) return 'Out of shells';
   aimWeapon(V, w, tx, ty, _aim);
   if (!_aim.ok) return _aim.reason || 'Out of arc';
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }

@@ -30,7 +30,7 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti, beams, flames]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
       : opts.campaign

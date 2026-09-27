@@ -1,0 +1,69 @@
+{
+  "id": "laser",
+  "name": "Pulse laser",
+  "family": "laser",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 40,
+    "armor": 8,
+    "power": -120,
+    "rel": 0.998,
+    "pen": 60,
+    "dmg": 40,
+    "reload": 1.2,
+    "range": 2500,
+    "spread": 0.2,
+    "cal": 0,
+    "shotHeat": 18
+  },
+  "behaviour": {
+    "beam": true,
+    "energy": true,
+    "dtype": "laser"
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 6,
+    "scrap": 6,
+    "money": 220
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lasers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

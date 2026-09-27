@@ -83,6 +83,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   if (m.planned) continue;
   PARTS[id] = { id, name: m.name, cat: 'structure', w: 1, h: 1, mass: m.mass, hp: m.hp, armor: m.armor, power: 0, rel: 0.998, cost: m.cost, tier: m.tier };
   if (m.burns) PARTS[id].burns = m.burns;
+  if (m.resist) PARTS[id].resist = m.resist;          // damage-type resistances (Part 5)
   if (m.shape === 'slope') PARTS[id].sloped = true;
   if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
 }

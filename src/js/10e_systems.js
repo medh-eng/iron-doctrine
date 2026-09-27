@@ -139,11 +139,12 @@ function stepSystems(B, V, dt) {
   const running = V.flier || V.throttle !== 0;
   const ter = B.T.terrainAt(V.body.x);
   const inWater = V.hull && seaAt(B.T, V.body.x);
-  const made = (running ? V.heatEngines * (ter.heat || 1) : 0) + V.heatOther;
+  const made = (running ? V.heatEngines * (ter.heat || 1) : 0) + V.heatOther + (V.heatPool || 0) / HEAT_POOL_SECS;
   const removed = V.radiators + V.engineCount * (ENGINE_COOLING + (inWater || V.flier ? EXTRA_COOLING : 0));
   const over = made > removed ? (made - removed) / Math.max(1, made) : 0;
   V.overheat = over;
   V.heatMul = 1 - 0.5 * over;
+  stepEnergy(B, V, dt);
   V.overheatT = over > 0 ? (V.overheatT || 0) + dt : 0;
   if (V.overheatT > OVERHEAT_FIRE_SECS && over >= 0.5 && B.rng.next() < dt * 0.05) {
     const i = V.parts.findIndex((p) => p.alive && p.def.power > 0);

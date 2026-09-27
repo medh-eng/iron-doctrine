@@ -1,0 +1,68 @@
+{
+  "id": "mortar",
+  "name": "Mortar",
+  "family": "mortar",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 40,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 20,
+    "dmg": 30,
+    "reload": 6,
+    "range": 2500,
+    "vel": 90,
+    "spread": 1.5,
+    "cal": 81,
+    "shells": 20,
+    "heDmg": 90,
+    "heRadius": 4
+  },
+  "behaviour": {
+    "he": true,
+    "indirect": true
+  },
+  "cost": {
+    "metal": 4,
+    "money": 30
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_medium"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b: starting values from design/05 \u00a73.3\u20133.4. No art yet (code drawing)."
+}

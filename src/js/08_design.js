@@ -179,7 +179,7 @@ function hullOf(design) {
 
 // Derived numbers (design/01 §8.2, design/05 §7). Pure; `alive` optional.
 function statsOf(design, alive) {
-  let mass = 0, mx = 0, my = 0, power = 0, drawn = 0, contact = 0, cap = Infinity;
+  let energy = 0, capStore = 0, mass = 0, mx = 0, my = 0, power = 0, drawn = 0, contact = 0, cap = Infinity;
   let wheels = 0, tracks = 0, minX = Infinity, maxX = -Infinity, top = 0, fuel = 0, shells = 0, crew = 0;
   design.cells.forEach((c, i) => {
     if (alive && !alive[i]) return;
@@ -189,7 +189,9 @@ function statsOf(design, alive) {
     mass += d.mass;
     mx += d.mass * cx;
     my += d.mass * cy;
-    if (d.power > 0) power += d.power; else drawn -= d.power;
+    // Energy weapons draw power only while recharging (10f), so they don't count against driving.
+    if (d.power > 0) power += d.power; else if (d.energy) energy -= d.power; else drawn -= d.power;
+    if (d.capacity && d.cat === 'system') capStore += d.capacity;
     if (d.loco) {
       contact += d.contact;
       cap = Math.min(cap, d.cap);
@@ -213,6 +215,7 @@ function statsOf(design, alive) {
     com,
     power,
     drawn,
+    energy, capStore,
     powerToWeight: mass ? power / (mass / 1000) : 0,   // kW per tonne
     contact,
     pressure,
