@@ -197,20 +197,22 @@ function updateBattle(B, dt) {
     else if (V === B.me && !B.demo) {
       if (V.ai.react > 0) V.ai.react -= dt;
     } else if (V.structure) enemyThink(B, V, dt);   // emplacements hold and fire
+    else if (V.drone) droneThink(B, V, dt);
     else if (V.flier) airThink(B, V, dt);
     else if (V === B.me && B.demo) { V.ai.mode = 'attack'; enemyThink(B, V, dt); }
     else if (V.side === 0) squadThink(B, V, dt);
     else enemyThink(B, V, dt);
-    if (V.structure) continue;
+    if (V.structure || V.kinematic) continue;
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
   stepReserves(B, dt);
-  for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
-  if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
+  stepCarriers(B, dt);
+  for (const V of B.units) { if (V.flier && !V.kinematic) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
+  if (B.T.seaX0 !== undefined) for (const V of B.units) if (!V.kinematic) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
-  if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
-  for (const V of B.units) if (V.flier) airChecks(B, V);
+  if (B.T.seaX0 !== undefined) for (const V of B.units) if (!V.kinematic) { stepFlooding(B, V, dt); waterChecks(B, V); }
+  for (const V of B.units) if (V.flier && !V.kinematic) airChecks(B, V);
   if (!B.me.destroyed && B.me.speed * B.me.dir > 0.5 && Math.abs(B.T.slope(B.me.body.x)) >= 0.839) B.climbed40 = true;   // tan 40°
   separateVehicles(B.units);
 

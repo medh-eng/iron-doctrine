@@ -55,6 +55,7 @@ function makeVehicle(design, side, x, dir, terrain) {
   V.fuel = V.fuelMax;
   V.shells = V.shellsMax;
   initLaunchers(V);                  // missile launchers and flares (10g)
+  initHangars(V);                    // drone hangars and air wings (10h)
   // Rest on the ground: lowest contact touching the terrain. Ships float level on their waterline.
   const b = V.body;
   b.x = x;
@@ -155,7 +156,7 @@ function rebuildVehicle(V, first) {
       const pts = d.loco === 'track' ? [cx - 0.25, cx + 0.25] : [cx];
       for (const px of pts) contacts.push({ gx: px, gy: cy, r: d.radius, loco: d.loco, part: i, lx: 0, ly: 0, N: 0 });
     }
-    if (d.cat === 'weapon' && d.id !== 'smoke') {
+    if ((d.cat === 'weapon' || (d.cat === 'drone' && (d.auto || d.beam))) && d.id !== 'smoke') {   // drone guns and lasers too
       // Turret weapons sit on parts connected to the hull through a turret ring.
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
@@ -237,7 +238,7 @@ function rebuildVehicle(V, first) {
 const _wf = { fx: 0, fy: 0, tq: 0 };
 
 function stepVehicle(V, T, dt) {
-  if (V.gone || V.anchored) return;           // siege structures stand where they were built
+  if (V.gone || V.anchored || V.kinematic) return;   // siege structures stand; drones steer themselves (10h)
   const b = V.body;
   const h = dt / PHYS_SUBSTEPS;
   const st = V.stats;
@@ -373,6 +374,7 @@ function separateVehicles(list) {
       if (A.side === B.side && (A.pulling || B.pulling)) continue;
       // Defenders pass through their own walls and keep (the gates).
       if (A.side === B.side && (A.structure || B.structure)) continue;
+      if (A.kinematic || B.kinematic) continue;             // drones fly over everything
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;

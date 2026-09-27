@@ -1,0 +1,45 @@
+{
+  "id": "hangar_a",
+  "name": "Aircraft hangar",
+  "family": "hangar_a",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 6,
+    "h": 3
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 4000,
+    "hp": 200,
+    "armor": 15,
+    "power": -20,
+    "rel": 0.998,
+    "capacity": 2,
+    "rate": 0.1
+  },
+  "behaviour": {
+    "hangar": "aircraft"
+  },
+  "cost": {
+    "metal": 16,
+    "elec": 3,
+    "money": 300
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "carriers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing). Holds 2 aircraft; launches one every 10 s."
+}

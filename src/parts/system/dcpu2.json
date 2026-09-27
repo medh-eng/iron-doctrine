@@ -1,0 +1,43 @@
+{
+  "id": "dcpu2",
+  "name": "Drone computer II",
+  "family": "dcpu2",
+  "variant": "std",
+  "category": "system",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 70,
+    "hp": 20,
+    "armor": 2,
+    "power": -30,
+    "rel": 0.998,
+    "control": 4,
+    "grid": 2
+  },
+  "cost": {
+    "elec": 12,
+    "money": 120
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones_2"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing)."
+}

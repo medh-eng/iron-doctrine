@@ -62,7 +62,7 @@ SCREENS.designer = {
     const ox = Math.min(1, W - d0.w), oy = H - d0.h;
     this.st = {
       cls: cls.id,
-      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined, kind: design.kind, load: design.load },
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined, kind: design.kind, load: design.load, drone: design.drone },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
@@ -286,6 +286,9 @@ SCREENS.designer = {
     this.loadBtn = button('Missiles', () => this.loadMenu(), 'btn btn-small');
     this.loadBtn.hidden = true;
     br.appendChild(this.loadBtn);
+    this.droneBtn = button('Drones', () => this.droneMenu(), 'btn btn-small');
+    this.droneBtn.hidden = true;
+    br.appendChild(this.droneBtn);
     if (!this.st.d.kind) br.appendChild(this.testBtn);
     br.appendChild(this.saveBtn);
     r.appendChild(br);
@@ -392,6 +395,7 @@ SCREENS.designer = {
     if (d.kind) { this.rep = null; this.refreshKind(); return; }   // Missile and Drone tabs (16m)
     const rep = designReport(d);
     this.loadBtn.hidden = !d.cells.some((c) => PARTS[c.p].secondary === 'missile');
+    this.droneBtn.hidden = !d.cells.some((c) => PARTS[c.p].hangar === 'drone');
     this.rep = rep;
     const st = rep.st;
     // The class follows the domain (adding wings makes an aircraft); the grid stays as it is.
@@ -629,6 +633,7 @@ SCREENS.designer = {
     col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
     col.appendChild(button('Scratch build (airship)', () => { close(); this.load(this.scratch('airship'), null, false); this.build(); }));
     // Missile tab (Part 5): the standard missiles as starting points.
+    col.appendChild(button(`Drone: ${DEFAULT_DRONE.name}`, () => { close(); this.load(Object.assign(JSON.parse(JSON.stringify(DEFAULT_DRONE)), { id: 'scratch', family: DEFAULT_DRONE.name }), null, false); this.build(); }));
     for (const k of [1, 2, 3]) col.appendChild(button(`Missile: ${DEFAULT_MISSILES[k].name}`, () => { close(); this.load(Object.assign(JSON.parse(JSON.stringify(DEFAULT_MISSILES[k])), { id: 'scratch', family: DEFAULT_MISSILES[k].name }), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
@@ -688,6 +693,7 @@ SCREENS.designer = {
       cls: s.cls,
       kind: s.d.kind,
       load: s.d.load,
+      drone: s.d.drone,
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,

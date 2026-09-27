@@ -173,7 +173,7 @@ window.__GAME__ = {
   siegeCheck: () => siegeCheck(),
   researchCheck: () => researchCheck(),
   energyCheck: () => energyCheck(),
-  DEFAULT_MISSILES, missileStats, designedMissileCheck: () => designedMissileCheck(),
+  DEFAULT_MISSILES, DEFAULT_DRONE, missileStats, designedMissileCheck: () => designedMissileCheck(), droneCheck: () => droneCheck(),
   camp: {
     get campaign() { return campaign; }, get world() { return world; },
     newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,

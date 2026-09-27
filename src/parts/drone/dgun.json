@@ -1,0 +1,62 @@
+{
+  "id": "dgun",
+  "name": "Drone gun",
+  "family": "dgun",
+  "variant": "std",
+  "category": "drone",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      1,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 15,
+    "hp": 10,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 12,
+    "dmg": 8,
+    "range": 800,
+    "vel": 190,
+    "spread": 1.2,
+    "rpm": 400,
+    "burst": 5,
+    "cal": 8
+  },
+  "behaviour": {
+    "auto": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 20
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing)."
+}

@@ -558,3 +558,4 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .research-state { font-style: italic; }
 .dz-hidden { font-size: 12px; color: rgba(214, 238, 255, 0.8); padding: 4px 6px; }
 .dz-warn { font-size: 12px; color: #FFB23E; padding: 2px 0; }
+.cmd-wheel .cmd-wide { width: 220px; }

@@ -21,7 +21,7 @@ export const PALETTE = {
 const ALLOWED_COLOURS = new Set([...Object.values(PALETTE), ...Object.values(TOKENS)].map((c) => c.toUpperCase()));
 
 // The game's categories (PARTS[id].cat), plus the v2 ones still to come.
-export const CATEGORIES = ['structure', 'mobility', 'lift', 'weapon', 'missile', 'system', 'logistics', 'special'];
+export const CATEGORIES = ['structure', 'mobility', 'lift', 'weapon', 'missile', 'drone', 'system', 'logistics', 'special'];
 export const MOVING_ROLES = ['barrel', 'turret', 'wheel', 'rotor', 'prop', 'radar', 'track', 'door'];
 // Design domains (design/01 §5): land, sea (ships and submarines), airship, aircraft
 // (planes and helicopters), drone, missile; wall = siege emplacements.

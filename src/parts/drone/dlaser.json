@@ -1,0 +1,64 @@
+{
+  "id": "dlaser",
+  "name": "Drone laser",
+  "family": "dlaser",
+  "variant": "std",
+  "category": "drone",
+  "tier": 4,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      1,
+      0.5
+    ]
+  },
+  "stats": {
+    "mass": 20,
+    "hp": 10,
+    "armor": 2,
+    "power": -30,
+    "rel": 0.998,
+    "pen": 30,
+    "dmg": 18,
+    "reload": 1.5,
+    "range": 1500,
+    "spread": 0.3,
+    "shotHeat": 4,
+    "cal": 0
+  },
+  "behaviour": {
+    "beam": true,
+    "energy": true,
+    "dtype": "laser"
+  },
+  "cost": {
+    "elec": 3,
+    "scrap": 3,
+    "money": 60
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones_3"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing)."
+}

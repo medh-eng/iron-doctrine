@@ -1,0 +1,40 @@
+{
+  "id": "drotor",
+  "name": "Drone rotor",
+  "family": "drotor",
+  "variant": "std",
+  "category": "drone",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 15,
+    "hp": 10,
+    "armor": 1,
+    "power": 0,
+    "rel": 0.998,
+    "liftForce": 1500
+  },
+  "cost": {
+    "metal": 1,
+    "money": 15
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing)."
+}

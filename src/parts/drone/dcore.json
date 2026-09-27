@@ -1,0 +1,43 @@
+{
+  "id": "dcore",
+  "name": "Drone core",
+  "family": "dcore",
+  "variant": "std",
+  "category": "drone",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 20,
+    "armor": 2,
+    "power": 40,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "core": true
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 2,
+    "money": 30
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing). Every drone needs one; its battery powers the drone."
+}

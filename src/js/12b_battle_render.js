@@ -492,6 +492,28 @@ function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
       g.fillStyle = '#2A2D33';
       for (let k = 0; k < (d.id === 'vls' ? 4 : 2); k++) g.fillRect(x + w * (0.1 + k * (d.id === 'vls' ? 0.22 : 0.45)), y + h * 0.2, w * (d.id === 'vls' ? 0.14 : 0.35), h * 0.6);
       break;
+    case 'dcore': case 'dcam':
+      g.fillStyle = '#3A3F47'; roundRect(g, x + w * 0.1, y + h * 0.15, w * 0.8, h * 0.7, cs * 0.2); g.fill();
+      g.fillStyle = d.id === 'dcam' ? '#7FD3FF' : '#E8C547'; g.beginPath(); g.arc(x + w / 2, y + h / 2, h * 0.18, 0, Math.PI * 2); g.fill();
+      break;
+    case 'drotor':
+      g.fillStyle = '#2A2D33'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.fillStyle = 'rgba(200,210,220,0.6)'; g.fillRect(x, y + h * 0.3, w, h * 0.12);
+      break;
+    case 'dgun': case 'dlaser': case 'dcharge':
+      g.fillStyle = '#474C55'; g.fillRect(x + w * 0.1, y + h * 0.3, w * 0.6, h * 0.4);
+      g.fillStyle = d.id === 'dcharge' ? '#E8C547' : d.id === 'dlaser' ? '#7FF3FF' : '#2A2D33';
+      g.fillRect(x + w * 0.6, y + h * 0.4, w * 0.4, h * 0.2);
+      break;
+    case 'hangar_d': case 'hangar_a':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#1E2126'; g.fillRect(x + w * 0.08, y + h * 0.3, w * 0.84, h * 0.6);
+      g.strokeStyle = '#E8C547'; g.lineWidth = Math.max(1, cs * 0.06); g.strokeRect(x + w * 0.08, y + h * 0.3, w * 0.84, h * 0.6);
+      break;
+    case 'dcpu1': case 'dcpu2': case 'dcpu3':
+      bevel(g, x, y, w, h, shade(steel, 0.75), 1);
+      g.fillStyle = '#9CFF6B'; for (let k = 0; k < d.w * 2; k++) g.fillRect(x + w * (0.15 + k * 0.3 / d.w), y + h * 0.4, w * 0.08 / d.w, h * 0.2);
+      break;
     case 'flare':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.fillStyle = '#FFF6D0'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.2, 0, Math.PI * 2); g.fill();

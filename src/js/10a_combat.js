@@ -399,6 +399,7 @@ function checkVehicleState(B, V, source) {
   for (const p of V.parts) if (p.alive) hp += p.hp;
   // Siege structures (walls, the keep) have no crew: they fall when battered below 30%.
   if (V.structure) { if (hp < V.hpMax * 0.3) knockOut(B, V, source, V.keep ? 'Keep destroyed' : 'Wall breached'); return; }
+  if (V.drone) { if (hp < V.hpMax * DRONE_DOWN) droneDown(B, V, 'Drone down'); return; }
   if (V.crew <= 0 || V.parts.every((p) => !p.alive || p.def.cat === 'mobility')) {
     knockOut(B, V, source, 'Knocked out');
   } else if (hp < V.hpMax * 0.3) {

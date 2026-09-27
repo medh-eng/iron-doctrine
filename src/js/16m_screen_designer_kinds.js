@@ -33,6 +33,17 @@ Object.assign(SCREENS.designer, {
       row('Damage', ms.dmg);
       row('Carried by', ms.size === 1 ? 'racks (4) and VLS (8)' : ms.size === 2 ? 'VLS (4)' : 'VLS (2)');
     }
+    if (d.kind === 'drone') {
+      const ds = droneStats(Object.assign({}, d, { id: 'draft' }));
+      chip(`${ds.mass} kg`); chip(`lift/W ${ds.ratio.toFixed(2)}`); chip(`cost ${ds.cost}`);
+      head('Stats · Drone');
+      row('Mass', `${ds.mass} kg`);
+      row('Lift', `${ds.lift} N (${ds.ratio.toFixed(2)} × weight)`);
+      row('Speed', `${Math.round(ds.speed)} m/s`);
+      row('Guns / lasers', `${ds.guns} / ${ds.lasers}`);
+      row('Charge', ds.charge ? `${ds.charge} damage, destroys the drone` : 'none');
+      row('Needs', `drone computer ${['I', 'II', 'III'][Math.min(2, ds.grid - 1)] || '—'} on the carrier`);
+    }
     for (const e of errs) S.appendChild(el('div', 'dz-warn', e));
     this.saveBtn.disabled = !!errs.length;
     this.nameBtn.textContent = markName(d) + (this.changed() ? ' *' : '');
@@ -42,9 +53,33 @@ Object.assign(SCREENS.designer, {
     const d = this.st.d;
     if (!d.cells.length) return ['Empty grid.'];
     if (d.kind === 'missile') return missileStats(Object.assign({}, d, { id: 'draft' + d.cells.length })).errors;
+    if (d.kind === 'drone') return droneStats(Object.assign({}, d, { id: 'draft' })).errors;
     return [];
   },
   kindCost() { return this.st.d.cells.reduce((a, c) => a + partCost(PARTS[c.p]), 0); },
+
+  // Which drone design a carrier's hangars hold; its computers must handle the drone's grid.
+  droneMenu() {
+    const s = this.st;
+    let grid = 0;
+    for (const q of s.d.cells) if (PARTS[q.p].grid) grid = Math.max(grid, PARTS[q.p].grid);
+    const c = ui.card('Drones for the hangars');
+    const col = el('div', 'card-col');
+    let close = null;
+    if (!grid) col.appendChild(el('p', 'card-text', 'No drone computer on this design: drones can’t be launched.'));
+    for (const dd of [DEFAULT_DRONE].concat(save.designs.list.filter((x) => x.kind === 'drone'))) {
+      const ds = droneStats(dd);
+      if (ds.errors.length) continue;
+      const on = (s.d.drone || DEFAULT_DRONE.id) === dd.id;
+      const b = button(`${markName(dd)} · computer ${['I', 'II', 'III'][ds.grid - 1]} · ${Math.round(ds.speed)} m/s${on ? ' ✓' : ''}`, () => { s.d.drone = dd.id === DEFAULT_DRONE.id ? undefined : dd.id; close(); this.refresh(); }, 'btn' + (on ? ' btn-primary' : ''));
+      if (ds.grid > grid) { b.disabled = true; b.textContent += ' (needs a bigger computer)'; }
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    c.classList.add('card-scroll');
+    close = ui.open(c);
+  },
 
   // Which missile design the ship's launchers carry.
   loadMenu() {

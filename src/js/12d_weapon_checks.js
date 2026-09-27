@@ -141,4 +141,53 @@ function designedMissileCheck() {
   for (const pool of [shells, missiles, particles, debris, beams, flames, firePatches, decoys, floaters]) pool.forEachAlive((p) => { p.alive = false; });
   return out;
 }
+
+// Drones and carriers (design/06 Part 5): a carrier's drones launch, follow orders, land on
+// Recall, and are lost when the carrier retreats; air wings take off and are lost with it.
+function droneCheck() {
+  const out = {};
+  const carrier = designFromTemplate('medium');
+  carrier.cells.push({ p: 'hangar_d', x: 0, y: 0 }, { p: 'dcpu1', x: 3, y: 0 });
+  carrier.id = 'test_carrier';
+  const B = createBattle(0, { cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 55 }), reserves: true, demo: true, squad: [carrier], enemyForce: [designFromTemplate('light')] });
+  const C = B.squad[0], T = B.enemySlots[0];
+  T.body.x = C.body.x + 60; T.body.y = B.T.height(T.body.x) + 2;
+  for (const V of B.units) V.seen = true;
+  out.carrier = { cap: C.droneCap, control: C.droneControl, stock: C.droneStock };
+  // The target is kept whole so the battle goes on while the orders are checked.
+  const run = (secs) => { for (let t = 0; t < secs; t += SIM_STEP) { for (const p of T.parts) p.hp = p.def.hp; B.result = null; updateBattle(B, SIM_STEP); T.seen = true; } };
+  C.ai.hold = C.body.x;
+  run(8);
+  const up = () => C.drones.filter((D) => !D.destroyed && !D.gone);
+  out.launched = { up: up().length, stock: C.droneStock, flying: up().every((D) => D.body.y > B.T.height(D.body.x) + 2) };
+  run(6);
+  out.attack = up().some((D) => D.ai.target === T);
+  out.shots = up().some((D) => D.weapons.some((w) => w.burst > 0 || w.reload > 0));
+  // Recall: drones land and go back in the hangar.
+  setDroneOrder(C, 'recall');
+  run(12);
+  out.recall = { up: up().length, stock: C.droneStock };
+  // Relaunch, then retreat: the drones are lost.
+  setDroneOrder(C, 'attack');
+  run(7);
+  const before = up().length;
+  withdraw(B, C);
+  run(0.5);
+  out.retreat = { before, after: up().length };
+  // Designs: the standard drone fits computer I; a drone without a core doesn't fly.
+  out.designs = { std: droneStats(DEFAULT_DRONE).errors.length, grid: droneStats(DEFAULT_DRONE).grid, noCore: droneStats({ id: 'nc', kind: 'drone', w: 8, h: 4, cells: [{ p: 'drotor', x: 0, y: 0 }] }).errors.length > 0 };
+  // Air wing: a hangar launches the loaded aircraft; lost with the carrier.
+  const deck = designFromTemplate('destroyer');
+  deck.cells.push({ p: 'hangar_a', x: 0, y: 0 });
+  const B2 = createBattle(0, { cfg: simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 56 }), reserves: true, demo: true, squad: [deck], enemyForce: [designFromTemplate('gunboat')] });
+  const D2 = B2.squad[0];
+  for (const V of B2.units) V.seen = true;
+  for (let t = 0; t < 4; t += SIM_STEP) { updateBattle(B2, SIM_STEP); for (const V of B2.units) V.seen = true; }
+  out.wing = { launched: D2.wing.length, flier: D2.wing.every((A) => A.flier) };
+  knockOut(B2, D2, null, 'test');
+  for (let t = 0; t < 0.2; t += SIM_STEP) updateBattle(B2, SIM_STEP);
+  out.wing.lost = D2.wing.every((A) => A.destroyed);
+  for (const pool of [shells, missiles, particles, debris, beams, flames, firePatches, decoys, floaters, smokeColumns]) pool.forEachAlive((p) => { p.alive = false; });
+  return out;
+}
 /*TEST:END*/

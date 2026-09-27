@@ -706,6 +706,12 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         MC(dmc.flares.heat > 0.55 && dmc.flares.radar < 0.4 && dmc.flares.heat > dmc.flares.radar * 2 && dmc.flares.laser === 0, 'flares should beat heat seekers more than radar seekers');
         MC(dmc.ecm.radar < 1 && dmc.ecm.heat === 1, 'ECM should spoil radar locks only');
         MC(dmc.napalm.patches > 0 && dmc.napalm.burn > 0 && dmc.acid > 0 && dmc.emp.t === 5 && dmc.emp.silent && dmc.cluster === 4, 'a warhead effect is missing');
+        const dr = await G(() => window.__GAME__.droneCheck());
+        const DR = (c, what) => check(c, `${what} ${JSON.stringify(dr)}`);
+        DR(dr.carrier.cap === 4 && dr.carrier.control === 2 && dr.launched.up === 2 && dr.launched.flying, 'the carrier did not launch its drones');
+        DR(dr.attack && dr.shots && dr.recall.up === 0 && dr.recall.stock === 4, 'drones did not follow orders');
+        DR(dr.retreat.before > 0 && dr.retreat.after === 0, 'drones should be lost when their carrier retreats');
+        DR(dr.designs.std === 0 && dr.designs.grid === 1 && dr.designs.noCore && dr.wing.launched > 0 && dr.wing.flier && dr.wing.lost, 'drone designs or air wing wrong');
         E(ec.migrate.ok && ec.migrate.v === 3 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -793,6 +799,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(300);
       check((await page.locator('.dz-tab').count()) === 1, 'the Missile tab should show missile parts only');
       await shot('34-missile-designer');
+      await G(() => window.__GAME__.go('designer', { design: Object.assign(JSON.parse(JSON.stringify(window.__GAME__.DEFAULT_DRONE)), { id: 'scratch' }) }));
+      await wait(300);
+      await shot('35-drone-designer');
       await G(() => window.__GAME__.go('research'));
       await wait(250);
       check(await page.locator('.research-node').count() > 40, 'the tech tree is missing nodes');

@@ -256,6 +256,13 @@ SCREENS.battle = {
       b.style.top = `${((i % 3) - 1) * 50}px`;
       r.appendChild(b);
     });
+    // Carriers: the drone order, cycling Attack → Guard → Recall.
+    if (V.droneCap) {
+      const next = DRONE_ORDERS[(DRONE_ORDERS.indexOf(V.droneOrder) + 1) % DRONE_ORDERS.length];
+      const b = button(`Drones: ${V.droneOrder} → ${next}`, () => { this.closeWheel(); setDroneOrder(V, next); this.orderDone(V, `Drones: ${next}`); }, 'btn btn-small cmd-item cmd-wide');
+      b.style.left = '0px'; b.style.top = '100px';
+      r.appendChild(b);
+    }
     const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
     x.setAttribute('aria-label', `Close orders for ${V.name}`);
     r.appendChild(x);

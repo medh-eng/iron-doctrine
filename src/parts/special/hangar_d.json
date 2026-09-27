@@ -1,0 +1,47 @@
+{
+  "id": "hangar_d",
+  "name": "Drone hangar",
+  "family": "hangar_d",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 900,
+    "hp": 80,
+    "armor": 8,
+    "power": -10,
+    "rel": 0.998,
+    "capacity": 4,
+    "rate": 0.33
+  },
+  "behaviour": {
+    "hangar": "drone"
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 2,
+    "money": 140
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 \u00a73.4). No art yet (code drawing). Holds 4 drones; launches one every 3 s."
+}
