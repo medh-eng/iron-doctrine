@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.4';
+const GAME_VERSION = '0.3.0';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -64,6 +64,8 @@ const DEFAULT_PROFILE = {
   requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
   squad: [],               // design ids fielded in the ladder (v2)
   stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
+  // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
+  sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [], scheme: 'league' },
 };
 
 // Saved designs (v2). Stored under irondoctrine.designs.

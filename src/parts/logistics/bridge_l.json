@@ -1,0 +1,35 @@
+{
+  "id": "bridge_l",
+  "name": "Bridge layer",
+  "family": "bridge_l",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 1
+  },
+  "stats": {
+    "mass": 3000,
+    "hp": 120,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "info": "Lays a 10 m bridge (campaign)"
+  },
+  "cost": {
+    "metal": 10
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "salvage"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Id bridge_l (the command bridge in structure/ is bridge)."
+}

@@ -302,7 +302,7 @@ Warnings state facts only, e.g. "Power drawn exceeds power produced by 40 kW." N
 
 - Saving a changed design creates the next mark (Mk.I → Mk.II) with an automatic change log.
 - Units already in the field keep their mark until refitted at a workshop, repair depot or shipyard. A refit costs the difference in parts plus labour time.
-- A lineage view shows each design family tree.
+- A lineage view shows each design family tree. As built (v0.2.3): the Lineage button on your designs in the Workshop lists the family from the template or design it started from, each mark with its mass, cost and change log.
 
 ### 8.5 Unlocking parts
 
@@ -465,6 +465,7 @@ One new idea every 2–3 levels:
 | 13 | Anti-tank guns in bunkers |
 | 14 | Coastal gunboats (Part 2a): the sea begins at 300 m; gunboats sail in and shell the shore |
 | 17 | Air raid (Part 2c): fighters, then a bomber and a helicopter, with a light tank on the ground. Only heavy machine guns, autocannons and AA guns reach aircraft |
+| 16+ (Part 2d) | About a quarter of random levels add aircraft with a SAM site; from 18, tank hunters with guided missiles |
 | 16 | Submarine hunt (Part 2b): a sea battle. Only ships and submarines deploy; with none in the squad, 2 Destroyers and a Gunboat are lent |
 | 15 | Night: sensors matter. +1 life |
 | 16+ | Mixes of earlier ideas with rising numbers; every 5th level is a named boss with a blueprint |

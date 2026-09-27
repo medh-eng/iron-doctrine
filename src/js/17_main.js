@@ -151,6 +151,8 @@ window.__GAME__ = {
   navalCheck: () => navalCheck(),
   subCheck: () => subCheck(),
   airCheck: () => airCheck(),
+  missileCheck: () => missileCheck(),
+  systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope
   randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of Object.keys(CLASSES)) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
   ladder,
@@ -159,6 +161,19 @@ window.__GAME__ = {
   damageCheck: () => damageCheck(),
   destroyPart: (B, V, i, src) => destroyPart(B, V, i, src),
   howitzerCheck: () => howitzerCheck(),
+  svgArtCheck: () => svgArtCheck(),
+  reserveCheck: () => reserveCheck(),
+  airshipCheck: () => airshipCheck(),
+  classCheck: () => classCheck(),
+  campaignCheck: () => campaignCheck(),
+  camp: {
+    get campaign() { return campaign; }, get world() { return world; },
+    newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,
+    autoResolve, battleSides, detachShip, pickUp, relation, byId, shipStats, fleetStrength, updateVisibility, retreatCheck, retreat, store: campaignStore,
+  },
+  paintCheck: () => paintCheck(),
+  view,
+  designFromTemplate,
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },
   loseSquad: () => { const B = SCREENS.battle.B; for (const V of B.squad) knockOut(B, V, null, 'Knocked out'); },

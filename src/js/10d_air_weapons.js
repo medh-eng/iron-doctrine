@@ -8,7 +8,7 @@ const FLAK = { dmg: 30, radius: 3 };
 
 // Can V's weapons fight U? Aircraft only by weapons that can hit aircraft, or by other aircraft.
 function canEngage(V, U) {
-  if (!U.flier || V.flier) return true;
+  if (!U.flier || V.flier || U.domain === 'airship') return true;     // airships are big and slow: any gun reaches them
   return V.weapons.some((w) => w.def.aa && V.parts[w.part].alive);
 }
 

@@ -5,7 +5,7 @@
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const markName = (d) => `${d.family || d.name} Mk.${ROMAN[d.mark || 1] || d.mark}`;
-const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
+const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['lift', 'Lift'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
 const BLUEPRINT = { bg: '#13466B', grid: '#2A6A92', line: 'rgba(214,238,255,0.85)', valid: '#7FD3FF', invalid: '#FF6B5A' };
 
 // A thumbnail of a design, drawn with the battle part art.
@@ -49,17 +49,18 @@ SCREENS.designer = {
     canvas.removeEventListener('pointermove', this.onHover);
   },
 
-  // Put a design into a class-sized grid, bottom-aligned.
+  // Put a design into its class grid (design/01 §5), bottom-aligned: the smallest class of its
+  // domain that it fits. A design that fits none keeps working and is marked outside class limits.
   load(design, base, owned) {
     const d0 = cropDesign(design);
-    const dom = domainOf(d0);
-    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : airDomain(dom) ? dom : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
-    const C = CLASSES[cls];
-    const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
-    const ox = 1, oy = H - d0.h;
+    const list = classesOf(domainOf(d0));
+    const fit = classFor(d0);
+    const cls = fit || list[list.length - 1];
+    const W = Math.max(cls.grid[0], d0.w), H = Math.max(cls.grid[1], d0.h);
+    const ox = Math.min(1, W - d0.w), oy = H - d0.h;
     this.st = {
-      cls,
-      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
+      cls: cls.id,
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
@@ -74,6 +75,7 @@ SCREENS.designer = {
     const cells = [];
     if (cls === 'ship') for (let x = 4; x < 20; x += 2) cells.push(['keel', x, C.h - 1]);
     else if (cls === 'air') { for (let x = 4; x < 16; x++) cells.push(['frame', x, C.h - 5]); cells.push(['wing', 8, C.h - 4]); }
+    else if (cls === 'airship') { for (let x = 4; x < 16; x++) cells.push(['canvas_bag', x, 1], ['canvas_bag', x, 2]); for (let x = 6; x < 14; x++) cells.push(['timber', x, 3]); }
     else for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
     return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
   },
@@ -84,6 +86,9 @@ SCREENS.designer = {
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
+    // The class part limit (structure cells don't count).
+    const cls = classById(this.st.cls);
+    if (ignore < 0 && cls && !PART_LIBRARY.materials[id] && partCount(d) >= cls.parts) return `${cls.name} class: ${cls.parts} parts at most.`;
     let touches = false, others = 0;
     for (let i = 0; i < d.cells.length; i++) {
       if (i === ignore) continue;
@@ -240,6 +245,8 @@ SCREENS.designer = {
     top.appendChild(button('‹ Back', () => this.back(), 'btn btn-small', 'back'));
     this.nameBtn = button('', () => this.rename(), 'btn btn-small dz-name');
     top.appendChild(this.nameBtn);
+    this.classBtn = button('', () => this.classMenu(), 'btn btn-small dz-class');
+    top.appendChild(this.classBtn);
     this.chips = el('div', 'dz-chips');
     top.appendChild(this.chips);
     top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
@@ -272,6 +279,7 @@ SCREENS.designer = {
     const br = el('div', 'dz-br');
     this.testBtn = button('Test drive', () => this.testDrive(), 'btn btn-small');
     this.saveBtn = button('Save', () => this.saveDesign(), 'btn btn-small btn-primary');
+    br.appendChild(button('Paint', () => this.paintMenu(), 'btn btn-small'));
     br.appendChild(this.testBtn);
     br.appendChild(this.saveBtn);
     r.appendChild(br);
@@ -304,13 +312,24 @@ SCREENS.designer = {
       if (P.tier !== undefined) nm.appendChild(el('span', 'dz-tier', `T${P.tier}`));
       nm.appendChild(document.createTextNode(P.name));
       txt.appendChild(nm);
-      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
+      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}${P.info ? ` · ${P.info}` : ''}`));
       b.appendChild(txt);
       if (this.st.brush === P.id) b.classList.add('on');
       // Tap to pick up the part as a brush; drag it straight onto the grid.
       b.addEventListener('pointerdown', (e) => this.paletteDown(e, P.id, b));
       list.appendChild(b);
     }
+  },
+
+  // Barrel at zero elevation, from the part's pivot (SVG art, or a line).
+  drawBarrelPreview(g, P, ox, oy, x, y, cs) {
+    const px = ox + (x + barrelPivotX(P)) * cs, py = oy + (y + barrelPivotY(P)) * cs;
+    const len = (barrelLength(P) / CELL) * cs;
+    if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+    if (drawBarrelArt(g, P, px, py, 0, len, resolvePaint(this.st.d, 0))) return;
+    g.strokeStyle = '#30343b';
+    g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + len, py); g.stroke();
   },
 
   paletteDown(e, id, btn) {
@@ -364,8 +383,15 @@ SCREENS.designer = {
     const rep = designReport(d);
     this.rep = rep;
     const st = rep.st;
+    // The class follows the domain (adding wings makes an aircraft); the grid stays as it is.
+    let cls = classById(s.cls);
+    if (!cls || cls.cat !== CLASS_CAT[rep.domain]) { const list = classesOf(rep.domain); cls = classFor(d) || list[list.length - 1]; s.cls = cls.id; }
+    const misfit = classMisfit(d, cls);
+    this.classBtn.textContent = `${cls.name} ▾`;
     this.chips.textContent = '';
-    const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
+    const chip = (t, cl = '') => this.chips.appendChild(el('span', 'dz-chip' + cl, t));
+    chip(`parts ${partCount(d)}/${cls.parts}`);
+    if (misfit.length) chip('outside class limits: refit needed', ' dz-chip-warn');
     const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
@@ -373,6 +399,7 @@ SCREENS.designer = {
     if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
     else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
     else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'airship') chip(`lift/W ${(st.liftMargin || 0).toFixed(2)}`);
     else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
     chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
@@ -410,6 +437,11 @@ SCREENS.designer = {
       row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
       if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
       if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'airship') {
+      row('Gas lift (envelopes)', `${((st.gasLift || 0) / 1000).toFixed(1)} kN`);
+      row('Lift engines', `${((st.engineLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift margin', (st.liftMargin || 0).toFixed(2));
     } else if (rep.domain === 'heli') {
       row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
       row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);
@@ -420,8 +452,23 @@ SCREENS.designer = {
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
       row('Climb limit', `${rep.climb}°`);
     }
-    row('Crew space', `${st.crew}`);
+    const sys = rep.sys;
+    row('Crew space', `${sys.crew}`);
+    row('Crew needed (driver, gunners)', `${sys.crewNeeded}`);
+    if (sys.loaders) row('Loaders (guns of 75 mm up)', `${sys.loadersFitted} of ${sys.loaders}`);
+    row('Commander', sys.commander ? 'yes (+15% sight)' : 'no');
     row('Fuel', `${st.fuel} L`);
+    head('Heat and reliability');
+    row('Heat made', `${sys.heatMade} per s`);
+    row('Heat removed', `${sys.heatRemoved} per s`);
+    row('Breakdowns per 100 h', sys.breakdownsPer100h.toFixed(1));
+    head('Sensors');
+    row('Sight', `${sys.sightKm.toFixed(1)} km`);
+    if (sys.radarAirKm) row('Radar', `air ${sys.radarAirKm} km, surface ${sys.radarGroundKm} km`);
+    if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
+    if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
+    if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
@@ -431,7 +478,7 @@ SCREENS.designer = {
     row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
-    for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
+    for (const w of rep.weapons) row(w.name, [w.pen ? `${w.pen} mm` : '', w.range ? `${Math.round(weaponRange(w))} m` : '', w.rounds ? `${w.rounds} carried` : ''].filter(Boolean).join(' · '));
     head('Cost');
     row('Parts', rep.cost);
     row('Requisition to build', this.buildCost());
@@ -452,6 +499,7 @@ SCREENS.designer = {
   },
 
   changed() {
+    if (JSON.stringify(this.st.d.paint || null) !== JSON.stringify(this.st.base.paint || null)) return true;
     const a = cropDesign(this.st.d), b = cropDesign(this.st.base);
     if (a.cells.length !== b.cells.length) return true;
     const key = (d) => d.cells.map((c) => `${c.p}@${c.x},${c.y}`).sort().join('|');
@@ -465,6 +513,98 @@ SCREENS.designer = {
     return Math.max(0, now - before);
   },
 
+  // Paint (design/02 §6, design/07 §3): a faction scheme, custom P1/P2/P3 from the paint-shop
+  // palette, and a camouflage pattern. Stored with the design; the preview shows the result.
+  paintMenu() {
+    const s = this.st;
+    const P = PART_LIBRARY.paints;
+    const c = ui.card('Paint', 'card-paint');
+    let close = null;
+    let slot = 'p1';
+    const body = el('div', 'paint-body');
+    c.appendChild(body);
+    const cur = () => s.d.paint || { scheme: playerScheme(), camo: 'none' };
+    const set = (patch) => { s.d.paint = Object.assign({}, cur(), patch); this.refresh(); draw(); };
+    const draw = () => {
+      body.textContent = '';
+      const p = cur();
+      const paint = resolvePaint(s.d, 0);
+      const prev = el('div', 'paint-preview');
+      prev.appendChild(designThumb(s.d, 220, 84));
+      body.appendChild(prev);
+      const row = (label) => { const r = el('div', 'paint-row'); r.appendChild(el('span', 'paint-label', label)); body.appendChild(r); return r; };
+      const sch = row('Scheme');
+      for (const [id, sc] of Object.entries(P.schemes)) {
+        const b = button(sc.name, () => set({ scheme: id, p1: undefined, p2: undefined, p3: undefined }), 'btn btn-small paint-chip' + (p.scheme === id && !p.p1 && !p.p2 && !p.p3 ? ' on' : ''));
+        b.prepend(el('i', 'paint-dot'));
+        b.firstChild.style.background = sc.p1;
+        sch.appendChild(b);
+      }
+      const sl = row('Colour');
+      for (const k of ['p1', 'p2', 'p3']) {
+        const b = button({ p1: 'Primary', p2: 'Secondary', p3: 'Accent' }[k], () => { slot = k; draw(); }, 'btn btn-small paint-chip' + (slot === k ? ' on' : ''));
+        b.prepend(el('i', 'paint-dot'));
+        b.firstChild.style.background = paint[k];
+        sl.appendChild(b);
+      }
+      const sw = el('div', 'paint-swatches');
+      for (const col of P.palette) {
+        const b = button('', () => set({ [slot]: col }), 'paint-swatch' + (paint[slot] === col ? ' on' : ''));
+        b.style.background = col;
+        b.setAttribute('aria-label', col);
+        sw.appendChild(b);
+      }
+      body.appendChild(sw);
+      const cm = row('Camouflage');
+      for (const id of P.camo) cm.appendChild(button(id[0].toUpperCase() + id.slice(1), () => set({ camo: id }), 'btn btn-small paint-chip' + (p.camo === id ? ' on' : '')));
+    };
+    draw();
+    // Redraw the preview when newly painted art finishes loading.
+    let seen = art.version;
+    const timer = setInterval(() => { if (art.version !== seen) { seen = art.version; const pv = body.querySelector('.paint-preview'); if (pv) { pv.textContent = ''; pv.appendChild(designThumb(s.d, 220, 84)); } } }, 250);
+    const btns = el('div', 'card-row');
+    btns.appendChild(button('Done', () => close(), 'btn btn-primary'));
+    c.appendChild(btns);
+    close = ui.open(c, () => clearInterval(timer));
+  },
+
+  // Class selector (design/02 §6): the classes of this design's domain, with their grid, part
+  // limit and captain level. Choosing one re-grids the design if it fits.
+  classMenu() {
+    const s = this.st;
+    const dom = domainOf(s.d);
+    const c = ui.card(`${DOMAIN_NAMES[dom]} classes`);
+    const col = el('div', 'card-col');
+    let close = null;
+    for (const cls of classesOf(dom)) {
+      const why = classMisfit(s.d, cls);
+      const b = button(`${cls.name} · ${cls.grid[0]} × ${cls.grid[1]} grid · ${cls.parts} parts · captain level ${cls.captain}`, () => {
+        if (why.length) { audio.sfx('error'); ui.toast(why.join(' ')); return; }
+        close();
+        this.setClass(cls);
+      }, 'btn' + (cls.id === s.cls ? ' btn-primary' : ''));
+      if (why.length) b.classList.add('btn-disabled');
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
+  },
+
+  setClass(cls) {
+    const s = this.st;
+    s.undo.length = 0; s.redo.length = 0;      // undo keeps cells only, not the grid size
+    const d0 = cropDesign(s.d);
+    const W = cls.grid[0], H = cls.grid[1];
+    const ox = Math.min(1, W - d0.w), oy = H - d0.h;
+    s.cls = cls.id;
+    s.d.w = W; s.d.h = H;
+    s.d.cells = d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy }));
+    s.sel = -1;
+    this.refresh();
+    requestAnimationFrame(() => this.layout());
+  },
+
   newMenu() {
     const c = ui.card('New design');
     const col = el('div', 'card-col');
@@ -476,6 +616,7 @@ SCREENS.designer = {
     col.appendChild(button('Scratch build (ground)', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
     col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
     col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (airship)', () => { close(); this.load(this.scratch('airship'), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -485,7 +626,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design' }[cls] || 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design', airship: 'Airship design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -529,7 +670,9 @@ SCREENS.designer = {
       mark,
       w: out.w, h: out.h,
       cells: out.cells,
-      changelog: s.baseOwned ? changeLog(s.base, out) : ['New design'],
+      changelog: s.baseOwned ? changeLog(s.base, out).concat(JSON.stringify(s.d.paint || null) !== JSON.stringify(s.base.paint || null) ? ['Repainted'] : []) : ['New design'],
+      cls: s.cls,
+      paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),
@@ -549,11 +692,24 @@ SCREENS.designer = {
     this.build();
   },
 
+  // Test range picker (design/06 Part 2d): land, sea or sky. Ships and submarines need the sea.
   testDrive() {
     const d = cropDesign(this.st.d);
     if (!validateDesign(d).ok) { this.say('Test drive needs a valid design.', true); return; }
     d.name = markName(this.st.d);
-    screens.go('battle', { test: d, back: { restore: this.st } });
+    const dom = domainOf(d);
+    const c = ui.card('Test range');
+    const col = el('div', 'card-col');
+    let close = null;
+    const go = (range) => { close(); screens.go('battle', { test: d, range, back: { restore: this.st } }); };
+    for (const [range, label] of [['land', 'Land: mud, hills and a trench'], ['sea', 'Sea: a beach and open water'], ['air', 'Sky: open air over hills']]) {
+      const b = button(label, () => go(range), range === rangeFor(dom) || (range === 'air' && dom === 'heli') ? 'btn btn-primary' : 'btn');
+      if (seaDomain(dom) && range !== 'sea') { b.disabled = true; b.textContent += ' (needs sea)'; }
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
   },
 
   back() {
@@ -605,26 +761,18 @@ SCREENS.designer = {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
-    // Parts: structure first.
-    const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
-    for (const i of order) {
-      if (this.move && this.move.idx === i) continue;
-      const c = d.cells[i];
-      drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
-        // Barrel preview at zero elevation.
-        const P = PARTS[c.p];
-        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
-        const len = barrelLength(P) * cs * 2;
-        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
-        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
-        g.strokeStyle = '#30343b';
-        g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
-        g.beginPath();
-        g.moveTo(ox + (c.x + 0.5) * cs, oy + (c.y + P.h / 2) * cs);
-        g.lineTo(ox + (c.x + 0.5) * cs + barrelLength(P) * cs * 2, oy + (c.y + P.h / 2) * cs);
-        g.stroke();
-      }
+    // Parts: auto-tiled structure first, then the rest with their barrels at zero elevation.
+    const items = [];
+    d.cells.forEach((c, i) => { if (!(this.move && this.move.idx === i)) items.push({ p: { def: PARTS[c.p], scorch: 0 }, x: c.x, y: c.y, seed: i }); });
+    const paint = resolvePaint(d, 0);
+    drawPlacedParts(g, items.filter((it) => isTiled(it.p.def.id)), 0, ox, oy, cs, paint);
+    for (const it of items) {
+      const P = it.p.def;
+      if (isTiled(P.id)) continue;
+      const gun = P.cat === 'weapon' && P.id !== 'smoke' && !P.secondary;
+      if (gun && barrelBehind(P, paint)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
+      drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, 0, it.seed, paint);
+      if (gun && !barrelBehind(P, paint)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
     }
     if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.

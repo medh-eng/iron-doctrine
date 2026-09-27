@@ -119,6 +119,29 @@ The ✔ in the last column means SVG art exists. The rest use the code drawing u
 | fuel_l | Fuel tank 1000 L | logistics | 1 | 2×2 | 1050 | 60 | 3 | fuel 1000 | M3 | cargo_2 |  |
 | fuel_ss | Self-sealing tank 150 L | logistics | 1 | 1×1 | 210 | 40 | 3 | fuel 150 | M3 | cargo_2 |  |
 
+### 2.1 Added in Part 2d (step 2.5d)
+
+Built on the v1 game in Part 2d and brought across in step 2.5d. The mechanics are in `design/v1/05` §7.6b. They use the game's ids, so some differ from the plan in §3: `rpod` is the planned `rocket`, `radar_s` the planned `radar`, and `repair` sits in `logistics` rather than `special`. `ecm` arrives here, earlier than Part 5. `bridge_l` is the bridge layer (`bridge` is the command bridge).
+
+| id | Name | Cat. | T | Cells | Mass | HP | Arm. | Key stats | Cost | Unlock | SVG |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| skirt | Spaced skirt | structure | 1 | 1×1 | 90 | 30 | 8 |  | M1 | hull_iron |  |
+| gen | Auxiliary generator | mobility | 1 | 2×1 | 250 | 40 | 5 | power 40, heat 8, fuelUse 10 | M2 E1 | prop_petrol |  |
+| rpod | Rocket pod | weapon | 2 | 2×1 | 200 | 30 | 5 | pen 70, reload 12, range 1500, rounds 2, salvo 8, vel 110, dmg 50, spread 2.2, cal 70, heDmg 25, heRadius 1.5 | M3 W1 | rockets |  |
+| atgm | Guided anti-tank missile | weapon | 3 | 2×1 | 180 | 30 | 5 | pen 200, reload 6, range 2500, rounds 4, vel 45, dmg 160, spread 0, cal 120, burst 60, burstR 1.4 | M4 E4 | missiles |  |
+| sam | Surface-to-air missile launcher | weapon | 3 | 2×2 | 600 | 50 | 10 | pen 0, reload 8, range 6000, rounds 2, vel 70, dmg 0, spread 0, cal 90 | M6 E8 | missiles |  |
+| cradio | Command radio | system | 1 | 2×1 | 120 | 20 | 2 | power -4, crew -1 | M2 E3 | radio |  |
+| radar_s | Search radar | system | 2 | 2×1 | 250 | 20 | 2 | power -25, radarAir 8000, radarGround 3000, lock 0.12 | M3 E6 | radar |  |
+| radar_n | Naval radar | system | 2 | 2×2 | 600 | 30 | 3 | power -60, radarAir 15000, radarGround 10000, lock 0.2 | M5 E10 | radar |  |
+| ecm | ECM suite | system | 3 | 2×1 | 150 | 20 | 2 | power -30, heat 10 | M2 E8 | ecm |  |
+| troop | Troop compartment | logistics | 0 | 2×2 | 250 | 50 | 5 |  | M2 | start |  |
+| tank_c | Fuel cargo tank | logistics | 1 | 3×2 | 400 | 60 | 3 | fire 0.5 | M4 | cargo_2 |  |
+| repair | Repair workshop | logistics | 1 | 2×2 | 600 | 60 | 5 | repair 10 | M4 E1 | repair_bay |  |
+| crane | Recovery winch | logistics | 1 | 2×2 | 900 | 80 | 10 |  | M5 | salvage |  |
+| blade | Dozer blade | logistics | 1 | 2×1 | 700 | 90 | 20 |  | M4 | salvage |  |
+| bridge_l | Bridge layer | logistics | 1 | 4×1 | 3000 | 120 | 10 |  | M10 | salvage |  |
+| ramp | Landing ramp | logistics | 1 | 2×2 | 400 | 60 | 10 |  | M3 | hull_iron |  |
+
 ## 3. New parts to add (starting values)
 
 ### 3.1 Tier 0 (for the v2 campaign start)

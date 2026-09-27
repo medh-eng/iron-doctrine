@@ -1,0 +1,35 @@
+{
+  "id": "blade",
+  "name": "Dozer blade",
+  "family": "blade",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 700,
+    "hp": 90,
+    "armor": 20,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "info": "Builds field works; clears obstacles (campaign)"
+  },
+  "cost": {
+    "metal": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "salvage"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

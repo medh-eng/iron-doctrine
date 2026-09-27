@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.4';
+const GAME_VERSION = '0.3.0';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -68,6 +68,8 @@ const DEFAULT_PROFILE = {
   requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
   squad: [],               // design ids fielded in the ladder (v2)
   stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
+  // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
+  sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [], scheme: 'league' },
 };
 
 // Saved designs (v2). Stored under irondoctrine.designs.
@@ -1275,6 +1277,12 @@ const input = {
     canvas.addEventListener('pointercancel', (e) => this.up(e, true));
     canvas.addEventListener('lostpointercapture', (e) => { if (this.pointers.has(e.pointerId)) this.up(e, true); });
     canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    // Right-click: the screen's context action (the battle's command wheel).
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const scr = screens.cur;
+      if (scr && scr.world && scr.world.contextMenu) { const [x, y] = this.local(e); scr.world.contextMenu(x, y); }
+    });
     window.addEventListener('keydown', (e) => this.keyDown(e));
     window.addEventListener('keyup', (e) => this.keyUp(e));
   },
@@ -1585,7 +1593,12 @@ function drawAcetate(g, x, y, w, h) {
 
 /* ---------- 05b_art.js ---------- */
 /* ==== 05b ART ==== */
-// Imported part art (design/07 contract). ART_MANIFEST is embedded by the build from
+// Part art, in order of preference (design/07 §6, design/04 §9):
+//   1. SVG from PART_LIBRARY.svg: paint tokens swapped for the side's scheme, then the body
+//      and the barrel rasterised separately at SVG_PX pixels per cell;
+//   2. the legacy PNG route (design/07_ART_INTEGRATION), below;
+//   3. the code drawing in drawPart().
+// Legacy PNG art: ART_MANIFEST is embedded by the build from
 // src/assets/parts/**/<name>.json. Images load in the background; until one has
 // loaded (or if it fails, or its size is wrong) the procedural drawing is used.
 // Art is drawn at the part's footprint: canvas scaled by (cell px ÷ pxPerCell),
@@ -1600,7 +1613,10 @@ const art = {
   debug: false,        // draw origin, pivot and muzzle markers
   failed: [],
 
+  painted: {},         // paint key → partId → { body, barrel, l, t, W, H, barrelBehind }
+
   init() {
+    this.initSvg();
     this.byPart = {};
     for (const m of ART_MANIFEST) {
       const live = ART_LIVE_STATUS.includes(m.status) || (m.status === 'placeholder' && this.usePlaceholders);
@@ -1623,14 +1639,96 @@ const art = {
     }
   },
 
+  // SVG art for every part that has it, painted for both sides' schemes; other paints (a
+  // design's own colours, camouflage) are prepared the first time they're asked for. Images
+  // load in the background; `version` bumps as each one is ready, so cached sprites redraw.
+  initSvg() {
+    this.painted = {};
+    for (let side = 0; side < 2; side++) this.prepare(sideScheme(side));
+  },
+
+  prepare(paint) {
+    const set = {};
+    this.painted[paint.key] = set;
+    if (typeof DOMParser === 'undefined') return set;
+    for (const id of Object.keys(PART_LIBRARY.svg)) {
+      const def = PART_LIBRARY.parts[id];
+      if (def && PARTS[id]) this.loadSvg(id, def, paintSvg(PART_LIBRARY.svg[id], paint), set);
+    }
+    return set;
+  },
+
+  loadSvg(id, def, text, set) {
+    const o = def.overhang || {};
+    const l = o.left || 0, t = o.top || 0;
+    const W = def.footprint.w + l + (o.right || 0), H = def.footprint.h + t + (o.bottom || 0);
+    const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+    if (root.nodeName !== 'svg') { this.failed.push(`${id}.svg: not an SVG`); return; }
+    root.setAttribute('width', W * SVG_PX);
+    root.setAttribute('height', H * SVG_PX);
+    const groups = [...root.children].filter((n) => n.nodeName === 'g');
+    const isBarrel = (n) => n.getAttribute('data-role') === 'barrel';
+    const barrel = groups.find(isBarrel);
+    const body = groups.find((n) => n.getAttribute('id') === 'body');
+    // A barrel group written before the body sits behind it (document order, design/07 §5.2).
+    const entry = { body: null, barrel: null, l, t, W, H, barrelBehind: !!barrel && groups.indexOf(barrel) < groups.indexOf(body) };
+    set[id] = entry;
+    const raster = (keep, done) => {
+      const svg = root.cloneNode(true);
+      for (const n of [...svg.children]) if (n.nodeName === 'g' && !keep(n)) svg.removeChild(n);
+      const im = new Image();
+      im.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = W * SVG_PX; c.height = H * SVG_PX;
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        done(c);
+        this.version++;
+      };
+      im.onerror = () => this.failed.push(`${id}.svg: failed to rasterise`);
+      im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+    };
+    // The body image holds every group except the barrel (other moving groups stay still for now).
+    raster((n) => !isBarrel(n), (c) => { entry.body = c; });
+    if (barrel) raster(isBarrel, (c) => { entry.barrel = c; });
+  },
+
   get(partId) {
     const e = this.byPart[partId];
     return e && e.img ? e : null;
   },
 };
 
-// Draw imported art for a part into a footprint rectangle at (x, y), cell size cs. Returns false if none.
-function drawPartArt(g, p, x, y, cs) {
+const SVG_PX = 64;                 // raster pixels per cell for SVG part art
+const PAINT_TOKENS = [['#FF00FF', 'p1'], ['#00FFFF', 'p2'], ['#FFFF00', 'p3']];
+
+function paintSvg(text, scheme) {
+  for (const [token, k] of PAINT_TOKENS) text = text.split(token).join(scheme[k]).split(token.toLowerCase()).join(scheme[k]);
+  return text;
+}
+
+// A part's SVG art in a paint ({ p1, p2, p3, key }), or null until it has loaded.
+function svgArt(id, paint) {
+  const set = art.painted[paint.key] || art.prepare(paint);
+  const e = set[id];
+  return e && e.body ? e : null;
+}
+
+// Whether a part is drawn from art (SVG or PNG) rather than code.
+function hasPartArt(id, paint) { return !!(svgArt(id, paint) || art.get(id)); }
+
+// Whether a weapon's SVG barrel sits behind its body, so it's drawn before the vehicle sprite.
+function barrelBehind(d, paint) {
+  const e = svgArt(d.id, paint);
+  return !!(e && e.barrel && e.barrelBehind);
+}
+
+// Draw a part's art into a footprint rectangle at (x, y), cell size cs. Returns false if none.
+function drawPartArt(g, p, x, y, cs, paint) {
+  const S = svgArt(p.def.id, paint);
+  if (S) {
+    g.drawImage(S.body, x - S.l * cs, y - S.t * cs, S.W * cs, S.H * cs);
+    return true;
+  }
   const A = art.get(p.def.id);
   if (!A) return false;
   const m = A.meta;
@@ -1641,7 +1739,20 @@ function drawPartArt(g, p, x, y, cs) {
 }
 
 // Barrel image rotated about its pivot. (px, py) = pivot on screen, ang = world angle, len = barrel length in px.
-function drawBarrelArt(g, d, px, py, ang, lenPx) {
+function drawBarrelArt(g, d, px, py, ang, lenPx, paint) {
+  const S = svgArt(d.id, paint);
+  const geo = barrelGeometry(d);
+  if (S && S.barrel && geo) {
+    // SVG barrels are never stretched: pixels per cell come from the pivot-to-muzzle distance.
+    const cs = lenPx / geo.len;
+    g.save();
+    g.translate(px, py);
+    g.rotate(-ang);
+    if (Math.cos(ang) < 0) g.scale(1, -1);     // keep the top of the barrel up when it points left
+    g.drawImage(S.barrel, -(S.l + geo.pivot[0]) * cs, -(S.t + geo.pivot[1]) * cs, S.W * cs, S.H * cs);
+    g.restore();
+    return true;
+  }
   const A = art.byPart[d.id];
   if (!A || !A.barrelImg) return false;
   const b = A.meta.barrel;
@@ -1667,6 +1778,232 @@ function drawArtMarker(g, kind, x, y) {
     g.beginPath(); g.arc(x, y, kind === 'pivot' ? 5 : 7, 0, Math.PI * 2); g.stroke();
   }
   g.restore();
+}
+
+/* ---------- 05c_partrender.js ---------- */
+/* ==== 05c PART RENDER ==== */
+// Structure cells (materials.json) are auto-tiled from their "look" rules (design/07 §4):
+// painted or bare fills, a material texture, one light-to-dark overlay over the whole
+// shape, bevels and outlines on outside edges, seams between cells, and rivets.
+// A port of tools/part-render.js. Drawn only when a sprite is rebuilt, never per frame.
+// Paint schemes come from PART_LIBRARY.paints: the player uses league, the enemy directorate.
+
+const TILE_UNITS = 32;             // look sizes are authored at 32 units per cell
+const SIDE_SCHEMES = ['league', 'directorate'];
+const TILE_OUTLINE = '#14171B', TILE_STEEL_DARK = '#2E3339';
+// Slope corners: o 0 = bottom-left filled, 1 = bottom-right, 2 = top-left, 3 = top-right.
+const SLOPE_PTS = [
+  [[0, 0], [0, 1], [1, 1]],
+  [[1, 0], [1, 1], [0, 1]],
+  [[0, 0], [1, 0], [0, 1]],
+  [[0, 0], [1, 0], [1, 1]],
+];
+const SLOPE_SOLID = [['bottom', 'left'], ['bottom', 'right'], ['top', 'left'], ['top', 'right']];
+const SLOPE_HYP = [[0, 2], [0, 2], [2, 1], [0, 2]];
+
+// Paint (design/07 §3, step 2.8): a design's own paint, or the player's scheme (chosen in the
+// Battle Simulator for now); the enemy is the Directorate. { p1, p2, p3, camo, key }.
+function playerScheme() { return (save.profile.sim && save.profile.sim.scheme) || SIDE_SCHEMES[0]; }
+function resolvePaint(design, side) {
+  const S = PART_LIBRARY.paints.schemes;
+  const p = (design && design.paint) || { scheme: side === 0 ? playerScheme() : SIDE_SCHEMES[1] };
+  const base = S[p.scheme] || S[SIDE_SCHEMES[side] || SIDE_SCHEMES[0]];
+  const out = { p1: p.p1 || base.p1, p2: p.p2 || base.p2, p3: p.p3 || base.p3, camo: p.camo || 'none' };
+  out.key = out.p1 + out.p2 + out.p3;
+  return out;
+}
+function sideScheme(side) { return resolvePaint(null, side); }
+
+// Camouflage (design/07 §3.2): the second colours are P1 and P2 darkened; P3 accents stay.
+function darken(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c) => Math.round(c * k).toString(16).padStart(2, '0');
+  return `#${f(n >> 16)}${f((n >> 8) & 255)}${f(n & 255)}`.toUpperCase();
+}
+function camoPaint(paint) {
+  const out = { p1: darken(paint.p1, 0.66), p2: darken(paint.p2, 0.7), p3: paint.p3, camo: 'none' };
+  out.key = out.p1 + out.p2 + out.p3;
+  return out;
+}
+
+// One path of pattern shapes over the design's grid (cells from (ox, oy), u px per cell).
+function camoPath(g, pattern, ox, oy, u, w, h, seed) {
+  const rng = makeRng(seed);
+  g.beginPath();
+  if (pattern === 'bands') {
+    for (let x = -h; x < w + h; x += 3.2) { g.moveTo(ox + x * u, oy + h * u); g.lineTo(ox + (x + 1.4) * u, oy + h * u); g.lineTo(ox + (x + 1.4 + h * 0.6) * u, oy); g.lineTo(ox + (x + h * 0.6) * u, oy); g.closePath(); }
+  } else if (pattern === 'blotch') {
+    for (let k = 0; k < (w * h) / 5; k++) g.ellipse(ox + rng.range(0, w) * u, oy + rng.range(0, h) * u, rng.range(0.6, 1.4) * u, rng.range(0.4, 0.9) * u, rng.range(0, 3), 0, Math.PI * 2);
+  } else if (pattern === 'splinter') {
+    for (let k = 0; k < (w * h) / 4; k++) {
+      const x = rng.range(0, w), y = rng.range(0, h);
+      g.moveTo(ox + x * u, oy + y * u); g.lineTo(ox + (x + rng.range(0.8, 2.2)) * u, oy + (y + rng.range(-0.6, 0.6)) * u); g.lineTo(ox + (x + rng.range(0.2, 1.2)) * u, oy + (y + rng.range(0.6, 1.4)) * u); g.closePath();
+    }
+  } else if (pattern === 'stripes') {
+    for (let x = 0; x < w; x += 1.8) g.rect(ox + x * u, oy, 0.6 * u, h * u);
+  }
+}
+
+function isTiled(id) {
+  const m = PART_LIBRARY.materials[id];
+  return !!(m && m.look);
+}
+
+function tileCellPath(g, c, mat, u) {
+  if (mat.shape === 'slope') {
+    const p = SLOPE_PTS[c.o || 0];
+    g.moveTo((c.x + p[0][0]) * u, (c.y + p[0][1]) * u);
+    g.lineTo((c.x + p[1][0]) * u, (c.y + p[1][1]) * u);
+    g.lineTo((c.x + p[2][0]) * u, (c.y + p[2][1]) * u);
+    g.closePath();
+  } else {
+    g.rect(c.x * u, c.y * u, u, u);
+  }
+}
+
+function tileLine(g, x1, y1, x2, y2, col, w) {
+  g.strokeStyle = col; g.lineWidth = w;
+  g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+}
+
+function tileRivet(g, x, y, s) {
+  g.fillStyle = TILE_STEEL_DARK; g.beginPath(); g.arc(x, y, 1.15 * s, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(196,202,208,0.8)'; g.beginPath(); g.arc(x - 0.35 * s, y - 0.35 * s, 0.45 * s, 0, Math.PI * 2); g.fill();
+}
+
+function tileTexture(g, c, mat, u, s) {
+  const L = mat.look, x = c.x * u, y = c.y * u;
+  g.save(); g.beginPath(); tileCellPath(g, c, mat, u); g.clip();
+  if (L.kind === 'wood') {
+    for (let i = 1; i < 4; i++) tileLine(g, x, y + i * 8 * s, x + u, y + i * 8 * s, 'rgba(110,74,38,0.55)', 0.8 * s);
+    tileLine(g, x, y + 2 * s, x + u, y + 2 * s, 'rgba(207,157,99,0.35)', 0.7 * s);
+    if ((c.x + c.y) % 2 === 0) tileLine(g, x + 16 * s, y + 8 * s, x + 16 * s, y + 16 * s, 'rgba(110,74,38,0.5)', 0.7 * s);
+    g.fillStyle = 'rgba(40,30,20,0.55)';
+    g.fillRect(x + 3 * s, y + 4 * s, 1.2 * s, 1.2 * s); g.fillRect(x + 27 * s, y + 20 * s, 1.2 * s, 1.2 * s);
+  } else if (L.kind === 'heavy') {
+    g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = s; g.strokeRect(x + 4 * s, y + 4 * s, u - 8 * s, u - 8 * s);
+    tileLine(g, x + 4 * s, y + 4.8 * s, x + u - 4 * s, y + 4.8 * s, 'rgba(255,255,255,0.18)', 0.8 * s);
+  } else if (L.kind === 'composite') {
+    for (let k = -1; k < 3; k++) tileLine(g, x + k * 12 * s, y + u, x + k * 12 * s + u, y, 'rgba(0,0,0,0.14)', 0.8 * s);
+  } else if (L.kind === 'envelope') {
+    for (let r = 8; r < 32; r += 8) tileLine(g, x + r * s, y, x + r * s, y + u, 'rgba(0,0,0,0.12)', 0.7 * s);
+    tileLine(g, x, y + 3 * s, x + u, y + 3 * s, 'rgba(255,255,255,0.22)', s);
+  } else if (L.kind === 'frame') {
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 7 * s, y + 7 * s, u - 14 * s, u - 14 * s);
+    tileLine(g, x + 7 * s, y + 7 * s, x + u - 7 * s, y + u - 7 * s, 'rgba(138,145,153,0.9)', 2.2 * s);
+  } else if (L.kind === 'precursor') {
+    tileLine(g, x + 6 * s, y + 16 * s, x + u - 6 * s, y + 16 * s, 'rgba(79,209,197,0.55)', s);
+    tileLine(g, x + 16 * s, y + 6 * s, x + 16 * s, y + 12 * s, 'rgba(79,209,197,0.35)', 0.8 * s);
+  }
+  g.restore();
+}
+
+// Draw structure cells as one auto-tiled shape. cells: [{ m: materialId, x, y, o }] in grid
+// cells; (ox, oy) = screen position of grid cell (0, 0); u = pixels per cell.
+function drawStructureCells(g, cells, scheme, ox, oy, u) {
+  if (!cells.length) return;
+  const mats = PART_LIBRARY.materials;
+  const s = u / TILE_UNITS;
+  const at = new Map();
+  let minY = Infinity, maxY = -Infinity;
+  for (const c of cells) { at.set(c.x + ',' + c.y, c); minY = Math.min(minY, c.y); maxY = Math.max(maxY, c.y + 1); }
+  g.save();
+  g.translate(ox, oy);
+  g.lineCap = 'butt';
+  // 1. base fills and material texture
+  for (const c of cells) {
+    const mat = mats[c.m], L = mat.look;
+    g.fillStyle = L.paintable ? scheme[L.paint || 'p1'] : L.color;
+    g.beginPath(); tileCellPath(g, c, mat, u); g.fill();
+    tileTexture(g, c, mat, u, s);
+  }
+  // 2. shared top-left key light: one vertical gradient over the whole structure
+  g.save();
+  g.beginPath();
+  for (const c of cells) tileCellPath(g, c, mats[c.m], u);
+  g.clip();
+  const gr = g.createLinearGradient(0, minY * u, 0, maxY * u);
+  gr.addColorStop(0, 'rgba(255,255,255,0.20)'); gr.addColorStop(0.45, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.36)');
+  g.fillStyle = gr;
+  g.fillRect(-100000, minY * u, 200000, (maxY - minY) * u);
+  g.restore();
+  // 3. edges, seams and rivets
+  for (const c of cells) {
+    const mat = mats[c.m], L = mat.look, o = c.o || 0;
+    const x = c.x * u, y = c.y * u;
+    const bw = (L.kind === 'heavy' ? 2.4 : 1.6) * s;
+    if (mat.shape === 'slope') {
+      const p = SLOPE_PTS[o], h = SLOPE_HYP[o];
+      const x1 = (c.x + p[h[0]][0]) * u, y1 = (c.y + p[h[0]][1]) * u, x2 = (c.x + p[h[1]][0]) * u, y2 = (c.y + p[h[1]][1]) * u;
+      tileLine(g, x1, y1, x2, y2, o < 2 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)', bw * 1.6);
+      tileLine(g, x1, y1, x2, y2, TILE_OUTLINE, s);
+    }
+    for (const [name, nb, x1, y1, x2, y2] of [
+      ['top', at.get(c.x + ',' + (c.y - 1)), x, y, x + u, y],
+      ['bottom', at.get(c.x + ',' + (c.y + 1)), x, y + u, x + u, y + u],
+      ['left', at.get((c.x - 1) + ',' + c.y), x, y, x, y + u],
+      ['right', at.get((c.x + 1) + ',' + c.y), x + u, y, x + u, y + u],
+    ]) {
+      if (mat.shape === 'slope' && !SLOPE_SOLID[o].includes(name)) continue;
+      if (!nb) {
+        const inset = bw / 2;
+        const dx = name === 'left' ? inset : name === 'right' ? -inset : 0;
+        const dy = name === 'top' ? inset : name === 'bottom' ? -inset : 0;
+        tileLine(g, x1 + dx, y1 + dy, x2 + dx, y2 + dy, name === 'top' || name === 'left' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)', bw);
+        tileLine(g, x1, y1, x2, y2, TILE_OUTLINE, s);
+        if (L.rivets) {
+          const horiz = name === 'top' || name === 'bottom';
+          for (let t = 4; t < 32; t += 8) {
+            const rx = horiz ? x1 + t * s : x1 + (name === 'left' ? 3.2 : -3.2) * s;
+            const ry = horiz ? y1 + (name === 'top' ? 3.2 : -3.2) * s : y1 + t * s;
+            tileRivet(g, rx, ry, s);
+          }
+        }
+      } else if (nb.m !== c.m) {
+        if (name === 'bottom' || name === 'right') tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.38)', 0.9 * s);
+      } else {
+        const seam = L.seam || 2;
+        if (name === 'right' && (c.x + 1) % seam === 0) tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.24)', 0.7 * s);
+        if (name === 'bottom' && (c.y + 1) % seam === 0) tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.24)', 0.7 * s);
+      }
+    }
+  }
+  g.restore();
+}
+
+// Draw a list of placed parts: auto-tiled structure first (as one shape, so seams and edges
+// join up), then every other part on top. items: [{ p: { def, scorch }, x, y, seed }] with
+// x, y in grid cells. Structure cells still get their own damage marks.
+function drawPlacedParts(g, items, side, ox, oy, cs, paint = sideScheme(side)) {
+  const cells = [];
+  for (const it of items) if (isTiled(it.p.def.id)) cells.push({ m: it.p.def.id, x: it.x, y: it.y, o: 0 });
+  drawStructureCells(g, cells, paint, ox, oy, cs);
+  for (const it of items) {
+    if (isTiled(it.p.def.id)) drawPartDamage(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, it.seed);
+  }
+  for (const it of items) {
+    if (!isTiled(it.p.def.id)) drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, side, it.seed, paint);
+  }
+}
+
+// Placed parts in their paint, with camouflage over the P1 and P2 areas: the parts are drawn a
+// second time in the darker camouflage colours, cut to the pattern, and laid on top. Anything
+// not painted is the same in both, so only painted areas change. w, h: the grid in cells.
+function drawPainted(g, items, side, ox, oy, cs, paint, w, h, seed) {
+  drawPlacedParts(g, items, side, ox, oy, cs, paint);
+  if (!paint.camo || paint.camo === 'none') return;
+  const cp = camoPaint(paint);
+  // Wait for the camouflage-coloured art; the sprite is redrawn when it arrives.
+  if (!items.every((it) => !PART_LIBRARY.svg[it.p.def.id] || svgArt(it.p.def.id, cp))) return;
+  const c2 = document.createElement('canvas');
+  c2.width = g.canvas.width; c2.height = g.canvas.height;
+  const g2 = c2.getContext('2d');
+  drawPlacedParts(g2, items, side, ox, oy, cs, cp);
+  g2.globalCompositeOperation = 'destination-in';
+  camoPath(g2, paint.camo, ox, oy, cs, w, h, seed);
+  g2.fillStyle = '#000';
+  g2.fill();
+  g.drawImage(c2, 0, 0);
 }
 
 /* ---------- 06_ui.js ---------- */
@@ -2013,7 +2350,7 @@ function drawFloaters(g, toScreenX, toScreenY) {
 
 /* ---------- 06z_part_library.generated.js ---------- */
 /* ==== PART LIBRARY (generated by build.mjs, do not edit) ==== */
-const PART_LIBRARY = {"materials":{"frame":{"name":"Light frame","tier":0,"mass":60,"hp":40,"armor":5,"cost":{"metal":1},"look":{"kind":"frame","color":"#4F565E","paintable":false,"rivets":true,"seam":1}},"timber":{"name":"Timber frame","tier":0,"mass":40,"hp":25,"armor":3,"cost":{"wood":1},"burns":true,"look":{"kind":"wood","color":"#A8743F","paintable":false,"rivets":false,"seam":2}},"plank":{"name":"Plank hull","tier":0,"mass":70,"hp":40,"armor":8,"cost":{"wood":2},"burns":true,"look":{"kind":"wood","color":"#A8743F","paintable":true,"paint":"p1","rivets":false,"seam":3}},"ironwood":{"name":"Iron-banded plank","tier":0,"mass":110,"hp":55,"armor":12,"cost":{"wood":2,"metal":1},"burns":true,"look":{"kind":"wood","color":"#8E6035","paintable":true,"paint":"p1","rivets":true,"seam":2}},"plate":{"name":"Hull plate","tier":1,"mass":120,"hp":60,"armor":15,"cost":{"metal":2},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm20":{"name":"Armour 20 mm","tier":1,"mass":190,"hp":80,"armor":20,"cost":{"metal":3},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm40":{"name":"Armour 40 mm","tier":2,"mass":380,"hp":120,"armor":40,"cost":{"metal":5},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm80":{"name":"Armour 80 mm","tier":2,"mass":760,"hp":180,"armor":80,"cost":{"metal":9},"look":{"kind":"heavy","color":"#4A4E55","paintable":true,"paint":"p1","rivets":true,"seam":2}},"slope40":{"name":"Sloped armour 40 mm","tier":2,"mass":300,"hp":110,"armor":40,"cost":{"metal":5},"shape":"slope","look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2},"sloped":true},"composite":{"name":"Composite armour","tier":3,"mass":330,"hp":130,"armor":45,"cost":{"metal":4,"elec":1},"resist":{"fire":0.5,"plasma":0.6,"acid":0.7},"look":{"kind":"composite","color":"#6B7079","paintable":true,"paint":"p1","rivets":false,"seam":2}},"alloy":{"name":"Light alloy","tier":3,"mass":90,"hp":55,"armor":14,"cost":{"metal":3,"elec":1},"look":{"kind":"alloy","color":"#B7C3CF","paintable":true,"paint":"p1","rivets":false,"seam":3}},"precursor":{"name":"Precursor plating","tier":4,"mass":260,"hp":150,"armor":50,"cost":{"metal":4,"elec":3,"scrap":6},"resist":{"laser":0.5,"emp":0.5},"look":{"kind":"precursor","color":"#2B3440","paintable":false,"rivets":false,"seam":2},"planned":true},"canvas_bag":{"name":"Canvas gas bag","tier":0,"mass":12,"hp":15,"armor":0,"cost":{"wood":1,"money":8},"burns":true,"look":{"kind":"envelope","color":"#B9A77A","paintable":true,"paint":"p2","rivets":false,"seam":4},"gasLift":1.6,"planned":true},"rigid_env":{"name":"Rigid envelope","tier":1,"mass":20,"hp":35,"armor":2,"cost":{"metal":1,"wood":1,"money":12},"look":{"kind":"envelope","color":"#D8CCAA","paintable":true,"paint":"p2","rivets":true,"seam":3},"gasLift":1.8,"planned":true},"armored_env":{"name":"Armoured envelope","tier":3,"mass":45,"hp":70,"armor":8,"cost":{"metal":2,"elec":1,"money":20},"look":{"kind":"envelope","color":"#8E9BA8","paintable":true,"paint":"p2","rivets":true,"seam":2},"gasLift":1.7,"planned":true}},"paints":{"schemes":{"league":{"name":"Harbour League","p1":"#6E8FA8","p2":"#D8CCAA","p3":"#F2C14E"},"directorate":{"name":"Directorate","p1":"#8A3A2C","p2":"#4A4F57","p3":"#E0A43A"},"skyreach":{"name":"Skyreach Concord","p1":"#E4DFD2","p2":"#6F9CC4","p3":"#C9A04A"},"clans":{"name":"Salvage Clans","p1":"#9A5A34","p2":"#C9A86A","p3":"#2F7F7A"},"lumen":{"name":"Lumen Collective","p1":"#3A4450","p2":"#1F2A33","p3":"#4FD1C5"},"primer":{"name":"Primer (unpainted stock)","p1":"#7D8084","p2":"#6B6E72","p3":"#9A9DA1"}},"palette":["#7E8A94","#4F5A63","#5F6B75","#1F3552","#2E5FA3","#7FA8C9","#2F7F7A","#4E6B3A","#6B6B3A","#8A9A7B","#C9A86A","#A38F5D","#D9CFB4","#E9ECEE","#202326","#5A3B2A","#8E3B2A","#7A2E26","#C43C2C","#D9772E","#D9A441","#F2C14E","#6E8FA8","#9A5A34"],"camo":["none","bands","blotch","splinter","stripes"]},"classes":{"land":[{"id":"tank","name":"Tank","grid":[16,8],"parts":24,"captain":1},{"id":"behemoth","name":"Behemoth","grid":[28,12],"parts":48,"captain":3},{"id":"landship","name":"Landship","grid":[44,16],"parts":90,"captain":5},{"id":"land_dreadnought","name":"Land dreadnought","grid":[64,20],"parts":150,"captain":8}],"sea":[{"id":"corvette","name":"Corvette","grid":[32,10],"parts":40,"captain":1},{"id":"destroyer","name":"Destroyer","grid":[48,14],"parts":80,"captain":3},{"id":"cruiser","name":"Cruiser","grid":[64,18],"parts":130,"captain":5},{"id":"battleship","name":"Battleship","grid":[88,24],"parts":200,"captain":8}],"airship":[{"id":"gunship","name":"Gunship","grid":[24,10],"parts":30,"captain":1},{"id":"air_frigate","name":"Air frigate","grid":[36,14],"parts":60,"captain":3},{"id":"air_cruiser","name":"Air cruiser","grid":[52,18],"parts":100,"captain":5},{"id":"sky_fortress","name":"Sky fortress","grid":[72,24],"parts":160,"captain":8}],"aircraft":[{"id":"aircraft","name":"Aircraft or helicopter","grid":[32,12],"parts":60,"captain":0}],"drone":[{"id":"drone_1","name":"Drone (computer I)","grid":[8,4],"parts":6,"captain":0},{"id":"drone_2","name":"Drone (computer II)","grid":[10,5],"parts":10,"captain":0},{"id":"drone_3","name":"Drone (computer III)","grid":[12,6],"parts":16,"captain":0}],"missile":[{"id":"missile_s","name":"Small missile","grid":[6,1],"parts":4,"captain":0},{"id":"missile_m","name":"Medium missile","grid":[10,2],"parts":8,"captain":0},{"id":"missile_l","name":"Large missile","grid":[16,3],"parts":14,"captain":0}]},"parts":{"ammo":{"id":"ammo","name":"Ammo rack","family":"ammo","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[0.5,0.5]]},"stats":{"mass":250,"hp":30,"armor":3,"power":0,"rel":0.998,"shells":20,"detonate":0.4},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway ready rack of brass shells in a timber cradle; P3 warning band."},"ammo_p":{"id":"ammo_p","name":"Protected ammo storage","family":"ammo_p","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":320,"hp":50,"armor":10,"power":0,"rel":0.998,"shells":20,"detonate":0.1},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"cargo":{"id":"cargo","name":"Cargo bay","family":"cargo","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,1.95],"smoke":[[1,0.8]]},"stats":{"mass":200,"hp":40,"armor":3,"power":0,"rel":0.998,"cargo":2000},"cost":{"metal":2,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_cargo_std)."},"fuel_l":{"id":"fuel_l","name":"Fuel tank 1000 L","family":"fuel_l","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":1050,"hp":60,"armor":3,"power":0,"rel":0.998,"fuel":1000,"fire":0.35},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"fuel_s":{"id":"fuel_s","name":"Fuel tank 200 L","family":"fuel_s","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[0.5,0.5]]},"stats":{"mass":220,"hp":30,"armor":3,"power":0,"rel":0.998,"fuel":200,"fire":0.35},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway bay with a riveted 200 L tank, brass filler, sight glass; P3 hazard band."},"fuel_ss":{"id":"fuel_ss","name":"Self-sealing tank 150 L","family":"fuel_ss","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":210,"hp":40,"armor":3,"power":0,"rel":0.998,"fuel":150,"fire":0.1},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"aero":{"id":"aero","name":"Aero piston engine","family":"aero","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":600,"hp":50,"armor":5,"power":900,"rel":0.985,"heat":40,"fuelUse":250},"behaviour":{"air":true},"cost":{"metal":6,"elec":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"aprop":{"id":"aprop","name":"Air propeller","family":"aprop","variant":"std","category":"mobility","tier":0,"domains":["aircraft","airship"],"footprint":{"w":1,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_side","layer":"front","anchors":{"mount":[0.1,1],"wash":[1,1]},"moving":{"prop":{"pivot":[0.71875,1]}},"stats":{"mass":80,"hp":20,"armor":2,"power":0,"rel":0.998},"behaviour":{"airprop":true},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_airprop_std)."},"ballast":{"id":"ballast","name":"Ballast tank","family":"ballast","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":300,"hp":80,"armor":10,"power":0,"rel":0.998,"ballast":4000,"sealed":1},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"emotor":{"id":"emotor","name":"Electric motor + batteries","family":"emotor","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":1200,"hp":70,"armor":10,"power":200,"rel":0.996,"heat":5,"sealed":1},"behaviour":{"electric":true,"floods":true},"cost":{"metal":6,"elec":3},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"eng_h":{"id":"eng_h","name":"Diesel engine H","family":"eng_h","variant":"std","category":"mobility","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":4,"h":2},"stats":{"mass":1900,"hp":120,"armor":5,"power":520,"rel":0.992,"heat":45,"fuelUse":95},"cost":{"metal":12},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"eng_m":{"id":"eng_m","name":"Diesel engine M","family":"eng_m","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"exhaust":[0.23,0.05],"smoke":[[1.3,0.6],[2.6,1.1]]},"stats":{"mass":1100,"hp":90,"armor":5,"power":300,"rel":0.994,"heat":25,"fuelUse":55},"cost":{"metal":7},"craftAt":"city","unlock":{"tech":"prop_diesel"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway engine bay (P1 bulkhead frame, P2 cast block). Anchor 'exhaust' = where the exhaust leaves the roof."},"eng_s":{"id":"eng_s","name":"Petrol engine S","family":"eng_s","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":450,"hp":60,"armor":5,"power":110,"rel":0.99,"heat":12,"fuelUse":30},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"jet":{"id":"jet","name":"Jet engine","family":"jet","variant":"std","category":"mobility","tier":3,"domains":["aircraft"],"footprint":{"w":3,"h":1},"stats":{"mass":900,"hp":70,"armor":5,"power":0,"rel":0.97,"jet":25000,"heat":60,"fuelUse":900},"behaviour":{"air":true},"cost":{"metal":10,"elec":4},"craftAt":"metropolis","unlock":{"tech":"jets"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"marine":{"id":"marine","name":"Marine diesel","family":"marine","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":4,"h":3},"stats":{"mass":5000,"hp":200,"armor":10,"power":1500,"rel":0.995,"heat":40,"fuelUse":300,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":25},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"prop":{"id":"prop","name":"Ship propeller","family":"prop","variant":"std","category":"mobility","tier":0,"domains":["sea"],"footprint":{"w":1,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_bottom","layer":"front","anchors":{"mount":[0.35,0.05],"wash":[1,1.125]},"moving":{"screw":{"pivot":[0.71875,1.125]}},"stats":{"mass":300,"hp":50,"armor":10,"power":0,"rel":0.998},"behaviour":{"propeller":true},"cost":{"metal":2},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_prop_std)."},"radiator":{"id":"radiator","name":"Radiator","family":"radiator","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":70,"hp":20,"armor":2,"power":0,"rel":0.998,"heat":-12},"cost":{"metal":1},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"rotor":{"id":"rotor","name":"Rotor","family":"rotor","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":4,"h":1},"stats":{"mass":400,"hp":50,"armor":2,"power":0,"rel":0.985},"behaviour":{"rotor":true},"cost":{"metal":4,"elec":1},"craftAt":"city","unlock":{"tech":"rotorcraft"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"steam":{"id":"steam","name":"Steam engine","family":"steam","variant":"std","category":"mobility","tier":0,"domains":["land","sea","airship"],"footprint":{"w":3,"h":2},"overhang":{"left":0,"right":0,"top":0.75,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1.5,1.9],"exhaust":[2.6,-0.66],"smoke":[[1.6,0.9],[0.5,1.2]]},"moving":{"flywheel":{"pivot":[0.69,0.19]}},"stats":{"mass":1400,"hp":90,"armor":5,"power":120,"rel":0.985,"heat":30,"fuelUse":60},"cost":{"wood":2,"metal":6},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_steam_std)."},"thrust":{"id":"thrust","name":"Manoeuvre thruster","family":"thrust","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":1,"h":1},"stats":{"mass":150,"hp":30,"armor":5,"power":-40,"rel":0.998,"heat":5},"behaviour":{"thruster":true},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"track":{"id":"track","name":"Track segment","family":"track","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"dust":[[0.5,1],[1.5,1]]},"moving":{"wheel_a":{"pivot":[0.5,0.5]},"wheel_b":{"pivot":[1.5,0.5]}},"stats":{"mass":450,"hp":70,"armor":10,"power":0,"rel":0.998,"contact":0.35,"maxLoad":10000,"cap":55,"radius":0.25},"behaviour":{"loco":"track"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"prop_diesel"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: steel-link belt with straight runs so segments tile edge to edge in a run; the two road wheels (role wheel) can spin with ground speed. Anchor 'dust' = where dust kicks up."},"trotor":{"id":"trotor","name":"Tail rotor","family":"trotor","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":60,"hp":20,"armor":2,"power":0,"rel":0.998},"behaviour":{"trotor":true},"cost":{"metal":1},"craftAt":"city","unlock":{"tech":"rotorcraft"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"turb":{"id":"turb","name":"Gas turbine","family":"turb","variant":"std","category":"mobility","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":2},"stats":{"mass":900,"hp":80,"armor":5,"power":750,"rel":0.98,"heat":70,"fuelUse":220},"cost":{"metal":8,"elec":3},"craftAt":"city","unlock":{"tech":"prop_turbine"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_l":{"id":"wheel_l","name":"Off-road wheel","family":"wheel_l","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":2,"h":2},"stats":{"mass":200,"hp":50,"armor":5,"power":0,"rel":0.998,"contact":0.12,"maxLoad":5000,"cap":75,"radius":0.5},"behaviour":{"loco":"wheel"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_s":{"id":"wheel_s","name":"Road wheel","family":"wheel_s","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":1,"h":1},"stats":{"mass":80,"hp":30,"armor":5,"power":0,"rel":0.998,"contact":0.04,"maxLoad":2000,"cap":90,"radius":0.25},"behaviour":{"loco":"wheel"},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_w":{"id":"wheel_w","name":"Spoked wheel","family":"wheel_w","variant":"std","category":"mobility","tier":0,"domains":["land"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_bottom","layer":"front","anchors":{"mount":[1,0.1],"contact":[1,2]},"moving":{"wheel":{"pivot":[1,1]}},"stats":{"mass":160,"hp":40,"armor":3,"power":0,"rel":0.993,"contact":0.1,"maxLoad":3000,"cap":35,"radius":0.5},"behaviour":{"loco":"wheel"},"cost":{"wood":2,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_wheel_wood_std)."},"bow":{"id":"bow","name":"Bow section","family":"bow","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":450,"hp":130,"armor":10,"power":0,"rel":0.998,"sealed":0.5},"behaviour":{"floods":true,"bowShape":true},"cost":{"metal":3,"wood":1},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"bridge":{"id":"bridge","name":"Command bridge","family":"bridge","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0.75,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,1.9],"smoke":[[0.55,0.3],[1.35,1.3]],"light":[[0.54,-0.59]]},"stats":{"mass":350,"hp":90,"armor":10,"power":0,"rel":0.998,"crew":3},"cost":{"wood":3,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as crw_bridge_std)."},"bulk":{"id":"bulk","name":"Watertight bulkhead","family":"bulk","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":1,"h":2},"stats":{"mass":200,"hp":100,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"bulkhead":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"cabin":{"id":"cabin","name":"Crew cabin","family":"cabin","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":0,"top":0.5,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,0.95],"smoke":[[1.66,-0.46]]},"stats":{"mass":180,"hp":50,"armor":6,"power":0,"rel":0.998,"crew":2},"cost":{"wood":2},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as crw_cabin_std)."},"crew2":{"id":"crew2","name":"Crew compartment","family":"crew2","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[1,0.5]]},"stats":{"mass":300,"hp":80,"armor":10,"power":0,"rel":0.998,"crew":2},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway crew compartment, two seated crew; interior bulkhead in P2, frame in P1, P3 interior stripe."},"hull":{"id":"hull","name":"Ship hull section","family":"hull","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":600,"hp":150,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":4,"wood":1},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"keel":{"id":"keel","name":"Keel","family":"keel","variant":"std","category":"structure","tier":0,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":500,"hp":120,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"keel":true},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"phull":{"id":"phull","name":"Pressure hull section","family":"phull","variant":"std","category":"structure","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":2200,"hp":220,"armor":25,"power":0,"rel":0.998,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":8},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"tail":{"id":"tail","name":"Tail unit","family":"tail","variant":"std","category":"structure","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":60,"hp":30,"armor":2,"power":0,"rel":0.998,"tail":3},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"turret":{"id":"turret","name":"Turret ring","family":"turret","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"stats":{"mass":250,"hp":90,"armor":20,"power":-5,"rel":0.998},"behaviour":{"ring":true},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: riveted turret ring (fixed flange in P1, bare bearing race, P2 collar). No moving group: traverse doesn't show in side view."},"wing":{"id":"wing","name":"Wing section","family":"wing","variant":"std","category":"structure","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":90,"hp":30,"armor":2,"power":0,"rel":0.998,"lift":6},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"fc":{"id":"fc","name":"Fire-control computer","family":"fc","variant":"std","category":"system","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":60,"hp":15,"armor":2,"power":-5,"rel":0.998,"accuracy":1.35},"cost":{"metal":1,"elec":5},"craftAt":"city","unlock":{"tech":"fire_control"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"nsight":{"id":"nsight","name":"Night sight","family":"nsight","variant":"std","category":"system","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":20,"hp":10,"armor":2,"power":-3,"rel":0.998,"night":0.7},"cost":{"metal":1,"elec":4},"craftAt":"city","unlock":{"tech":"radar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"optics":{"id":"optics","name":"Optics","family":"optics","variant":"std","category":"system","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0.5,"bottom":0},"anchors":{"eye":[0.66,-0.24]},"stats":{"mass":30,"hp":10,"armor":2,"power":0,"rel":0.998,"spot":1.4},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: riveted observation cupola with vision slits and a periscope head (0.5-cell top overhang)."},"radio":{"id":"radio","name":"Radio","family":"radio","variant":"std","category":"system","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":3,"bottom":0},"anchors":{"antenna":[0.22,-2.88]},"stats":{"mass":50,"hp":15,"armor":2,"power":-1,"rel":0.998},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"tech":"radio"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: radio set with a whip antenna rising 3 cells (as in the v1 drawing). Anchor 'antenna' = whip tip."},"sonar":{"id":"sonar","name":"Sonar","family":"sonar","variant":"std","category":"system","tier":2,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":300,"hp":30,"armor":5,"power":-10,"rel":0.998,"sonar":2000},"behaviour":{"wet":true},"cost":{"metal":2,"elec":4},"craftAt":"city","unlock":{"tech":"sonar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"stab":{"id":"stab","name":"Gun stabiliser","family":"stab","variant":"std","category":"system","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":90,"hp":15,"armor":2,"power":-8,"rel":0.998},"cost":{"metal":2,"elec":4},"craftAt":"city","unlock":{"tech":"stabiliser"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"aa40":{"id":"aa40","name":"AA gun 40 mm","family":"aa40","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":3,"h":2},"stats":{"mass":1800,"hp":80,"armor":10,"power":0,"rel":0.998,"pen":60,"rpm":120,"range":3500,"vel":200,"dmg":30,"spread":0.9,"cal":40,"burst":3},"behaviour":{"auto":true,"aa":true,"flak":true},"cost":{"metal":10},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"ac20":{"id":"ac20","name":"Autocannon 20 mm","family":"ac20","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":2,"h":1},"stats":{"mass":150,"hp":35,"armor":5,"power":0,"rel":0.998,"pen":35,"rpm":180,"range":1200,"vel":240,"dmg":16,"spread":1,"cal":20,"burst":4},"behaviour":{"auto":true,"aa":true},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"bomb":{"id":"bomb","name":"Bomb rack","family":"bomb","variant":"std","category":"weapon","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":1100,"hp":30,"armor":3,"power":0,"rel":0.998,"range":0,"reload":0.5,"rounds":4,"bombMass":250,"pen":60,"heDmg":200,"heRadius":5},"behaviour":{"secondary":"bomb","air":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"c105":{"id":"c105","name":"Cannon 105 mm","family":"c105","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":4,"h":1},"stats":{"mass":1300,"hp":80,"armor":10,"power":0,"rel":0.998,"pen":150,"reload":8,"range":2500,"vel":155,"dmg":150,"spread":0.45,"cal":105,"shells":20,"burst":80,"burstR":2,"heDmg":110,"heRadius":4},"cost":{"metal":12},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"c37":{"id":"c37","name":"Cannon 37 mm","family":"c37","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":2.5,"top":0,"bottom":0},"anchors":{"mount":[0.5,0.5],"muzzle":[4.5,0.5],"smoke":[[0.6,0.3]]},"moving":{"barrel":{"pivot":[0.8,0.5],"elevation":[-8,20]}},"stats":{"mass":250,"hp":40,"armor":10,"power":0,"rel":0.998,"pen":50,"reload":2.5,"range":1500,"vel":180,"dmg":45,"spread":0.55,"cal":37,"shells":40,"burst":25,"burstR":1},"cost":{"metal":4},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: pivot at 0.8 (inside the mantlet); barrel length 3.7 cells = 2 x 1.25 + 1.2 (07 section 7)."},"c75":{"id":"c75","name":"Cannon 75 mm","family":"c75","variant":"std","category":"weapon","tier":1,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":3,"h":1},"overhang":{"left":0,"right":1.5,"top":0,"bottom":0},"mount":"turret_or_hull","layer":"front","anchors":{"mount":[0.5,0.5],"muzzle":[4.5,0.5],"smoke":[[1,0.25]]},"moving":{"barrel":{"pivot":[0.94,0.5],"elevation":[-8,20]}},"stats":{"mass":600,"hp":60,"armor":10,"power":0,"rel":0.998,"pen":90,"reload":5,"range":2000,"vel":165,"dmg":95,"spread":0.5,"cal":75,"shells":30,"burst":55,"burstR":1.6,"heDmg":70,"heRadius":3},"cost":{"metal":7},"craftAt":"city","unlock":{"tech":"guns_medium"},"pros":[],"cons":[],"upgrades":[{"mark":2,"options":[{"id":"hv_rounds","name":"High-velocity rounds","mods":{"pen":1.3,"vel":1.15,"dmg":1.05,"reload":1.05},"cost":{"metal":3,"elec":1,"money":40}},{"id":"quick_breech","name":"Quick-action breech","mods":{"reload":0.66,"spread":0.96,"rel":0.8,"mass":1.04},"cost":{"metal":3,"elec":1,"money":40}}]},{"mark":3,"options":[{"id":"long_tube","name":"Lengthened tube","mods":{"pen":1.5,"vel":1.25,"range":1.3,"spread":0.9,"dmg":1.1,"mass":1.15,"reload":1.06},"cost":{"metal":7,"elec":2,"money":60}},{"id":"autoloader","name":"Autoloader","mods":{"reload":0.44,"rel":0.7,"mass":1.1},"adds":{"power":-6},"cost":{"metal":6,"elec":3,"money":60}}]}],"notes":"Golden sample: the art reference for every part (design/07 §12). Stats imported from v1 07_data.js. Barrel pivot and muzzle come from 'moving' and 'anchors' (the game reads them). Mk 3 options are totals relative to Mk 1."},"dc":{"id":"dc","name":"Depth-charge rack","family":"dc","variant":"std","category":"weapon","tier":2,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":300,"hp":40,"armor":5,"power":0,"rel":0.998,"reload":4,"range":0,"rounds":6},"behaviour":{"secondary":"depth"},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"sonar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"hmg":{"id":"hmg","name":"Heavy machine gun","family":"hmg","variant":"std","category":"weapon","tier":1,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"stats":{"mass":80,"hp":25,"armor":5,"power":0,"rel":0.998,"pen":20,"rpm":450,"range":1000,"vel":250,"dmg":11,"spread":1.2,"cal":13,"burst":5},"behaviour":{"auto":true,"aa":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"guns_medium"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"how":{"id":"how","name":"Howitzer 150 mm","family":"how","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":4,"h":2},"stats":{"mass":2500,"hp":100,"armor":10,"power":0,"rel":0.998,"pen":40,"reload":12,"range":8000,"vel":95,"dmg":180,"spread":0.9,"cal":150,"shells":12,"heDmg":180,"heRadius":6},"behaviour":{"he":true,"indirect":true},"cost":{"metal":18},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"mg":{"id":"mg","name":"Machine gun","family":"mg","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":1.45,"top":0,"bottom":0},"anchors":{"mount":[0.5,0.5],"muzzle":[2.45,0.5],"smoke":[[0.4,0.4]]},"moving":{"barrel":{"pivot":[0.6,0.5],"elevation":[-10,25]}},"stats":{"mass":40,"hp":20,"armor":5,"power":0,"rel":0.998,"pen":8,"rpm":600,"range":600,"vel":260,"dmg":6,"spread":1.4,"cal":8,"burst":6},"behaviour":{"auto":true},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: ball mount in an armour collar; barrel length 1.85 cells = 1 x 1.25 + 0.6 (automatic)."},"ngun":{"id":"ngun","name":"Naval gun 120 mm, twin","family":"ngun","variant":"std","category":"weapon","tier":2,"domains":["sea","land"],"footprint":{"w":4,"h":3},"stats":{"mass":9000,"hp":200,"armor":25,"power":0,"rel":0.998,"pen":130,"reload":6,"range":9000,"vel":120,"dmg":150,"spread":0.45,"cal":120,"shells":30,"burst":70,"burstR":2.2},"behaviour":{"twin":true},"cost":{"metal":40},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"smoke":{"id":"smoke","name":"Smoke launcher","family":"smoke","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[0.5,0.95],"smoke":[[0.19,0.22],[0.5,0.22],[0.81,0.22]]},"stats":{"mass":30,"hp":15,"armor":2,"power":0,"rel":0.998,"salvos":3},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as sys_smoke_std)."},"swivel":{"id":"swivel","name":"Swivel gun 20 mm","family":"swivel","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0.75,"top":0,"bottom":0},"mount":"rail_or_hull","layer":"front","anchors":{"mount":[0.5,0.95],"muzzle":[1.72,0.375],"smoke":[[0.5,0.6]]},"moving":{"barrel":{"pivot":[0.5,0.375],"elevation":[-10,30]}},"stats":{"mass":60,"hp":20,"armor":3,"power":0,"rel":0.998,"pen":12,"dmg":18,"reload":1.2,"range":700,"vel":200,"spread":1,"cal":20,"shells":40},"cost":{"wood":1,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as wpn_swivel20_std)."},"torp":{"id":"torp","name":"Torpedo tube","family":"torp","variant":"std","category":"weapon","tier":2,"domains":["sea"],"footprint":{"w":3,"h":1},"stats":{"mass":900,"hp":60,"armor":10,"power":0,"rel":0.998,"reload":30,"range":4000,"rounds":2},"behaviour":{"secondary":"torpedo","wet":true},"cost":{"metal":8,"elec":1},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."}},"svg":{"ammo":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"ammo\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 23.8H28.8V25.8H3.2Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M2.6 2.6H29.4V29.4H2.6ZM3.2 23.8H28.8V25.8H3.2Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"url(#shade)\"/>\n<rect x=\"3.2\" y=\"11.4\" width=\"25.6\" height=\"2.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.6 12H28.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M6.7 26V14.6H12.1V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M6.7 26V14.6H12.1V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M6.9 14.8Q7.1 7.2 9.4 5.8Q11.7 7.2 11.9 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M7.8 13.6Q7.9 9 9.2 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"6.7\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<path d=\"M13.3 26V14.6H18.7V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M13.3 26V14.6H18.7V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M13.5 14.8Q13.7 7.2 16 5.8Q18.3 7.2 18.5 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.4 13.6Q14.5 9 15.8 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"13.3\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<path d=\"M19.9 26V14.6H25.3V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M19.9 26V14.6H25.3V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M20.1 14.8Q20.3 7.2 22.6 5.8Q24.9 7.2 25.1 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M21 13.6Q21.1 9 22.4 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"19.9\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<rect x=\"3.2\" y=\"21.6\" width=\"25.6\" height=\"2.2\" fill=\"#A8743F\"/>\n<rect x=\"3.2\" y=\"25.8\" width=\"25.6\" height=\"3.6\" fill=\"#A8743F\"/>\n<path d=\"M3.2 23.8H28.8V25.8H3.2Z\" fill=\"url(#shade)\"/>\n<path d=\"M3.2 21.6H28.8M3.2 29.4H28.8\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n<path d=\"M3.6 22.2H28.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.2 28.4H28.8\" stroke=\"#6E4A26\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.6 11.6L6 13.6M28.4 11.6L26 13.6\" stroke=\"#857650\" stroke-width=\"1\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"27.6\" r=\"0.9\"/><circle cx=\"27\" cy=\"27.6\" r=\"0.9\"/></g>\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M2.6 2.6H29.4V4.8H4.8V29.4H2.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M29.8 2.6V29.8H2.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 31.1V0.9H31.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M31.1 0.9V31.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.3\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"16\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"16\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"16\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"16\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"23.35\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"23.35\" r=\"0.9\"/></g>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"31\" height=\"31\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","cargo":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"cargo\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<clipPath id=\"load\"><path clip-rule=\"evenodd\" d=\"M0 0H64V64H0ZM1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4ZM21.2 22.6H24.4V25.4H21.2ZM40.2 22.6H43.4V25.4H40.2ZM59.4 22.6H62.6V25.4H59.4Z\"/></clipPath>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.4 22.6H4.6V25.4H1.4ZM21.2 22.6H24.4V25.4H21.2ZM40.2 22.6H43.4V25.4H40.2ZM59.4 22.6H62.6V25.4H59.4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<g clip-path=\"url(#load)\">\n<rect x=\"42.6\" y=\"7.6\" width=\"15.6\" height=\"13.6\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M42.6 12.2H58.2M42.6 16.7H58.2\" stroke=\"#6E4A26\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M43.4 8.4H57.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M42.6 7.6h3v1.2h-1.8v1.8h-1.2ZM58.2 7.6h-3v1.2h1.8v1.8h1.2Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"44.2\" cy=\"9.2\" r=\"0.9\"/><circle cx=\"56.6\" cy=\"9.2\" r=\"0.9\"/></g>\n<path d=\"M6.6 22Q5.8 14 11 12.4Q16.6 11.4 18 16L17 21Z\" fill=\"#D8CCAA\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M9.6 13.2Q11 12 12.6 12.6\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M5 50.6V28Q5 21.4 11 19.8L20 17.8Q27 14.6 35 15.8L43 17.2V21H58.4Q59.6 22.8 59.6 28V50.6Z\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<path d=\"M5 50.6V28Q5 21.4 11 19.8L20 17.8Q27 14.6 35 15.8L43 17.2V21H58.4Q59.6 22.8 59.6 28V50.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M12 20.6Q16 34 13 50M28 16.2Q31 32 27 50M47 21Q44 36 48 50\" stroke=\"#857650\" stroke-opacity=\"0.7\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M6.2 27Q7 22.6 11.6 21M21 18.6Q28 15.6 34.6 16.6M45 21.8H57.6\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M8 21L9.2 50.6M24.6 16.8L23 50.6M38 16.2Q41 30 39.4 50.6M55.6 21L57.4 50.6M6 30Q32 44 58.4 34\" stroke=\"#14171B\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M8 21L9.2 50.6M24.6 16.8L23 50.6M38 16.2Q41 30 39.4 50.6M55.6 21L57.4 50.6M6 30Q32 44 58.4 34\" stroke=\"#A8743F\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 31H62.6M1.4 41.6H62.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1.4\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M2.1 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 22.6H4.6V25.4H1.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"3\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"21.2\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M21.9 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M23.8 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M21.2 22.6H24.4V25.4H21.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"22.8\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"22.8\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"40.2\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M40.9 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M42.8 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M40.2 22.6H43.4V25.4H40.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"41.8\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"41.8\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"59.4\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M60.1 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M62 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M59.4 22.6H62.6V25.4H59.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"61\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"61\" cy=\"43\" r=\"0.95\"/></g>\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M0.6 53.9H63.4\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M1.2 51.2H62.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M16 50.6V53.8M36 54V57.2M50 50.6V53.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"1.4\" y=\"57.2\" width=\"61.2\" height=\"5.6\" rx=\"0.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.6\" cy=\"60\" r=\"1\"/><circle cx=\"11.4\" cy=\"60\" r=\"1\"/><circle cx=\"18.2\" cy=\"60\" r=\"1\"/><circle cx=\"25\" cy=\"60\" r=\"1\"/><circle cx=\"31.8\" cy=\"60\" r=\"1\"/><circle cx=\"38.6\" cy=\"60\" r=\"1\"/><circle cx=\"45.4\" cy=\"60\" r=\"1\"/><circle cx=\"52.2\" cy=\"60\" r=\"1\"/><circle cx=\"59\" cy=\"60\" r=\"1\"/></g>\n<path d=\"M1.4 59.6H62.6V62.8H1.4Z\" fill=\"url(#grime)\"/>\n<path d=\"M2 57.9h4M30 57.9h3M58 57.9h3\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M8.6 51h2.4M44 51h2M62.8 52.4v2M23.6 30.8v1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"20\" cy=\"38\" r=\"0.6\"/><circle cx=\"50\" cy=\"26\" r=\"0.6\"/><circle cx=\"33\" cy=\"47\" r=\"0.6\"/></g>\n</g>\n</g>\n</svg>","fuel_s":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"fuel_s\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M4.6 16.4H27.4V19.4H4.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M2.6 2.6H29.4V29.4H2.6ZM8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"url(#shade)\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"url(#cyl)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7.4\" cy=\"10.4\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"10.4\" r=\"0.9\"/><circle cx=\"7.4\" cy=\"25.2\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"25.2\" r=\"0.9\"/><circle cx=\"16\" cy=\"9.2\" r=\"0.9\"/><circle cx=\"16\" cy=\"26.4\" r=\"0.9\"/></g>\n<path d=\"M11.6 7.8V27.8M20.4 7.8V27.8\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"4.4\" y=\"12.4\" width=\"23.2\" height=\"1.8\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"4.4\" y=\"22\" width=\"23.2\" height=\"1.8\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"17.4\" y=\"5\" width=\"4.4\" height=\"2.8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"16.6\" y=\"3.2\" width=\"6\" height=\"2.2\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M17.2 3.8H21.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"24.8\" y=\"10.8\" width=\"1.8\" height=\"13.6\" rx=\"0.4\" fill=\"#14171B\"/>\n<rect x=\"25.1\" y=\"16\" width=\"1.2\" height=\"8.2\" fill=\"#FFB23E\"/>\n<rect x=\"25.1\" y=\"11.2\" width=\"1.2\" height=\"4.8\" fill=\"#7FB7C9\"/>\n<path d=\"M4.6 25.4H2.6\" stroke=\"#14171B\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M4.8 25.4H2.6\" stroke=\"#B8733F\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M8.4 28H24L22.8 29.4H9.6Z\" fill=\"#1B1712\" fill-opacity=\"0.35\"/>\n<path d=\"M8 8.4H14\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M2.6 2.6H29.4V4.8H4.8V29.4H2.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M29.8 2.6V29.8H2.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 31.1V0.9H31.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M31.1 0.9V31.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.3\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"16\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"16\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"16\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"16\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"23.35\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"23.35\" r=\"0.9\"/></g>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"31\" height=\"31\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","aprop":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 64\" data-part=\"aprop\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" fill=\"#FF00FF\"/>\n<path d=\"M0.6 18.6Q0.6 17.6 1.6 17.6H4.4V46.4H1.6Q0.6 46.4 0.6 45.4Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" fill=\"url(#tube)\"/>\n<path d=\"M9 24.8V39.2M15 25V39\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7\" cy=\"27\" r=\"0.9\"/><circle cx=\"7\" cy=\"37\" r=\"0.9\"/><circle cx=\"12\" cy=\"26.6\" r=\"0.9\"/><circle cx=\"12\" cy=\"37.4\" r=\"0.9\"/></g>\n<rect x=\"8.2\" y=\"21\" width=\"3.4\" height=\"3.6\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"7.6\" y=\"20.2\" width=\"4.6\" height=\"1.4\" rx=\"0.4\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M8.8 21.6V24\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M0.6 18.6Q0.6 17.6 1.6 17.6H4.4V46.4H1.6Q0.6 46.4 0.6 45.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"2.5\" cy=\"21\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"27.5\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"36.5\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"20.6\" y=\"29.6\" width=\"3\" height=\"4.8\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n</g>\n</g>\n<g id=\"prop\" data-role=\"prop\" data-pivot=\"23 32\">\n<g class=\"paint\">\n<path d=\"M19.4 8.6Q19.8 4.6 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q25.9 5.6 26.2 8.6ZM19.9 55.4Q20.3 59.2 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q26.1 58.6 26.5 55.4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M19.2 8.6L19.2 18L19.8 29.6H26.2L26.4 18Q26.6 12 26.2 8.6Z\" fill=\"#A8743F\"/>\n<path d=\"M19.9 55.4L19.8 46L19.8 34.4H26.2L26.6 46Q26.8 51 26.5 55.4Z\" fill=\"#A8743F\"/>\n<path d=\"M19.8 29.6L19.2 18Q19 8 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q26.8 9 26.4 18L26.2 29.6Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19.8 34.4L19.8 46Q19.8 56 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q27 55 26.6 46L26.2 34.4Z\" fill=\"url(#cyl)\"/>\n<path d=\"M21.2 28V10M23.4 28V9M25 28V12M21.4 36V54M23.6 36V55M25.2 36V52\" stroke=\"#6E4A26\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M20.4 27L20.2 11M20.6 37L20.8 53\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M19.8 29.6L19.2 18Q19 8 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q26.8 9 26.4 18L26.2 29.6Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M19.8 34.4L19.8 46Q19.8 56 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q27 55 26.6 46L26.2 34.4Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M19.4 8.6H26.2M19.9 55.4H26.5\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"19.4\" y=\"26.6\" width=\"6\" height=\"10.8\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"19.4\" y=\"26.6\" width=\"6\" height=\"10.8\" rx=\"0.8\" fill=\"url(#cyl)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"22.4\" cy=\"28.6\" r=\"0.9\"/><circle cx=\"22.4\" cy=\"35.4\" r=\"0.9\"/></g>\n<path d=\"M25 27.4Q31 28 31.4 32Q31 36 25 36.6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M25 27.4Q31 28 31.4 32Q31 36 25 36.6Z\" fill=\"url(#tube)\"/>\n<path d=\"M26.2 29.2Q29.4 29.8 30.2 31.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","eng_m":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\" data-part=\"eng_m\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"hot\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#9A4E2A\"/><stop offset=\"0.5\" stop-color=\"#C2713D\"/><stop offset=\"1\" stop-color=\"#9A4E2A\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H96V64H0ZM3 3V61H93V3Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M75 9.6H89V12H75Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3 3H93V61H3ZM12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" fill=\"url(#shade)\"/>\n<rect x=\"3\" y=\"56.4\" width=\"90\" height=\"4.6\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M13.4 50H20.4L21.4 56.4H12.4ZM63.6 50H70.6L71.6 56.4H62.6Z\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M13.8 51H20M64 51H70.2\" stroke=\"#4A4540\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M20 50H64L62 55.4H22Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"20\" y=\"50\" width=\"44\" height=\"5.4\" fill=\"url(#tube)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"24\" cy=\"51.6\" r=\"0.9\"/><circle cx=\"60\" cy=\"51.6\" r=\"0.9\"/></g>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M22 30V49M32 30V49M42 30V49M52 30V49M62 30V49\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M22.8 30V49M32.8 30V49M42.8 30V49M52.8 30V49M62.8 30V49\" stroke=\"#FFFFFF\" stroke-opacity=\"0.14\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"12\" y=\"28\" width=\"60\" height=\"2.6\" fill=\"#000000\" fill-opacity=\"0.2\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"22.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"30\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"37.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"45\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"52.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"60\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"67.5\" cy=\"29.3\" r=\"0.9\"/></g>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"30\" y=\"34\" width=\"12\" height=\"8\" rx=\"1\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"30\" y=\"34\" width=\"12\" height=\"8\" rx=\"1\" fill=\"url(#tube)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"32.4\" cy=\"36\" r=\"0.9\"/><circle cx=\"39.6\" cy=\"36\" r=\"0.9\"/></g>\n<path d=\"M33 34Q33 27 17 22.4M34.2 34Q34.2 27 27 22.4M35.4 34Q35.4 27 37 22.4M36.6 34Q36.6 27 47 22.4M37.8 34Q37.8 27 57 22.4M39 34Q39 27 67 22.4\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M33 34Q33 27 17 22.4M34.2 34Q34.2 27 27 22.4M35.4 34Q35.4 27 37 22.4M36.6 34Q36.6 27 47 22.4M37.8 34Q37.8 27 57 22.4M39 34Q39 27 67 22.4\" stroke=\"#B8733F\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"11\" y=\"18\" width=\"62\" height=\"10.4\" rx=\"0.8\" fill=\"#4A4E55\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"11\" y=\"18\" width=\"62\" height=\"10.4\" rx=\"0.8\" fill=\"url(#tube)\"/>\n<path d=\"M13 18V14.6Q13 12.4 15.2 12.4H19Q21.2 12.4 21.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M14 14.6Q14 13.4 15.2 13.4H18\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"19.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M23 18V14.6Q23 12.4 25.2 12.4H29Q31.2 12.4 31.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M24 14.6Q24 13.4 25.2 13.4H28\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"25\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"29.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M33 18V14.6Q33 12.4 35.2 12.4H39Q41.2 12.4 41.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M34 14.6Q34 13.4 35.2 13.4H38\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"35\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"39.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M43 18V14.6Q43 12.4 45.2 12.4H49Q51.2 12.4 51.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M44 14.6Q44 13.4 45.2 13.4H48\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"45\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"49.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M53 18V14.6Q53 12.4 55.2 12.4H59Q61.2 12.4 61.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M54 14.6Q54 13.4 55.2 13.4H58\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"55\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"59.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M63 18V14.6Q63 12.4 65.2 12.4H69Q71.2 12.4 71.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M64 14.6Q64 13.4 65.2 13.4H68\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"65\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"69.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M17 26.6V23.6M27 26.6V23.6M37 26.6V23.6M47 26.6V23.6M57 26.6V23.6M67 26.6V23.6\" stroke=\"#14171B\" stroke-width=\"3.4\" fill=\"none\"/>\n<path d=\"M17 26.6V23.6M27 26.6V23.6M37 26.6V23.6M47 26.6V23.6M57 26.6V23.6M67 26.6V23.6\" stroke=\"#9A4E2A\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M68 22.6H9.6Q7.4 22.6 7.4 20.4V18\" stroke=\"#14171B\" stroke-width=\"4.4\" fill=\"none\"/>\n<path d=\"M68 22.6H9.6Q7.4 22.6 7.4 20.4V18\" stroke=\"#C2713D\" stroke-width=\"3\" fill=\"none\"/>\n<path d=\"M66 21.8H10.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"4\" y=\"5\" width=\"7\" height=\"13.4\" rx=\"1.4\" fill=\"url(#hot)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M4 8.6H11M4 14.8H11\" stroke=\"#2E3339\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"5.6\" y=\"3\" width=\"3.8\" height=\"2.4\" fill=\"#2A2622\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M4 5H11V9H4Z\" fill=\"#2A2622\" fill-opacity=\"0.4\"/>\n<path d=\"M72 22L84 18.6H90V55H84L72 51Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M72 22L84 18.6H90V55H84L72 51Z\" fill=\"url(#shade)\"/>\n<path d=\"M84 19V55\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"75\" cy=\"25\" r=\"0.95\"/><circle cx=\"75\" cy=\"48\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"22\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"36.8\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"51.6\" r=\"0.95\"/><circle cx=\"80.6\" cy=\"22.6\" r=\"0.95\"/><circle cx=\"80.6\" cy=\"50.6\" r=\"0.95\"/></g>\n<rect x=\"90\" y=\"40.4\" width=\"3\" height=\"4.6\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M75 9.6V7.2Q75 5.6 76.6 5.6H87.4Q89 5.6 89 7.2V9.6ZM75 12H89V15.4Q89 17 87.4 17H76.6Q75 17 75 15.4Z\" fill=\"url(#steel)\"/>\n<rect x=\"75\" y=\"5.6\" width=\"14\" height=\"11.4\" rx=\"1.6\" fill=\"url(#cyl)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"74.4\" y=\"4.4\" width=\"15.2\" height=\"1.8\" rx=\"0.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M78 17V20.4H72.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M78 17V20.4H72.4\" stroke=\"#4F565E\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M11.6 19Q13 9 18 3\" stroke=\"#14171B\" stroke-width=\"3.4\" fill=\"none\"/>\n<path d=\"M11.6 19Q13 9 18 3\" stroke=\"#23201E\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M12.8 17Q14 10 17.6 5\" stroke=\"#4A4540\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"4.4\" y=\"33\" width=\"7\" height=\"10.4\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M4.4 36.4H11.4M4.4 40H11.4\" stroke=\"#B8733F\" stroke-opacity=\"0.9\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M8 43.4L13.4 44.6M8 45.2L13.4 46.2\" stroke=\"#23201E\" stroke-width=\"1\" fill=\"none\"/>\n<rect x=\"3\" y=\"44\" width=\"90\" height=\"12.4\" fill=\"url(#grime)\"/>\n<g fill=\"#1B1712\" fill-opacity=\"0.5\"><circle cx=\"26\" cy=\"55\" r=\"1.3\"/><circle cx=\"47\" cy=\"54.6\" r=\"1.3\"/><circle cx=\"58\" cy=\"55.2\" r=\"1.3\"/></g>\n<path d=\"M15 28.8h3M40 28.8h2.4M73 22.6l2 -0.6M13 47.2v1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0 0H96V64H0ZM3 3V61H93V3Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M3 3H93V5.2H5.2V61H3Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M93.4 3V61.4H3\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 63.1V0.9H95.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M95.1 0.9V63.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.5\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"15.81\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"15.81\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"22.96\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"22.96\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"30.12\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"30.12\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"37.27\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"37.27\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"44.42\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"44.42\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"51.58\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"51.58\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"58.73\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"58.73\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"65.88\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"65.88\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"73.04\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"73.04\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"80.19\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"80.19\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"87.35\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"87.35\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"8.28\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"8.28\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"15.06\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"15.06\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"21.83\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"21.83\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"28.61\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"28.61\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"35.39\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"35.39\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"42.17\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"42.17\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"48.94\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"48.94\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"55.72\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"55.72\" r=\"0.9\"/></g>\n<rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"95\" height=\"63\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","prop":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 64\" data-part=\"prop\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M2.9 6H19.2L18.8 9.2H3.3Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"url(#cyl)\"/>\n<path d=\"M11 1.4V30.6\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.6\" cy=\"4\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"12\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"18.8\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"4\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"12\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"18.8\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"25.6\" r=\"0.95\"/></g>\n<rect x=\"2.4\" y=\"0.6\" width=\"17.4\" height=\"2.6\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"url(#grime)\"/>\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"0.4\" y=\"33.8\" width=\"21\" height=\"4.4\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"0.4\" y=\"33.8\" width=\"21\" height=\"4.4\" fill=\"url(#tube)\"/>\n<rect x=\"0.4\" y=\"32.4\" width=\"2.4\" height=\"7.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"4.6\" y=\"30.6\" width=\"13\" height=\"10.8\" rx=\"2.2\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"4.6\" y=\"30.6\" width=\"13\" height=\"10.8\" rx=\"2.2\" fill=\"url(#tube)\"/>\n<path d=\"M8.6 31V41M13.6 31V41\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.6\" cy=\"32.8\" r=\"0.95\"/><circle cx=\"6.6\" cy=\"39.2\" r=\"0.95\"/><circle cx=\"15.6\" cy=\"32.8\" r=\"0.95\"/><circle cx=\"15.6\" cy=\"39.2\" r=\"0.95\"/></g>\n<g fill=\"#857650\" fill-opacity=\"0.6\"><circle cx=\"5.4\" cy=\"22\" r=\"0.9\"/><circle cx=\"15.6\" cy=\"27\" r=\"0.9\"/><circle cx=\"8\" cy=\"28.5\" r=\"0.9\"/><circle cx=\"12.2\" cy=\"40.6\" r=\"0.9\"/><circle cx=\"17\" cy=\"38\" r=\"0.9\"/></g>\n<path d=\"M7.4 13v4M14.8 20v3.6\" stroke=\"#9A4E2A\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"screw\" data-role=\"prop\" data-pivot=\"23 36\">\n<g class=\"detail\">\n<path d=\"M19 31L17.6 23Q16.2 15.6 18.8 12.4Q21.4 10 24.4 11.6Q27.8 14 27.4 22L26.4 31Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M19 31L17.6 23Q16.2 15.6 18.8 12.4Q21.4 10 24.4 11.6Q27.8 14 27.4 22L26.4 31Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19 41L18.4 49Q17.6 57 20.4 59.6Q23.2 61.6 25.8 59.4Q28.4 56.4 27.4 49L26.4 41Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M19 41L18.4 49Q17.6 57 20.4 59.6Q23.2 61.6 25.8 59.4Q28.4 56.4 27.4 49L26.4 41Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19.4 29Q18 20 20 14.4M19.8 43Q19 53 21 57.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M24.6 29Q26 20 23.6 13.4M24.8 43Q26.2 52 24.4 58.4\" stroke=\"#8A6A2A\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"18.6\" y=\"30.4\" width=\"8.4\" height=\"11.2\" rx=\"2.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"18.6\" y=\"30.4\" width=\"8.4\" height=\"11.2\" rx=\"2.4\" fill=\"url(#tube)\"/>\n<path d=\"M26.8 31.6L30.8 34.4V37.6L26.8 40.4Z\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M26.8 31.6L30.8 34.4V35.6L26.8 33.8Z\" fill=\"#FFFFFF\" fill-opacity=\"0.3\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"21\" cy=\"32.6\" r=\"0.9\"/><circle cx=\"21\" cy=\"39.4\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"32.6\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"39.4\" r=\"0.9\"/></g>\n</g>\n</g>\n</svg>","steam":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -24 96 88\" data-part=\"steam\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<radialGradient id=\"rim\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.72\" stop-color=\"#2E3339\"/><stop offset=\"0.8\" stop-color=\"#4F565E\"/><stop offset=\"0.9\" stop-color=\"#8A9199\"/><stop offset=\"0.95\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n<linearGradient id=\"soot\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#2A2622\" stop-opacity=\"0.85\"/><stop offset=\"1\" stop-color=\"#2A2622\" stop-opacity=\"0\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" fill=\"#FF00FF\"/>\n<path d=\"M29 24H78V55.5H29Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" fill=\"#00FFFF\"/>\n<path d=\"M79.5 -12H87.5V-8.6H79.5Z\" fill=\"#FFFF00\"/>\n<path d=\"M4 50.2H30V53H4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M79.5 -17.5H87.5V-12H79.5ZM79.5 -8.6H87.5V24H79.5Z\" fill=\"#3A3F45\"/>\n<path d=\"M79.5 24V-17.5H87.5V24Z\" fill=\"url(#cyl)\"/>\n<rect x=\"79.5\" y=\"-17.5\" width=\"8\" height=\"13\" fill=\"url(#soot)\"/>\n<path d=\"M79.5 5H87.5M79.5 -2H87.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"81\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"86\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"81\" cy=\"-5.5\" r=\"0.9\"/><circle cx=\"86\" cy=\"-5.5\" r=\"0.9\"/></g>\n<path d=\"M77.6 -17.4L78.6 -22.4H88.4L89.4 -17.4Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M77.6 -17.4L78.6 -22.4H88.4L89.4 -17.4Z\" fill=\"url(#cyl)\"/>\n<path d=\"M79 -22.4H88V-21H79Z\" fill=\"#1B1712\" fill-opacity=\"0.8\"/>\n<path d=\"M79.5 24V-17.5H87.5V24Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" fill=\"url(#shade)\"/>\n<path d=\"M4.8 18V55\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.8\" cy=\"19\" r=\"1\"/><circle cx=\"6.8\" cy=\"25.5\" r=\"1\"/><circle cx=\"6.8\" cy=\"32\" r=\"1\"/><circle cx=\"6.8\" cy=\"38.5\" r=\"1\"/><circle cx=\"6.8\" cy=\"51\" r=\"1\"/><circle cx=\"27.2\" cy=\"19\" r=\"1\"/><circle cx=\"27.2\" cy=\"38.5\" r=\"1\"/><circle cx=\"27.2\" cy=\"51\" r=\"1\"/></g>\n<circle cx=\"11.5\" cy=\"27\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"11.5\" cy=\"27\" r=\"3.2\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M11.5 27L13.4 25.2\" stroke=\"#E0533D\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M9.2 29.2A3 3 0 0 1 8.6 25.9\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"11.5\" cy=\"27\" r=\"0.9\" fill=\"#14171B\"/>\n<path d=\"M11.5 31.4V35\" stroke=\"#B8733F\" stroke-width=\"1.2\" fill=\"none\"/>\n<rect x=\"22.6\" y=\"23\" width=\"3.4\" height=\"13\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"23.5\" y=\"25\" width=\"1.6\" height=\"9\" fill=\"#7FB7C9\"/>\n<rect x=\"23.5\" y=\"29.5\" width=\"1.6\" height=\"4.5\" fill=\"#7FB7C9\"/>\n<path d=\"M23.5 29.5H25.1\" stroke=\"#D8F0F7\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"8.4\" y=\"36.2\" width=\"15.2\" height=\"12.6\" rx=\"1\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M8.4 36.2h15.2v4H8.4Z\" fill=\"url(#shade)\"/>\n<rect x=\"10.4\" y=\"44.2\" width=\"11.2\" height=\"2.4\" rx=\"0.6\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M11 45.4H21\" stroke=\"#FFE08A\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M13.2 44.2V46.6M16 44.2V46.6M18.8 44.2V46.6\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"18\" y=\"38.2\" width=\"5.2\" height=\"1.6\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"10.4\" cy=\"38.4\" r=\"0.9\"/><circle cx=\"10.4\" cy=\"42.4\" r=\"0.9\"/></g>\n<path d=\"M8.4 49H23.6L22 52H10Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<path d=\"M4 50H30V56H4Z\" fill=\"url(#grime)\"/>\n<path d=\"M29 24H78V55.5H29Z\" fill=\"url(#tube)\"/>\n<path d=\"M29 49H78V55.5H29Z\" fill=\"url(#grime)\"/>\n<rect x=\"40\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"40\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<rect x=\"53\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"53\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<rect x=\"66\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"66\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<path d=\"M47 24.5V55M60 24.5V55\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"31.4\" cy=\"27.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"33.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"39.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"45.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"51.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"27.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"33.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"39.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"45.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"51.5\" r=\"1\"/></g>\n<path d=\"M30 25.3H77\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M29 24H78V55.5H29Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M76 56V25Q76 22.5 78.5 22.5H88Q92.4 22.5 92.4 27V51.5Q92.4 56 88 56Z\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<path d=\"M76 56V25Q76 22.5 78.5 22.5H88Q92.4 22.5 92.4 27V51.5Q92.4 56 88 56Z\" fill=\"url(#tube)\"/>\n<path d=\"M88.6 23.6Q91.6 24.2 91.6 27V51.5Q91.6 54.6 88.6 55\" stroke=\"#4F565E\" stroke-width=\"1\" fill=\"none\"/>\n<rect x=\"81\" y=\"29.6\" width=\"11.8\" height=\"2.4\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"81\" y=\"46\" width=\"11.8\" height=\"2.4\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"82.8\" cy=\"30.8\" r=\"0.95\"/><circle cx=\"82.8\" cy=\"47.2\" r=\"0.95\"/><circle cx=\"78.4\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"78.4\" cy=\"52.6\" r=\"0.95\"/></g>\n<circle cx=\"90.2\" cy=\"39\" r=\"1.8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M90.2 39H93.4\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M76 22.5H92.4V30H76Z\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<path d=\"M58.4 24.4V20.4Q58.4 15.2 63.8 15.2Q69.2 15.2 69.2 20.4V24.4Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M58.4 24.4V20.4Q58.4 15.2 63.8 15.2Q69.2 15.2 69.2 20.4V24.4Z\" fill=\"url(#cyl)\"/>\n<rect x=\"57.4\" y=\"23\" width=\"12.8\" height=\"2\" rx=\"0.5\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"62.6\" y=\"10.4\" width=\"2.4\" height=\"5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M60.2 11.4H67.4\" stroke=\"#4F565E\" stroke-width=\"1.1\" fill=\"none\"/>\n<circle cx=\"67.6\" cy=\"11.4\" r=\"1\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M66.6 15.4V12.6H68.6V15.4Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M58.6 19.2Q56.6 19.2 56.6 17.6V16.6\" stroke=\"#14171B\" stroke-width=\"2.8\" fill=\"none\"/>\n<path d=\"M58.6 19.2Q56.6 19.2 56.6 17.6V16.6\" stroke=\"#B8733F\" stroke-width=\"1.8\" fill=\"none\"/>\n<rect x=\"38.4\" y=\"12.6\" width=\"17.8\" height=\"11.6\" rx=\"1.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M39 15.4H55.6M39 18.4H55.6M39 21.4H55.6\" stroke=\"#6E4A26\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"38.4\" y=\"12.6\" width=\"17.8\" height=\"11.6\" rx=\"1.2\" fill=\"url(#tube)\"/>\n<rect x=\"36.8\" y=\"12\" width=\"2.4\" height=\"12.8\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"53.8\" y=\"12\" width=\"2.4\" height=\"12.8\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"44\" y=\"12\" width=\"2.4\" height=\"12.8\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"38\" y=\"23.8\" width=\"18.6\" height=\"1.6\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M32.6 17.2H36.8V20.2H32.6Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"30.4\" y=\"15.6\" width=\"3.6\" height=\"6.2\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M32 18.6L22 6\" stroke=\"#14171B\" stroke-width=\"3\" fill=\"none\"/>\n<path d=\"M32 18.6L22 6\" stroke=\"#8A9199\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M31.6 17.8L22.4 6.2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M15 14.6L19.4 5H24.6L29 14.6Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M15.8 14L19.8 5.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"17.5\" cy=\"12.6\" r=\"0.95\"/><circle cx=\"26.5\" cy=\"12.6\" r=\"0.95\"/></g>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.5 59.5H94.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.5 56.4H94.5\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"10\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"47\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"84\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"11.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"11.5\" cy=\"61.4\" r=\"0.95\"/><circle cx=\"48.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"48.5\" cy=\"61.4\" r=\"0.95\"/><circle cx=\"85.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"85.5\" cy=\"61.4\" r=\"0.95\"/></g>\n<path d=\"M1 60.5H95V63.5H1Z\" fill=\"url(#grime)\"/>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M5 17.2l1.8 -0.8M29.4 30v2M77.2 35v2.2M36.5 55.8h3M70 55.8h2.5M2.5 55.9h3\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M44 45v4M71 43v3.4\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"35\" cy=\"30\" r=\"0.55\"/><circle cx=\"50\" cy=\"41\" r=\"0.55\"/><circle cx=\"62\" cy=\"35\" r=\"0.55\"/><circle cx=\"72\" cy=\"48\" r=\"0.55\"/><circle cx=\"15\" cy=\"20\" r=\"0.55\"/></g>\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"flywheel\" data-role=\"rotor\" data-pivot=\"22 6\">\n<g class=\"paint\">\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" fill=\"#FF00FF\"/>\n<circle cx=\"22\" cy=\"6\" r=\"5.2\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n<path d=\"M27.5 6L33 6M24.75 10.76L27.5 15.53M19.25 10.76L16.5 15.53M16.5 6L11 6M19.25 1.24L16.5 -3.53M24.75 1.24L27.5 -3.53\" stroke=\"#FFFFFF\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M6.8 6A15.2 15.2 0 1 0 37.2 6A15.2 15.2 0 1 0 6.8 6ZM11 6A11 11 0 1 0 33 6A11 11 0 1 0 11 6Z\" fill=\"url(#rim)\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<circle cx=\"22\" cy=\"6\" r=\"5.2\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" fill=\"url(#shade)\"/>\n<circle cx=\"22\" cy=\"6\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bbolt)\"><circle cx=\"24.2\" cy=\"6\" r=\"0.9\"/><circle cx=\"20.9\" cy=\"7.91\" r=\"0.9\"/><circle cx=\"20.9\" cy=\"4.09\" r=\"0.9\"/></g>\n<circle cx=\"22\" cy=\"6\" r=\"1\" fill=\"#C4CAD0\"/>\n<circle cx=\"22\" cy=\"6\" r=\"12.4\" fill=\"none\" stroke=\"#000000\" stroke-width=\"0.8\" stroke-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"34.59\" cy=\"10.58\" r=\"0.9\"/><circle cx=\"27.66\" cy=\"18.14\" r=\"0.9\"/><circle cx=\"17.42\" cy=\"18.59\" r=\"0.9\"/><circle cx=\"9.86\" cy=\"11.66\" r=\"0.9\"/><circle cx=\"9.41\" cy=\"1.42\" r=\"0.9\"/><circle cx=\"16.34\" cy=\"-6.14\" r=\"0.9\"/><circle cx=\"26.58\" cy=\"-6.59\" r=\"0.9\"/><circle cx=\"34.14\" cy=\"0.34\" r=\"0.9\"/></g>\n<g fill=\"#1B1712\" fill-opacity=\"0.4\"><circle cx=\"26.69\" cy=\"18.87\" r=\"1.2\"/><circle cx=\"9.58\" cy=\"0.21\" r=\"1.2\"/><circle cx=\"28.85\" cy=\"-5.86\" r=\"1.2\"/></g>\n</g>\n</g>\n</svg>","track":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 32\" data-part=\"track\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"disc\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.3\" stop-color=\"#4F565E\"/><stop offset=\"0.62\" stop-color=\"#8A9199\"/><stop offset=\"0.85\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M22.6 8.6H41.4L44.8 20.6H19.2Z\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M22.6 8.6H41.4L44.8 20.6H19.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M23.2 9.4H40.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"25\" cy=\"12\" r=\"0.95\"/><circle cx=\"39\" cy=\"12\" r=\"0.95\"/><circle cx=\"27\" cy=\"18\" r=\"0.95\"/><circle cx=\"37\" cy=\"18\" r=\"0.95\"/></g>\n<circle cx=\"32\" cy=\"10.2\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"32\" cy=\"10.2\" r=\"1.2\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"0.8\" width=\"64\" height=\"5.6\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"0.8\" width=\"64\" height=\"5.6\" fill=\"url(#tube)\"/>\n<path d=\"M4 0.8V6.4M12 0.8V6.4M20 0.8V6.4M28 0.8V6.4M36 0.8V6.4M44 0.8V6.4M52 0.8V6.4M60 0.8V6.4\" stroke=\"#14171B\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"#4F565E\"><circle cx=\"8\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"16\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"24\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"32\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"40\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"48\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"56\" cy=\"3.6\" r=\"0.9\"/></g>\n<path d=\"M5.6 0.9V0.2H10.4V0.9ZM13.6 0.9V0.2H18.4V0.9ZM21.6 0.9V0.2H26.4V0.9ZM29.6 0.9V0.2H34.4V0.9ZM37.6 0.9V0.2H42.4V0.9ZM45.6 0.9V0.2H50.4V0.9ZM53.6 0.9V0.2H58.4V0.9Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M-1.2 6.4L-0.6 7.8H0.6L1.2 6.4ZM6.8 6.4L7.4 7.8H8.6L9.2 6.4ZM14.8 6.4L15.4 7.8H16.6L17.2 6.4ZM22.8 6.4L23.4 7.8H24.6L25.2 6.4ZM30.8 6.4L31.4 7.8H32.6L33.2 6.4ZM38.8 6.4L39.4 7.8H40.6L41.2 6.4ZM46.8 6.4L47.4 7.8H48.6L49.2 6.4ZM54.8 6.4L55.4 7.8H56.6L57.2 6.4ZM62.8 6.4L63.4 7.8H64.6L65.2 6.4Z\" fill=\"#2E3339\"/>\n<path d=\"M0 1.5H64\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"0\" y=\"25.6\" width=\"64\" height=\"5.6\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"25.6\" width=\"64\" height=\"5.6\" fill=\"url(#tube)\"/>\n<path d=\"M4 25.6V31.2M12 25.6V31.2M20 25.6V31.2M28 25.6V31.2M36 25.6V31.2M44 25.6V31.2M52 25.6V31.2M60 25.6V31.2\" stroke=\"#14171B\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"#4F565E\"><circle cx=\"8\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"16\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"24\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"32\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"40\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"48\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"56\" cy=\"28.4\" r=\"0.9\"/></g>\n<path d=\"M5.6 31.1V31.9H10.4V31.1ZM13.6 31.1V31.9H18.4V31.1ZM21.6 31.1V31.9H26.4V31.1ZM29.6 31.1V31.9H34.4V31.1ZM37.6 31.1V31.9H42.4V31.1ZM45.6 31.1V31.9H50.4V31.1ZM53.6 31.1V31.9H58.4V31.1Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"0\" y=\"28\" width=\"64\" height=\"3.2\" fill=\"url(#grime)\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"5\" cy=\"30\" r=\"1.1\"/><circle cx=\"19\" cy=\"29.6\" r=\"1.1\"/><circle cx=\"35\" cy=\"30.2\" r=\"1.1\"/><circle cx=\"52\" cy=\"29.8\" r=\"1.1\"/><circle cx=\"60\" cy=\"30.4\" r=\"1.1\"/></g>\n<path d=\"M0 0.8H64M0 6.4H64M0 25.6H64M0 31.2H64\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"wheel_a\" data-role=\"wheel\" data-pivot=\"16 16\">\n<g class=\"detail\">\n<path d=\"M5.4 16A10.6 10.6 0 1 0 26.6 16A10.6 10.6 0 1 0 5.4 16ZM7.8 16A8.2 8.2 0 1 0 24.2 16A8.2 8.2 0 1 0 7.8 16Z\" fill=\"#23201E\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"16\" cy=\"16\" r=\"9.6\" fill=\"none\" stroke=\"#4A4540\" stroke-width=\"0.8\"/>\n<circle cx=\"16\" cy=\"16\" r=\"8.2\" fill=\"url(#disc)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M21.52 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M16 21.8m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M10.48 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M12.59 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M19.41 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"16\" cy=\"16\" r=\"3.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"18.1\" cy=\"16\" r=\"0.9\"/><circle cx=\"17.05\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"14.95\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"13.9\" cy=\"16\" r=\"0.9\"/><circle cx=\"14.95\" cy=\"14.18\" r=\"0.9\"/><circle cx=\"17.05\" cy=\"14.18\" r=\"0.9\"/></g>\n<circle cx=\"16\" cy=\"16\" r=\"1\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"23.2\" cy=\"22.04\" r=\"1\"/><circle cx=\"7.17\" cy=\"19.21\" r=\"1\"/><circle cx=\"17.63\" cy=\"6.74\" r=\"1\"/></g>\n</g>\n</g>\n<g id=\"wheel_b\" data-role=\"wheel\" data-pivot=\"48 16\">\n<g class=\"detail\">\n<path d=\"M37.4 16A10.6 10.6 0 1 0 58.6 16A10.6 10.6 0 1 0 37.4 16ZM39.8 16A8.2 8.2 0 1 0 56.2 16A8.2 8.2 0 1 0 39.8 16Z\" fill=\"#23201E\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"48\" cy=\"16\" r=\"9.6\" fill=\"none\" stroke=\"#4A4540\" stroke-width=\"0.8\"/>\n<circle cx=\"48\" cy=\"16\" r=\"8.2\" fill=\"url(#disc)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M53.52 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M48 21.8m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M42.48 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M44.59 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M51.41 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"48\" cy=\"16\" r=\"3.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"50.1\" cy=\"16\" r=\"0.9\"/><circle cx=\"49.05\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"45.9\" cy=\"16\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"14.18\" r=\"0.9\"/><circle cx=\"49.05\" cy=\"14.18\" r=\"0.9\"/></g>\n<circle cx=\"48\" cy=\"16\" r=\"1\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"55.2\" cy=\"22.04\" r=\"1\"/><circle cx=\"39.17\" cy=\"19.21\" r=\"1\"/><circle cx=\"49.63\" cy=\"6.74\" r=\"1\"/></g>\n</g>\n</g>\n</svg>","wheel_w":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"wheel_w\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"tyre\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.89\" stop-color=\"#2E3339\"/><stop offset=\"0.93\" stop-color=\"#8A9199\"/><stop offset=\"0.965\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n<radialGradient id=\"fel\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.8\" stop-color=\"#000000\" stop-opacity=\"0.4\"/><stop offset=\"0.86\" stop-color=\"#000000\" stop-opacity=\"0\"/><stop offset=\"0.95\" stop-color=\"#FFFFFF\" stop-opacity=\"0.18\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.3\"/></radialGradient>\n<radialGradient id=\"nave\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.55\" stop-color=\"#FFFFFF\" stop-opacity=\"0.22\"/><stop offset=\"0.8\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.45\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 1.6Q0.6 0.6 1.6 0.6H10.4V4.6H0.6Z M53.6 0.6H62.4Q63.4 0.6 63.4 1.6V4.6H53.6Z\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M0.6 1.6Q0.6 0.6 1.6 0.6H10.4V4.6H0.6Z M53.6 0.6H62.4Q63.4 0.6 63.4 1.6V4.6H53.6Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.4 1.5H9.8M54.2 1.5H62.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 6.2Q32 19.5 60 6.2\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M4 6.2Q32 19.5 60 6.2\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M4 5.6Q32 18.9 60 5.6\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M7 8.4Q32 20 57 8.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M7 8.4Q32 20 57 8.4\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M7 7.8Q32 19.4 57 7.8\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M10 10.6Q32 20.6 54 10.6\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M10 10.6Q32 20.6 54 10.6\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M10 10Q32 20 54 10\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<rect x=\"3.1\" y=\"3.2\" width=\"4.8\" height=\"4.6\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"5.5\" cy=\"5.6\" r=\"1.2\" fill=\"url(#bolt)\"/>\n<rect x=\"56.1\" y=\"3.2\" width=\"4.8\" height=\"4.6\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"58.5\" cy=\"5.6\" r=\"1.2\" fill=\"url(#bolt)\"/>\n</g>\n</g>\n<g id=\"wheel\" data-role=\"wheel\" data-pivot=\"32 32\">\n<g class=\"paint\">\n<path d=\"M5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32ZM10 32A22 22 0 1 0 54 32A22 22 0 1 0 10 32Z\" fill=\"#00FFFF\" fill-rule=\"evenodd\"/>\n<path d=\"M39.92 33.11L54.48 36.86L53.9 39.03L39.42 35ZM38.3 36.93L49.04 47.45L47.45 49.04L36.93 38.3ZM35 39.42L39.03 53.9L36.86 54.48L33.11 39.92ZM30.89 39.92L27.14 54.48L24.97 53.9L29 39.42ZM27.07 38.3L16.55 49.04L14.96 47.45L25.7 36.93ZM24.58 35L10.1 39.03L9.52 36.86L24.08 33.11ZM24.08 30.89L9.52 27.14L10.1 24.97L24.58 29ZM25.7 27.07L14.96 16.55L16.55 14.96L27.07 25.7ZM29 24.58L24.97 10.1L27.14 9.52L30.89 24.08ZM33.11 24.08L36.86 9.52L39.03 10.1L35 24.58ZM36.93 25.7L47.45 14.96L49.04 16.55L38.3 27.07ZM39.42 29L53.9 24.97L54.48 27.14L39.92 30.89Z\" fill=\"#00FFFF\"/>\n<circle cx=\"32\" cy=\"32\" r=\"9\" fill=\"#00FFFF\"/>\n<circle cx=\"32\" cy=\"32\" r=\"7.2\" fill=\"none\" stroke=\"#FFFF00\" stroke-width=\"1.8\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M39.92 33.11L54.48 36.86L53.9 39.03L39.42 35ZM38.3 36.93L49.04 47.45L47.45 49.04L36.93 38.3ZM35 39.42L39.03 53.9L36.86 54.48L33.11 39.92ZM30.89 39.92L27.14 54.48L24.97 53.9L29 39.42ZM27.07 38.3L16.55 49.04L14.96 47.45L25.7 36.93ZM24.58 35L10.1 39.03L9.52 36.86L24.08 33.11ZM24.08 30.89L9.52 27.14L10.1 24.97L24.58 29ZM25.7 27.07L14.96 16.55L16.55 14.96L27.07 25.7ZM29 24.58L24.97 10.1L27.14 9.52L30.89 24.08ZM33.11 24.08L36.86 9.52L39.03 10.1L35 24.58ZM36.93 25.7L47.45 14.96L49.04 16.55L38.3 27.07ZM39.42 29L53.9 24.97L54.48 27.14L39.92 30.89Z\" stroke=\"#14171B\" stroke-width=\"0.6\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M41.18 34.46L52.77 37.56M38.72 38.72L47.2 47.2M34.46 41.18L37.56 52.77M29.54 41.18L26.44 52.77M25.28 38.72L16.8 47.2M22.82 34.46L11.23 37.56M22.82 29.54L11.23 26.44M25.28 25.28L16.8 16.8M29.54 22.82L26.44 11.23M34.46 22.82L37.56 11.23M38.72 25.28L47.2 16.8M41.18 29.54L52.77 26.44\" stroke=\"#FFFFFF\" stroke-opacity=\"0.22\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32ZM10 32A22 22 0 1 0 54 32A22 22 0 1 0 10 32Z\" fill=\"url(#fel)\" fill-rule=\"evenodd\"/>\n<path d=\"M54.2 32L58.8 32M43.1 51.23L45.4 55.21M20.9 51.23L18.6 55.21M9.8 32L5.2 32M20.9 12.77L18.6 8.79M43.1 12.77L45.4 8.79\" stroke=\"#000000\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.35\"><circle cx=\"53.22\" cy=\"44.25\" r=\"0.9\"/><circle cx=\"32\" cy=\"56.5\" r=\"0.9\"/><circle cx=\"10.78\" cy=\"44.25\" r=\"0.9\"/><circle cx=\"10.78\" cy=\"19.75\" r=\"0.9\"/><circle cx=\"32\" cy=\"7.5\" r=\"0.9\"/><circle cx=\"53.22\" cy=\"19.75\" r=\"0.9\"/></g>\n<circle cx=\"32\" cy=\"32\" r=\"22\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.7 32A30.3 30.3 0 1 0 62.3 32A30.3 30.3 0 1 0 1.7 32ZM5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32Z\" fill=\"url(#tyre)\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"60.65\" cy=\"32\" r=\"0.95\"/><circle cx=\"58.17\" cy=\"43.65\" r=\"0.95\"/><circle cx=\"51.17\" cy=\"53.29\" r=\"0.95\"/><circle cx=\"40.85\" cy=\"59.25\" r=\"0.95\"/><circle cx=\"29.01\" cy=\"60.49\" r=\"0.95\"/><circle cx=\"17.68\" cy=\"56.81\" r=\"0.95\"/><circle cx=\"8.82\" cy=\"48.84\" r=\"0.95\"/><circle cx=\"3.98\" cy=\"37.96\" r=\"0.95\"/><circle cx=\"3.98\" cy=\"26.04\" r=\"0.95\"/><circle cx=\"8.82\" cy=\"15.16\" r=\"0.95\"/><circle cx=\"17.67\" cy=\"7.19\" r=\"0.95\"/><circle cx=\"29.01\" cy=\"3.51\" r=\"0.95\"/><circle cx=\"40.85\" cy=\"4.75\" r=\"0.95\"/><circle cx=\"51.17\" cy=\"10.71\" r=\"0.95\"/><circle cx=\"58.17\" cy=\"20.35\" r=\"0.95\"/></g>\n<circle cx=\"32\" cy=\"32\" r=\"9\" fill=\"url(#nave)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"32\" cy=\"32\" r=\"5.4\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"35.6\" cy=\"32\" r=\"0.9\"/><circle cx=\"33.8\" cy=\"35.12\" r=\"0.9\"/><circle cx=\"30.2\" cy=\"35.12\" r=\"0.9\"/><circle cx=\"28.4\" cy=\"32\" r=\"0.9\"/><circle cx=\"30.2\" cy=\"28.88\" r=\"0.9\"/><circle cx=\"33.8\" cy=\"28.88\" r=\"0.9\"/></g>\n<path d=\"M30.3 32L31.15 30.53H32.85L33.7 32L32.85 33.47H31.15Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"32\" cy=\"32\" r=\"0.9\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.45\"><circle cx=\"59.93\" cy=\"35.92\" r=\"1.3\"/><circle cx=\"49.75\" cy=\"53.92\" r=\"1.3\"/><circle cx=\"28.56\" cy=\"59.99\" r=\"1.3\"/><circle cx=\"10.4\" cy=\"50.13\" r=\"1.3\"/><circle cx=\"5.34\" cy=\"22.82\" r=\"1.3\"/><circle cx=\"16.23\" cy=\"8.62\" r=\"1.3\"/><circle cx=\"40.71\" cy=\"5.18\" r=\"1.3\"/><circle cx=\"56.66\" cy=\"18.33\" r=\"1.3\"/></g>\n<g fill=\"#1B1712\" fill-opacity=\"0.35\"><circle cx=\"55.96\" cy=\"40.72\" r=\"0.9\"/><circle cx=\"23.28\" cy=\"55.96\" r=\"0.9\"/><circle cx=\"6.89\" cy=\"36.43\" r=\"0.9\"/><circle cx=\"23.28\" cy=\"8.04\" r=\"0.9\"/><circle cx=\"48.39\" cy=\"12.47\" r=\"0.9\"/></g>\n<path d=\"M56.25 48.98A29.6 29.6 0 0 1 54 51.81M15.02 56.25A29.6 29.6 0 0 1 12.19 54M7.75 15.02A29.6 29.6 0 0 1 10 12.19M46.8 6.37A29.6 29.6 0 0 1 49.81 8.36\" stroke=\"#C4CAD0\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","bridge":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -24 64 88\" data-part=\"bridge\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"aov\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.5\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<clipPath id=\"whc\"><path d=\"M9 13H58L54.5 32H9Z\"/></clipPath>\n<clipPath id=\"dkc\"><path d=\"M3 35H61V57.5H3Z\"/></clipPath>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M16 -14.8C11.5 -15.9 7 -13.6 1.2 -14.6L4.6 -12.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" fill=\"#FFFF00\"/>\n<path d=\"M3 35H61V57.5H3Z\" fill=\"#FF00FF\"/>\n<path d=\"M9 13H58L54.5 32H9Z\" fill=\"#FF00FF\"/>\n<path d=\"M9 26.3H55.55L55.13 28.6H9Z\" fill=\"#FFFF00\"/>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" fill=\"#00FFFF\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" fill=\"#00FFFF\"/>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M9.8 -9.6L5.5 10.2M24.6 -9.6L29.5 8.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"16\" y=\"-17\" width=\"2.4\" height=\"26\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"16\" y=\"-17\" width=\"2.4\" height=\"26\" fill=\"url(#cyl)\"/>\n<g fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"15.6\" y=\"-7\" width=\"3.2\" height=\"1.6\"/><rect x=\"15.6\" y=\"1.5\" width=\"3.2\" height=\"1.6\"/></g>\n<rect x=\"9\" y=\"-10.4\" width=\"16.4\" height=\"1.8\" rx=\"0.9\" fill=\"#8E6035\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M9.8 -10H24.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"15.4\" y=\"-10.9\" width=\"3.6\" height=\"2.8\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M16 -12.2C11.6 -12.2 8 -11.4 4 -11.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" fill=\"#000000\" fill-opacity=\"0.25\"/>\n<path d=\"M15.6 -14.2C11.5 -15 7.5 -13.2 3.2 -13.9\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M16 -14.8C11.5 -15.9 7 -13.6 1.2 -14.6L4.6 -12.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" stroke=\"#14171B\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M14.6 -21.2L15.6 -23.4H18.8L19.8 -21.2Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"15\" y=\"-21.2\" width=\"4.4\" height=\"4.6\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"15.5\" y=\"-20.7\" width=\"1.1\" height=\"3.2\" fill=\"#D8F0F7\" fill-opacity=\"0.8\"/>\n<path d=\"M17.2 -21.2V-16.6\" stroke=\"#8A6A2A\" stroke-width=\"0.8\"/>\n<rect x=\"14.6\" y=\"-16.8\" width=\"5.2\" height=\"1.4\" rx=\"0.4\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" fill=\"url(#shade)\"/>\n<path d=\"M18 8.2V13M33 7.6V13M48 8.1V13\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5.3 10.6Q33 6.7 61.8 9.9\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"4.5\" y=\"11.9\" width=\"58\" height=\"1.5\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7.5\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"14.7\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"21.9\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"29.1\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"36.3\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"43.5\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"50.7\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"57.9\" cy=\"12.6\" r=\"0.9\"/></g>\n<path d=\"M13.6 9.9V7.6Q13.6 6.8 14.4 6.8H20Q20.8 6.8 20.8 7.6V9.9Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M14.2 7.6H20\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15.2\" cy=\"8.6\" r=\"0.9\"/><circle cx=\"19.2\" cy=\"8.6\" r=\"0.9\"/></g>\n<path d=\"M44.6 8.6V3.8Q44.6 0.6 48.2 0.6H50.8V5.6H48.8V8.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M50.2 0.2Q52.6 0.2 52.6 3.1Q52.6 6 50.2 6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M50.6 1.4Q51.6 1.6 51.6 3.1Q51.6 4.6 50.6 4.8Z\" fill=\"#14171B\"/>\n<path d=\"M45.5 7.6V4Q45.5 1.6 48.2 1.5\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"43.6\" y=\"7.8\" width=\"6.2\" height=\"1.4\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M9 13H58L54.5 32H9Z\" fill=\"url(#shade)\"/>\n<rect x=\"9\" y=\"13\" width=\"50\" height=\"6\" fill=\"url(#aov)\" clip-path=\"url(#whc)\"/>\n<path d=\"M9.7 18V31\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M57.26 17L54.63 31.3\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M23.8 14V31M34.5 24.4V31M45 24.4V31\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"11.3\" cy=\"16.5\" r=\"1\"/><circle cx=\"11.3\" cy=\"22\" r=\"1\"/><circle cx=\"11.3\" cy=\"27.4\" r=\"1\"/><circle cx=\"22.2\" cy=\"16.5\" r=\"1\"/><circle cx=\"22.2\" cy=\"22\" r=\"1\"/><circle cx=\"12\" cy=\"30.1\" r=\"1\"/><circle cx=\"18.9\" cy=\"30.1\" r=\"1\"/><circle cx=\"25.8\" cy=\"30.1\" r=\"1\"/><circle cx=\"32.7\" cy=\"30.1\" r=\"1\"/><circle cx=\"39.6\" cy=\"30.1\" r=\"1\"/><circle cx=\"46.5\" cy=\"30.1\" r=\"1\"/><circle cx=\"53.4\" cy=\"30.1\" r=\"1\"/></g>\n<path d=\"M25 15.4H33.5L33.5 24H25ZM35.5 15.4H44L44 24H35.5ZM46 15.4H55.26L53.67 24H46Z\" fill=\"#14171B\"/>\n<path d=\"M26.1 16.5H33L33 23.5H26.1ZM36.6 16.5H43.5L43.5 23.5H36.6ZM47.1 16.5H54.56L53.27 23.5H47.1Z\" fill=\"#7FB7C9\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.72\"><circle cx=\"39.4\" cy=\"20.6\" r=\"2\"/><path d=\"M36.4 19.2Q36.6 17.4 39.4 17.3Q42 17.4 42.2 18.9L43.7 19.4H36.4Z\"/><path d=\"M36.7 24Q37 22.4 39.4 22.3Q41.9 22.4 42.3 24Z\"/></g>\n<circle cx=\"40.3\" cy=\"18.3\" r=\"0.9\" fill=\"#C9A04A\"/>\n<path d=\"M46.5 23.5A3.7 3.7 0 0 1 53.9 23.5\" stroke=\"#6E4A26\" stroke-opacity=\"0.85\" stroke-width=\"1.2\" fill=\"none\"/>\n<g fill=\"#6E4A26\" fill-opacity=\"0.85\"><circle cx=\"50.2\" cy=\"18.4\" r=\"1\"/><circle cx=\"46.6\" cy=\"20\" r=\"1\"/><circle cx=\"53.8\" cy=\"20\" r=\"1\"/><circle cx=\"50.2\" cy=\"23.3\" r=\"1.1\"/></g>\n<path d=\"M25.6 16H57V17.8H25.6Z\" fill=\"#000000\" fill-opacity=\"0.3\" clip-path=\"url(#whc)\"/>\n<path d=\"M26.8 23.3L31.2 17.2M29.8 23.3L32.4 19.7M36.8 23.3L37.9 21.8M46.8 23.3L48.4 21.1\" stroke=\"#D8F0F7\" stroke-opacity=\"0.6\" stroke-width=\"1.1\" fill=\"none\"/>\n<g fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"24.4\" y=\"24\" width=\"9.7\" height=\"1.3\" rx=\"0.3\"/><rect x=\"34.9\" y=\"24\" width=\"9.7\" height=\"1.3\" rx=\"0.3\"/><rect x=\"45.4\" y=\"24\" width=\"9\" height=\"1.3\" rx=\"0.3\"/></g>\n<rect x=\"12\" y=\"16.3\" width=\"7.6\" height=\"1.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"15.9\" cy=\"18\" r=\"0.9\" fill=\"none\" stroke=\"#8A6A2A\" stroke-width=\"0.8\"/>\n<path d=\"M13.6 23Q13.8 18.8 15.9 18.6Q18 18.8 18.2 23Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"13\" y=\"22.8\" width=\"5.8\" height=\"1.2\" rx=\"0.5\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.5 22.4Q14.5 20 15.7 19.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M15.9 24V26.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M4.3 26.9Q6.6 27.9 9 27.4V31.3H4.3Z\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M4.8 28.4Q6.6 29.2 8.6 28.8\" stroke=\"#D8CCAA\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.3 29.8H9V31.3H4.3Z\" fill=\"#000000\" fill-opacity=\"0.22\"/>\n<path d=\"M5.4 27.6v1.4M7.8 27.6v1.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M3.6 26.2Q6.3 27.6 9 26.9\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M55.53 26.4Q58.3 27.6 60.6 26.2M55.05 29Q58.2 30 60.6 28.7\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"2.9\" y=\"25.8\" width=\"1.4\" height=\"5.6\"/><rect x=\"59.9\" y=\"25.8\" width=\"1.4\" height=\"5.6\"/></g>\n<g fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.4\"><circle cx=\"3.6\" cy=\"25.4\" r=\"1.1\"/><circle cx=\"60.6\" cy=\"25.4\" r=\"1.1\"/></g>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" fill=\"url(#shade)\"/>\n<path d=\"M2.4 32.1H61.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1.6\" y=\"34.3\" width=\"60.8\" height=\"1.2\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<path d=\"M3 35H61V57.5H3Z\" fill=\"url(#shade)\"/>\n<rect x=\"3\" y=\"35\" width=\"58\" height=\"3.2\" fill=\"url(#aov)\"/>\n<rect x=\"3\" y=\"50\" width=\"58\" height=\"7.5\" fill=\"url(#grime)\"/>\n<path d=\"M3 40.6H61M3 46.2H61M3 51.8H61\" stroke=\"#000000\" stroke-opacity=\"0.32\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M3 41.3H61M3 46.9H61M3 52.5H61\" stroke=\"#FFFFFF\" stroke-opacity=\"0.12\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M52 35.5V40.6M35.5 40.6V46.2M54.5 46.2V51.8M38.5 51.8V57.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.4\"><circle cx=\"51\" cy=\"37.2\" r=\"0.6\"/><circle cx=\"53\" cy=\"38.9\" r=\"0.6\"/><circle cx=\"34.5\" cy=\"42.6\" r=\"0.6\"/><circle cx=\"36.5\" cy=\"44.4\" r=\"0.6\"/><circle cx=\"53.5\" cy=\"48.2\" r=\"0.6\"/><circle cx=\"55.5\" cy=\"50\" r=\"0.6\"/><circle cx=\"37.5\" cy=\"53.8\" r=\"0.6\"/><circle cx=\"39.5\" cy=\"55.5\" r=\"0.6\"/></g>\n<rect x=\"3\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.6 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M6.4 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"26.6\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M27.2 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M30 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"57\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M57.6 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M60.4 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"38.2\" r=\"1\"/><circle cx=\"5\" cy=\"44.2\" r=\"1\"/><circle cx=\"5\" cy=\"50.2\" r=\"1\"/><circle cx=\"5\" cy=\"55.6\" r=\"1\"/><circle cx=\"28.6\" cy=\"38.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"44.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"50.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"55.6\" r=\"1\"/><circle cx=\"59\" cy=\"38.2\" r=\"1\"/><circle cx=\"59\" cy=\"44.2\" r=\"1\"/><circle cx=\"59\" cy=\"50.2\" r=\"1\"/><circle cx=\"59\" cy=\"55.6\" r=\"1\"/></g>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" fill=\"url(#shade)\"/>\n<path d=\"M14 37.8V57.5M18 37.8V57.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M10.8 57.4V38.7Q10.8 38.2 11.3 38.2H21.2\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"1\" fill=\"none\"/>\n<g fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"9.2\" y=\"40.2\" width=\"10.4\" height=\"2.2\" rx=\"0.4\"/><rect x=\"9.2\" y=\"51.8\" width=\"10.4\" height=\"2.2\" rx=\"0.4\"/></g>\n<g fill=\"url(#bolt)\"><circle cx=\"12\" cy=\"41.3\" r=\"0.9\"/><circle cx=\"16.8\" cy=\"41.3\" r=\"0.9\"/><circle cx=\"12\" cy=\"52.9\" r=\"0.9\"/><circle cx=\"16.8\" cy=\"52.9\" r=\"0.9\"/></g>\n<circle cx=\"20\" cy=\"47.6\" r=\"1.5\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<circle cx=\"20\" cy=\"46.1\" r=\"0.9\" fill=\"url(#bbolt)\"/>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"44.6\" cy=\"46\" r=\"5.8\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M40.4 43.4A5 5 0 0 1 47.2 41.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"49.3\" cy=\"46\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"50.07\" r=\"0.9\"/><circle cx=\"42.25\" cy=\"50.07\" r=\"0.9\"/><circle cx=\"39.9\" cy=\"46\" r=\"0.9\"/><circle cx=\"42.25\" cy=\"41.93\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"41.93\" r=\"0.9\"/></g>\n<circle cx=\"44.6\" cy=\"46\" r=\"3.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M41.3 45.2A3.4 3.4 0 0 1 45.4 42.6L45 43.6A2.5 2.5 0 0 0 42.2 45.5Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M43.2 48.3L46.8 44.3\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"1\"/>\n<rect x=\"23.2\" y=\"26.4\" width=\"2.4\" height=\"31\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"23.2\" y=\"26.4\" width=\"2.4\" height=\"31\" fill=\"url(#cyl)\"/>\n<g fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"22.2\" y=\"25.4\" width=\"4.4\" height=\"1.6\" rx=\"0.4\"/><rect x=\"22.4\" y=\"42\" width=\"4\" height=\"1.6\" rx=\"0.3\"/><rect x=\"22.4\" y=\"50\" width=\"4\" height=\"1.6\" rx=\"0.3\"/><rect x=\"22.2\" y=\"56.2\" width=\"4.4\" height=\"1.4\" rx=\"0.3\"/></g>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"33\" cy=\"38.2\" r=\"0.55\"/><circle cx=\"48\" cy=\"55\" r=\"0.55\"/><circle cx=\"8.6\" cy=\"44.5\" r=\"0.55\"/><circle cx=\"41\" cy=\"29.5\" r=\"0.55\"/><circle cx=\"30\" cy=\"20.5\" r=\"0.55\"/><circle cx=\"53\" cy=\"14.3\" r=\"0.55\"/><circle cx=\"12\" cy=\"10.6\" r=\"0.55\"/></g>\n<g fill=\"#FFFFFF\" fill-opacity=\"0.18\"><circle cx=\"36\" cy=\"36.8\" r=\"0.45\"/><circle cx=\"50.5\" cy=\"36.4\" r=\"0.45\"/><circle cx=\"27.5\" cy=\"14.4\" r=\"0.45\"/><circle cx=\"40\" cy=\"9\" r=\"0.45\"/></g>\n<path d=\"M58.2 10.3l1.6 -0.2M61.6 12.4v-1.6M2.2 31.9h2.2M60.2 32h1.8M9.8 20.5v1.8M10.6 56.4v-1.8M21.2 38.3h-1.6M54.8 30.3l0.3 -1.5\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M29.2 45.4v3M60 51.4v2.4\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M44.2 51.9v2.6M45.3 51.9v1.4\" stroke=\"#C2713D\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1\" y=\"57.4\" width=\"62\" height=\"6\" rx=\"1\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"1\" y=\"60.4\" width=\"62\" height=\"3\" rx=\"1\" fill=\"url(#grime)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.5\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"11.38\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"18.25\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"25.12\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"32\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"38.88\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"45.75\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"52.62\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"59.5\" cy=\"60.4\" r=\"1.1\"/></g>\n<path d=\"M3 58.4h3.5M24 58.4h3M44 58.4h5M58 58.4h2.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M9 13.4V31.3M57.93 13.4L54.63 31.3\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M3 35.5V57.4M61 35.5V57.4\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g></g></svg>","cabin":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -16 64 48\" data-part=\"cabin\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"aov\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.5\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M2.6 9.4H61.4V27.8H2.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M2.6 10H61.4V12.2H2.6Z\" fill=\"#FFFF00\"/>\n<path d=\"M21 5.8V2.6Q21 1.6 22 1.6H32Q33 1.6 33 2.6V5.8Z\" fill=\"#00FFFF\"/>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" fill=\"#00FFFF\"/>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"51\" y=\"-11\" width=\"4\" height=\"16.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"51\" y=\"-11\" width=\"4\" height=\"16.4\" fill=\"url(#cyl)\"/>\n<rect x=\"50.4\" y=\"-4.6\" width=\"5.2\" height=\"1.4\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M48.6 -11.2L50.6 -14.6H55.4L57.4 -11.2Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M48.6 -11.2L50.6 -14.6H55.4L57.4 -11.2Z\" fill=\"url(#cyl)\"/>\n<path d=\"M50.8 -11H55.2V-7H50.8Z\" fill=\"#2A2622\" fill-opacity=\"0.6\"/>\n<path d=\"M49 -14.8Q53 -16.2 57 -14.8\" stroke=\"#2A2622\" stroke-width=\"1\" stroke-opacity=\"0.5\" fill=\"none\"/>\n<path d=\"M21 5.8V2.6Q21 1.6 22 1.6H32Q33 1.6 33 2.6V5.8Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"22.6\" y=\"2.6\" width=\"4\" height=\"2.4\" rx=\"0.2\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"27.4\" y=\"2.6\" width=\"4\" height=\"2.4\" rx=\"0.2\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M23 4.4L24.6 2.8M27.8 4.4L29.4 2.8\" stroke=\"#D8F0F7\" stroke-opacity=\"0.7\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 7.6Q32 3.8 62.6 7.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"0.6\" y=\"8.8\" width=\"62.8\" height=\"1.2\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"11\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"18\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"25\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"32\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"39\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"46\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"53\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"60\" cy=\"9.3\" r=\"0.9\"/></g>\n<path d=\"M49.4 5.4Q53 4.4 56.6 5.4V6.4H49.4Z\" fill=\"#2A2622\" fill-opacity=\"0.45\"/>\n<rect x=\"49.8\" y=\"4\" width=\"6.4\" height=\"2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M2.6 9.4H61.4V27.8H2.6Z\" fill=\"url(#shade)\"/>\n<rect x=\"2.6\" y=\"12.2\" width=\"58.8\" height=\"3\" fill=\"url(#aov)\"/>\n<path d=\"M2.6 22H61.4V27.8H2.6Z\" fill=\"url(#grime)\"/>\n<path d=\"M2.6 16.4H61.4M2.6 21.6H61.4\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M2.6 17.1H61.4M2.6 22.3H61.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.12\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M40.6 12.2V16.4M21 16.4V21.6M50 21.6V27.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.4\"><circle cx=\"39.8\" cy=\"13.4\" r=\"0.6\"/><circle cx=\"41.4\" cy=\"15.2\" r=\"0.6\"/><circle cx=\"20.2\" cy=\"17.6\" r=\"0.6\"/><circle cx=\"21.8\" cy=\"20.4\" r=\"0.6\"/><circle cx=\"49.2\" cy=\"23\" r=\"0.6\"/><circle cx=\"50.8\" cy=\"26.4\" r=\"0.6\"/></g>\n<rect x=\"2.6\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.2 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5.4 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"33.2\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M33.8 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"58\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M58.6 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M60.8 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.3\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"4.3\" cy=\"20\" r=\"0.95\"/><circle cx=\"4.3\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"20\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"20\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"25.6\" r=\"0.95\"/></g>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" fill=\"url(#shade)\"/>\n<path d=\"M11 13V27.8M14 13V27.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"6.6\" y=\"15.6\" width=\"7.4\" height=\"1.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"6.6\" y=\"23.4\" width=\"7.4\" height=\"1.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.8\" cy=\"16.5\" r=\"0.9\"/><circle cx=\"12\" cy=\"16.5\" r=\"0.9\"/><circle cx=\"8.8\" cy=\"24.3\" r=\"0.9\"/><circle cx=\"12\" cy=\"24.3\" r=\"0.9\"/></g>\n<circle cx=\"15.2\" cy=\"20.4\" r=\"1.2\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"25\" cy=\"19.2\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M21.6 17.6A3.8 3.8 0 0 1 25.6 15.4\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.55\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"28.12\" cy=\"21\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"21\" r=\"0.9\"/><circle cx=\"25\" cy=\"15.6\" r=\"0.9\"/></g>\n<circle cx=\"25\" cy=\"19.2\" r=\"2.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M22.6 18.8A2.5 2.5 0 0 1 25.4 16.7L25.2 17.6A1.7 1.7 0 0 0 23.4 19Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M23.8 20.8L26.4 18\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"45\" cy=\"19.2\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M41.6 17.6A3.8 3.8 0 0 1 45.6 15.4\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.55\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"48.12\" cy=\"21\" r=\"0.9\"/><circle cx=\"41.88\" cy=\"21\" r=\"0.9\"/><circle cx=\"45\" cy=\"15.6\" r=\"0.9\"/></g>\n<circle cx=\"45\" cy=\"19.2\" r=\"2.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 18.8A2.5 2.5 0 0 1 45.4 16.7L45.2 17.6A1.7 1.7 0 0 0 43.4 19Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M43.8 20.8L46.4 18\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"50.2\" y=\"14.2\" width=\"6\" height=\"8.4\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M50.8 16.2H55.6M50.8 18.4H55.6M50.8 20.6H55.6\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M50.8 15.4H55.6M50.8 17.6H55.6M50.8 19.8H55.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 7.8l1.6 -0.2M62.4 8.2v1.6M17 14.6v1.6M29 26.8h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36.6 20.6v3.4M45 23.8v2\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"1\" y=\"27.6\" width=\"62\" height=\"4\" rx=\"0.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.4\" cy=\"29.6\" r=\"1\"/><circle cx=\"11.3\" cy=\"29.6\" r=\"1\"/><circle cx=\"18.2\" cy=\"29.6\" r=\"1\"/><circle cx=\"25.1\" cy=\"29.6\" r=\"1\"/><circle cx=\"32\" cy=\"29.6\" r=\"1\"/><circle cx=\"38.9\" cy=\"29.6\" r=\"1\"/><circle cx=\"45.8\" cy=\"29.6\" r=\"1\"/><circle cx=\"52.7\" cy=\"29.6\" r=\"1\"/><circle cx=\"59.6\" cy=\"29.6\" r=\"1\"/></g>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M2.6 10V27.6M61.4 10V27.6\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","crew2":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"crew2\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H64V64H0ZM3.2 3.2V60.8H60.8V3.2Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 3.2H60.8V60.8H3.2Z\" fill=\"#00FFFF\"/>\n<path d=\"M3.2 44.4H60.8V47H3.2Z\" fill=\"#FFFF00\"/>\n<path d=\"M12 0.4H30Q31 0.4 31 1.4V3.6H11V1.4Q11 0.4 12 0.4Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 3.2H60.8V60.8H3.2Z\" fill=\"url(#shade)\"/>\n<path d=\"M32 3.2V54M3.2 30H60.8\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29.6\" cy=\"8\" r=\"0.9\"/><circle cx=\"34.4\" cy=\"8\" r=\"0.9\"/><circle cx=\"29.6\" cy=\"50\" r=\"0.9\"/><circle cx=\"34.4\" cy=\"50\" r=\"0.9\"/><circle cx=\"8\" cy=\"27.8\" r=\"0.9\"/><circle cx=\"56\" cy=\"27.8\" r=\"0.9\"/></g>\n<rect x=\"12.4\" y=\"3.2\" width=\"17.2\" height=\"2.4\" fill=\"#14171B\" fill-opacity=\"0.55\"/>\n<circle cx=\"12.4\" cy=\"2.2\" r=\"1.1\" fill=\"url(#bolt)\"/>\n<path d=\"M12.4 1.2H29.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"44\" cy=\"8.4\" r=\"4.6\" fill=\"#FFB23E\" fill-opacity=\"0.16\"/>\n<path d=\"M41.8 3.2V5.6H46.2V3.2Z\" fill=\"#3A3F45\"/>\n<circle cx=\"44\" cy=\"7.2\" r=\"1.9\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 6V8.6M45.4 6V8.6\" stroke=\"#4F565E\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"29.4\" y=\"14\" width=\"9\" height=\"11.4\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"33.9\" cy=\"17.6\" r=\"2.1\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"33.9\" cy=\"17.6\" r=\"1.4\" fill=\"#D8F0F7\"/>\n<path d=\"M33.9 17.6L34.9 16.8\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"33.9\" cy=\"22.2\" r=\"2.1\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"33.9\" cy=\"22.2\" r=\"1.4\" fill=\"#D8F0F7\"/>\n<path d=\"M33.9 22.2L34.9 21.4\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36 3.2V11Q36 12.8 38 12.8H40\" stroke=\"#14171B\" stroke-width=\"2.8\" fill=\"none\"/>\n<path d=\"M36 3.2V11Q36 12.8 38 12.8H40\" stroke=\"#C9A04A\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M39.6 11L42 10.2V15.4L39.6 14.6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"3.2\" y=\"55\" width=\"57.6\" height=\"5.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M6 57.4l1.6 1.6M9 59l1.6 -1.6M12 57.4l1.6 1.6M15 59l1.6 -1.6M18 57.4l1.6 1.6M21 59l1.6 -1.6M24 57.4l1.6 1.6M27 59l1.6 -1.6M30 57.4l1.6 1.6M33 59l1.6 -1.6M36 57.4l1.6 1.6M39 59l1.6 -1.6M42 57.4l1.6 1.6M45 59l1.6 -1.6M48 57.4l1.6 1.6M51 59l1.6 -1.6M54 57.4l1.6 1.6M57 59l1.6 -1.6\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M49.4 55L48.2 36\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M49.4 55L48.2 36\" stroke=\"#8A9199\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"48.2\" cy=\"35.4\" r=\"1.3\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M52.8 55L51.6 36\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M52.8 55L51.6 36\" stroke=\"#8A9199\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"51.6\" cy=\"35.4\" r=\"1.3\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"54.4\" y=\"15\" width=\"6.4\" height=\"13\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"56\" y=\"16.8\" width=\"4.8\" height=\"9.4\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M56.6 24.6L59.8 18.2\" stroke=\"#D8F0F7\" stroke-opacity=\"0.8\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M56 16.8H60.8V18.6H56Z\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<rect x=\"10\" y=\"36\" width=\"3\" height=\"12\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"10\" y=\"46\" width=\"11\" height=\"2.8\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M11.5 49V55M19.6 49V55\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M10.8 37V45\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"36\" y=\"40\" width=\"3\" height=\"12\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"36\" y=\"50\" width=\"11\" height=\"2.8\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M37.5 53V55M45.6 53V55\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M36.8 41V49\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M16.4 21.4Q15.8 34.4 17.6 37.4H27.6L28.6 53.8H24.2L24 41H17.2Q13.4 36.4 13.8 24.4Q14.2 20.4 18.4 19.8Z\" fill=\"#2A2622\" fill-opacity=\"0.95\"/>\n<path d=\"M18.8 23.4Q22.4 27.4 27 25\" stroke=\"#2A2622\" stroke-width=\"2.6\" fill=\"none\"/>\n<circle cx=\"20.4\" cy=\"16.4\" r=\"3.3\" fill=\"#2A2622\"/>\n<path d=\"M16.5 16Q16.8 11.8 20.6 12Q24.4 12.2 24.4 16.2L25.6 16.8H16.5Z\" fill=\"#857650\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M17.4 15.4Q17.8 12.8 20.4 12.8\" stroke=\"#D8CCAA\" stroke-width=\"0.8\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M14.2 32.4Q14 23.4 18 20.8\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.3\" fill=\"none\"/>\n<path d=\"M41.6 29.6Q41 42.6 42.8 45.6H53.2L54.2 54.8H49.8L49.6 49.2H42.4Q38.6 44.6 39 32.6Q39.4 28.6 43.6 28Z\" fill=\"#2A2622\" fill-opacity=\"0.95\"/>\n<path d=\"M44 31.6Q47.6 35.6 48.2 36.4\" stroke=\"#2A2622\" stroke-width=\"2.6\" fill=\"none\"/>\n<circle cx=\"45.6\" cy=\"24.6\" r=\"3.3\" fill=\"#2A2622\"/>\n<path d=\"M41.7 24.2Q42 20 45.8 20.2Q49.6 20.4 49.6 24.4L50.8 25H41.7Z\" fill=\"#857650\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 23.6Q43 21 45.6 21\" stroke=\"#D8CCAA\" stroke-width=\"0.8\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M39.4 40.6Q39.2 31.6 43.2 29\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.3\" fill=\"none\"/>\n<rect x=\"3.2\" y=\"48\" width=\"57.6\" height=\"7\" fill=\"url(#grime)\"/>\n<path d=\"M0 0H64V64H0ZM3.2 3.2V60.8H60.8V3.2Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 3.2H60.8V5.4H5.4V60.8H3.2Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M61.2 3.2V61.2H3.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 63.1V0.9H63.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M63.1 0.9V63.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.6\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"8.36\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"8.36\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"15.11\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"15.11\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"21.87\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"21.87\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"28.62\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"28.62\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"35.38\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"35.38\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"42.13\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"42.13\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"48.89\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"48.89\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"55.64\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"55.64\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"8.36\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"8.36\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"15.11\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"15.11\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"21.87\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"21.87\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"28.62\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"28.62\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"35.38\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"35.38\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"42.13\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"42.13\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"48.89\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"48.89\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"55.64\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"55.64\" r=\"0.9\"/></g>\n<rect x=\"3.2\" y=\"3.2\" width=\"57.6\" height=\"57.6\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"63\" height=\"63\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n<path d=\"M12 0.4H30Q31 0.4 31 1.4V3.6H11V1.4Q11 0.4 12 0.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n</g>\n</g>\n</svg>","turret":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 32\" data-part=\"turret\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" fill=\"#FF00FF\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M45.2 12.6L48 8.4L50.8 12.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"3.4\" y=\"12.4\" width=\"89.2\" height=\"8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"4\" y=\"14.6\" width=\"88\" height=\"3.4\" rx=\"0.6\" fill=\"#2E3339\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"12.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"17.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"23.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"28.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"34\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"39.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"44.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"50.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"55.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"61\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"66.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"71.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"77.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"82.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"88\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"93.4\" cy=\"16.3\" r=\"1.1\"/></g>\n<path d=\"M4 13.2H92\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"20\" y=\"10.4\" width=\"56\" height=\"2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M22 10.6V11.8M26 10.6V11.8M30 10.6V11.8M34 10.6V11.8M38 10.6V11.8M42 10.6V11.8M46 10.6V11.8M50 10.6V11.8M54 10.6V11.8M58 10.6V11.8M62 10.6V11.8M66 10.6V11.8M70 10.6V11.8M74 10.6V11.8\" stroke=\"#8A6A2A\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M6 6.4Q6 4.2 8.2 4.2H87.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"24\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"31\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"38\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"45\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"52\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"59\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"66\" cy=\"6.8\" r=\"0.95\"/></g>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"4.2\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"2\"/>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"4.2\" fill=\"none\" stroke=\"#4F565E\" stroke-width=\"1.2\"/>\n<path d=\"M9.8 7.8H17.4M13.6 4V11.6\" stroke=\"#4F565E\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"1.3\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"10.6\" cy=\"4.8\" r=\"0.9\" fill=\"#23201E\"/>\n<rect x=\"76\" y=\"4.2\" width=\"12\" height=\"6.8\" rx=\"1.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"76\" y=\"4.2\" width=\"12\" height=\"6.8\" rx=\"1.4\" fill=\"url(#tube)\"/>\n<path d=\"M79 4.4V10.8M85 4.4V10.8\" stroke=\"#B8733F\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M88 7.6Q91.6 8 91 12.4\" stroke=\"#23201E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 24L4.2 21H91.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"26.6\" r=\"1\"/><circle cx=\"12.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"19.4\" cy=\"26.6\" r=\"1\"/><circle cx=\"26.6\" cy=\"26.6\" r=\"1\"/><circle cx=\"33.8\" cy=\"26.6\" r=\"1\"/><circle cx=\"41\" cy=\"26.6\" r=\"1\"/><circle cx=\"48.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"55.4\" cy=\"26.6\" r=\"1\"/><circle cx=\"62.6\" cy=\"26.6\" r=\"1\"/><circle cx=\"69.8\" cy=\"26.6\" r=\"1\"/><circle cx=\"77\" cy=\"26.6\" r=\"1\"/><circle cx=\"84.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"91.4\" cy=\"26.6\" r=\"1\"/></g>\n<path d=\"M8 20.2V32M48 20.2V32M88 20.2V32\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M20 21h3M60 21h2.4M94.6 25v2M30.4 3.6h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n</svg>","optics":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -16 32 48\" data-part=\"optics\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" fill=\"#00FFFF\"/>\n<path d=\"M3.6 21.4H28.4V23.8H3.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"14.2\" y=\"-6\" width=\"5.2\" height=\"12.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"14.2\" y=\"-6\" width=\"5.2\" height=\"12.4\" fill=\"url(#cyl)\"/>\n<rect x=\"13.2\" y=\"2.6\" width=\"7.2\" height=\"2.4\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M12.6 -5.4V-11.2Q12.6 -13 14.4 -13H19.6L22.6 -10V-5.4Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M12.6 -5.4V-11.2Q12.6 -13 14.4 -13H19.6L22.6 -10V-5.4Z\" fill=\"url(#tube)\"/>\n<path d=\"M20.4 -10.4L22 -8.8V-6.6H20.4Z\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M20.8 -7.2L21.6 -8.6\" stroke=\"#D8F0F7\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M19 -13.4L23.4 -9.4\" stroke=\"#4F565E\" stroke-width=\"1.3\" fill=\"none\"/>\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" fill=\"url(#shade)\"/>\n<path d=\"M5 22Q4.6 8 16 6.6\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.4\" fill=\"none\"/>\n<rect x=\"5.8\" y=\"12.4\" width=\"6.2\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"6.6\" y=\"13.2\" width=\"4.6\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M6.6 13.2H11.2V14.2H6.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<rect x=\"12.8\" y=\"12.4\" width=\"6.4\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"13.6\" y=\"13.2\" width=\"4.8\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M13.6 13.2H18.4V14.2H13.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<rect x=\"20\" y=\"12.4\" width=\"6.2\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"20.8\" y=\"13.2\" width=\"4.6\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M20.8 13.2H25.4V14.2H20.8Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"26.52\" cy=\"12.52\" r=\"0.95\"/><circle cx=\"21.6\" cy=\"7.81\" r=\"0.95\"/><circle cx=\"10.4\" cy=\"7.81\" r=\"0.95\"/><circle cx=\"5.48\" cy=\"12.52\" r=\"0.95\"/></g>\n<g fill=\"url(#bolt)\"><circle cx=\"6.6\" cy=\"19.2\" r=\"0.95\"/><circle cx=\"25.4\" cy=\"19.2\" r=\"0.95\"/></g>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" fill=\"url(#shade)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.4\" cy=\"29\" r=\"1\"/><circle cx=\"11\" cy=\"29\" r=\"1\"/><circle cx=\"21\" cy=\"29\" r=\"1\"/><circle cx=\"27.6\" cy=\"29\" r=\"1\"/></g>\n<path d=\"M2.2 27.4Q2.2 26.6 3.2 26.6H28.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.4 17h1.4M26.6 12l0.6 1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","radio":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -96 32 128\" data-part=\"radio\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M5 12H27V27.8H5Z\" fill=\"#00FFFF\"/>\n<path d=\"M6.6 -86.4Q2.4 -86.8 0.6 -84.8Q3 -83.2 6.8 -82.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M11.6 2Q11 -45 7 -92\" stroke=\"#14171B\" stroke-width=\"2.4\" fill=\"none\"/>\n<path d=\"M11.6 2Q11 -45 7 -92\" stroke=\"#4F565E\" stroke-width=\"1.3\" fill=\"none\"/>\n<path d=\"M11.2 -2Q10.7 -40 7.4 -80\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"7\" cy=\"-92.2\" r=\"1.3\" fill=\"#C4CAD0\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M6.6 -86.4Q2.4 -86.8 0.6 -84.8Q3 -83.2 6.8 -82.6Z\" stroke=\"#14171B\" stroke-width=\"0.5\" fill=\"none\"/>\n<rect x=\"9.2\" y=\"4.2\" width=\"4.8\" height=\"4.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"9.8\" y=\"0.4\" width=\"3.6\" height=\"1.8\" rx=\"0.8\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"9.8\" y=\"2.2\" width=\"3.6\" height=\"1.8\" rx=\"0.8\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M5 12H27V27.8H5Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"10.4\" cy=\"16.8\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"10.4\" cy=\"16.8\" r=\"2.2\" fill=\"#D8F0F7\"/>\n<path d=\"M10.4 16.8L11.8 15.4\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"15.6\" y=\"14.4\" width=\"9\" height=\"4.4\" rx=\"0.6\" fill=\"#14171B\"/>\n<rect x=\"16.4\" y=\"15.2\" width=\"7.4\" height=\"2.8\" rx=\"0.3\" fill=\"#FFB23E\"/>\n<path d=\"M18 15.2V18M20.4 15.2V18M22.6 15.2V18\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"24.6\" cy=\"22.6\" r=\"1.4\" fill=\"#7BC47F\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"#23201E\"><circle cx=\"9\" cy=\"24\" r=\"1.5\"/><circle cx=\"14\" cy=\"24\" r=\"1.5\"/><circle cx=\"19\" cy=\"24\" r=\"1.5\"/></g>\n<g fill=\"#4A4540\"><circle cx=\"8.6\" cy=\"23.6\" r=\"0.5\"/><circle cx=\"13.6\" cy=\"23.6\" r=\"0.5\"/><circle cx=\"18.6\" cy=\"23.6\" r=\"0.5\"/></g>\n<path d=\"M3.4 13V22.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M3.4 13V22.4\" stroke=\"#23201E\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M3.4 22.4Q1.4 25 3.4 26.6Q5.4 28.2 3.8 30\" stroke=\"#23201E\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.8\" cy=\"10.6\" r=\"0.95\"/><circle cx=\"27.2\" cy=\"10.6\" r=\"0.95\"/><circle cx=\"4.8\" cy=\"29.4\" r=\"0.95\"/><circle cx=\"27.2\" cy=\"29.4\" r=\"0.95\"/></g>\n<path d=\"M3 30.8V10.6Q3 9 4.6 9H27\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M2.8 31h3M26 8.8h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","c37":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 144 32\" data-part=\"c37\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"ao\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.42\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<clipPath id=\"mc\"><path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\"/></clipPath>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"25.6 16\">\n<g class=\"paint\">\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4V18.6H61.8L60.6 19.4H22Z\" fill=\"#FF00FF\"/>\n<path d=\"M118 13.4H122.4V18.6H118Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M134.4 13.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6Z\" fill=\"#8A9199\"/>\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6H61.8L60.6 19.4H22Z\" fill=\"url(#tube)\"/>\n<rect x=\"141.8\" y=\"13.8\" width=\"1.6\" height=\"4.4\" fill=\"#14171B\" fill-opacity=\"0.9\"/>\n<rect x=\"30\" y=\"19.4\" width=\"28\" height=\"3.6\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"34\" y=\"18.8\" width=\"2.2\" height=\"4.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"50\" y=\"18.8\" width=\"2.2\" height=\"4.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"60.4\" y=\"12.8\" width=\"2\" height=\"6.4\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"92\" y=\"13\" width=\"2\" height=\"6\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"132.6\" y=\"13\" width=\"2\" height=\"6\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M64 14.6H132\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M70 14h3M100 14.1h4M124 14.1h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M63 18.2H133\" stroke=\"#1B1712\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M137.6 12.6L138.4 10.8H139.6L140.2 12.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6H61.8L60.6 19.4H22Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" fill=\"#FF00FF\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"5.6\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" fill=\"url(#shade)\"/>\n<rect x=\"1.6\" y=\"3.6\" width=\"9\" height=\"24.8\" fill=\"url(#ao)\"/>\n<rect x=\"1.6\" y=\"22\" width=\"34\" height=\"6.4\" fill=\"url(#grime)\" clip-path=\"url(#mc)\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"5.6\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"4.4\" fill=\"none\" stroke=\"#000000\" stroke-width=\"0.6\" stroke-opacity=\"0.25\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29.32\" cy=\"18.15\" r=\"0.9\"/><circle cx=\"25.6\" cy=\"20.3\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"18.15\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"13.85\" r=\"0.9\"/><circle cx=\"25.6\" cy=\"11.7\" r=\"0.9\"/><circle cx=\"29.32\" cy=\"13.85\" r=\"0.9\"/></g>\n<circle cx=\"25.6\" cy=\"16\" r=\"2.2\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5.2\" cy=\"7.6\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"12.4\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"17.2\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"22\" r=\"1.15\"/></g>\n<path d=\"M9.4 5V27\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"14\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"20.2\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"26.4\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"14\" cy=\"26.4\" r=\"0.95\"/><circle cx=\"20.2\" cy=\"26.4\" r=\"0.95\"/></g>\n<rect x=\"28.6\" y=\"5.4\" width=\"4.6\" height=\"3\" rx=\"0.7\" fill=\"#14171B\"/>\n<rect x=\"29.3\" y=\"6\" width=\"3.2\" height=\"1.3\" rx=\"0.3\" fill=\"#7FB7C9\"/>\n<path d=\"M14.4 3.7V2.6A2 2 0 0 1 18.4 2.6V3.7\" stroke=\"#3A3F45\" stroke-width=\"1.1\" fill=\"none\"/>\n<path d=\"M6 5.2H21.6C28 5.2 32.4 7.6 34.4 11\" stroke=\"#FFFFFF\" stroke-opacity=\"0.34\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M12 4.2h2.4M33 13v2M31 23.6l-0.8 1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","c75":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 144 32\" data-part=\"c75\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.34\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.64\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.48\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"ao\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.42\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.38\"/></linearGradient>\n<clipPath id=\"mantClip\"><path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\"/></clipPath>\n<clipPath id=\"mclip\"><path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\"/></clipPath>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"30 16\" data-z=\"-1\">\n<g class=\"paint\">\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26Z\" fill=\"#FF00FF\"/>\n<rect x=\"111\" y=\"12.3\" width=\"5.5\" height=\"7.4\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26Z\" fill=\"url(#tube)\"/>\n<rect x=\"60\" y=\"11.2\" width=\"2.2\" height=\"9.6\" fill=\"#2E3339\" opacity=\"0.6\"/>\n<rect x=\"93\" y=\"11.9\" width=\"2\" height=\"8.3\" fill=\"#2E3339\" opacity=\"0.5\"/>\n<path d=\"M64 13.4L128 14.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.38\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M70 12.3h3M84 12.5h5M101 12.8h2M119 13h3\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M63 19.9L130 19.2\" stroke=\"#1B1712\" stroke-opacity=\"0.4\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"30\" y=\"7\" width=\"30\" height=\"3.6\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"57.5\" y=\"6.5\" width=\"3.2\" height=\"4.6\" rx=\"0.6\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"45\" y=\"6.7\" width=\"2\" height=\"4.2\" fill=\"#2E3339\"/>\n<rect x=\"30\" y=\"21.4\" width=\"23\" height=\"3\" rx=\"1\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M131 10.8H140.8Q143.2 10.8 143.2 13.2V18.8Q143.2 21.2 140.8 21.2H131Z\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"133.6\" y=\"11.7\" width=\"1.9\" height=\"8.6\" rx=\"0.5\" fill=\"#14171B\"/>\n<rect x=\"137.6\" y=\"11.7\" width=\"1.9\" height=\"8.6\" rx=\"0.5\" fill=\"#14171B\"/>\n<path d=\"M131.6 11.9H140\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.6\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" fill=\"#FF00FF\"/>\n<circle cx=\"29\" cy=\"16\" r=\"6.4\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" fill=\"url(#shade)\"/>\n<rect x=\"2\" y=\"3.5\" width=\"11\" height=\"26\" fill=\"url(#ao)\" clip-path=\"url(#mantClip)\"/>\n<rect x=\"2\" y=\"23\" width=\"42\" height=\"7\" fill=\"url(#grime)\" clip-path=\"url(#mantClip)\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"15\" cy=\"7\" r=\"0.55\"/><circle cx=\"21\" cy=\"9.5\" r=\"0.5\"/><circle cx=\"36\" cy=\"12\" r=\"0.55\"/><circle cx=\"18\" cy=\"22\" r=\"0.6\"/><circle cx=\"37.5\" cy=\"20.5\" r=\"0.5\"/><circle cx=\"24\" cy=\"26\" r=\"0.55\"/><circle cx=\"14\" cy=\"16.5\" r=\"0.5\"/><circle cx=\"33\" cy=\"25.5\" r=\"0.5\"/></g>\n<g fill=\"#FFFFFF\" fill-opacity=\"0.18\"><circle cx=\"17\" cy=\"6.2\" r=\"0.45\"/><circle cx=\"31\" cy=\"6.4\" r=\"0.5\"/><circle cx=\"38.5\" cy=\"10.5\" r=\"0.45\"/><circle cx=\"22\" cy=\"13\" r=\"0.4\"/></g>\n<circle cx=\"29\" cy=\"16\" r=\"6.4\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"29\" cy=\"16\" r=\"5.1\" fill=\"none\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29\" cy=\"11.6\" r=\"0.95\"/><circle cx=\"32.8\" cy=\"13.8\" r=\"0.95\"/><circle cx=\"32.8\" cy=\"18.2\" r=\"0.95\"/><circle cx=\"29\" cy=\"20.4\" r=\"0.95\"/><circle cx=\"25.2\" cy=\"18.2\" r=\"0.95\"/><circle cx=\"25.2\" cy=\"13.8\" r=\"0.95\"/></g>\n<circle cx=\"29\" cy=\"16\" r=\"2.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"28.3\" cy=\"15.3\" r=\"0.8\" fill=\"#C4CAD0\" fill-opacity=\"0.7\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6\" cy=\"7.5\" r=\"1.25\"/><circle cx=\"6\" cy=\"12\" r=\"1.25\"/><circle cx=\"6\" cy=\"16.5\" r=\"1.25\"/><circle cx=\"6\" cy=\"21\" r=\"1.25\"/><circle cx=\"6\" cy=\"25.5\" r=\"1.25\"/></g>\n<path d=\"M10.5 5V28\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.9\" stroke-dasharray=\"1.2 0.8\" fill=\"none\"/>\n<rect x=\"33.5\" y=\"5.8\" width=\"5.2\" height=\"3.3\" rx=\"0.8\" fill=\"#14171B\"/>\n<rect x=\"34.3\" y=\"6.5\" width=\"3.6\" height=\"1.4\" rx=\"0.4\" fill=\"#7FB7C9\"/>\n<rect x=\"34.6\" y=\"6.6\" width=\"1.2\" height=\"0.6\" fill=\"#D8F0F7\"/>\n<path d=\"M17.2 3.6V2.4A2.2 2.2 0 0 1 21.6 2.4V3.6\" stroke=\"#3A3F45\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M7 5.2H25C31.5 5.2 36.5 7.6 39.4 11.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.34\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M13 4.1h2.5M28 4.3h2M40.6 13.5v2.2M39.8 21.5l-0.8 1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","mg":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 78.4 32\" data-part=\"mg\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<radialGradient id=\"ball\" cx=\"0.36\" cy=\"0.32\" r=\"0.72\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.4\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 0.6H31.4V31.4H0.6ZM8.8 16a10.4 10.4 0 1 0 20.8 0a10.4 10.4 0 1 0 -20.8 0Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n</g>\n<g class=\"detail\">\n<circle cx=\"19.2\" cy=\"16\" r=\"10.4\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M0.6 0.6H31.4V31.4H0.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 30.6V1.4H30.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M30.6 1.4V30.6H1.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4\" cy=\"4\" r=\"1\"/><circle cx=\"4\" cy=\"11\" r=\"1\"/><circle cx=\"4\" cy=\"18.4\" r=\"1\"/><circle cx=\"4\" cy=\"26\" r=\"1\"/><circle cx=\"11\" cy=\"28\" r=\"1\"/><circle cx=\"26\" cy=\"28\" r=\"1\"/><circle cx=\"11\" cy=\"4\" r=\"1\"/><circle cx=\"26\" cy=\"4\" r=\"1\"/></g>\n<circle cx=\"19.2\" cy=\"16\" r=\"11.4\" fill=\"none\" stroke=\"#4F565E\" stroke-width=\"1.4\"/>\n<path d=\"M8.8 16A10.4 10.4 0 0 1 26.6 8.6\" stroke=\"#000000\" stroke-width=\"1.6\" stroke-opacity=\"0.45\" fill=\"none\"/>\n<path d=\"M3 29.4h3M28.8 5v2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 0.6H31.4V31.4H0.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"19.2 16\">\n<g class=\"paint\">\n<circle cx=\"19.2\" cy=\"16\" r=\"9.2\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M64.4 14.8H73V17.2H64.4Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M72 14L78.2 12.6V19.4L72 18Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"77.2\" y=\"13.4\" width=\"1\" height=\"5.2\" fill=\"#14171B\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" fill=\"#8A9199\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" fill=\"url(#tube)\"/>\n<path d=\"M31 14.4h2.2v1.2h-2.2ZM33.6 16.6h2.2v1.2h-2.2ZM37 14.4h2.2v1.2h-2.2ZM39.6 16.6h2.2v1.2h-2.2ZM43 14.4h2.2v1.2h-2.2ZM45.6 16.6h2.2v1.2h-2.2ZM49 14.4h2.2v1.2h-2.2ZM51.6 16.6h2.2v1.2h-2.2ZM55 14.4h2.2v1.2h-2.2ZM57.6 16.6h2.2v1.2h-2.2Z\" fill=\"#14171B\" fill-opacity=\"0.85\"/>\n<rect x=\"26\" y=\"12.2\" width=\"3\" height=\"7.6\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"61.8\" y=\"12.2\" width=\"3\" height=\"7.6\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M30 13.6H61\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"19.2\" cy=\"16\" r=\"9.2\" fill=\"url(#ball)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"22.6\" cy=\"11.8\" r=\"1.6\" fill=\"#14171B\"/>\n<circle cx=\"22.8\" cy=\"11.6\" r=\"0.9\" fill=\"#7FB7C9\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"16.87\" cy=\"22.39\" r=\"0.9\"/><circle cx=\"12.4\" cy=\"16\" r=\"0.9\"/><circle cx=\"16.87\" cy=\"9.61\" r=\"0.9\"/></g>\n</g>\n</g>\n</svg>","smoke":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"smoke\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.8 19.2H10.2V21.6H1.8Z\" fill=\"#FFFF00\"/>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M11.8 19.2H20.2V21.6H11.8Z\" fill=\"#FFFF00\"/>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M21.8 19.2H30.2V21.6H21.8Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"1\" y=\"15.4\" width=\"30\" height=\"2.6\" rx=\"0.3\" fill=\"#8E6035\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"0.6\" y=\"12.6\" width=\"2\" height=\"14.4\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"29.4\" y=\"12.6\" width=\"2\" height=\"14.4\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M1.8 16.6H10.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M1.4 14L3.4 9.8H8.6L10.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M1.4 14L3.4 9.8H8.6L10.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"4.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.4 10.4H8.6L9.4 12.2H2.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"6\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"8.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M11.8 16.6H20.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M11.4 14L13.4 9.8H18.6L20.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M11.4 14L13.4 9.8H18.6L20.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"14.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M13.4 10.4H18.6L19.4 12.2H12.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"16\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"13.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"18.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M21.8 16.6H30.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M21.4 14L23.4 9.8H28.6L30.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M21.4 14L23.4 9.8H28.6L30.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"24.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M23.4 10.4H28.6L29.4 12.2H22.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"26\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"23.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"28.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M6 7.4Q11 9 16 7.4Q21 9 26 7.4Q29.4 7.6 30.2 11.6\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"30.2\" cy=\"13\" r=\"1.5\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<rect x=\"0.8\" y=\"26.4\" width=\"30.4\" height=\"5.2\" rx=\"0.6\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.6 27.2H30.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 29.2H30.6\" stroke=\"#6E4A26\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"14.4\" y=\"26.4\" width=\"3.2\" height=\"5.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3\" cy=\"29.8\" r=\"0.95\"/><circle cx=\"16\" cy=\"28.2\" r=\"0.95\"/><circle cx=\"16\" cy=\"30.4\" r=\"0.95\"/><circle cx=\"29\" cy=\"29.8\" r=\"0.95\"/></g>\n<path d=\"M0.8 28.6H31.2V31.6H0.8Z\" fill=\"url(#grime)\"/>\n<path d=\"M2.4 14.6h1.6M12.4 14.6h1.6M22.4 14.6h1.6M10 25.4v-1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","swivel":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 56 32\" data-part=\"swivel\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"16 12\">\n<g class=\"detail\">\n<path d=\"M9 13.6L1.6 19.6\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M9 13.6L1.6 19.6\" stroke=\"#A8743F\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M8.4 13.4L2 18.6\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"1.8\" cy=\"19.6\" r=\"1.5\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" fill=\"#C9A04A\"/>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" fill=\"url(#tube)\"/>\n<path d=\"M53.6 9.6H55V14.4H53.6Z\" fill=\"#14171B\" fill-opacity=\"0.85\"/>\n<rect x=\"21.5\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"34\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"47.6\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M24 10.2H47\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M27 15H47\" stroke=\"#1B1712\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"6.6\" y=\"7.8\" width=\"8.4\" height=\"8.4\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"6.6\" y=\"7.8\" width=\"8.4\" height=\"8.4\" rx=\"0.8\" fill=\"url(#tube)\"/>\n<path d=\"M11.2 5.6H13.4L13 7.8H11.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.4\" cy=\"9.6\" r=\"0.9\"/><circle cx=\"8.4\" cy=\"14.4\" r=\"0.9\"/></g>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" fill=\"#FF00FF\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" fill=\"#FFFF00\"/>\n<path d=\"M4.6 28.6H27.4Q28.4 28.6 28.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" fill=\"url(#cyl)\"/>\n<path d=\"M13 25V28.4M16.8 23.6V28\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"11.6\" y=\"26.2\" width=\"8.8\" height=\"1.8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M12 24.2L6.4 28.6M20 24.2L25.6 28.6\" stroke=\"#14171B\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M12 24.2L6.4 28.6M20 24.2L25.6 28.6\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M13.2 19.4L13.8 12.6Q14 9.4 16 9.4Q18 9.4 18.2 12.6L18.8 19.4Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M14.4 18.6L14.8 12.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"16\" cy=\"12\" r=\"2.2\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"16\" cy=\"12\" r=\"0.9\" fill=\"#14171B\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M3.6 28.6H28.4V31.6H3.6Z\" fill=\"url(#shade)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.4\" cy=\"30.1\" r=\"0.95\"/><circle cx=\"25.6\" cy=\"30.1\" r=\"0.95\"/></g>\n<path d=\"M4.6 29.3H27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M4.6 28.6H27.4Q28.4 28.6 28.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n</g>\n</g>\n</svg>"},"vehicles":{"assault":{"id":"assault","name":"Assault gun","domain":"land","class":"tank","w":13,"h":5,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",1,4],["track",3,4],["track",5,4],["track",7,4],["track",9,4],["arm20",0,2],["arm20",0,3],["eng_m",1,2],["ammo",4,2],["fuel_s",4,3],["crew2",5,2],["arm40",7,2],["arm40",7,3],["slope40",8,2],["arm80",8,3],["slope40",9,2],["arm80",9,3],["arm40",5,1],["arm40",6,1],["arm40",7,1],["c105",8,1],["optics",6,0]]},"behemoth":{"id":"behemoth","name":"Behemoth heavy tank","domain":"land","class":"behemoth","w":17,"h":8,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",1,7],["track",3,7],["track",5,7],["track",7,7],["track",9,7],["track",11,7],["track",13,7],["track",15,7],["arm80",0,5],["arm80",0,6],["eng_h",1,5],["fuel_ss",5,5],["fuel_ss",5,6],["ammo_p",6,5],["ammo_p",6,6],["crew2",7,5],["fc",9,5],["ammo_p",9,6],["stab",10,5],["plate",10,6],["arm80",11,5],["arm80",12,5],["arm80",13,5],["arm80",14,5],["arm80",15,5],["slope40",16,5],["arm80",11,6],["arm80",12,6],["arm80",13,6],["arm80",14,6],["arm80",15,6],["arm80",16,6],["arm80",0,4],["arm80",1,4],["arm80",2,4],["arm80",3,4],["arm80",4,4],["arm80",5,4],["turret",6,4],["arm80",9,4],["arm80",10,4],["arm80",11,4],["arm80",12,4],["arm80",13,4],["arm80",14,4],["slope40",15,4],["arm80",5,3],["crew2",6,2],["arm80",8,3],["c105",9,3],["arm80",5,2],["arm80",8,2],["mg",9,2],["arm80",5,1],["arm80",6,1],["arm80",7,1],["arm80",8,1],["optics",6,0],["radio",7,0]]},"bomber":{"id":"bomber","name":"Bomber","domain":"aircraft","class":"aircraft","w":30,"h":7,"source":"v1 template (07_data.js TEMPLATES)","cells":[["tail",0,2],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["frame",6,3],["frame",7,3],["fuel_s",8,3],["fuel_s",9,3],["frame",10,3],["frame",11,3],["frame",12,3],["frame",13,3],["frame",14,3],["frame",15,3],["frame",16,3],["frame",17,3],["aero",18,3],["frame",20,3],["frame",21,3],["frame",22,3],["frame",23,3],["aero",24,3],["aprop",26,2],["turret",12,2],["crew2",13,0],["hmg",15,1],["crew2",20,1],["optics",22,2],["wing",10,4],["wing",12,4],["wing",14,4],["wing",16,4],["wing",18,4],["bomb",11,5],["bomb",15,5]]},"bunker":{"id":"bunker","name":"Anti-tank gun bunker","domain":"land","class":"tank","w":8,"h":4,"fixed":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["arm80",0,0],["arm80",1,0],["arm80",2,0],["arm80",3,0],["arm80",4,0],["arm80",0,1],["crew2",1,1],["arm40",3,1],["arm40",4,1],["c75",5,1],["arm80",0,2],["ammo_p",3,2],["plate",4,2],["arm80",5,2],["arm80",6,2],["slope40",7,2],["arm80",0,3],["arm80",1,3],["arm80",2,3],["arm80",3,3],["arm80",4,3],["arm80",5,3],["arm80",6,3],["arm80",7,3]]},"destroyer":{"id":"destroyer","name":"Destroyer","domain":"sea","class":"destroyer","w":42,"h":14,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,12],["prop",4,12],["keel",5,13],["keel",7,13],["keel",9,13],["keel",11,13],["keel",13,13],["keel",15,13],["keel",17,13],["keel",19,13],["keel",21,13],["keel",23,13],["keel",25,13],["keel",27,13],["keel",29,13],["keel",31,13],["keel",33,13],["keel",35,13],["keel",37,13],["hull",5,11],["hull",7,11],["bulk",9,11],["hull",10,11],["hull",12,11],["hull",14,11],["marine",16,10],["bulk",20,11],["hull",21,11],["hull",23,11],["hull",25,11],["hull",27,11],["hull",29,11],["hull",31,11],["bulk",33,11],["hull",34,11],["hull",36,11],["bow",38,11],["hull",5,9],["hull",7,9],["bulk",9,9],["hull",10,9],["hull",12,9],["hull",14,9],["plate",16,9],["plate",17,9],["plate",18,9],["plate",19,9],["bulk",20,9],["hull",21,9],["hull",23,9],["hull",25,9],["hull",27,9],["hull",29,9],["hull",31,9],["bulk",33,9],["hull",34,9],["hull",36,9],["hull",38,9],["bow",40,9],["turret",8,8],["crew2",8,6],["c75",10,7],["dc",5,8],["plate",7,8],["hmg",5,7],["plate",11,8],["plate",12,8],["plate",13,8],["hmg",14,8],["plate",15,8],["eng_s",16,7],["fuel_l",18,7],["fuel_l",20,7],["plate",22,8],["plate",23,8],["crew2",24,7],["crew2",24,5],["optics",24,4],["radio",25,4],["fc",26,6],["ammo_p",26,8],["ammo_p",27,8],["torp",28,8],["turret",31,8],["ngun",31,5],["plate",34,8],["plate",35,8],["plate",36,8],["hmg",37,8],["sonar",39,13]]},"fighter":{"id":"fighter","name":"Fighter","domain":"aircraft","class":"aircraft","w":18,"h":6,"source":"v1 template (07_data.js TEMPLATES)","cells":[["tail",0,2],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["fuel_ss",6,3],["frame",7,3],["frame",8,3],["frame",9,3],["frame",10,3],["frame",11,3],["frame",12,3],["frame",13,3],["aero",14,3],["aprop",16,2],["crew2",9,1],["radio",8,2],["hmg",12,2],["hmg",13,2],["wing",6,4],["wing",8,4],["wing",10,4]]},"gunboat":{"id":"gunboat","name":"Gunboat","domain":"sea","class":"corvette","w":26,"h":9,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,7],["keel",4,8],["keel",6,8],["keel",8,8],["keel",10,8],["keel",12,8],["keel",14,8],["keel",16,8],["keel",18,8],["keel",20,8],["hull",4,6],["hull",6,6],["hull",8,6],["bulk",10,6],["hull",11,6],["hull",13,6],["hull",15,6],["hull",17,6],["bulk",19,6],["hull",20,6],["hull",22,6],["bow",24,6],["eng_m",4,4],["fuel_s",7,5],["ammo",8,5],["plate",7,4],["plate",8,4],["plate",9,5],["crew2",10,4],["optics",10,3],["radio",11,3],["plate",12,5],["plate",13,5],["plate",14,5],["turret",15,5],["crew2",15,3],["c37",17,4],["plate",18,5],["plate",19,5],["plate",20,5],["hmg",21,5]]},"heli":{"id":"heli","name":"Scout helicopter","domain":"aircraft","class":"aircraft","w":12,"h":4,"source":"v1 template (07_data.js TEMPLATES)","cells":[["rotor",5,0],["frame",8,1],["trotor",0,3],["frame",1,3],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["aero",6,2],["fuel_ss",6,3],["frame",7,3],["crew2",8,2],["optics",10,2],["hmg",10,3]]},"howitzer":{"id":"howitzer","name":"Howitzer battery","domain":"land","class":"tank","w":10,"h":5,"fixed":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_l",1,3],["wheel_l",6,3],["frame",0,2],["frame",1,2],["frame",2,2],["frame",3,2],["frame",4,2],["frame",5,2],["frame",6,2],["frame",7,2],["frame",8,2],["frame",9,2],["crew2",1,0],["ammo",3,1],["how",4,0],["frame",8,1]]},"light":{"id":"light","name":"Light tank","domain":"land","class":"tank","w":12,"h":6,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",2,5],["track",4,5],["track",6,5],["track",8,5],["arm20",1,3],["arm20",1,4],["eng_m",2,3],["crew2",5,3],["fuel_s",7,3],["ammo",7,4],["arm20",8,3],["arm20",8,4],["slope40",9,3],["arm20",9,4],["mg",10,4],["turret",4,2],["radio",3,1],["arm20",4,1],["arm20",5,1],["c37",6,1],["optics",5,0]]},"medium":{"id":"medium","name":"Medium tank","domain":"land","class":"tank","w":14,"h":7,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",2,6],["track",4,6],["track",6,6],["track",8,6],["track",10,6],["arm20",1,4],["arm20",1,5],["eng_m",2,4],["fuel_s",5,4],["fuel_s",5,5],["crew2",6,4],["ammo",8,4],["plate",8,5],["arm40",9,4],["arm40",9,5],["arm40",10,4],["arm40",10,5],["slope40",11,4],["arm40",11,5],["mg",12,5],["turret",5,3],["arm20",4,1],["arm20",4,2],["crew2",5,1],["arm40",7,1],["arm40",7,2],["c75",8,2],["optics",6,0],["radio",4,0]]},"mgcar":{"id":"mgcar","name":"Machine-gun car","domain":"land","class":"tank","w":10,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_s",1,4],["wheel_s",3,4],["wheel_s",6,4],["wheel_s",8,4],["plate",0,3],["eng_s",1,2],["crew2",3,2],["fuel_s",5,3],["plate",5,2],["plate",6,3],["plate",7,3],["plate",8,3],["plate",6,2],["plate",7,2],["slope40",8,2],["mg",4,1]]},"scout":{"id":"scout","name":"Scout car","domain":"land","class":"tank","w":10,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_s",1,4],["wheel_s",3,4],["wheel_s",6,4],["wheel_s",8,4],["plate",0,3],["eng_s",1,2],["crew2",3,2],["fuel_s",5,3],["radio",5,2],["plate",6,3],["plate",7,3],["plate",8,3],["arm20",6,2],["arm20",7,2],["slope40",8,2],["hmg",4,1],["optics",3,1]]},"sub":{"id":"sub","name":"Submarine","domain":"sea","class":"corvette","w":27,"h":8,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,6],["keel",5,7],["keel",7,7],["keel",9,7],["keel",11,7],["keel",13,7],["keel",15,7],["keel",17,7],["keel",19,7],["keel",21,7],["sonar",23,7],["ballast",4,5],["emotor",6,5],["phull",8,5],["bulk",10,5],["phull",11,5],["ballast",13,5],["phull",15,5],["bulk",17,5],["phull",18,5],["ballast",20,5],["bow",22,5],["torp",24,6],["arm80",5,4],["arm80",5,3],["ballast",6,3],["phull",8,3],["eng_m",10,3],["arm80",13,3],["fuel_s",13,4],["crew2",14,3],["phull",16,3],["phull",18,3],["arm80",20,4],["arm80",21,4],["optics",14,2],["radio",15,2],["arm80",16,2],["arm80",17,2]]},"truck":{"id":"truck","name":"Supply truck","domain":"land","class":"tank","w":11,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_l",1,3],["wheel_l",5,3],["wheel_l",8,3],["timber",0,2],["timber",1,2],["timber",2,2],["timber",3,2],["timber",4,2],["timber",5,2],["timber",6,2],["timber",7,2],["timber",8,2],["timber",9,2],["timber",10,2],["cargo",1,0],["cargo",3,0],["fuel_s",5,1],["timber",5,0],["crew2",6,0],["eng_s",8,0]]}},"noArt":["ammo_p","fuel_l","fuel_ss","aero","ballast","emotor","eng_h","eng_s","jet","marine","radiator","rotor","thrust","trotor","turb","wheel_l","wheel_s","bow","bulk","hull","keel","phull","tail","wing","fc","nsight","sonar","stab","aa40","ac20","bomb","c105","dc","hmg","how","ngun","torp"]};
+const PART_LIBRARY = {"materials":{"frame":{"name":"Light frame","tier":0,"mass":60,"hp":40,"armor":5,"cost":{"metal":1},"look":{"kind":"frame","color":"#4F565E","paintable":false,"rivets":true,"seam":1}},"timber":{"name":"Timber frame","tier":0,"mass":40,"hp":25,"armor":3,"cost":{"wood":1},"burns":true,"look":{"kind":"wood","color":"#A8743F","paintable":false,"rivets":false,"seam":2}},"plank":{"name":"Plank hull","tier":0,"mass":70,"hp":40,"armor":8,"cost":{"wood":2},"burns":true,"look":{"kind":"wood","color":"#A8743F","paintable":true,"paint":"p1","rivets":false,"seam":3}},"ironwood":{"name":"Iron-banded plank","tier":0,"mass":110,"hp":55,"armor":12,"cost":{"wood":2,"metal":1},"burns":true,"look":{"kind":"wood","color":"#8E6035","paintable":true,"paint":"p1","rivets":true,"seam":2}},"plate":{"name":"Hull plate","tier":1,"mass":120,"hp":60,"armor":15,"cost":{"metal":2},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm20":{"name":"Armour 20 mm","tier":1,"mass":190,"hp":80,"armor":20,"cost":{"metal":3},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm40":{"name":"Armour 40 mm","tier":2,"mass":380,"hp":120,"armor":40,"cost":{"metal":5},"look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2}},"arm80":{"name":"Armour 80 mm","tier":2,"mass":760,"hp":180,"armor":80,"cost":{"metal":9},"look":{"kind":"heavy","color":"#4A4E55","paintable":true,"paint":"p1","rivets":true,"seam":2}},"slope40":{"name":"Sloped armour 40 mm","tier":2,"mass":300,"hp":110,"armor":40,"cost":{"metal":5},"shape":"slope","look":{"kind":"plate","color":"#8A9199","paintable":true,"paint":"p1","rivets":true,"seam":2},"sloped":true},"composite":{"name":"Composite armour","tier":3,"mass":330,"hp":130,"armor":45,"cost":{"metal":4,"elec":1},"resist":{"fire":0.5,"plasma":0.6,"acid":0.7},"look":{"kind":"composite","color":"#6B7079","paintable":true,"paint":"p1","rivets":false,"seam":2}},"alloy":{"name":"Light alloy","tier":3,"mass":90,"hp":55,"armor":14,"cost":{"metal":3,"elec":1},"look":{"kind":"alloy","color":"#B7C3CF","paintable":true,"paint":"p1","rivets":false,"seam":3}},"precursor":{"name":"Precursor plating","tier":4,"mass":260,"hp":150,"armor":50,"cost":{"metal":4,"elec":3,"scrap":6},"resist":{"laser":0.5,"emp":0.5},"look":{"kind":"precursor","color":"#2B3440","paintable":false,"rivets":false,"seam":2},"planned":true},"canvas_bag":{"name":"Canvas gas bag","tier":0,"mass":12,"hp":15,"armor":0,"cost":{"wood":1,"money":8},"burns":true,"look":{"kind":"envelope","color":"#B9A77A","paintable":true,"paint":"p2","rivets":false,"seam":4},"gasLift":1.6},"rigid_env":{"name":"Rigid envelope","tier":1,"mass":20,"hp":35,"armor":2,"cost":{"metal":1,"wood":1,"money":12},"look":{"kind":"envelope","color":"#D8CCAA","paintable":true,"paint":"p2","rivets":true,"seam":3},"gasLift":1.8},"armored_env":{"name":"Armoured envelope","tier":3,"mass":45,"hp":70,"armor":8,"cost":{"metal":2,"elec":1,"money":20},"look":{"kind":"envelope","color":"#8E9BA8","paintable":true,"paint":"p2","rivets":true,"seam":2},"gasLift":1.7,"planned":true}},"paints":{"schemes":{"league":{"name":"Harbour League","p1":"#6E8FA8","p2":"#D8CCAA","p3":"#F2C14E"},"directorate":{"name":"Directorate","p1":"#8A3A2C","p2":"#4A4F57","p3":"#E0A43A"},"skyreach":{"name":"Skyreach Concord","p1":"#E4DFD2","p2":"#6F9CC4","p3":"#C9A04A"},"clans":{"name":"Salvage Clans","p1":"#9A5A34","p2":"#C9A86A","p3":"#2F7F7A"},"lumen":{"name":"Lumen Collective","p1":"#3A4450","p2":"#1F2A33","p3":"#4FD1C5"},"primer":{"name":"Primer (unpainted stock)","p1":"#7D8084","p2":"#6B6E72","p3":"#9A9DA1"}},"palette":["#7E8A94","#4F5A63","#5F6B75","#1F3552","#2E5FA3","#7FA8C9","#2F7F7A","#4E6B3A","#6B6B3A","#8A9A7B","#C9A86A","#A38F5D","#D9CFB4","#E9ECEE","#202326","#5A3B2A","#8E3B2A","#7A2E26","#C43C2C","#D9772E","#D9A441","#F2C14E","#6E8FA8","#9A5A34"],"camo":["none","bands","blotch","splinter","stripes"]},"classes":{"land":[{"id":"tank","name":"Tank","grid":[16,8],"parts":24,"captain":1},{"id":"behemoth","name":"Behemoth","grid":[28,12],"parts":48,"captain":3},{"id":"landship","name":"Landship","grid":[44,16],"parts":90,"captain":5},{"id":"land_dreadnought","name":"Land dreadnought","grid":[64,20],"parts":150,"captain":8}],"sea":[{"id":"corvette","name":"Corvette","grid":[32,10],"parts":40,"captain":1},{"id":"destroyer","name":"Destroyer","grid":[48,14],"parts":80,"captain":3},{"id":"cruiser","name":"Cruiser","grid":[64,18],"parts":130,"captain":5},{"id":"battleship","name":"Battleship","grid":[88,24],"parts":200,"captain":8}],"airship":[{"id":"gunship","name":"Gunship","grid":[24,10],"parts":30,"captain":1},{"id":"air_frigate","name":"Air frigate","grid":[36,14],"parts":60,"captain":3},{"id":"air_cruiser","name":"Air cruiser","grid":[52,18],"parts":100,"captain":5},{"id":"sky_fortress","name":"Sky fortress","grid":[72,24],"parts":160,"captain":8}],"aircraft":[{"id":"aircraft","name":"Aircraft or helicopter","grid":[32,12],"parts":60,"captain":0}],"drone":[{"id":"drone_1","name":"Drone (computer I)","grid":[8,4],"parts":6,"captain":0},{"id":"drone_2","name":"Drone (computer II)","grid":[10,5],"parts":10,"captain":0},{"id":"drone_3","name":"Drone (computer III)","grid":[12,6],"parts":16,"captain":0}],"missile":[{"id":"missile_s","name":"Small missile","grid":[6,1],"parts":4,"captain":0},{"id":"missile_m","name":"Medium missile","grid":[10,2],"parts":8,"captain":0},{"id":"missile_l","name":"Large missile","grid":[16,3],"parts":14,"captain":0}]},"parts":{"lifteng":{"id":"lifteng","name":"Lift engine","family":"lifteng","variant":"std","category":"lift","tier":2,"domains":["airship"],"footprint":{"w":2,"h":2},"stats":{"mass":700,"hp":70,"armor":5,"power":0,"rel":0.985,"liftForce":44000,"fuelUse":120,"heat":30},"cost":{"metal":6,"elec":1,"money":90},"craftAt":"metropolis","unlock":{"tech":"lift_engines"},"pros":[],"cons":[],"notes":"Step 2.7 (05 §3.2): lift in newtons while it has fuel; adds to the envelopes' gas lift and lets the airship climb."},"ammo":{"id":"ammo","name":"Ammo rack","family":"ammo","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[0.5,0.5]]},"stats":{"mass":250,"hp":30,"armor":3,"power":0,"rel":0.998,"shells":20,"detonate":0.4},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway ready rack of brass shells in a timber cradle; P3 warning band."},"ammo_p":{"id":"ammo_p","name":"Protected ammo storage","family":"ammo_p","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":320,"hp":50,"armor":10,"power":0,"rel":0.998,"shells":20,"detonate":0.1},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"blade":{"id":"blade","name":"Dozer blade","family":"blade","variant":"std","category":"logistics","tier":1,"domains":["land"],"footprint":{"w":2,"h":1},"stats":{"mass":700,"hp":90,"armor":20,"power":0,"rel":0.998},"behaviour":{"info":"Builds field works; clears obstacles (campaign)"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"salvage"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"bridge_l":{"id":"bridge_l","name":"Bridge layer","family":"bridge_l","variant":"std","category":"logistics","tier":1,"domains":["land"],"footprint":{"w":4,"h":1},"stats":{"mass":3000,"hp":120,"armor":10,"power":0,"rel":0.998},"behaviour":{"info":"Lays a 10 m bridge (campaign)"},"cost":{"metal":10},"craftAt":"city","unlock":{"tech":"salvage"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d. Id bridge_l (the command bridge in structure/ is bridge)."},"cargo":{"id":"cargo","name":"Cargo bay","family":"cargo","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,1.95],"smoke":[[1,0.8]]},"stats":{"mass":200,"hp":40,"armor":3,"power":0,"rel":0.998,"cargo":2000},"cost":{"metal":2,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_cargo_std)."},"crane":{"id":"crane","name":"Recovery winch","family":"crane","variant":"std","category":"logistics","tier":1,"domains":["land","sea"],"footprint":{"w":2,"h":2},"stats":{"mass":900,"hp":80,"armor":10,"power":0,"rel":0.998},"behaviour":{"info":"Tows up to 30 t (campaign)"},"cost":{"metal":5},"craftAt":"city","unlock":{"tech":"salvage"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"fuel_l":{"id":"fuel_l","name":"Fuel tank 1000 L","family":"fuel_l","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":1050,"hp":60,"armor":3,"power":0,"rel":0.998,"fuel":1000,"fire":0.35},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"fuel_s":{"id":"fuel_s","name":"Fuel tank 200 L","family":"fuel_s","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[0.5,0.5]]},"stats":{"mass":220,"hp":30,"armor":3,"power":0,"rel":0.998,"fuel":200,"fire":0.35},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway bay with a riveted 200 L tank, brass filler, sight glass; P3 hazard band."},"fuel_ss":{"id":"fuel_ss","name":"Self-sealing tank 150 L","family":"fuel_ss","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":210,"hp":40,"armor":3,"power":0,"rel":0.998,"fuel":150,"fire":0.1},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"ramp":{"id":"ramp","name":"Landing ramp","family":"ramp","variant":"std","category":"logistics","tier":1,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":400,"hp":60,"armor":10,"power":0,"rel":0.998},"behaviour":{"info":"Unloads onto a beach (campaign)"},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"repair":{"id":"repair","name":"Repair workshop","family":"repair","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship"],"footprint":{"w":2,"h":2},"stats":{"mass":600,"hp":60,"armor":5,"power":0,"rel":0.998,"repair":10},"cost":{"metal":4,"elec":1},"craftAt":"city","unlock":{"tech":"repair_bay"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"tank_c":{"id":"tank_c","name":"Fuel cargo tank","family":"tank_c","variant":"std","category":"logistics","tier":1,"domains":["land","sea","airship"],"footprint":{"w":3,"h":2},"stats":{"mass":400,"hp":60,"armor":3,"power":0,"rel":0.998,"fire":0.5},"behaviour":{"info":"4,000 L fuel cargo (campaign)"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"cargo_2"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"troop":{"id":"troop","name":"Troop compartment","family":"troop","variant":"std","category":"logistics","tier":0,"domains":["land","sea","airship"],"footprint":{"w":2,"h":2},"stats":{"mass":250,"hp":50,"armor":5,"power":0,"rel":0.998},"behaviour":{"info":"Carries 1 infantry squad (campaign)"},"cost":{"metal":2},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"aero":{"id":"aero","name":"Aero piston engine","family":"aero","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":600,"hp":50,"armor":5,"power":900,"rel":0.985,"heat":40,"fuelUse":250},"behaviour":{"air":true},"cost":{"metal":6,"elec":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"aprop":{"id":"aprop","name":"Air propeller","family":"aprop","variant":"std","category":"mobility","tier":0,"domains":["aircraft","airship"],"footprint":{"w":1,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_side","layer":"front","anchors":{"mount":[0.1,1],"wash":[1,1]},"moving":{"prop":{"pivot":[0.71875,1]}},"stats":{"mass":80,"hp":20,"armor":2,"power":0,"rel":0.998},"behaviour":{"airprop":true},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_airprop_std)."},"ballast":{"id":"ballast","name":"Ballast tank","family":"ballast","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":300,"hp":80,"armor":10,"power":0,"rel":0.998,"ballast":4000,"sealed":1},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"emotor":{"id":"emotor","name":"Electric motor + batteries","family":"emotor","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":1200,"hp":70,"armor":10,"power":200,"rel":0.996,"heat":5,"sealed":1},"behaviour":{"electric":true,"floods":true},"cost":{"metal":6,"elec":3},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"eng_h":{"id":"eng_h","name":"Diesel engine H","family":"eng_h","variant":"std","category":"mobility","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":4,"h":2},"stats":{"mass":1900,"hp":120,"armor":5,"power":520,"rel":0.992,"heat":45,"fuelUse":95},"cost":{"metal":12},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"eng_m":{"id":"eng_m","name":"Diesel engine M","family":"eng_m","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"exhaust":[0.23,0.05],"smoke":[[1.3,0.6],[2.6,1.1]]},"stats":{"mass":1100,"hp":90,"armor":5,"power":300,"rel":0.994,"heat":25,"fuelUse":55},"cost":{"metal":7},"craftAt":"city","unlock":{"tech":"prop_diesel"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway engine bay (P1 bulkhead frame, P2 cast block). Anchor 'exhaust' = where the exhaust leaves the roof."},"eng_s":{"id":"eng_s","name":"Petrol engine S","family":"eng_s","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":450,"hp":60,"armor":5,"power":110,"rel":0.99,"heat":12,"fuelUse":30},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"gen":{"id":"gen","name":"Auxiliary generator","family":"gen","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship"],"footprint":{"w":2,"h":1},"stats":{"mass":250,"hp":40,"armor":5,"power":40,"rel":0.99,"heat":8,"fuelUse":10},"behaviour":{"info":"Electrical power only"},"cost":{"metal":2,"elec":1},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"jet":{"id":"jet","name":"Jet engine","family":"jet","variant":"std","category":"mobility","tier":3,"domains":["aircraft"],"footprint":{"w":3,"h":1},"stats":{"mass":900,"hp":70,"armor":5,"power":0,"rel":0.97,"jet":25000,"heat":60,"fuelUse":900},"behaviour":{"air":true},"cost":{"metal":10,"elec":4},"craftAt":"metropolis","unlock":{"tech":"jets"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"marine":{"id":"marine","name":"Marine diesel","family":"marine","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":4,"h":3},"stats":{"mass":5000,"hp":200,"armor":10,"power":1500,"rel":0.995,"heat":40,"fuelUse":300,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":25},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"prop":{"id":"prop","name":"Ship propeller","family":"prop","variant":"std","category":"mobility","tier":0,"domains":["sea"],"footprint":{"w":1,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_bottom","layer":"front","anchors":{"mount":[0.35,0.05],"wash":[1,1.125]},"moving":{"screw":{"pivot":[0.71875,1.125]}},"stats":{"mass":300,"hp":50,"armor":10,"power":0,"rel":0.998},"behaviour":{"propeller":true},"cost":{"metal":2},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_prop_std)."},"radiator":{"id":"radiator","name":"Radiator","family":"radiator","variant":"std","category":"mobility","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":70,"hp":20,"armor":2,"power":0,"rel":0.998,"heat":-12},"cost":{"metal":1},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"rotor":{"id":"rotor","name":"Rotor","family":"rotor","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":4,"h":1},"stats":{"mass":400,"hp":50,"armor":2,"power":0,"rel":0.985},"behaviour":{"rotor":true},"cost":{"metal":4,"elec":1},"craftAt":"city","unlock":{"tech":"rotorcraft"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"steam":{"id":"steam","name":"Steam engine","family":"steam","variant":"std","category":"mobility","tier":0,"domains":["land","sea","airship"],"footprint":{"w":3,"h":2},"overhang":{"left":0,"right":0,"top":0.75,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1.5,1.9],"exhaust":[2.6,-0.66],"smoke":[[1.6,0.9],[0.5,1.2]]},"moving":{"flywheel":{"pivot":[0.69,0.19]}},"stats":{"mass":1400,"hp":90,"armor":5,"power":120,"rel":0.985,"heat":30,"fuelUse":60},"cost":{"wood":2,"metal":6},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_steam_std)."},"thrust":{"id":"thrust","name":"Manoeuvre thruster","family":"thrust","variant":"std","category":"mobility","tier":2,"domains":["sea"],"footprint":{"w":1,"h":1},"stats":{"mass":150,"hp":30,"armor":5,"power":-40,"rel":0.998,"heat":5},"behaviour":{"thruster":true},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"tech":"prop_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"track":{"id":"track","name":"Track segment","family":"track","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"dust":[[0.5,1],[1.5,1]]},"moving":{"wheel_a":{"pivot":[0.5,0.5]},"wheel_b":{"pivot":[1.5,0.5]}},"stats":{"mass":450,"hp":70,"armor":10,"power":0,"rel":0.998,"contact":0.35,"maxLoad":10000,"cap":55,"radius":0.25},"behaviour":{"loco":"track"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"prop_diesel"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: steel-link belt with straight runs so segments tile edge to edge in a run; the two road wheels (role wheel) can spin with ground speed. Anchor 'dust' = where dust kicks up."},"trotor":{"id":"trotor","name":"Tail rotor","family":"trotor","variant":"std","category":"mobility","tier":2,"domains":["aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":60,"hp":20,"armor":2,"power":0,"rel":0.998},"behaviour":{"trotor":true},"cost":{"metal":1},"craftAt":"city","unlock":{"tech":"rotorcraft"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"turb":{"id":"turb","name":"Gas turbine","family":"turb","variant":"std","category":"mobility","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":2},"stats":{"mass":900,"hp":80,"armor":5,"power":750,"rel":0.98,"heat":70,"fuelUse":220},"cost":{"metal":8,"elec":3},"craftAt":"city","unlock":{"tech":"prop_turbine"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_l":{"id":"wheel_l","name":"Off-road wheel","family":"wheel_l","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":2,"h":2},"stats":{"mass":200,"hp":50,"armor":5,"power":0,"rel":0.998,"contact":0.12,"maxLoad":5000,"cap":75,"radius":0.5},"behaviour":{"loco":"wheel"},"cost":{"metal":4},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_s":{"id":"wheel_s","name":"Road wheel","family":"wheel_s","variant":"std","category":"mobility","tier":1,"domains":["land"],"footprint":{"w":1,"h":1},"stats":{"mass":80,"hp":30,"armor":5,"power":0,"rel":0.998,"contact":0.04,"maxLoad":2000,"cap":90,"radius":0.25},"behaviour":{"loco":"wheel"},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"prop_petrol"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"wheel_w":{"id":"wheel_w","name":"Spoked wheel","family":"wheel_w","variant":"std","category":"mobility","tier":0,"domains":["land"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull_bottom","layer":"front","anchors":{"mount":[1,0.1],"contact":[1,2]},"moving":{"wheel":{"pivot":[1,1]}},"stats":{"mass":160,"hp":40,"armor":3,"power":0,"rel":0.993,"contact":0.1,"maxLoad":3000,"cap":35,"radius":0.5},"behaviour":{"loco":"wheel"},"cost":{"wood":2,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_wheel_wood_std)."},"bow":{"id":"bow","name":"Bow section","family":"bow","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":450,"hp":130,"armor":10,"power":0,"rel":0.998,"sealed":0.5},"behaviour":{"floods":true,"bowShape":true},"cost":{"metal":3,"wood":1},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"bridge":{"id":"bridge","name":"Command bridge","family":"bridge","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0.75,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,1.9],"smoke":[[0.55,0.3],[1.35,1.3]],"light":[[0.54,-0.59]]},"stats":{"mass":350,"hp":90,"armor":10,"power":0,"rel":0.998,"crew":3},"cost":{"wood":3,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as crw_bridge_std)."},"bulk":{"id":"bulk","name":"Watertight bulkhead","family":"bulk","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":1,"h":2},"stats":{"mass":200,"hp":100,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"bulkhead":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"cabin":{"id":"cabin","name":"Crew cabin","family":"cabin","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":0,"top":0.5,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[1,0.95],"smoke":[[1.66,-0.46]]},"stats":{"mass":180,"hp":50,"armor":6,"power":0,"rel":0.998,"crew":2},"cost":{"wood":2},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as crw_cabin_std)."},"crew2":{"id":"crew2","name":"Crew compartment","family":"crew2","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":2},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"anchors":{"smoke":[[1,0.5]]},"stats":{"mass":300,"hp":80,"armor":10,"power":0,"rel":0.998,"crew":2},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: cutaway crew compartment, two seated crew; interior bulkhead in P2, frame in P1, P3 interior stripe."},"hull":{"id":"hull","name":"Ship hull section","family":"hull","variant":"std","category":"structure","tier":1,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":600,"hp":150,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":4,"wood":1},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"keel":{"id":"keel","name":"Keel","family":"keel","variant":"std","category":"structure","tier":0,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":500,"hp":120,"armor":10,"power":0,"rel":0.998,"sealed":1},"behaviour":{"keel":true},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"phull":{"id":"phull","name":"Pressure hull section","family":"phull","variant":"std","category":"structure","tier":2,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":2200,"hp":220,"armor":25,"power":0,"rel":0.998,"sealed":1},"behaviour":{"floods":true},"cost":{"metal":8},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"skirt":{"id":"skirt","name":"Spaced skirt","family":"skirt","variant":"std","category":"structure","tier":1,"domains":["land"],"footprint":{"w":1,"h":1},"stats":{"mass":90,"hp":30,"armor":8,"power":0,"rel":0.998},"behaviour":{"skirt":true},"cost":{"metal":1},"craftAt":"city","unlock":{"tech":"hull_iron"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"tail":{"id":"tail","name":"Tail unit","family":"tail","variant":"std","category":"structure","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":2},"stats":{"mass":60,"hp":30,"armor":2,"power":0,"rel":0.998,"tail":3},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"turret":{"id":"turret","name":"Turret ring","family":"turret","variant":"std","category":"structure","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":3,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"stats":{"mass":250,"hp":90,"armor":20,"power":-5,"rel":0.998},"behaviour":{"ring":true},"cost":{"metal":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: riveted turret ring (fixed flange in P1, bare bearing race, P2 collar). No moving group: traverse doesn't show in side view."},"wbow":{"id":"wbow","name":"Wooden bow section","family":"wbow","variant":"std","category":"structure","tier":0,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":300,"hp":95,"armor":6,"power":0,"rel":0.998,"sealed":0.5},"behaviour":{"floods":true,"bowShape":true,"burns":true},"cost":{"wood":3},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Roster D4/D5, starting values from 05 §3.1 (step 2.8)."},"whull":{"id":"whull","name":"Wooden hull section","family":"whull","variant":"std","category":"structure","tier":0,"domains":["sea"],"footprint":{"w":2,"h":2},"stats":{"mass":400,"hp":110,"armor":6,"power":0,"rel":0.998,"sealed":1},"behaviour":{"floods":true,"burns":true},"cost":{"wood":4},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Roster D4/D5, starting values from 05 §3.1 (step 2.8)."},"wing":{"id":"wing","name":"Wing section","family":"wing","variant":"std","category":"structure","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":90,"hp":30,"armor":2,"power":0,"rel":0.998,"lift":6},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"cradio":{"id":"cradio","name":"Command radio","family":"cradio","variant":"std","category":"system","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":120,"hp":20,"armor":2,"power":-4,"rel":0.998,"crew":-1},"behaviour":{"info":"+1 platoon under force orders (campaign); needs a radio operator"},"cost":{"metal":2,"elec":3},"craftAt":"city","unlock":{"tech":"radio"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"ecm":{"id":"ecm","name":"ECM suite","family":"ecm","variant":"std","category":"system","tier":3,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":150,"hp":20,"armor":2,"power":-30,"rel":0.998,"heat":10},"behaviour":{"ecm":true},"cost":{"metal":2,"elec":8},"craftAt":"metropolis","unlock":{"tech":"ecm"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"fc":{"id":"fc","name":"Fire-control computer","family":"fc","variant":"std","category":"system","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":60,"hp":15,"armor":2,"power":-5,"rel":0.998,"accuracy":1.35},"cost":{"metal":1,"elec":5},"craftAt":"city","unlock":{"tech":"fire_control"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"nsight":{"id":"nsight","name":"Night sight","family":"nsight","variant":"std","category":"system","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":20,"hp":10,"armor":2,"power":-3,"rel":0.998,"night":0.7},"cost":{"metal":1,"elec":4},"craftAt":"city","unlock":{"tech":"radar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"optics":{"id":"optics","name":"Optics","family":"optics","variant":"std","category":"system","tier":0,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0.5,"bottom":0},"anchors":{"eye":[0.66,-0.24]},"stats":{"mass":30,"hp":10,"armor":2,"power":0,"rel":0.998,"spot":1.4},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: riveted observation cupola with vision slits and a periscope head (0.5-cell top overhang)."},"radar_n":{"id":"radar_n","name":"Naval radar","family":"radar_n","variant":"std","category":"system","tier":2,"domains":["sea","airship"],"footprint":{"w":2,"h":2},"stats":{"mass":600,"hp":30,"armor":3,"power":-60,"rel":0.998,"radarAir":15000,"radarGround":10000,"lock":0.2},"cost":{"metal":5,"elec":10},"craftAt":"metropolis","unlock":{"tech":"radar"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"radar_s":{"id":"radar_s","name":"Search radar","family":"radar_s","variant":"std","category":"system","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":2,"h":1},"stats":{"mass":250,"hp":20,"armor":2,"power":-25,"rel":0.998,"radarAir":8000,"radarGround":3000,"lock":0.12},"cost":{"metal":3,"elec":6},"craftAt":"metropolis","unlock":{"tech":"radar"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"radio":{"id":"radio","name":"Radio","family":"radio","variant":"std","category":"system","tier":1,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":3,"bottom":0},"anchors":{"antenna":[0.22,-2.88]},"stats":{"mass":50,"hp":15,"armor":2,"power":-1,"rel":0.998},"cost":{"metal":1,"elec":1},"craftAt":"city","unlock":{"tech":"radio"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: radio set with a whip antenna rising 3 cells (as in the v1 drawing). Anchor 'antenna' = whip tip."},"sonar":{"id":"sonar","name":"Sonar","family":"sonar","variant":"std","category":"system","tier":2,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":300,"hp":30,"armor":5,"power":-10,"rel":0.998,"sonar":2000},"behaviour":{"wet":true},"cost":{"metal":2,"elec":4},"craftAt":"city","unlock":{"tech":"sonar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"stab":{"id":"stab","name":"Gun stabiliser","family":"stab","variant":"std","category":"system","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":1,"h":1},"stats":{"mass":90,"hp":15,"armor":2,"power":-8,"rel":0.998},"cost":{"metal":2,"elec":4},"craftAt":"city","unlock":{"tech":"stabiliser"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"aa40":{"id":"aa40","name":"AA gun 40 mm","family":"aa40","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":3,"h":2},"stats":{"mass":1800,"hp":80,"armor":10,"power":0,"rel":0.998,"pen":60,"rpm":120,"range":3500,"vel":200,"dmg":30,"spread":0.9,"cal":40,"burst":3},"behaviour":{"auto":true,"aa":true,"flak":true},"cost":{"metal":10},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"ac20":{"id":"ac20","name":"Autocannon 20 mm","family":"ac20","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":2,"h":1},"stats":{"mass":150,"hp":35,"armor":5,"power":0,"rel":0.998,"pen":35,"rpm":180,"range":1200,"vel":240,"dmg":16,"spread":1,"cal":20,"burst":4},"behaviour":{"auto":true,"aa":true},"cost":{"metal":3},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"atgm":{"id":"atgm","name":"Guided anti-tank missile","family":"atgm","variant":"std","category":"weapon","tier":3,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":180,"hp":30,"armor":5,"power":0,"rel":0.998,"pen":200,"reload":6,"range":2500,"rounds":4,"vel":45,"dmg":160,"spread":0,"cal":120,"burst":60,"burstR":1.4},"behaviour":{"secondary":"atgm","needs":"fc","heat":true},"cost":{"metal":4,"elec":4},"craftAt":"metropolis","unlock":{"tech":"missiles"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"bomb":{"id":"bomb","name":"Bomb rack","family":"bomb","variant":"std","category":"weapon","tier":2,"domains":["aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":1100,"hp":30,"armor":3,"power":0,"rel":0.998,"range":0,"reload":0.5,"rounds":4,"bombMass":250,"pen":60,"heDmg":200,"heRadius":5},"behaviour":{"secondary":"bomb","air":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"aviation"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"c105":{"id":"c105","name":"Cannon 105 mm","family":"c105","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":4,"h":1},"stats":{"mass":1300,"hp":80,"armor":10,"power":0,"rel":0.998,"pen":150,"reload":8,"range":2500,"vel":155,"dmg":150,"spread":0.45,"cal":105,"shells":20,"burst":80,"burstR":2,"heDmg":110,"heRadius":4},"cost":{"metal":12},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"c37":{"id":"c37","name":"Cannon 37 mm","family":"c37","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":2,"h":1},"overhang":{"left":0,"right":2.5,"top":0,"bottom":0},"anchors":{"mount":[0.5,0.5],"muzzle":[4.5,0.5],"smoke":[[0.6,0.3]]},"moving":{"barrel":{"pivot":[0.8,0.5],"elevation":[-8,20]}},"stats":{"mass":250,"hp":40,"armor":10,"power":0,"rel":0.998,"pen":50,"reload":2.5,"range":1500,"vel":180,"dmg":45,"spread":0.55,"cal":37,"shells":40,"burst":25,"burstR":1},"cost":{"metal":4},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: pivot at 0.8 (inside the mantlet); barrel length 3.7 cells = 2 x 1.25 + 1.2 (07 section 7)."},"c75":{"id":"c75","name":"Cannon 75 mm","family":"c75","variant":"std","category":"weapon","tier":1,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":3,"h":1},"overhang":{"left":0,"right":1.5,"top":0,"bottom":0},"mount":"turret_or_hull","layer":"front","anchors":{"mount":[0.5,0.5],"muzzle":[4.5,0.5],"smoke":[[1,0.25]]},"moving":{"barrel":{"pivot":[0.94,0.5],"elevation":[-8,20]}},"stats":{"mass":600,"hp":60,"armor":10,"power":0,"rel":0.998,"pen":90,"reload":5,"range":2000,"vel":165,"dmg":95,"spread":0.5,"cal":75,"shells":30,"burst":55,"burstR":1.6,"heDmg":70,"heRadius":3},"cost":{"metal":7},"craftAt":"city","unlock":{"tech":"guns_medium"},"pros":[],"cons":[],"upgrades":[{"mark":2,"options":[{"id":"hv_rounds","name":"High-velocity rounds","mods":{"pen":1.3,"vel":1.15,"dmg":1.05,"reload":1.05},"cost":{"metal":3,"elec":1,"money":40}},{"id":"quick_breech","name":"Quick-action breech","mods":{"reload":0.66,"spread":0.96,"rel":0.8,"mass":1.04},"cost":{"metal":3,"elec":1,"money":40}}]},{"mark":3,"options":[{"id":"long_tube","name":"Lengthened tube","mods":{"pen":1.5,"vel":1.25,"range":1.3,"spread":0.9,"dmg":1.1,"mass":1.15,"reload":1.06},"cost":{"metal":7,"elec":2,"money":60}},{"id":"autoloader","name":"Autoloader","mods":{"reload":0.44,"rel":0.7,"mass":1.1},"adds":{"power":-6},"cost":{"metal":6,"elec":3,"money":60}}]}],"notes":"Golden sample: the art reference for every part (design/07 §12). Stats imported from v1 07_data.js. Barrel pivot and muzzle come from 'moving' and 'anchors' (the game reads them). Mk 3 options are totals relative to Mk 1."},"dc":{"id":"dc","name":"Depth-charge rack","family":"dc","variant":"std","category":"weapon","tier":2,"domains":["sea"],"footprint":{"w":2,"h":1},"stats":{"mass":300,"hp":40,"armor":5,"power":0,"rel":0.998,"reload":4,"range":0,"rounds":6},"behaviour":{"secondary":"depth"},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"sonar"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"hmg":{"id":"hmg","name":"Heavy machine gun","family":"hmg","variant":"std","category":"weapon","tier":1,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"stats":{"mass":80,"hp":25,"armor":5,"power":0,"rel":0.998,"pen":20,"rpm":450,"range":1000,"vel":250,"dmg":11,"spread":1.2,"cal":13,"burst":5},"behaviour":{"auto":true,"aa":true},"cost":{"metal":2},"craftAt":"city","unlock":{"tech":"guns_medium"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"how":{"id":"how","name":"Howitzer 150 mm","family":"how","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":4,"h":2},"stats":{"mass":2500,"hp":100,"armor":10,"power":0,"rel":0.998,"pen":40,"reload":12,"range":8000,"vel":95,"dmg":180,"spread":0.9,"cal":150,"shells":12,"heDmg":180,"heRadius":6},"behaviour":{"he":true,"indirect":true},"cost":{"metal":18},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"mg":{"id":"mg","name":"Machine gun","family":"mg","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":1.45,"top":0,"bottom":0},"anchors":{"mount":[0.5,0.5],"muzzle":[2.45,0.5],"smoke":[[0.4,0.4]]},"moving":{"barrel":{"pivot":[0.6,0.5],"elevation":[-10,25]}},"stats":{"mass":40,"hp":20,"armor":5,"power":0,"rel":0.998,"pen":8,"rpm":600,"range":600,"vel":260,"dmg":6,"spread":1.4,"cal":8,"burst":6},"behaviour":{"auto":true},"cost":{"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: ball mount in an armour collar; barrel length 1.85 cells = 1 x 1.25 + 0.6 (automatic)."},"ngun":{"id":"ngun","name":"Naval gun 120 mm, twin","family":"ngun","variant":"std","category":"weapon","tier":2,"domains":["sea","land"],"footprint":{"w":4,"h":3},"stats":{"mass":9000,"hp":200,"armor":25,"power":0,"rel":0.998,"pen":130,"reload":6,"range":9000,"vel":120,"dmg":150,"spread":0.45,"cal":120,"shells":30,"burst":70,"burstR":2.2},"behaviour":{"twin":true},"cost":{"metal":40},"craftAt":"city","unlock":{"tech":"guns_heavy"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."},"rpod":{"id":"rpod","name":"Rocket pod","family":"rpod","variant":"std","category":"weapon","tier":2,"domains":["land","sea","airship","aircraft"],"footprint":{"w":2,"h":1},"stats":{"mass":200,"hp":30,"armor":5,"power":0,"rel":0.998,"pen":70,"reload":12,"range":1500,"rounds":2,"salvo":8,"vel":110,"dmg":50,"spread":2.2,"cal":70,"heDmg":25,"heRadius":1.5},"behaviour":{"secondary":"rockets","heat":true},"cost":{"metal":3,"wood":1},"craftAt":"metropolis","unlock":{"tech":"rockets"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"sam":{"id":"sam","name":"Surface-to-air missile launcher","family":"sam","variant":"std","category":"weapon","tier":3,"domains":["land","sea","wall"],"footprint":{"w":2,"h":2},"stats":{"mass":600,"hp":50,"armor":10,"power":0,"rel":0.998,"pen":0,"reload":8,"range":6000,"rounds":2,"vel":70,"dmg":0,"spread":0,"cal":90},"behaviour":{"secondary":"sam","needs":"radar"},"cost":{"metal":6,"elec":8},"craftAt":"metropolis","unlock":{"tech":"missiles"},"pros":[],"cons":[],"notes":"Part 2d (v1 07_data.js), brought across in step 2.5d."},"smoke":{"id":"smoke","name":"Smoke launcher","family":"smoke","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","aircraft","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0,"top":0,"bottom":0},"mount":"hull","layer":"front","anchors":{"mount":[0.5,0.95],"smoke":[[0.19,0.22],[0.5,0.22],[0.81,0.22]]},"stats":{"mass":30,"hp":15,"armor":2,"power":0,"rel":0.998,"salvos":3},"cost":{"metal":1,"wood":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js. Art: Foundry batch A (delivered as sys_smoke_std)."},"swivel":{"id":"swivel","name":"Swivel gun 20 mm","family":"swivel","variant":"std","category":"weapon","tier":0,"domains":["land","sea","airship","wall"],"footprint":{"w":1,"h":1},"overhang":{"left":0,"right":0.75,"top":0,"bottom":0},"mount":"rail_or_hull","layer":"front","anchors":{"mount":[0.5,0.95],"muzzle":[1.72,0.375],"smoke":[[0.5,0.6]]},"moving":{"barrel":{"pivot":[0.5,0.375],"elevation":[-10,30]}},"stats":{"mass":60,"hp":20,"armor":3,"power":0,"rel":0.998,"pen":12,"dmg":18,"reload":1.2,"range":700,"vel":200,"spread":1,"cal":20,"shells":40},"cost":{"wood":1,"metal":1},"craftAt":"city","unlock":{"start":true},"pros":[],"cons":[],"notes":"New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as wpn_swivel20_std)."},"torp":{"id":"torp","name":"Torpedo tube","family":"torp","variant":"std","category":"weapon","tier":2,"domains":["sea"],"footprint":{"w":3,"h":1},"stats":{"mass":900,"hp":60,"armor":10,"power":0,"rel":0.998,"reload":30,"range":4000,"rounds":2},"behaviour":{"secondary":"torpedo","wet":true},"cost":{"metal":8,"elec":1},"craftAt":"city","unlock":{"tech":"submarines"},"pros":[],"cons":[],"notes":"Imported from v1 07_data.js."}},"svg":{"ammo":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"ammo\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 23.8H28.8V25.8H3.2Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M2.6 2.6H29.4V29.4H2.6ZM3.2 23.8H28.8V25.8H3.2Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"url(#shade)\"/>\n<rect x=\"3.2\" y=\"11.4\" width=\"25.6\" height=\"2.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.6 12H28.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M6.7 26V14.6H12.1V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M6.7 26V14.6H12.1V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M6.9 14.8Q7.1 7.2 9.4 5.8Q11.7 7.2 11.9 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M7.8 13.6Q7.9 9 9.2 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"6.7\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<path d=\"M13.3 26V14.6H18.7V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M13.3 26V14.6H18.7V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M13.5 14.8Q13.7 7.2 16 5.8Q18.3 7.2 18.5 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.4 13.6Q14.5 9 15.8 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"13.3\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<path d=\"M19.9 26V14.6H25.3V26Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M19.9 26V14.6H25.3V26Z\" fill=\"url(#cyl)\"/>\n<path d=\"M20.1 14.8Q20.3 7.2 22.6 5.8Q24.9 7.2 25.1 14.8Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M21 13.6Q21.1 9 22.4 7.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"19.9\" y=\"13.4\" width=\"5.4\" height=\"1.4\" fill=\"#B8733F\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<rect x=\"3.2\" y=\"21.6\" width=\"25.6\" height=\"2.2\" fill=\"#A8743F\"/>\n<rect x=\"3.2\" y=\"25.8\" width=\"25.6\" height=\"3.6\" fill=\"#A8743F\"/>\n<path d=\"M3.2 23.8H28.8V25.8H3.2Z\" fill=\"url(#shade)\"/>\n<path d=\"M3.2 21.6H28.8M3.2 29.4H28.8\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n<path d=\"M3.6 22.2H28.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.2 28.4H28.8\" stroke=\"#6E4A26\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.6 11.6L6 13.6M28.4 11.6L26 13.6\" stroke=\"#857650\" stroke-width=\"1\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"27.6\" r=\"0.9\"/><circle cx=\"27\" cy=\"27.6\" r=\"0.9\"/></g>\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M2.6 2.6H29.4V4.8H4.8V29.4H2.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M29.8 2.6V29.8H2.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 31.1V0.9H31.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M31.1 0.9V31.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.3\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"16\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"16\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"16\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"16\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"23.35\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"23.35\" r=\"0.9\"/></g>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"31\" height=\"31\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","cargo":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"cargo\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<clipPath id=\"load\"><path clip-rule=\"evenodd\" d=\"M0 0H64V64H0ZM1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4ZM21.2 22.6H24.4V25.4H21.2ZM40.2 22.6H43.4V25.4H40.2ZM59.4 22.6H62.6V25.4H59.4Z\"/></clipPath>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.4 22.6H4.6V25.4H1.4ZM21.2 22.6H24.4V25.4H21.2ZM40.2 22.6H43.4V25.4H40.2ZM59.4 22.6H62.6V25.4H59.4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<g clip-path=\"url(#load)\">\n<rect x=\"42.6\" y=\"7.6\" width=\"15.6\" height=\"13.6\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M42.6 12.2H58.2M42.6 16.7H58.2\" stroke=\"#6E4A26\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M43.4 8.4H57.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M42.6 7.6h3v1.2h-1.8v1.8h-1.2ZM58.2 7.6h-3v1.2h1.8v1.8h1.2Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"44.2\" cy=\"9.2\" r=\"0.9\"/><circle cx=\"56.6\" cy=\"9.2\" r=\"0.9\"/></g>\n<path d=\"M6.6 22Q5.8 14 11 12.4Q16.6 11.4 18 16L17 21Z\" fill=\"#D8CCAA\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M9.6 13.2Q11 12 12.6 12.6\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M5 50.6V28Q5 21.4 11 19.8L20 17.8Q27 14.6 35 15.8L43 17.2V21H58.4Q59.6 22.8 59.6 28V50.6Z\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<path d=\"M5 50.6V28Q5 21.4 11 19.8L20 17.8Q27 14.6 35 15.8L43 17.2V21H58.4Q59.6 22.8 59.6 28V50.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M12 20.6Q16 34 13 50M28 16.2Q31 32 27 50M47 21Q44 36 48 50\" stroke=\"#857650\" stroke-opacity=\"0.7\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M6.2 27Q7 22.6 11.6 21M21 18.6Q28 15.6 34.6 16.6M45 21.8H57.6\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M8 21L9.2 50.6M24.6 16.8L23 50.6M38 16.2Q41 30 39.4 50.6M55.6 21L57.4 50.6M6 30Q32 44 58.4 34\" stroke=\"#14171B\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M8 21L9.2 50.6M24.6 16.8L23 50.6M38 16.2Q41 30 39.4 50.6M55.6 21L57.4 50.6M6 30Q32 44 58.4 34\" stroke=\"#A8743F\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 31H62.6M1.4 41.6H62.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 30.2H62.6V34.6H1.4ZM1.4 40.8H62.6V45.2H1.4Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1.4\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M2.1 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 22.6H4.6V25.4H1.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"3\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"21.2\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M21.9 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M23.8 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M21.2 22.6H24.4V25.4H21.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"22.8\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"22.8\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"40.2\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M40.9 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M42.8 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M40.2 22.6H43.4V25.4H40.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"41.8\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"41.8\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"59.4\" y=\"25.4\" width=\"3.2\" height=\"25.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M60.1 26V50\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M62 26V50\" stroke=\"#6E4A26\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M59.4 22.6H62.6V25.4H59.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"61\" cy=\"32.4\" r=\"0.95\"/><circle cx=\"61\" cy=\"43\" r=\"0.95\"/></g>\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M0.6 53.9H63.4\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M1.2 51.2H62.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M16 50.6V53.8M36 54V57.2M50 50.6V53.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 50.4H63.4V57.4H0.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"1.4\" y=\"57.2\" width=\"61.2\" height=\"5.6\" rx=\"0.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.6\" cy=\"60\" r=\"1\"/><circle cx=\"11.4\" cy=\"60\" r=\"1\"/><circle cx=\"18.2\" cy=\"60\" r=\"1\"/><circle cx=\"25\" cy=\"60\" r=\"1\"/><circle cx=\"31.8\" cy=\"60\" r=\"1\"/><circle cx=\"38.6\" cy=\"60\" r=\"1\"/><circle cx=\"45.4\" cy=\"60\" r=\"1\"/><circle cx=\"52.2\" cy=\"60\" r=\"1\"/><circle cx=\"59\" cy=\"60\" r=\"1\"/></g>\n<path d=\"M1.4 59.6H62.6V62.8H1.4Z\" fill=\"url(#grime)\"/>\n<path d=\"M2 57.9h4M30 57.9h3M58 57.9h3\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M8.6 51h2.4M44 51h2M62.8 52.4v2M23.6 30.8v1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"20\" cy=\"38\" r=\"0.6\"/><circle cx=\"50\" cy=\"26\" r=\"0.6\"/><circle cx=\"33\" cy=\"47\" r=\"0.6\"/></g>\n</g>\n</g>\n</svg>","fuel_s":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"fuel_s\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M4.6 16.4H27.4V19.4H4.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M2.6 2.6H29.4V29.4H2.6ZM8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"url(#shade)\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" fill=\"url(#cyl)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7.4\" cy=\"10.4\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"10.4\" r=\"0.9\"/><circle cx=\"7.4\" cy=\"25.2\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"25.2\" r=\"0.9\"/><circle cx=\"16\" cy=\"9.2\" r=\"0.9\"/><circle cx=\"16\" cy=\"26.4\" r=\"0.9\"/></g>\n<path d=\"M11.6 7.8V27.8M20.4 7.8V27.8\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"4.4\" y=\"12.4\" width=\"23.2\" height=\"1.8\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"4.4\" y=\"22\" width=\"23.2\" height=\"1.8\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"17.4\" y=\"5\" width=\"4.4\" height=\"2.8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"16.6\" y=\"3.2\" width=\"6\" height=\"2.2\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M17.2 3.8H21.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"24.8\" y=\"10.8\" width=\"1.8\" height=\"13.6\" rx=\"0.4\" fill=\"#14171B\"/>\n<rect x=\"25.1\" y=\"16\" width=\"1.2\" height=\"8.2\" fill=\"#FFB23E\"/>\n<rect x=\"25.1\" y=\"11.2\" width=\"1.2\" height=\"4.8\" fill=\"#7FB7C9\"/>\n<path d=\"M4.6 25.4H2.6\" stroke=\"#14171B\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M4.8 25.4H2.6\" stroke=\"#B8733F\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M8.4 28H24L22.8 29.4H9.6Z\" fill=\"#1B1712\" fill-opacity=\"0.35\"/>\n<path d=\"M8 8.4H14\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M8 7.6H24Q27.4 7.6 27.4 11V24.6Q27.4 28 24 28H8Q4.6 28 4.6 24.6V11Q4.6 7.6 8 7.6Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0 0H32V32H0ZM2.6 2.6V29.4H29.4V2.6Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M2.6 2.6H29.4V4.8H4.8V29.4H2.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M29.8 2.6V29.8H2.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 31.1V0.9H31.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M31.1 0.9V31.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.3\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"16\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"16\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"23.35\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"1.3\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"30.7\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"8.65\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"16\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"16\" r=\"0.9\"/><circle cx=\"1.3\" cy=\"23.35\" r=\"0.9\"/><circle cx=\"30.7\" cy=\"23.35\" r=\"0.9\"/></g>\n<rect x=\"2.6\" y=\"2.6\" width=\"26.8\" height=\"26.8\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"31\" height=\"31\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","aprop":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 64\" data-part=\"aprop\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" fill=\"#FF00FF\"/>\n<path d=\"M0.6 18.6Q0.6 17.6 1.6 17.6H4.4V46.4H1.6Q0.6 46.4 0.6 45.4Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" fill=\"url(#tube)\"/>\n<path d=\"M9 24.8V39.2M15 25V39\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7\" cy=\"27\" r=\"0.9\"/><circle cx=\"7\" cy=\"37\" r=\"0.9\"/><circle cx=\"12\" cy=\"26.6\" r=\"0.9\"/><circle cx=\"12\" cy=\"37.4\" r=\"0.9\"/></g>\n<rect x=\"8.2\" y=\"21\" width=\"3.4\" height=\"3.6\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"7.6\" y=\"20.2\" width=\"4.6\" height=\"1.4\" rx=\"0.4\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M8.8 21.6V24\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3 24.4H13.4Q19.6 24.4 21.4 28.6V35.4Q19.6 39.6 13.4 39.6H3Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M0.6 18.6Q0.6 17.6 1.6 17.6H4.4V46.4H1.6Q0.6 46.4 0.6 45.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"2.5\" cy=\"21\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"27.5\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"36.5\" r=\"0.95\"/><circle cx=\"2.5\" cy=\"43\" r=\"0.95\"/></g>\n<rect x=\"20.6\" y=\"29.6\" width=\"3\" height=\"4.8\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n</g>\n</g>\n<g id=\"prop\" data-role=\"prop\" data-pivot=\"23 32\">\n<g class=\"paint\">\n<path d=\"M19.4 8.6Q19.8 4.6 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q25.9 5.6 26.2 8.6ZM19.9 55.4Q20.3 59.2 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q26.1 58.6 26.5 55.4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M19.2 8.6L19.2 18L19.8 29.6H26.2L26.4 18Q26.6 12 26.2 8.6Z\" fill=\"#A8743F\"/>\n<path d=\"M19.9 55.4L19.8 46L19.8 34.4H26.2L26.6 46Q26.8 51 26.5 55.4Z\" fill=\"#A8743F\"/>\n<path d=\"M19.8 29.6L19.2 18Q19 8 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q26.8 9 26.4 18L26.2 29.6Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19.8 34.4L19.8 46Q19.8 56 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q27 55 26.6 46L26.2 34.4Z\" fill=\"url(#cyl)\"/>\n<path d=\"M21.2 28V10M23.4 28V9M25 28V12M21.4 36V54M23.6 36V55M25.2 36V52\" stroke=\"#6E4A26\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M20.4 27L20.2 11M20.6 37L20.8 53\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M19.8 29.6L19.2 18Q19 8 20.6 3.2Q21.4 1.4 23 1.4Q24.6 1.4 25.2 3.2Q26.8 9 26.4 18L26.2 29.6Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M19.8 34.4L19.8 46Q19.8 56 21.2 60.8Q21.8 62.6 23.2 62.6Q24.8 62.6 25.4 60.8Q27 55 26.6 46L26.2 34.4Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M19.4 8.6H26.2M19.9 55.4H26.5\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"19.4\" y=\"26.6\" width=\"6\" height=\"10.8\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"19.4\" y=\"26.6\" width=\"6\" height=\"10.8\" rx=\"0.8\" fill=\"url(#cyl)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"22.4\" cy=\"28.6\" r=\"0.9\"/><circle cx=\"22.4\" cy=\"35.4\" r=\"0.9\"/></g>\n<path d=\"M25 27.4Q31 28 31.4 32Q31 36 25 36.6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M25 27.4Q31 28 31.4 32Q31 36 25 36.6Z\" fill=\"url(#tube)\"/>\n<path d=\"M26.2 29.2Q29.4 29.8 30.2 31.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","eng_m":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\" data-part=\"eng_m\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"hot\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#9A4E2A\"/><stop offset=\"0.5\" stop-color=\"#C2713D\"/><stop offset=\"1\" stop-color=\"#9A4E2A\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H96V64H0ZM3 3V61H93V3Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M75 9.6H89V12H75Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3 3H93V61H3ZM12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"#2E3339\" fill-rule=\"evenodd\"/>\n<rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" fill=\"url(#shade)\"/>\n<rect x=\"3\" y=\"56.4\" width=\"90\" height=\"4.6\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M13.4 50H20.4L21.4 56.4H12.4ZM63.6 50H70.6L71.6 56.4H62.6Z\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M13.8 51H20M64 51H70.2\" stroke=\"#4A4540\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M20 50H64L62 55.4H22Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"20\" y=\"50\" width=\"44\" height=\"5.4\" fill=\"url(#tube)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"24\" cy=\"51.6\" r=\"0.9\"/><circle cx=\"60\" cy=\"51.6\" r=\"0.9\"/></g>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M22 30V49M32 30V49M42 30V49M52 30V49M62 30V49\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M22.8 30V49M32.8 30V49M42.8 30V49M52.8 30V49M62.8 30V49\" stroke=\"#FFFFFF\" stroke-opacity=\"0.14\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"12\" y=\"28\" width=\"60\" height=\"2.6\" fill=\"#000000\" fill-opacity=\"0.2\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"22.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"30\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"37.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"45\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"52.5\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"60\" cy=\"29.3\" r=\"0.9\"/><circle cx=\"67.5\" cy=\"29.3\" r=\"0.9\"/></g>\n<path d=\"M12 28H72V47.6Q72 50 69.6 50H14.4Q12 50 12 47.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"30\" y=\"34\" width=\"12\" height=\"8\" rx=\"1\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"30\" y=\"34\" width=\"12\" height=\"8\" rx=\"1\" fill=\"url(#tube)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"32.4\" cy=\"36\" r=\"0.9\"/><circle cx=\"39.6\" cy=\"36\" r=\"0.9\"/></g>\n<path d=\"M33 34Q33 27 17 22.4M34.2 34Q34.2 27 27 22.4M35.4 34Q35.4 27 37 22.4M36.6 34Q36.6 27 47 22.4M37.8 34Q37.8 27 57 22.4M39 34Q39 27 67 22.4\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M33 34Q33 27 17 22.4M34.2 34Q34.2 27 27 22.4M35.4 34Q35.4 27 37 22.4M36.6 34Q36.6 27 47 22.4M37.8 34Q37.8 27 57 22.4M39 34Q39 27 67 22.4\" stroke=\"#B8733F\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"11\" y=\"18\" width=\"62\" height=\"10.4\" rx=\"0.8\" fill=\"#4A4E55\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"11\" y=\"18\" width=\"62\" height=\"10.4\" rx=\"0.8\" fill=\"url(#tube)\"/>\n<path d=\"M13 18V14.6Q13 12.4 15.2 12.4H19Q21.2 12.4 21.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M14 14.6Q14 13.4 15.2 13.4H18\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"19.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M23 18V14.6Q23 12.4 25.2 12.4H29Q31.2 12.4 31.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M24 14.6Q24 13.4 25.2 13.4H28\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"25\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"29.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M33 18V14.6Q33 12.4 35.2 12.4H39Q41.2 12.4 41.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M34 14.6Q34 13.4 35.2 13.4H38\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"35\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"39.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M43 18V14.6Q43 12.4 45.2 12.4H49Q51.2 12.4 51.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M44 14.6Q44 13.4 45.2 13.4H48\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"45\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"49.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M53 18V14.6Q53 12.4 55.2 12.4H59Q61.2 12.4 61.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M54 14.6Q54 13.4 55.2 13.4H58\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"55\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"59.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M63 18V14.6Q63 12.4 65.2 12.4H69Q71.2 12.4 71.2 14.6V18Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M64 14.6Q64 13.4 65.2 13.4H68\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"65\" cy=\"16.4\" r=\"0.9\"/><circle cx=\"69.2\" cy=\"16.4\" r=\"0.9\"/></g>\n<path d=\"M17 26.6V23.6M27 26.6V23.6M37 26.6V23.6M47 26.6V23.6M57 26.6V23.6M67 26.6V23.6\" stroke=\"#14171B\" stroke-width=\"3.4\" fill=\"none\"/>\n<path d=\"M17 26.6V23.6M27 26.6V23.6M37 26.6V23.6M47 26.6V23.6M57 26.6V23.6M67 26.6V23.6\" stroke=\"#9A4E2A\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M68 22.6H9.6Q7.4 22.6 7.4 20.4V18\" stroke=\"#14171B\" stroke-width=\"4.4\" fill=\"none\"/>\n<path d=\"M68 22.6H9.6Q7.4 22.6 7.4 20.4V18\" stroke=\"#C2713D\" stroke-width=\"3\" fill=\"none\"/>\n<path d=\"M66 21.8H10.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"4\" y=\"5\" width=\"7\" height=\"13.4\" rx=\"1.4\" fill=\"url(#hot)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M4 8.6H11M4 14.8H11\" stroke=\"#2E3339\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"5.6\" y=\"3\" width=\"3.8\" height=\"2.4\" fill=\"#2A2622\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M4 5H11V9H4Z\" fill=\"#2A2622\" fill-opacity=\"0.4\"/>\n<path d=\"M72 22L84 18.6H90V55H84L72 51Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M72 22L84 18.6H90V55H84L72 51Z\" fill=\"url(#shade)\"/>\n<path d=\"M84 19V55\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"75\" cy=\"25\" r=\"0.95\"/><circle cx=\"75\" cy=\"48\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"22\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"36.8\" r=\"0.95\"/><circle cx=\"86.8\" cy=\"51.6\" r=\"0.95\"/><circle cx=\"80.6\" cy=\"22.6\" r=\"0.95\"/><circle cx=\"80.6\" cy=\"50.6\" r=\"0.95\"/></g>\n<rect x=\"90\" y=\"40.4\" width=\"3\" height=\"4.6\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M75 9.6V7.2Q75 5.6 76.6 5.6H87.4Q89 5.6 89 7.2V9.6ZM75 12H89V15.4Q89 17 87.4 17H76.6Q75 17 75 15.4Z\" fill=\"url(#steel)\"/>\n<rect x=\"75\" y=\"5.6\" width=\"14\" height=\"11.4\" rx=\"1.6\" fill=\"url(#cyl)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"74.4\" y=\"4.4\" width=\"15.2\" height=\"1.8\" rx=\"0.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M78 17V20.4H72.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M78 17V20.4H72.4\" stroke=\"#4F565E\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M11.6 19Q13 9 18 3\" stroke=\"#14171B\" stroke-width=\"3.4\" fill=\"none\"/>\n<path d=\"M11.6 19Q13 9 18 3\" stroke=\"#23201E\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M12.8 17Q14 10 17.6 5\" stroke=\"#4A4540\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"4.4\" y=\"33\" width=\"7\" height=\"10.4\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M4.4 36.4H11.4M4.4 40H11.4\" stroke=\"#B8733F\" stroke-opacity=\"0.9\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M8 43.4L13.4 44.6M8 45.2L13.4 46.2\" stroke=\"#23201E\" stroke-width=\"1\" fill=\"none\"/>\n<rect x=\"3\" y=\"44\" width=\"90\" height=\"12.4\" fill=\"url(#grime)\"/>\n<g fill=\"#1B1712\" fill-opacity=\"0.5\"><circle cx=\"26\" cy=\"55\" r=\"1.3\"/><circle cx=\"47\" cy=\"54.6\" r=\"1.3\"/><circle cx=\"58\" cy=\"55.2\" r=\"1.3\"/></g>\n<path d=\"M15 28.8h3M40 28.8h2.4M73 22.6l2 -0.6M13 47.2v1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0 0H96V64H0ZM3 3V61H93V3Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M3 3H93V5.2H5.2V61H3Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M93.4 3V61.4H3\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 63.1V0.9H95.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M95.1 0.9V63.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.5\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"8.65\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"15.81\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"15.81\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"22.96\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"22.96\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"30.12\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"30.12\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"37.27\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"37.27\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"44.42\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"44.42\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"51.58\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"51.58\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"58.73\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"58.73\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"65.88\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"65.88\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"73.04\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"73.04\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"80.19\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"80.19\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"87.35\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"87.35\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"62.5\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"8.28\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"8.28\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"15.06\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"15.06\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"21.83\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"21.83\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"28.61\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"28.61\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"35.39\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"35.39\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"42.17\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"42.17\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"48.94\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"48.94\" r=\"0.9\"/><circle cx=\"1.5\" cy=\"55.72\" r=\"0.9\"/><circle cx=\"94.5\" cy=\"55.72\" r=\"0.9\"/></g>\n<rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"95\" height=\"63\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n</g>\n</g>\n</svg>","prop":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 64\" data-part=\"prop\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M2.9 6H19.2L18.8 9.2H3.3Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"url(#cyl)\"/>\n<path d=\"M11 1.4V30.6\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.6\" cy=\"4\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"12\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"18.8\" r=\"0.95\"/><circle cx=\"8.6\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"4\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"12\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"18.8\" r=\"0.95\"/><circle cx=\"13.4\" cy=\"25.6\" r=\"0.95\"/></g>\n<rect x=\"2.4\" y=\"0.6\" width=\"17.4\" height=\"2.6\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" fill=\"url(#grime)\"/>\n<path d=\"M3.2 0.6H18.8Q19.8 0.6 19.6 1.6L16 31.4H6.2L2.4 1.6Q2.2 0.6 3.2 0.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"0.4\" y=\"33.8\" width=\"21\" height=\"4.4\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"0.4\" y=\"33.8\" width=\"21\" height=\"4.4\" fill=\"url(#tube)\"/>\n<rect x=\"0.4\" y=\"32.4\" width=\"2.4\" height=\"7.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"4.6\" y=\"30.6\" width=\"13\" height=\"10.8\" rx=\"2.2\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"4.6\" y=\"30.6\" width=\"13\" height=\"10.8\" rx=\"2.2\" fill=\"url(#tube)\"/>\n<path d=\"M8.6 31V41M13.6 31V41\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.6\" cy=\"32.8\" r=\"0.95\"/><circle cx=\"6.6\" cy=\"39.2\" r=\"0.95\"/><circle cx=\"15.6\" cy=\"32.8\" r=\"0.95\"/><circle cx=\"15.6\" cy=\"39.2\" r=\"0.95\"/></g>\n<g fill=\"#857650\" fill-opacity=\"0.6\"><circle cx=\"5.4\" cy=\"22\" r=\"0.9\"/><circle cx=\"15.6\" cy=\"27\" r=\"0.9\"/><circle cx=\"8\" cy=\"28.5\" r=\"0.9\"/><circle cx=\"12.2\" cy=\"40.6\" r=\"0.9\"/><circle cx=\"17\" cy=\"38\" r=\"0.9\"/></g>\n<path d=\"M7.4 13v4M14.8 20v3.6\" stroke=\"#9A4E2A\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"screw\" data-role=\"prop\" data-pivot=\"23 36\">\n<g class=\"detail\">\n<path d=\"M19 31L17.6 23Q16.2 15.6 18.8 12.4Q21.4 10 24.4 11.6Q27.8 14 27.4 22L26.4 31Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M19 31L17.6 23Q16.2 15.6 18.8 12.4Q21.4 10 24.4 11.6Q27.8 14 27.4 22L26.4 31Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19 41L18.4 49Q17.6 57 20.4 59.6Q23.2 61.6 25.8 59.4Q28.4 56.4 27.4 49L26.4 41Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M19 41L18.4 49Q17.6 57 20.4 59.6Q23.2 61.6 25.8 59.4Q28.4 56.4 27.4 49L26.4 41Z\" fill=\"url(#cyl)\"/>\n<path d=\"M19.4 29Q18 20 20 14.4M19.8 43Q19 53 21 57.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M24.6 29Q26 20 23.6 13.4M24.8 43Q26.2 52 24.4 58.4\" stroke=\"#8A6A2A\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"18.6\" y=\"30.4\" width=\"8.4\" height=\"11.2\" rx=\"2.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"18.6\" y=\"30.4\" width=\"8.4\" height=\"11.2\" rx=\"2.4\" fill=\"url(#tube)\"/>\n<path d=\"M26.8 31.6L30.8 34.4V37.6L26.8 40.4Z\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M26.8 31.6L30.8 34.4V35.6L26.8 33.8Z\" fill=\"#FFFFFF\" fill-opacity=\"0.3\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"21\" cy=\"32.6\" r=\"0.9\"/><circle cx=\"21\" cy=\"39.4\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"32.6\" r=\"0.9\"/><circle cx=\"24.6\" cy=\"39.4\" r=\"0.9\"/></g>\n</g>\n</g>\n</svg>","steam":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -24 96 88\" data-part=\"steam\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<radialGradient id=\"rim\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.72\" stop-color=\"#2E3339\"/><stop offset=\"0.8\" stop-color=\"#4F565E\"/><stop offset=\"0.9\" stop-color=\"#8A9199\"/><stop offset=\"0.95\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n<linearGradient id=\"soot\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#2A2622\" stop-opacity=\"0.85\"/><stop offset=\"1\" stop-color=\"#2A2622\" stop-opacity=\"0\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" fill=\"#FF00FF\"/>\n<path d=\"M29 24H78V55.5H29Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" fill=\"#00FFFF\"/>\n<path d=\"M79.5 -12H87.5V-8.6H79.5Z\" fill=\"#FFFF00\"/>\n<path d=\"M4 50.2H30V53H4Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M79.5 -17.5H87.5V-12H79.5ZM79.5 -8.6H87.5V24H79.5Z\" fill=\"#3A3F45\"/>\n<path d=\"M79.5 24V-17.5H87.5V24Z\" fill=\"url(#cyl)\"/>\n<rect x=\"79.5\" y=\"-17.5\" width=\"8\" height=\"13\" fill=\"url(#soot)\"/>\n<path d=\"M79.5 5H87.5M79.5 -2H87.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"81\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"86\" cy=\"1.5\" r=\"0.9\"/><circle cx=\"81\" cy=\"-5.5\" r=\"0.9\"/><circle cx=\"86\" cy=\"-5.5\" r=\"0.9\"/></g>\n<path d=\"M77.6 -17.4L78.6 -22.4H88.4L89.4 -17.4Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M77.6 -17.4L78.6 -22.4H88.4L89.4 -17.4Z\" fill=\"url(#cyl)\"/>\n<path d=\"M79 -22.4H88V-21H79Z\" fill=\"#1B1712\" fill-opacity=\"0.8\"/>\n<path d=\"M79.5 24V-17.5H87.5V24Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" fill=\"url(#shade)\"/>\n<path d=\"M4.8 18V55\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.8\" cy=\"19\" r=\"1\"/><circle cx=\"6.8\" cy=\"25.5\" r=\"1\"/><circle cx=\"6.8\" cy=\"32\" r=\"1\"/><circle cx=\"6.8\" cy=\"38.5\" r=\"1\"/><circle cx=\"6.8\" cy=\"51\" r=\"1\"/><circle cx=\"27.2\" cy=\"19\" r=\"1\"/><circle cx=\"27.2\" cy=\"38.5\" r=\"1\"/><circle cx=\"27.2\" cy=\"51\" r=\"1\"/></g>\n<circle cx=\"11.5\" cy=\"27\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"11.5\" cy=\"27\" r=\"3.2\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M11.5 27L13.4 25.2\" stroke=\"#E0533D\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M9.2 29.2A3 3 0 0 1 8.6 25.9\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"11.5\" cy=\"27\" r=\"0.9\" fill=\"#14171B\"/>\n<path d=\"M11.5 31.4V35\" stroke=\"#B8733F\" stroke-width=\"1.2\" fill=\"none\"/>\n<rect x=\"22.6\" y=\"23\" width=\"3.4\" height=\"13\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"23.5\" y=\"25\" width=\"1.6\" height=\"9\" fill=\"#7FB7C9\"/>\n<rect x=\"23.5\" y=\"29.5\" width=\"1.6\" height=\"4.5\" fill=\"#7FB7C9\"/>\n<path d=\"M23.5 29.5H25.1\" stroke=\"#D8F0F7\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"8.4\" y=\"36.2\" width=\"15.2\" height=\"12.6\" rx=\"1\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M8.4 36.2h15.2v4H8.4Z\" fill=\"url(#shade)\"/>\n<rect x=\"10.4\" y=\"44.2\" width=\"11.2\" height=\"2.4\" rx=\"0.6\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M11 45.4H21\" stroke=\"#FFE08A\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M13.2 44.2V46.6M16 44.2V46.6M18.8 44.2V46.6\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"18\" y=\"38.2\" width=\"5.2\" height=\"1.6\" rx=\"0.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"10.4\" cy=\"38.4\" r=\"0.9\"/><circle cx=\"10.4\" cy=\"42.4\" r=\"0.9\"/></g>\n<path d=\"M8.4 49H23.6L22 52H10Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<path d=\"M4 50H30V56H4Z\" fill=\"url(#grime)\"/>\n<path d=\"M29 24H78V55.5H29Z\" fill=\"url(#tube)\"/>\n<path d=\"M29 49H78V55.5H29Z\" fill=\"url(#grime)\"/>\n<rect x=\"40\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"40\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<rect x=\"53\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"53\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<rect x=\"66\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"66\" y=\"23.6\" width=\"2.6\" height=\"32.2\" fill=\"url(#tube)\"/>\n<path d=\"M47 24.5V55M60 24.5V55\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"31.4\" cy=\"27.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"33.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"39.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"45.5\" r=\"1\"/><circle cx=\"31.4\" cy=\"51.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"27.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"33.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"39.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"45.5\" r=\"1\"/><circle cx=\"74.6\" cy=\"51.5\" r=\"1\"/></g>\n<path d=\"M30 25.3H77\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M29 24H78V55.5H29Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M76 56V25Q76 22.5 78.5 22.5H88Q92.4 22.5 92.4 27V51.5Q92.4 56 88 56Z\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<path d=\"M76 56V25Q76 22.5 78.5 22.5H88Q92.4 22.5 92.4 27V51.5Q92.4 56 88 56Z\" fill=\"url(#tube)\"/>\n<path d=\"M88.6 23.6Q91.6 24.2 91.6 27V51.5Q91.6 54.6 88.6 55\" stroke=\"#4F565E\" stroke-width=\"1\" fill=\"none\"/>\n<rect x=\"81\" y=\"29.6\" width=\"11.8\" height=\"2.4\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"81\" y=\"46\" width=\"11.8\" height=\"2.4\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"82.8\" cy=\"30.8\" r=\"0.95\"/><circle cx=\"82.8\" cy=\"47.2\" r=\"0.95\"/><circle cx=\"78.4\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"78.4\" cy=\"52.6\" r=\"0.95\"/></g>\n<circle cx=\"90.2\" cy=\"39\" r=\"1.8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M90.2 39H93.4\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M76 22.5H92.4V30H76Z\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<path d=\"M58.4 24.4V20.4Q58.4 15.2 63.8 15.2Q69.2 15.2 69.2 20.4V24.4Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M58.4 24.4V20.4Q58.4 15.2 63.8 15.2Q69.2 15.2 69.2 20.4V24.4Z\" fill=\"url(#cyl)\"/>\n<rect x=\"57.4\" y=\"23\" width=\"12.8\" height=\"2\" rx=\"0.5\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"62.6\" y=\"10.4\" width=\"2.4\" height=\"5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M60.2 11.4H67.4\" stroke=\"#4F565E\" stroke-width=\"1.1\" fill=\"none\"/>\n<circle cx=\"67.6\" cy=\"11.4\" r=\"1\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M66.6 15.4V12.6H68.6V15.4Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M58.6 19.2Q56.6 19.2 56.6 17.6V16.6\" stroke=\"#14171B\" stroke-width=\"2.8\" fill=\"none\"/>\n<path d=\"M58.6 19.2Q56.6 19.2 56.6 17.6V16.6\" stroke=\"#B8733F\" stroke-width=\"1.8\" fill=\"none\"/>\n<rect x=\"38.4\" y=\"12.6\" width=\"17.8\" height=\"11.6\" rx=\"1.2\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M39 15.4H55.6M39 18.4H55.6M39 21.4H55.6\" stroke=\"#6E4A26\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"38.4\" y=\"12.6\" width=\"17.8\" height=\"11.6\" rx=\"1.2\" fill=\"url(#tube)\"/>\n<rect x=\"36.8\" y=\"12\" width=\"2.4\" height=\"12.8\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"53.8\" y=\"12\" width=\"2.4\" height=\"12.8\" rx=\"0.5\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"44\" y=\"12\" width=\"2.4\" height=\"12.8\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"38\" y=\"23.8\" width=\"18.6\" height=\"1.6\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M32.6 17.2H36.8V20.2H32.6Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"30.4\" y=\"15.6\" width=\"3.6\" height=\"6.2\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M32 18.6L22 6\" stroke=\"#14171B\" stroke-width=\"3\" fill=\"none\"/>\n<path d=\"M32 18.6L22 6\" stroke=\"#8A9199\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M31.6 17.8L22.4 6.2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M15 14.6L19.4 5H24.6L29 14.6Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M15.8 14L19.8 5.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"17.5\" cy=\"12.6\" r=\"0.95\"/><circle cx=\"26.5\" cy=\"12.6\" r=\"0.95\"/></g>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.5 59.5H94.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.5 56.4H94.5\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"10\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"47\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"84\" y=\"55.5\" width=\"3\" height=\"8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"11.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"11.5\" cy=\"61.4\" r=\"0.95\"/><circle cx=\"48.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"48.5\" cy=\"61.4\" r=\"0.95\"/><circle cx=\"85.5\" cy=\"57.8\" r=\"0.95\"/><circle cx=\"85.5\" cy=\"61.4\" r=\"0.95\"/></g>\n<path d=\"M1 60.5H95V63.5H1Z\" fill=\"url(#grime)\"/>\n<path d=\"M1.5 55.5H94.5Q95.5 55.5 95.5 56.5V62.6Q95.5 63.5 94.5 63.5H1.5Q0.5 63.5 0.5 62.6V56.5Q0.5 55.5 1.5 55.5Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M5 17.2l1.8 -0.8M29.4 30v2M77.2 35v2.2M36.5 55.8h3M70 55.8h2.5M2.5 55.9h3\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M44 45v4M71 43v3.4\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"35\" cy=\"30\" r=\"0.55\"/><circle cx=\"50\" cy=\"41\" r=\"0.55\"/><circle cx=\"62\" cy=\"35\" r=\"0.55\"/><circle cx=\"72\" cy=\"48\" r=\"0.55\"/><circle cx=\"15\" cy=\"20\" r=\"0.55\"/></g>\n<path d=\"M4 56V17Q4 14 7 14H27Q30 14 30 17V56Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"flywheel\" data-role=\"rotor\" data-pivot=\"22 6\">\n<g class=\"paint\">\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" fill=\"#FF00FF\"/>\n<circle cx=\"22\" cy=\"6\" r=\"5.2\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n<path d=\"M27.5 6L33 6M24.75 10.76L27.5 15.53M19.25 10.76L16.5 15.53M16.5 6L11 6M19.25 1.24L16.5 -3.53M24.75 1.24L27.5 -3.53\" stroke=\"#FFFFFF\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M6.8 6A15.2 15.2 0 1 0 37.2 6A15.2 15.2 0 1 0 6.8 6ZM11 6A11 11 0 1 0 33 6A11 11 0 1 0 11 6Z\" fill=\"url(#rim)\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<circle cx=\"22\" cy=\"6\" r=\"5.2\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M25.11 4.62L33.46 4.19L33.46 7.81L25.11 7.38ZM24.75 8L29.3 15.01L26.16 16.83L22.36 9.38ZM21.64 9.38L17.84 16.83L14.7 15.01L19.25 8ZM18.89 7.38L10.54 7.81L10.54 4.19L18.89 4.62ZM19.25 4L14.7 -3.01L17.84 -4.83L21.64 2.62ZM22.36 2.62L26.16 -4.83L29.3 -3.01L24.75 4Z\" fill=\"url(#shade)\"/>\n<circle cx=\"22\" cy=\"6\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bbolt)\"><circle cx=\"24.2\" cy=\"6\" r=\"0.9\"/><circle cx=\"20.9\" cy=\"7.91\" r=\"0.9\"/><circle cx=\"20.9\" cy=\"4.09\" r=\"0.9\"/></g>\n<circle cx=\"22\" cy=\"6\" r=\"1\" fill=\"#C4CAD0\"/>\n<circle cx=\"22\" cy=\"6\" r=\"12.4\" fill=\"none\" stroke=\"#000000\" stroke-width=\"0.8\" stroke-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"34.59\" cy=\"10.58\" r=\"0.9\"/><circle cx=\"27.66\" cy=\"18.14\" r=\"0.9\"/><circle cx=\"17.42\" cy=\"18.59\" r=\"0.9\"/><circle cx=\"9.86\" cy=\"11.66\" r=\"0.9\"/><circle cx=\"9.41\" cy=\"1.42\" r=\"0.9\"/><circle cx=\"16.34\" cy=\"-6.14\" r=\"0.9\"/><circle cx=\"26.58\" cy=\"-6.59\" r=\"0.9\"/><circle cx=\"34.14\" cy=\"0.34\" r=\"0.9\"/></g>\n<g fill=\"#1B1712\" fill-opacity=\"0.4\"><circle cx=\"26.69\" cy=\"18.87\" r=\"1.2\"/><circle cx=\"9.58\" cy=\"0.21\" r=\"1.2\"/><circle cx=\"28.85\" cy=\"-5.86\" r=\"1.2\"/></g>\n</g>\n</g>\n</svg>","track":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 32\" data-part=\"track\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"disc\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.3\" stop-color=\"#4F565E\"/><stop offset=\"0.62\" stop-color=\"#8A9199\"/><stop offset=\"0.85\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M22.6 8.6H41.4L44.8 20.6H19.2Z\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M22.6 8.6H41.4L44.8 20.6H19.2Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M23.2 9.4H40.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"25\" cy=\"12\" r=\"0.95\"/><circle cx=\"39\" cy=\"12\" r=\"0.95\"/><circle cx=\"27\" cy=\"18\" r=\"0.95\"/><circle cx=\"37\" cy=\"18\" r=\"0.95\"/></g>\n<circle cx=\"32\" cy=\"10.2\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"32\" cy=\"10.2\" r=\"1.2\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"0.8\" width=\"64\" height=\"5.6\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"0.8\" width=\"64\" height=\"5.6\" fill=\"url(#tube)\"/>\n<path d=\"M4 0.8V6.4M12 0.8V6.4M20 0.8V6.4M28 0.8V6.4M36 0.8V6.4M44 0.8V6.4M52 0.8V6.4M60 0.8V6.4\" stroke=\"#14171B\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"#4F565E\"><circle cx=\"8\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"16\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"24\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"32\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"40\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"48\" cy=\"3.6\" r=\"0.9\"/><circle cx=\"56\" cy=\"3.6\" r=\"0.9\"/></g>\n<path d=\"M5.6 0.9V0.2H10.4V0.9ZM13.6 0.9V0.2H18.4V0.9ZM21.6 0.9V0.2H26.4V0.9ZM29.6 0.9V0.2H34.4V0.9ZM37.6 0.9V0.2H42.4V0.9ZM45.6 0.9V0.2H50.4V0.9ZM53.6 0.9V0.2H58.4V0.9Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M-1.2 6.4L-0.6 7.8H0.6L1.2 6.4ZM6.8 6.4L7.4 7.8H8.6L9.2 6.4ZM14.8 6.4L15.4 7.8H16.6L17.2 6.4ZM22.8 6.4L23.4 7.8H24.6L25.2 6.4ZM30.8 6.4L31.4 7.8H32.6L33.2 6.4ZM38.8 6.4L39.4 7.8H40.6L41.2 6.4ZM46.8 6.4L47.4 7.8H48.6L49.2 6.4ZM54.8 6.4L55.4 7.8H56.6L57.2 6.4ZM62.8 6.4L63.4 7.8H64.6L65.2 6.4Z\" fill=\"#2E3339\"/>\n<path d=\"M0 1.5H64\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"0\" y=\"25.6\" width=\"64\" height=\"5.6\" fill=\"#3A3F45\"/>\n<rect x=\"0\" y=\"25.6\" width=\"64\" height=\"5.6\" fill=\"url(#tube)\"/>\n<path d=\"M4 25.6V31.2M12 25.6V31.2M20 25.6V31.2M28 25.6V31.2M36 25.6V31.2M44 25.6V31.2M52 25.6V31.2M60 25.6V31.2\" stroke=\"#14171B\" stroke-opacity=\"0.8\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"#4F565E\"><circle cx=\"8\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"16\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"24\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"32\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"40\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"48\" cy=\"28.4\" r=\"0.9\"/><circle cx=\"56\" cy=\"28.4\" r=\"0.9\"/></g>\n<path d=\"M5.6 31.1V31.9H10.4V31.1ZM13.6 31.1V31.9H18.4V31.1ZM21.6 31.1V31.9H26.4V31.1ZM29.6 31.1V31.9H34.4V31.1ZM37.6 31.1V31.9H42.4V31.1ZM45.6 31.1V31.9H50.4V31.1ZM53.6 31.1V31.9H58.4V31.1Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"0\" y=\"28\" width=\"64\" height=\"3.2\" fill=\"url(#grime)\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"5\" cy=\"30\" r=\"1.1\"/><circle cx=\"19\" cy=\"29.6\" r=\"1.1\"/><circle cx=\"35\" cy=\"30.2\" r=\"1.1\"/><circle cx=\"52\" cy=\"29.8\" r=\"1.1\"/><circle cx=\"60\" cy=\"30.4\" r=\"1.1\"/></g>\n<path d=\"M0 0.8H64M0 6.4H64M0 25.6H64M0 31.2H64\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"wheel_a\" data-role=\"wheel\" data-pivot=\"16 16\">\n<g class=\"detail\">\n<path d=\"M5.4 16A10.6 10.6 0 1 0 26.6 16A10.6 10.6 0 1 0 5.4 16ZM7.8 16A8.2 8.2 0 1 0 24.2 16A8.2 8.2 0 1 0 7.8 16Z\" fill=\"#23201E\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"16\" cy=\"16\" r=\"9.6\" fill=\"none\" stroke=\"#4A4540\" stroke-width=\"0.8\"/>\n<circle cx=\"16\" cy=\"16\" r=\"8.2\" fill=\"url(#disc)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M21.52 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M16 21.8m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M10.48 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M12.59 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M19.41 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"16\" cy=\"16\" r=\"3.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"18.1\" cy=\"16\" r=\"0.9\"/><circle cx=\"17.05\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"14.95\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"13.9\" cy=\"16\" r=\"0.9\"/><circle cx=\"14.95\" cy=\"14.18\" r=\"0.9\"/><circle cx=\"17.05\" cy=\"14.18\" r=\"0.9\"/></g>\n<circle cx=\"16\" cy=\"16\" r=\"1\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"23.2\" cy=\"22.04\" r=\"1\"/><circle cx=\"7.17\" cy=\"19.21\" r=\"1\"/><circle cx=\"17.63\" cy=\"6.74\" r=\"1\"/></g>\n</g>\n</g>\n<g id=\"wheel_b\" data-role=\"wheel\" data-pivot=\"48 16\">\n<g class=\"detail\">\n<path d=\"M37.4 16A10.6 10.6 0 1 0 58.6 16A10.6 10.6 0 1 0 37.4 16ZM39.8 16A8.2 8.2 0 1 0 56.2 16A8.2 8.2 0 1 0 39.8 16Z\" fill=\"#23201E\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"48\" cy=\"16\" r=\"9.6\" fill=\"none\" stroke=\"#4A4540\" stroke-width=\"0.8\"/>\n<circle cx=\"48\" cy=\"16\" r=\"8.2\" fill=\"url(#disc)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M53.52 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M48 21.8m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M42.48 17.79m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M44.59 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0M51.41 11.31m-1.3 0a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"48\" cy=\"16\" r=\"3.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"50.1\" cy=\"16\" r=\"0.9\"/><circle cx=\"49.05\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"17.82\" r=\"0.9\"/><circle cx=\"45.9\" cy=\"16\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"14.18\" r=\"0.9\"/><circle cx=\"49.05\" cy=\"14.18\" r=\"0.9\"/></g>\n<circle cx=\"48\" cy=\"16\" r=\"1\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.5\"><circle cx=\"55.2\" cy=\"22.04\" r=\"1\"/><circle cx=\"39.17\" cy=\"19.21\" r=\"1\"/><circle cx=\"49.63\" cy=\"6.74\" r=\"1\"/></g>\n</g>\n</g>\n</svg>","wheel_w":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"wheel_w\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"tyre\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.89\" stop-color=\"#2E3339\"/><stop offset=\"0.93\" stop-color=\"#8A9199\"/><stop offset=\"0.965\" stop-color=\"#C4CAD0\"/><stop offset=\"1\" stop-color=\"#4F565E\"/></radialGradient>\n<radialGradient id=\"fel\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.8\" stop-color=\"#000000\" stop-opacity=\"0.4\"/><stop offset=\"0.86\" stop-color=\"#000000\" stop-opacity=\"0\"/><stop offset=\"0.95\" stop-color=\"#FFFFFF\" stop-opacity=\"0.18\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.3\"/></radialGradient>\n<radialGradient id=\"nave\" cx=\"0.5\" cy=\"0.5\" r=\"0.5\"><stop offset=\"0.55\" stop-color=\"#FFFFFF\" stop-opacity=\"0.22\"/><stop offset=\"0.8\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.45\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 1.6Q0.6 0.6 1.6 0.6H10.4V4.6H0.6Z M53.6 0.6H62.4Q63.4 0.6 63.4 1.6V4.6H53.6Z\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M0.6 1.6Q0.6 0.6 1.6 0.6H10.4V4.6H0.6Z M53.6 0.6H62.4Q63.4 0.6 63.4 1.6V4.6H53.6Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.4 1.5H9.8M54.2 1.5H62.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 6.2Q32 19.5 60 6.2\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M4 6.2Q32 19.5 60 6.2\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M4 5.6Q32 18.9 60 5.6\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M7 8.4Q32 20 57 8.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M7 8.4Q32 20 57 8.4\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M7 7.8Q32 19.4 57 7.8\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M10 10.6Q32 20.6 54 10.6\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M10 10.6Q32 20.6 54 10.6\" stroke=\"#8A9199\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M10 10Q32 20 54 10\" stroke=\"#C4CAD0\" stroke-width=\"0.7\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<rect x=\"3.1\" y=\"3.2\" width=\"4.8\" height=\"4.6\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"5.5\" cy=\"5.6\" r=\"1.2\" fill=\"url(#bolt)\"/>\n<rect x=\"56.1\" y=\"3.2\" width=\"4.8\" height=\"4.6\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"58.5\" cy=\"5.6\" r=\"1.2\" fill=\"url(#bolt)\"/>\n</g>\n</g>\n<g id=\"wheel\" data-role=\"wheel\" data-pivot=\"32 32\">\n<g class=\"paint\">\n<path d=\"M5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32ZM10 32A22 22 0 1 0 54 32A22 22 0 1 0 10 32Z\" fill=\"#00FFFF\" fill-rule=\"evenodd\"/>\n<path d=\"M39.92 33.11L54.48 36.86L53.9 39.03L39.42 35ZM38.3 36.93L49.04 47.45L47.45 49.04L36.93 38.3ZM35 39.42L39.03 53.9L36.86 54.48L33.11 39.92ZM30.89 39.92L27.14 54.48L24.97 53.9L29 39.42ZM27.07 38.3L16.55 49.04L14.96 47.45L25.7 36.93ZM24.58 35L10.1 39.03L9.52 36.86L24.08 33.11ZM24.08 30.89L9.52 27.14L10.1 24.97L24.58 29ZM25.7 27.07L14.96 16.55L16.55 14.96L27.07 25.7ZM29 24.58L24.97 10.1L27.14 9.52L30.89 24.08ZM33.11 24.08L36.86 9.52L39.03 10.1L35 24.58ZM36.93 25.7L47.45 14.96L49.04 16.55L38.3 27.07ZM39.42 29L53.9 24.97L54.48 27.14L39.92 30.89Z\" fill=\"#00FFFF\"/>\n<circle cx=\"32\" cy=\"32\" r=\"9\" fill=\"#00FFFF\"/>\n<circle cx=\"32\" cy=\"32\" r=\"7.2\" fill=\"none\" stroke=\"#FFFF00\" stroke-width=\"1.8\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M39.92 33.11L54.48 36.86L53.9 39.03L39.42 35ZM38.3 36.93L49.04 47.45L47.45 49.04L36.93 38.3ZM35 39.42L39.03 53.9L36.86 54.48L33.11 39.92ZM30.89 39.92L27.14 54.48L24.97 53.9L29 39.42ZM27.07 38.3L16.55 49.04L14.96 47.45L25.7 36.93ZM24.58 35L10.1 39.03L9.52 36.86L24.08 33.11ZM24.08 30.89L9.52 27.14L10.1 24.97L24.58 29ZM25.7 27.07L14.96 16.55L16.55 14.96L27.07 25.7ZM29 24.58L24.97 10.1L27.14 9.52L30.89 24.08ZM33.11 24.08L36.86 9.52L39.03 10.1L35 24.58ZM36.93 25.7L47.45 14.96L49.04 16.55L38.3 27.07ZM39.42 29L53.9 24.97L54.48 27.14L39.92 30.89Z\" stroke=\"#14171B\" stroke-width=\"0.6\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M41.18 34.46L52.77 37.56M38.72 38.72L47.2 47.2M34.46 41.18L37.56 52.77M29.54 41.18L26.44 52.77M25.28 38.72L16.8 47.2M22.82 34.46L11.23 37.56M22.82 29.54L11.23 26.44M25.28 25.28L16.8 16.8M29.54 22.82L26.44 11.23M34.46 22.82L37.56 11.23M38.72 25.28L47.2 16.8M41.18 29.54L52.77 26.44\" stroke=\"#FFFFFF\" stroke-opacity=\"0.22\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32ZM10 32A22 22 0 1 0 54 32A22 22 0 1 0 10 32Z\" fill=\"url(#fel)\" fill-rule=\"evenodd\"/>\n<path d=\"M54.2 32L58.8 32M43.1 51.23L45.4 55.21M20.9 51.23L18.6 55.21M9.8 32L5.2 32M20.9 12.77L18.6 8.79M43.1 12.77L45.4 8.79\" stroke=\"#000000\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.35\"><circle cx=\"53.22\" cy=\"44.25\" r=\"0.9\"/><circle cx=\"32\" cy=\"56.5\" r=\"0.9\"/><circle cx=\"10.78\" cy=\"44.25\" r=\"0.9\"/><circle cx=\"10.78\" cy=\"19.75\" r=\"0.9\"/><circle cx=\"32\" cy=\"7.5\" r=\"0.9\"/><circle cx=\"53.22\" cy=\"19.75\" r=\"0.9\"/></g>\n<circle cx=\"32\" cy=\"32\" r=\"22\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.7 32A30.3 30.3 0 1 0 62.3 32A30.3 30.3 0 1 0 1.7 32ZM5 32A27 27 0 1 0 59 32A27 27 0 1 0 5 32Z\" fill=\"url(#tyre)\" fill-rule=\"evenodd\" stroke=\"#14171B\" stroke-width=\"0.9\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"60.65\" cy=\"32\" r=\"0.95\"/><circle cx=\"58.17\" cy=\"43.65\" r=\"0.95\"/><circle cx=\"51.17\" cy=\"53.29\" r=\"0.95\"/><circle cx=\"40.85\" cy=\"59.25\" r=\"0.95\"/><circle cx=\"29.01\" cy=\"60.49\" r=\"0.95\"/><circle cx=\"17.68\" cy=\"56.81\" r=\"0.95\"/><circle cx=\"8.82\" cy=\"48.84\" r=\"0.95\"/><circle cx=\"3.98\" cy=\"37.96\" r=\"0.95\"/><circle cx=\"3.98\" cy=\"26.04\" r=\"0.95\"/><circle cx=\"8.82\" cy=\"15.16\" r=\"0.95\"/><circle cx=\"17.67\" cy=\"7.19\" r=\"0.95\"/><circle cx=\"29.01\" cy=\"3.51\" r=\"0.95\"/><circle cx=\"40.85\" cy=\"4.75\" r=\"0.95\"/><circle cx=\"51.17\" cy=\"10.71\" r=\"0.95\"/><circle cx=\"58.17\" cy=\"20.35\" r=\"0.95\"/></g>\n<circle cx=\"32\" cy=\"32\" r=\"9\" fill=\"url(#nave)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"32\" cy=\"32\" r=\"5.4\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"35.6\" cy=\"32\" r=\"0.9\"/><circle cx=\"33.8\" cy=\"35.12\" r=\"0.9\"/><circle cx=\"30.2\" cy=\"35.12\" r=\"0.9\"/><circle cx=\"28.4\" cy=\"32\" r=\"0.9\"/><circle cx=\"30.2\" cy=\"28.88\" r=\"0.9\"/><circle cx=\"33.8\" cy=\"28.88\" r=\"0.9\"/></g>\n<path d=\"M30.3 32L31.15 30.53H32.85L33.7 32L32.85 33.47H31.15Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"32\" cy=\"32\" r=\"0.9\" fill=\"#C4CAD0\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.45\"><circle cx=\"59.93\" cy=\"35.92\" r=\"1.3\"/><circle cx=\"49.75\" cy=\"53.92\" r=\"1.3\"/><circle cx=\"28.56\" cy=\"59.99\" r=\"1.3\"/><circle cx=\"10.4\" cy=\"50.13\" r=\"1.3\"/><circle cx=\"5.34\" cy=\"22.82\" r=\"1.3\"/><circle cx=\"16.23\" cy=\"8.62\" r=\"1.3\"/><circle cx=\"40.71\" cy=\"5.18\" r=\"1.3\"/><circle cx=\"56.66\" cy=\"18.33\" r=\"1.3\"/></g>\n<g fill=\"#1B1712\" fill-opacity=\"0.35\"><circle cx=\"55.96\" cy=\"40.72\" r=\"0.9\"/><circle cx=\"23.28\" cy=\"55.96\" r=\"0.9\"/><circle cx=\"6.89\" cy=\"36.43\" r=\"0.9\"/><circle cx=\"23.28\" cy=\"8.04\" r=\"0.9\"/><circle cx=\"48.39\" cy=\"12.47\" r=\"0.9\"/></g>\n<path d=\"M56.25 48.98A29.6 29.6 0 0 1 54 51.81M15.02 56.25A29.6 29.6 0 0 1 12.19 54M7.75 15.02A29.6 29.6 0 0 1 10 12.19M46.8 6.37A29.6 29.6 0 0 1 49.81 8.36\" stroke=\"#C4CAD0\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","bridge":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -24 64 88\" data-part=\"bridge\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"aov\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.5\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<clipPath id=\"whc\"><path d=\"M9 13H58L54.5 32H9Z\"/></clipPath>\n<clipPath id=\"dkc\"><path d=\"M3 35H61V57.5H3Z\"/></clipPath>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M16 -14.8C11.5 -15.9 7 -13.6 1.2 -14.6L4.6 -12.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" fill=\"#FFFF00\"/>\n<path d=\"M3 35H61V57.5H3Z\" fill=\"#FF00FF\"/>\n<path d=\"M9 13H58L54.5 32H9Z\" fill=\"#FF00FF\"/>\n<path d=\"M9 26.3H55.55L55.13 28.6H9Z\" fill=\"#FFFF00\"/>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" fill=\"#00FFFF\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" fill=\"#00FFFF\"/>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M9.8 -9.6L5.5 10.2M24.6 -9.6L29.5 8.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"16\" y=\"-17\" width=\"2.4\" height=\"26\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"16\" y=\"-17\" width=\"2.4\" height=\"26\" fill=\"url(#cyl)\"/>\n<g fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"15.6\" y=\"-7\" width=\"3.2\" height=\"1.6\"/><rect x=\"15.6\" y=\"1.5\" width=\"3.2\" height=\"1.6\"/></g>\n<rect x=\"9\" y=\"-10.4\" width=\"16.4\" height=\"1.8\" rx=\"0.9\" fill=\"#8E6035\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M9.8 -10H24.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"15.4\" y=\"-10.9\" width=\"3.6\" height=\"2.8\" rx=\"0.5\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M16 -12.2C11.6 -12.2 8 -11.4 4 -11.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" fill=\"#000000\" fill-opacity=\"0.25\"/>\n<path d=\"M15.6 -14.2C11.5 -15 7.5 -13.2 3.2 -13.9\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M16 -14.8C11.5 -15.9 7 -13.6 1.2 -14.6L4.6 -12.6L1.6 -10.4C7 -11.5 11.5 -10.2 16 -11Z\" stroke=\"#14171B\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M14.6 -21.2L15.6 -23.4H18.8L19.8 -21.2Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"15\" y=\"-21.2\" width=\"4.4\" height=\"4.6\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"15.5\" y=\"-20.7\" width=\"1.1\" height=\"3.2\" fill=\"#D8F0F7\" fill-opacity=\"0.8\"/>\n<path d=\"M17.2 -21.2V-16.6\" stroke=\"#8A6A2A\" stroke-width=\"0.8\"/>\n<rect x=\"14.6\" y=\"-16.8\" width=\"5.2\" height=\"1.4\" rx=\"0.4\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" fill=\"url(#shade)\"/>\n<path d=\"M18 8.2V13M33 7.6V13M48 8.1V13\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5.3 10.6Q33 6.7 61.8 9.9\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"4.5\" y=\"11.9\" width=\"58\" height=\"1.5\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7.5\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"14.7\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"21.9\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"29.1\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"36.3\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"43.5\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"50.7\" cy=\"12.6\" r=\"0.9\"/><circle cx=\"57.9\" cy=\"12.6\" r=\"0.9\"/></g>\n<path d=\"M13.6 9.9V7.6Q13.6 6.8 14.4 6.8H20Q20.8 6.8 20.8 7.6V9.9Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M14.2 7.6H20\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"15.2\" cy=\"8.6\" r=\"0.9\"/><circle cx=\"19.2\" cy=\"8.6\" r=\"0.9\"/></g>\n<path d=\"M44.6 8.6V3.8Q44.6 0.6 48.2 0.6H50.8V5.6H48.8V8.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M50.2 0.2Q52.6 0.2 52.6 3.1Q52.6 6 50.2 6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M50.6 1.4Q51.6 1.6 51.6 3.1Q51.6 4.6 50.6 4.8Z\" fill=\"#14171B\"/>\n<path d=\"M45.5 7.6V4Q45.5 1.6 48.2 1.5\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"43.6\" y=\"7.8\" width=\"6.2\" height=\"1.4\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M9 13H58L54.5 32H9Z\" fill=\"url(#shade)\"/>\n<rect x=\"9\" y=\"13\" width=\"50\" height=\"6\" fill=\"url(#aov)\" clip-path=\"url(#whc)\"/>\n<path d=\"M9.7 18V31\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M57.26 17L54.63 31.3\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M23.8 14V31M34.5 24.4V31M45 24.4V31\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"11.3\" cy=\"16.5\" r=\"1\"/><circle cx=\"11.3\" cy=\"22\" r=\"1\"/><circle cx=\"11.3\" cy=\"27.4\" r=\"1\"/><circle cx=\"22.2\" cy=\"16.5\" r=\"1\"/><circle cx=\"22.2\" cy=\"22\" r=\"1\"/><circle cx=\"12\" cy=\"30.1\" r=\"1\"/><circle cx=\"18.9\" cy=\"30.1\" r=\"1\"/><circle cx=\"25.8\" cy=\"30.1\" r=\"1\"/><circle cx=\"32.7\" cy=\"30.1\" r=\"1\"/><circle cx=\"39.6\" cy=\"30.1\" r=\"1\"/><circle cx=\"46.5\" cy=\"30.1\" r=\"1\"/><circle cx=\"53.4\" cy=\"30.1\" r=\"1\"/></g>\n<path d=\"M25 15.4H33.5L33.5 24H25ZM35.5 15.4H44L44 24H35.5ZM46 15.4H55.26L53.67 24H46Z\" fill=\"#14171B\"/>\n<path d=\"M26.1 16.5H33L33 23.5H26.1ZM36.6 16.5H43.5L43.5 23.5H36.6ZM47.1 16.5H54.56L53.27 23.5H47.1Z\" fill=\"#7FB7C9\"/>\n<g fill=\"#2A2622\" fill-opacity=\"0.72\"><circle cx=\"39.4\" cy=\"20.6\" r=\"2\"/><path d=\"M36.4 19.2Q36.6 17.4 39.4 17.3Q42 17.4 42.2 18.9L43.7 19.4H36.4Z\"/><path d=\"M36.7 24Q37 22.4 39.4 22.3Q41.9 22.4 42.3 24Z\"/></g>\n<circle cx=\"40.3\" cy=\"18.3\" r=\"0.9\" fill=\"#C9A04A\"/>\n<path d=\"M46.5 23.5A3.7 3.7 0 0 1 53.9 23.5\" stroke=\"#6E4A26\" stroke-opacity=\"0.85\" stroke-width=\"1.2\" fill=\"none\"/>\n<g fill=\"#6E4A26\" fill-opacity=\"0.85\"><circle cx=\"50.2\" cy=\"18.4\" r=\"1\"/><circle cx=\"46.6\" cy=\"20\" r=\"1\"/><circle cx=\"53.8\" cy=\"20\" r=\"1\"/><circle cx=\"50.2\" cy=\"23.3\" r=\"1.1\"/></g>\n<path d=\"M25.6 16H57V17.8H25.6Z\" fill=\"#000000\" fill-opacity=\"0.3\" clip-path=\"url(#whc)\"/>\n<path d=\"M26.8 23.3L31.2 17.2M29.8 23.3L32.4 19.7M36.8 23.3L37.9 21.8M46.8 23.3L48.4 21.1\" stroke=\"#D8F0F7\" stroke-opacity=\"0.6\" stroke-width=\"1.1\" fill=\"none\"/>\n<g fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"24.4\" y=\"24\" width=\"9.7\" height=\"1.3\" rx=\"0.3\"/><rect x=\"34.9\" y=\"24\" width=\"9.7\" height=\"1.3\" rx=\"0.3\"/><rect x=\"45.4\" y=\"24\" width=\"9\" height=\"1.3\" rx=\"0.3\"/></g>\n<rect x=\"12\" y=\"16.3\" width=\"7.6\" height=\"1.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"15.9\" cy=\"18\" r=\"0.9\" fill=\"none\" stroke=\"#8A6A2A\" stroke-width=\"0.8\"/>\n<path d=\"M13.6 23Q13.8 18.8 15.9 18.6Q18 18.8 18.2 23Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"13\" y=\"22.8\" width=\"5.8\" height=\"1.2\" rx=\"0.5\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.5 22.4Q14.5 20 15.7 19.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M15.9 24V26.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M4.3 26.9Q6.6 27.9 9 27.4V31.3H4.3Z\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M4.8 28.4Q6.6 29.2 8.6 28.8\" stroke=\"#D8CCAA\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.3 29.8H9V31.3H4.3Z\" fill=\"#000000\" fill-opacity=\"0.22\"/>\n<path d=\"M5.4 27.6v1.4M7.8 27.6v1.4\" stroke=\"#857650\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M3.6 26.2Q6.3 27.6 9 26.9\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M55.53 26.4Q58.3 27.6 60.6 26.2M55.05 29Q58.2 30 60.6 28.7\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"2.9\" y=\"25.8\" width=\"1.4\" height=\"5.6\"/><rect x=\"59.9\" y=\"25.8\" width=\"1.4\" height=\"5.6\"/></g>\n<g fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.4\"><circle cx=\"3.6\" cy=\"25.4\" r=\"1.1\"/><circle cx=\"60.6\" cy=\"25.4\" r=\"1.1\"/></g>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" fill=\"url(#shade)\"/>\n<path d=\"M2.4 32.1H61.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1.6\" y=\"34.3\" width=\"60.8\" height=\"1.2\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<path d=\"M3 35H61V57.5H3Z\" fill=\"url(#shade)\"/>\n<rect x=\"3\" y=\"35\" width=\"58\" height=\"3.2\" fill=\"url(#aov)\"/>\n<rect x=\"3\" y=\"50\" width=\"58\" height=\"7.5\" fill=\"url(#grime)\"/>\n<path d=\"M3 40.6H61M3 46.2H61M3 51.8H61\" stroke=\"#000000\" stroke-opacity=\"0.32\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M3 41.3H61M3 46.9H61M3 52.5H61\" stroke=\"#FFFFFF\" stroke-opacity=\"0.12\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M52 35.5V40.6M35.5 40.6V46.2M54.5 46.2V51.8M38.5 51.8V57.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.4\"><circle cx=\"51\" cy=\"37.2\" r=\"0.6\"/><circle cx=\"53\" cy=\"38.9\" r=\"0.6\"/><circle cx=\"34.5\" cy=\"42.6\" r=\"0.6\"/><circle cx=\"36.5\" cy=\"44.4\" r=\"0.6\"/><circle cx=\"53.5\" cy=\"48.2\" r=\"0.6\"/><circle cx=\"55.5\" cy=\"50\" r=\"0.6\"/><circle cx=\"37.5\" cy=\"53.8\" r=\"0.6\"/><circle cx=\"39.5\" cy=\"55.5\" r=\"0.6\"/></g>\n<rect x=\"3\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.6 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M6.4 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"26.6\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M27.2 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M30 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"57\" y=\"35.5\" width=\"4\" height=\"22\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M57.6 36V57\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M60.4 36V57\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"38.2\" r=\"1\"/><circle cx=\"5\" cy=\"44.2\" r=\"1\"/><circle cx=\"5\" cy=\"50.2\" r=\"1\"/><circle cx=\"5\" cy=\"55.6\" r=\"1\"/><circle cx=\"28.6\" cy=\"38.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"44.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"50.2\" r=\"1\"/><circle cx=\"28.6\" cy=\"55.6\" r=\"1\"/><circle cx=\"59\" cy=\"38.2\" r=\"1\"/><circle cx=\"59\" cy=\"44.2\" r=\"1\"/><circle cx=\"59\" cy=\"50.2\" r=\"1\"/><circle cx=\"59\" cy=\"55.6\" r=\"1\"/></g>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" fill=\"url(#shade)\"/>\n<path d=\"M14 37.8V57.5M18 37.8V57.5\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M10.8 57.4V38.7Q10.8 38.2 11.3 38.2H21.2\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"1\" fill=\"none\"/>\n<g fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"9.2\" y=\"40.2\" width=\"10.4\" height=\"2.2\" rx=\"0.4\"/><rect x=\"9.2\" y=\"51.8\" width=\"10.4\" height=\"2.2\" rx=\"0.4\"/></g>\n<g fill=\"url(#bolt)\"><circle cx=\"12\" cy=\"41.3\" r=\"0.9\"/><circle cx=\"16.8\" cy=\"41.3\" r=\"0.9\"/><circle cx=\"12\" cy=\"52.9\" r=\"0.9\"/><circle cx=\"16.8\" cy=\"52.9\" r=\"0.9\"/></g>\n<circle cx=\"20\" cy=\"47.6\" r=\"1.5\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<circle cx=\"20\" cy=\"46.1\" r=\"0.9\" fill=\"url(#bbolt)\"/>\n<path d=\"M10 57.5V38.6Q10 37.4 11.2 37.4H20.8Q22 37.4 22 38.6V57.5Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"44.6\" cy=\"46\" r=\"5.8\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M40.4 43.4A5 5 0 0 1 47.2 41.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.55\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"49.3\" cy=\"46\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"50.07\" r=\"0.9\"/><circle cx=\"42.25\" cy=\"50.07\" r=\"0.9\"/><circle cx=\"39.9\" cy=\"46\" r=\"0.9\"/><circle cx=\"42.25\" cy=\"41.93\" r=\"0.9\"/><circle cx=\"46.95\" cy=\"41.93\" r=\"0.9\"/></g>\n<circle cx=\"44.6\" cy=\"46\" r=\"3.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M41.3 45.2A3.4 3.4 0 0 1 45.4 42.6L45 43.6A2.5 2.5 0 0 0 42.2 45.5Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M43.2 48.3L46.8 44.3\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"1\"/>\n<rect x=\"23.2\" y=\"26.4\" width=\"2.4\" height=\"31\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"23.2\" y=\"26.4\" width=\"2.4\" height=\"31\" fill=\"url(#cyl)\"/>\n<g fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"><rect x=\"22.2\" y=\"25.4\" width=\"4.4\" height=\"1.6\" rx=\"0.4\"/><rect x=\"22.4\" y=\"42\" width=\"4\" height=\"1.6\" rx=\"0.3\"/><rect x=\"22.4\" y=\"50\" width=\"4\" height=\"1.6\" rx=\"0.3\"/><rect x=\"22.2\" y=\"56.2\" width=\"4.4\" height=\"1.4\" rx=\"0.3\"/></g>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"33\" cy=\"38.2\" r=\"0.55\"/><circle cx=\"48\" cy=\"55\" r=\"0.55\"/><circle cx=\"8.6\" cy=\"44.5\" r=\"0.55\"/><circle cx=\"41\" cy=\"29.5\" r=\"0.55\"/><circle cx=\"30\" cy=\"20.5\" r=\"0.55\"/><circle cx=\"53\" cy=\"14.3\" r=\"0.55\"/><circle cx=\"12\" cy=\"10.6\" r=\"0.55\"/></g>\n<g fill=\"#FFFFFF\" fill-opacity=\"0.18\"><circle cx=\"36\" cy=\"36.8\" r=\"0.45\"/><circle cx=\"50.5\" cy=\"36.4\" r=\"0.45\"/><circle cx=\"27.5\" cy=\"14.4\" r=\"0.45\"/><circle cx=\"40\" cy=\"9\" r=\"0.45\"/></g>\n<path d=\"M58.2 10.3l1.6 -0.2M61.6 12.4v-1.6M2.2 31.9h2.2M60.2 32h1.8M9.8 20.5v1.8M10.6 56.4v-1.8M21.2 38.3h-1.6M54.8 30.3l0.3 -1.5\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M29.2 45.4v3M60 51.4v2.4\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M44.2 51.9v2.6M45.3 51.9v1.4\" stroke=\"#C2713D\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"1\" y=\"57.4\" width=\"62\" height=\"6\" rx=\"1\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"1\" y=\"60.4\" width=\"62\" height=\"3\" rx=\"1\" fill=\"url(#grime)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.5\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"11.38\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"18.25\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"25.12\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"32\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"38.88\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"45.75\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"52.62\" cy=\"60.4\" r=\"1.1\"/><circle cx=\"59.5\" cy=\"60.4\" r=\"1.1\"/></g>\n<path d=\"M3 58.4h3.5M24 58.4h3M44 58.4h5M58 58.4h2.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.5 13.4V10.4Q33 6.3 62.5 9.6V13.4Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M9 13.4V31.3M57.93 13.4L54.63 31.3\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M2.4 31.3H61.6Q62.4 31.3 62.4 32.1V34.7Q62.4 35.5 61.6 35.5H2.4Q1.6 35.5 1.6 34.7V32.1Q1.6 31.3 2.4 31.3Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M3 35.5V57.4M61 35.5V57.4\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g></g></svg>","cabin":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -16 64 48\" data-part=\"cabin\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"aov\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.5\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M2.6 9.4H61.4V27.8H2.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M2.6 10H61.4V12.2H2.6Z\" fill=\"#FFFF00\"/>\n<path d=\"M21 5.8V2.6Q21 1.6 22 1.6H32Q33 1.6 33 2.6V5.8Z\" fill=\"#00FFFF\"/>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" fill=\"#00FFFF\"/>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"51\" y=\"-11\" width=\"4\" height=\"16.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"51\" y=\"-11\" width=\"4\" height=\"16.4\" fill=\"url(#cyl)\"/>\n<rect x=\"50.4\" y=\"-4.6\" width=\"5.2\" height=\"1.4\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M48.6 -11.2L50.6 -14.6H55.4L57.4 -11.2Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M48.6 -11.2L50.6 -14.6H55.4L57.4 -11.2Z\" fill=\"url(#cyl)\"/>\n<path d=\"M50.8 -11H55.2V-7H50.8Z\" fill=\"#2A2622\" fill-opacity=\"0.6\"/>\n<path d=\"M49 -14.8Q53 -16.2 57 -14.8\" stroke=\"#2A2622\" stroke-width=\"1\" stroke-opacity=\"0.5\" fill=\"none\"/>\n<path d=\"M21 5.8V2.6Q21 1.6 22 1.6H32Q33 1.6 33 2.6V5.8Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"22.6\" y=\"2.6\" width=\"4\" height=\"2.4\" rx=\"0.2\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"27.4\" y=\"2.6\" width=\"4\" height=\"2.4\" rx=\"0.2\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M23 4.4L24.6 2.8M27.8 4.4L29.4 2.8\" stroke=\"#D8F0F7\" stroke-opacity=\"0.7\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 7.6Q32 3.8 62.6 7.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.5\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"0.6\" y=\"8.8\" width=\"62.8\" height=\"1.2\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"11\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"18\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"25\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"32\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"39\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"46\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"53\" cy=\"9.3\" r=\"0.9\"/><circle cx=\"60\" cy=\"9.3\" r=\"0.9\"/></g>\n<path d=\"M49.4 5.4Q53 4.4 56.6 5.4V6.4H49.4Z\" fill=\"#2A2622\" fill-opacity=\"0.45\"/>\n<rect x=\"49.8\" y=\"4\" width=\"6.4\" height=\"2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M2.6 9.4H61.4V27.8H2.6Z\" fill=\"url(#shade)\"/>\n<rect x=\"2.6\" y=\"12.2\" width=\"58.8\" height=\"3\" fill=\"url(#aov)\"/>\n<path d=\"M2.6 22H61.4V27.8H2.6Z\" fill=\"url(#grime)\"/>\n<path d=\"M2.6 16.4H61.4M2.6 21.6H61.4\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M2.6 17.1H61.4M2.6 22.3H61.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.12\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M40.6 12.2V16.4M21 16.4V21.6M50 21.6V27.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"#000000\" fill-opacity=\"0.4\"><circle cx=\"39.8\" cy=\"13.4\" r=\"0.6\"/><circle cx=\"41.4\" cy=\"15.2\" r=\"0.6\"/><circle cx=\"20.2\" cy=\"17.6\" r=\"0.6\"/><circle cx=\"21.8\" cy=\"20.4\" r=\"0.6\"/><circle cx=\"49.2\" cy=\"23\" r=\"0.6\"/><circle cx=\"50.8\" cy=\"26.4\" r=\"0.6\"/></g>\n<rect x=\"2.6\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.2 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5.4 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"33.2\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M33.8 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"58\" y=\"12.2\" width=\"3.4\" height=\"15.6\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M58.6 12.6V27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M60.8 12.6V27.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.3\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"4.3\" cy=\"20\" r=\"0.95\"/><circle cx=\"4.3\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"20\" r=\"0.95\"/><circle cx=\"34.9\" cy=\"25.6\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"14.4\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"20\" r=\"0.95\"/><circle cx=\"59.7\" cy=\"25.6\" r=\"0.95\"/></g>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" fill=\"url(#shade)\"/>\n<path d=\"M11 13V27.8M14 13V27.8\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"6.6\" y=\"15.6\" width=\"7.4\" height=\"1.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"6.6\" y=\"23.4\" width=\"7.4\" height=\"1.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.8\" cy=\"16.5\" r=\"0.9\"/><circle cx=\"12\" cy=\"16.5\" r=\"0.9\"/><circle cx=\"8.8\" cy=\"24.3\" r=\"0.9\"/><circle cx=\"12\" cy=\"24.3\" r=\"0.9\"/></g>\n<circle cx=\"15.2\" cy=\"20.4\" r=\"1.2\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<path d=\"M8 27.8V14.4Q8 12.8 9.6 12.8H15.4Q17 12.8 17 14.4V27.8Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"25\" cy=\"19.2\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M21.6 17.6A3.8 3.8 0 0 1 25.6 15.4\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.55\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"28.12\" cy=\"21\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"21\" r=\"0.9\"/><circle cx=\"25\" cy=\"15.6\" r=\"0.9\"/></g>\n<circle cx=\"25\" cy=\"19.2\" r=\"2.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M22.6 18.8A2.5 2.5 0 0 1 25.4 16.7L25.2 17.6A1.7 1.7 0 0 0 23.4 19Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M23.8 20.8L26.4 18\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"45\" cy=\"19.2\" r=\"4.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M41.6 17.6A3.8 3.8 0 0 1 45.6 15.4\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.55\" fill=\"none\"/>\n<g fill=\"#8A6A2A\"><circle cx=\"48.12\" cy=\"21\" r=\"0.9\"/><circle cx=\"41.88\" cy=\"21\" r=\"0.9\"/><circle cx=\"45\" cy=\"15.6\" r=\"0.9\"/></g>\n<circle cx=\"45\" cy=\"19.2\" r=\"2.6\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 18.8A2.5 2.5 0 0 1 45.4 16.7L45.2 17.6A1.7 1.7 0 0 0 43.4 19Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M43.8 20.8L46.4 18\" stroke=\"#D8F0F7\" stroke-opacity=\"0.75\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"50.2\" y=\"14.2\" width=\"6\" height=\"8.4\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M50.8 16.2H55.6M50.8 18.4H55.6M50.8 20.6H55.6\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M50.8 15.4H55.6M50.8 17.6H55.6M50.8 19.8H55.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.5\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 7.8l1.6 -0.2M62.4 8.2v1.6M17 14.6v1.6M29 26.8h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36.6 20.6v3.4M45 23.8v2\" stroke=\"#9A4E2A\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"1\" y=\"27.6\" width=\"62\" height=\"4\" rx=\"0.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.4\" cy=\"29.6\" r=\"1\"/><circle cx=\"11.3\" cy=\"29.6\" r=\"1\"/><circle cx=\"18.2\" cy=\"29.6\" r=\"1\"/><circle cx=\"25.1\" cy=\"29.6\" r=\"1\"/><circle cx=\"32\" cy=\"29.6\" r=\"1\"/><circle cx=\"38.9\" cy=\"29.6\" r=\"1\"/><circle cx=\"45.8\" cy=\"29.6\" r=\"1\"/><circle cx=\"52.7\" cy=\"29.6\" r=\"1\"/><circle cx=\"59.6\" cy=\"29.6\" r=\"1\"/></g>\n<path d=\"M0.6 10V7.4Q32 3.4 63.4 7.4V10Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M2.6 10V27.6M61.4 10V27.6\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","crew2":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" data-part=\"crew2\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0 0H64V64H0ZM3.2 3.2V60.8H60.8V3.2Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 3.2H60.8V60.8H3.2Z\" fill=\"#00FFFF\"/>\n<path d=\"M3.2 44.4H60.8V47H3.2Z\" fill=\"#FFFF00\"/>\n<path d=\"M12 0.4H30Q31 0.4 31 1.4V3.6H11V1.4Q11 0.4 12 0.4Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 3.2H60.8V60.8H3.2Z\" fill=\"url(#shade)\"/>\n<path d=\"M32 3.2V54M3.2 30H60.8\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29.6\" cy=\"8\" r=\"0.9\"/><circle cx=\"34.4\" cy=\"8\" r=\"0.9\"/><circle cx=\"29.6\" cy=\"50\" r=\"0.9\"/><circle cx=\"34.4\" cy=\"50\" r=\"0.9\"/><circle cx=\"8\" cy=\"27.8\" r=\"0.9\"/><circle cx=\"56\" cy=\"27.8\" r=\"0.9\"/></g>\n<rect x=\"12.4\" y=\"3.2\" width=\"17.2\" height=\"2.4\" fill=\"#14171B\" fill-opacity=\"0.55\"/>\n<circle cx=\"12.4\" cy=\"2.2\" r=\"1.1\" fill=\"url(#bolt)\"/>\n<path d=\"M12.4 1.2H29.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"44\" cy=\"8.4\" r=\"4.6\" fill=\"#FFB23E\" fill-opacity=\"0.16\"/>\n<path d=\"M41.8 3.2V5.6H46.2V3.2Z\" fill=\"#3A3F45\"/>\n<circle cx=\"44\" cy=\"7.2\" r=\"1.9\" fill=\"#FFB23E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 6V8.6M45.4 6V8.6\" stroke=\"#4F565E\" stroke-width=\"0.8\" fill=\"none\"/>\n<rect x=\"29.4\" y=\"14\" width=\"9\" height=\"11.4\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"33.9\" cy=\"17.6\" r=\"2.1\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"33.9\" cy=\"17.6\" r=\"1.4\" fill=\"#D8F0F7\"/>\n<path d=\"M33.9 17.6L34.9 16.8\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"33.9\" cy=\"22.2\" r=\"2.1\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"33.9\" cy=\"22.2\" r=\"1.4\" fill=\"#D8F0F7\"/>\n<path d=\"M33.9 22.2L34.9 21.4\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M36 3.2V11Q36 12.8 38 12.8H40\" stroke=\"#14171B\" stroke-width=\"2.8\" fill=\"none\"/>\n<path d=\"M36 3.2V11Q36 12.8 38 12.8H40\" stroke=\"#C9A04A\" stroke-width=\"1.8\" fill=\"none\"/>\n<path d=\"M39.6 11L42 10.2V15.4L39.6 14.6Z\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"3.2\" y=\"55\" width=\"57.6\" height=\"5.8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M6 57.4l1.6 1.6M9 59l1.6 -1.6M12 57.4l1.6 1.6M15 59l1.6 -1.6M18 57.4l1.6 1.6M21 59l1.6 -1.6M24 57.4l1.6 1.6M27 59l1.6 -1.6M30 57.4l1.6 1.6M33 59l1.6 -1.6M36 57.4l1.6 1.6M39 59l1.6 -1.6M42 57.4l1.6 1.6M45 59l1.6 -1.6M48 57.4l1.6 1.6M51 59l1.6 -1.6M54 57.4l1.6 1.6M57 59l1.6 -1.6\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M49.4 55L48.2 36\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M49.4 55L48.2 36\" stroke=\"#8A9199\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"48.2\" cy=\"35.4\" r=\"1.3\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M52.8 55L51.6 36\" stroke=\"#14171B\" stroke-width=\"1.9\" fill=\"none\"/>\n<path d=\"M52.8 55L51.6 36\" stroke=\"#8A9199\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"51.6\" cy=\"35.4\" r=\"1.3\" fill=\"#23201E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"54.4\" y=\"15\" width=\"6.4\" height=\"13\" rx=\"0.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"56\" y=\"16.8\" width=\"4.8\" height=\"9.4\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M56.6 24.6L59.8 18.2\" stroke=\"#D8F0F7\" stroke-opacity=\"0.8\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M56 16.8H60.8V18.6H56Z\" fill=\"#000000\" fill-opacity=\"0.3\"/>\n<rect x=\"10\" y=\"36\" width=\"3\" height=\"12\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"10\" y=\"46\" width=\"11\" height=\"2.8\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M11.5 49V55M19.6 49V55\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M10.8 37V45\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"36\" y=\"40\" width=\"3\" height=\"12\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"36\" y=\"50\" width=\"11\" height=\"2.8\" rx=\"0.6\" fill=\"#B9A77A\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M37.5 53V55M45.6 53V55\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M36.8 41V49\" stroke=\"#D8CCAA\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M16.4 21.4Q15.8 34.4 17.6 37.4H27.6L28.6 53.8H24.2L24 41H17.2Q13.4 36.4 13.8 24.4Q14.2 20.4 18.4 19.8Z\" fill=\"#2A2622\" fill-opacity=\"0.95\"/>\n<path d=\"M18.8 23.4Q22.4 27.4 27 25\" stroke=\"#2A2622\" stroke-width=\"2.6\" fill=\"none\"/>\n<circle cx=\"20.4\" cy=\"16.4\" r=\"3.3\" fill=\"#2A2622\"/>\n<path d=\"M16.5 16Q16.8 11.8 20.6 12Q24.4 12.2 24.4 16.2L25.6 16.8H16.5Z\" fill=\"#857650\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M17.4 15.4Q17.8 12.8 20.4 12.8\" stroke=\"#D8CCAA\" stroke-width=\"0.8\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M14.2 32.4Q14 23.4 18 20.8\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.3\" fill=\"none\"/>\n<path d=\"M41.6 29.6Q41 42.6 42.8 45.6H53.2L54.2 54.8H49.8L49.6 49.2H42.4Q38.6 44.6 39 32.6Q39.4 28.6 43.6 28Z\" fill=\"#2A2622\" fill-opacity=\"0.95\"/>\n<path d=\"M44 31.6Q47.6 35.6 48.2 36.4\" stroke=\"#2A2622\" stroke-width=\"2.6\" fill=\"none\"/>\n<circle cx=\"45.6\" cy=\"24.6\" r=\"3.3\" fill=\"#2A2622\"/>\n<path d=\"M41.7 24.2Q42 20 45.8 20.2Q49.6 20.4 49.6 24.4L50.8 25H41.7Z\" fill=\"#857650\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M42.6 23.6Q43 21 45.6 21\" stroke=\"#D8CCAA\" stroke-width=\"0.8\" stroke-opacity=\"0.8\" fill=\"none\"/>\n<path d=\"M39.4 40.6Q39.2 31.6 43.2 29\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.3\" fill=\"none\"/>\n<rect x=\"3.2\" y=\"48\" width=\"57.6\" height=\"7\" fill=\"url(#grime)\"/>\n<path d=\"M0 0H64V64H0ZM3.2 3.2V60.8H60.8V3.2Z\" fill=\"url(#shade)\" fill-rule=\"evenodd\"/>\n<path d=\"M3.2 3.2H60.8V5.4H5.4V60.8H3.2Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<path d=\"M61.2 3.2V61.2H3.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.3\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M0.9 63.1V0.9H63.1\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M63.1 0.9V63.1H0.9\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"1.6\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"8.36\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"8.36\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"15.11\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"15.11\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"21.87\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"21.87\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"28.62\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"28.62\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"35.38\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"35.38\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"42.13\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"42.13\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"48.89\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"48.89\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"55.64\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"55.64\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"1.6\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"62.4\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"8.36\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"8.36\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"15.11\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"15.11\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"21.87\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"21.87\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"28.62\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"28.62\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"35.38\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"35.38\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"42.13\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"42.13\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"48.89\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"48.89\" r=\"0.9\"/><circle cx=\"1.6\" cy=\"55.64\" r=\"0.9\"/><circle cx=\"62.4\" cy=\"55.64\" r=\"0.9\"/></g>\n<rect x=\"3.2\" y=\"3.2\" width=\"57.6\" height=\"57.6\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"0.6\" fill-opacity=\"0\"/>\n<rect x=\"0.5\" y=\"0.5\" width=\"63\" height=\"63\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"1\" fill-opacity=\"0\"/>\n<path d=\"M12 0.4H30Q31 0.4 31 1.4V3.6H11V1.4Q11 0.4 12 0.4Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n</g>\n</g>\n</svg>","turret":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 32\" data-part=\"turret\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" fill=\"#FF00FF\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" fill=\"#00FFFF\"/>\n<path d=\"M45.2 12.6L48 8.4L50.8 12.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"3.4\" y=\"12.4\" width=\"89.2\" height=\"8\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"4\" y=\"14.6\" width=\"88\" height=\"3.4\" rx=\"0.6\" fill=\"#2E3339\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"7\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"12.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"17.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"23.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"28.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"34\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"39.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"44.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"50.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"55.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"61\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"66.4\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"71.8\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"77.2\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"82.6\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"88\" cy=\"16.3\" r=\"1.1\"/><circle cx=\"93.4\" cy=\"16.3\" r=\"1.1\"/></g>\n<path d=\"M4 13.2H92\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"20\" y=\"10.4\" width=\"56\" height=\"2\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M22 10.6V11.8M26 10.6V11.8M30 10.6V11.8M34 10.6V11.8M38 10.6V11.8M42 10.6V11.8M46 10.6V11.8M50 10.6V11.8M54 10.6V11.8M58 10.6V11.8M62 10.6V11.8M66 10.6V11.8M70 10.6V11.8M74 10.6V11.8\" stroke=\"#8A6A2A\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M6 6.4Q6 4.2 8.2 4.2H87.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"24\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"31\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"38\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"45\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"52\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"59\" cy=\"6.8\" r=\"0.95\"/><circle cx=\"66\" cy=\"6.8\" r=\"0.95\"/></g>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"4.2\" fill=\"none\" stroke=\"#14171B\" stroke-width=\"2\"/>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"4.2\" fill=\"none\" stroke=\"#4F565E\" stroke-width=\"1.2\"/>\n<path d=\"M9.8 7.8H17.4M13.6 4V11.6\" stroke=\"#4F565E\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"13.6\" cy=\"7.8\" r=\"1.3\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<circle cx=\"10.6\" cy=\"4.8\" r=\"0.9\" fill=\"#23201E\"/>\n<rect x=\"76\" y=\"4.2\" width=\"12\" height=\"6.8\" rx=\"1.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"76\" y=\"4.2\" width=\"12\" height=\"6.8\" rx=\"1.4\" fill=\"url(#tube)\"/>\n<path d=\"M79 4.4V10.8M85 4.4V10.8\" stroke=\"#B8733F\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M88 7.6Q91.6 8 91 12.4\" stroke=\"#23201E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 24L4.2 21H91.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5\" cy=\"26.6\" r=\"1\"/><circle cx=\"12.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"19.4\" cy=\"26.6\" r=\"1\"/><circle cx=\"26.6\" cy=\"26.6\" r=\"1\"/><circle cx=\"33.8\" cy=\"26.6\" r=\"1\"/><circle cx=\"41\" cy=\"26.6\" r=\"1\"/><circle cx=\"48.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"55.4\" cy=\"26.6\" r=\"1\"/><circle cx=\"62.6\" cy=\"26.6\" r=\"1\"/><circle cx=\"69.8\" cy=\"26.6\" r=\"1\"/><circle cx=\"77\" cy=\"26.6\" r=\"1\"/><circle cx=\"84.2\" cy=\"26.6\" r=\"1\"/><circle cx=\"91.4\" cy=\"26.6\" r=\"1\"/></g>\n<path d=\"M8 20.2V32M48 20.2V32M88 20.2V32\" stroke=\"#000000\" stroke-opacity=\"0.28\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M20 21h3M60 21h2.4M94.6 25v2M30.4 3.6h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 32V23.6L3.8 20.2H92.2L95.4 23.6V32Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M5 12.6V6.4Q5 3.2 8.2 3.2H87.8Q91 3.2 91 6.4V12.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n</svg>","optics":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -16 32 48\" data-part=\"optics\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" fill=\"#00FFFF\"/>\n<path d=\"M3.6 21.4H28.4V23.8H3.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"14.2\" y=\"-6\" width=\"5.2\" height=\"12.4\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"14.2\" y=\"-6\" width=\"5.2\" height=\"12.4\" fill=\"url(#cyl)\"/>\n<rect x=\"13.2\" y=\"2.6\" width=\"7.2\" height=\"2.4\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M12.6 -5.4V-11.2Q12.6 -13 14.4 -13H19.6L22.6 -10V-5.4Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M12.6 -5.4V-11.2Q12.6 -13 14.4 -13H19.6L22.6 -10V-5.4Z\" fill=\"url(#tube)\"/>\n<path d=\"M20.4 -10.4L22 -8.8V-6.6H20.4Z\" fill=\"#7FB7C9\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M20.8 -7.2L21.6 -8.6\" stroke=\"#D8F0F7\" stroke-opacity=\"0.9\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M19 -13.4L23.4 -9.4\" stroke=\"#4F565E\" stroke-width=\"1.3\" fill=\"none\"/>\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" fill=\"url(#shade)\"/>\n<path d=\"M5 22Q4.6 8 16 6.6\" stroke=\"#FFFFFF\" stroke-width=\"0.8\" stroke-opacity=\"0.4\" fill=\"none\"/>\n<rect x=\"5.8\" y=\"12.4\" width=\"6.2\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"6.6\" y=\"13.2\" width=\"4.6\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M6.6 13.2H11.2V14.2H6.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<rect x=\"12.8\" y=\"12.4\" width=\"6.4\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"13.6\" y=\"13.2\" width=\"4.8\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M13.6 13.2H18.4V14.2H13.6Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<rect x=\"20\" y=\"12.4\" width=\"6.2\" height=\"4.8\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"20.8\" y=\"13.2\" width=\"4.6\" height=\"3.2\" fill=\"#7FB7C9\"/>\n<path d=\"M20.8 13.2H25.4V14.2H20.8Z\" fill=\"#000000\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"26.52\" cy=\"12.52\" r=\"0.95\"/><circle cx=\"21.6\" cy=\"7.81\" r=\"0.95\"/><circle cx=\"10.4\" cy=\"7.81\" r=\"0.95\"/><circle cx=\"5.48\" cy=\"12.52\" r=\"0.95\"/></g>\n<g fill=\"url(#bolt)\"><circle cx=\"6.6\" cy=\"19.2\" r=\"0.95\"/><circle cx=\"25.4\" cy=\"19.2\" r=\"0.95\"/></g>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" fill=\"url(#shade)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.4\" cy=\"29\" r=\"1\"/><circle cx=\"11\" cy=\"29\" r=\"1\"/><circle cx=\"21\" cy=\"29\" r=\"1\"/><circle cx=\"27.6\" cy=\"29\" r=\"1\"/></g>\n<path d=\"M2.2 27.4Q2.2 26.6 3.2 26.6H28.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4.4 17h1.4M26.6 12l0.6 1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.6 26V15Q3.6 5.4 16 5.4Q28.4 5.4 28.4 15V26Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M1.4 32V27.6Q1.4 25.8 3.2 25.8H28.8Q30.6 25.8 30.6 27.6V32Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","radio":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -96 32 128\" data-part=\"radio\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" fill=\"#FF00FF\"/>\n<path d=\"M5 12H27V27.8H5Z\" fill=\"#00FFFF\"/>\n<path d=\"M6.6 -86.4Q2.4 -86.8 0.6 -84.8Q3 -83.2 6.8 -82.6Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M11.6 2Q11 -45 7 -92\" stroke=\"#14171B\" stroke-width=\"2.4\" fill=\"none\"/>\n<path d=\"M11.6 2Q11 -45 7 -92\" stroke=\"#4F565E\" stroke-width=\"1.3\" fill=\"none\"/>\n<path d=\"M11.2 -2Q10.7 -40 7.4 -80\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"7\" cy=\"-92.2\" r=\"1.3\" fill=\"#C4CAD0\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M6.6 -86.4Q2.4 -86.8 0.6 -84.8Q3 -83.2 6.8 -82.6Z\" stroke=\"#14171B\" stroke-width=\"0.5\" fill=\"none\"/>\n<rect x=\"9.2\" y=\"4.2\" width=\"4.8\" height=\"4.2\" rx=\"0.4\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"9.8\" y=\"0.4\" width=\"3.6\" height=\"1.8\" rx=\"0.8\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"9.8\" y=\"2.2\" width=\"3.6\" height=\"1.8\" rx=\"0.8\" fill=\"#D8F0F7\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M5 12H27V27.8H5Z\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"10.4\" cy=\"16.8\" r=\"3.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"10.4\" cy=\"16.8\" r=\"2.2\" fill=\"#D8F0F7\"/>\n<path d=\"M10.4 16.8L11.8 15.4\" stroke=\"#E0533D\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"15.6\" y=\"14.4\" width=\"9\" height=\"4.4\" rx=\"0.6\" fill=\"#14171B\"/>\n<rect x=\"16.4\" y=\"15.2\" width=\"7.4\" height=\"2.8\" rx=\"0.3\" fill=\"#FFB23E\"/>\n<path d=\"M18 15.2V18M20.4 15.2V18M22.6 15.2V18\" stroke=\"#14171B\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"24.6\" cy=\"22.6\" r=\"1.4\" fill=\"#7BC47F\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"#23201E\"><circle cx=\"9\" cy=\"24\" r=\"1.5\"/><circle cx=\"14\" cy=\"24\" r=\"1.5\"/><circle cx=\"19\" cy=\"24\" r=\"1.5\"/></g>\n<g fill=\"#4A4540\"><circle cx=\"8.6\" cy=\"23.6\" r=\"0.5\"/><circle cx=\"13.6\" cy=\"23.6\" r=\"0.5\"/><circle cx=\"18.6\" cy=\"23.6\" r=\"0.5\"/></g>\n<path d=\"M3.4 13V22.4\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M3.4 13V22.4\" stroke=\"#23201E\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M3.4 22.4Q1.4 25 3.4 26.6Q5.4 28.2 3.8 30\" stroke=\"#23201E\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4.8\" cy=\"10.6\" r=\"0.95\"/><circle cx=\"27.2\" cy=\"10.6\" r=\"0.95\"/><circle cx=\"4.8\" cy=\"29.4\" r=\"0.95\"/><circle cx=\"27.2\" cy=\"29.4\" r=\"0.95\"/></g>\n<path d=\"M3 30.8V10.6Q3 9 4.6 9H27\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M2.8 31h3M26 8.8h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M2.2 31.6V10.4Q2.2 8.2 4.4 8.2H27.6Q29.8 8.2 29.8 10.4V31.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","c37":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 144 32\" data-part=\"c37\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"ao\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.42\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<clipPath id=\"mc\"><path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\"/></clipPath>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"25.6 16\">\n<g class=\"paint\">\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4V18.6H61.8L60.6 19.4H22Z\" fill=\"#FF00FF\"/>\n<path d=\"M118 13.4H122.4V18.6H118Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M134.4 13.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6Z\" fill=\"#8A9199\"/>\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6H61.8L60.6 19.4H22Z\" fill=\"url(#tube)\"/>\n<rect x=\"141.8\" y=\"13.8\" width=\"1.6\" height=\"4.4\" fill=\"#14171B\" fill-opacity=\"0.9\"/>\n<rect x=\"30\" y=\"19.4\" width=\"28\" height=\"3.6\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"34\" y=\"18.8\" width=\"2.2\" height=\"4.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"50\" y=\"18.8\" width=\"2.2\" height=\"4.6\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<rect x=\"60.4\" y=\"12.8\" width=\"2\" height=\"6.4\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"92\" y=\"13\" width=\"2\" height=\"6\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"132.6\" y=\"13\" width=\"2\" height=\"6\" rx=\"0.3\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M64 14.6H132\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M70 14h3M100 14.1h4M124 14.1h2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M63 18.2H133\" stroke=\"#1B1712\" stroke-opacity=\"0.4\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M137.6 12.6L138.4 10.8H139.6L140.2 12.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<path d=\"M22 12.6H60.6L61.8 13.4H134.4L135.4 12.6H142Q143.6 12.6 143.6 14.2V17.8Q143.6 19.4 142 19.4H135.4L134.4 18.6H61.8L60.6 19.4H22Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" fill=\"#FF00FF\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"5.6\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" fill=\"url(#shade)\"/>\n<rect x=\"1.6\" y=\"3.6\" width=\"9\" height=\"24.8\" fill=\"url(#ao)\"/>\n<rect x=\"1.6\" y=\"22\" width=\"34\" height=\"6.4\" fill=\"url(#grime)\" clip-path=\"url(#mc)\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"5.6\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"25.6\" cy=\"16\" r=\"4.4\" fill=\"none\" stroke=\"#000000\" stroke-width=\"0.6\" stroke-opacity=\"0.25\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29.32\" cy=\"18.15\" r=\"0.9\"/><circle cx=\"25.6\" cy=\"20.3\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"18.15\" r=\"0.9\"/><circle cx=\"21.88\" cy=\"13.85\" r=\"0.9\"/><circle cx=\"25.6\" cy=\"11.7\" r=\"0.9\"/><circle cx=\"29.32\" cy=\"13.85\" r=\"0.9\"/></g>\n<circle cx=\"25.6\" cy=\"16\" r=\"2.2\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"5.2\" cy=\"7.6\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"12.4\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"17.2\" r=\"1.15\"/><circle cx=\"5.2\" cy=\"22\" r=\"1.15\"/></g>\n<path d=\"M9.4 5V27\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"14\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"20.2\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"26.4\" cy=\"5.6\" r=\"0.95\"/><circle cx=\"14\" cy=\"26.4\" r=\"0.95\"/><circle cx=\"20.2\" cy=\"26.4\" r=\"0.95\"/></g>\n<rect x=\"28.6\" y=\"5.4\" width=\"4.6\" height=\"3\" rx=\"0.7\" fill=\"#14171B\"/>\n<rect x=\"29.3\" y=\"6\" width=\"3.2\" height=\"1.3\" rx=\"0.3\" fill=\"#7FB7C9\"/>\n<path d=\"M14.4 3.7V2.6A2 2 0 0 1 18.4 2.6V3.7\" stroke=\"#3A3F45\" stroke-width=\"1.1\" fill=\"none\"/>\n<path d=\"M6 5.2H21.6C28 5.2 32.4 7.6 34.4 11\" stroke=\"#FFFFFF\" stroke-opacity=\"0.34\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M12 4.2h2.4M33 13v2M31 23.6l-0.8 1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M3.2 3.6H21.6C30 3.6 35.2 8.8 35.2 16S30 28.4 21.6 28.4H3.2Q1.6 28.4 1.6 26.8V5.2Q1.6 3.6 3.2 3.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","c75":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 144 32\" data-part=\"c75\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.34\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.64\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.48\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"steel\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4F565E\"/><stop offset=\"0.22\" stop-color=\"#C4CAD0\"/><stop offset=\"0.5\" stop-color=\"#8A9199\"/><stop offset=\"0.82\" stop-color=\"#4F565E\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></linearGradient>\n<linearGradient id=\"ao\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.42\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.38\"/></linearGradient>\n<clipPath id=\"mantClip\"><path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\"/></clipPath>\n<clipPath id=\"mclip\"><path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\"/></clipPath>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"30 16\" data-z=\"-1\">\n<g class=\"paint\">\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26Z\" fill=\"#FF00FF\"/>\n<rect x=\"111\" y=\"12.3\" width=\"5.5\" height=\"7.4\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26Z\" fill=\"url(#tube)\"/>\n<rect x=\"60\" y=\"11.2\" width=\"2.2\" height=\"9.6\" fill=\"#2E3339\" opacity=\"0.6\"/>\n<rect x=\"93\" y=\"11.9\" width=\"2\" height=\"8.3\" fill=\"#2E3339\" opacity=\"0.5\"/>\n<path d=\"M64 13.4L128 14.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.38\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M70 12.3h3M84 12.5h5M101 12.8h2M119 13h3\" stroke=\"#C4CAD0\" stroke-opacity=\"0.55\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M63 19.9L130 19.2\" stroke=\"#1B1712\" stroke-opacity=\"0.4\" stroke-width=\"1\" fill=\"none\"/>\n<path d=\"M26 10.5H60L62 11.4L131 12.5V19.5L62 20.6L60 21.5H26\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"30\" y=\"7\" width=\"30\" height=\"3.6\" rx=\"1.2\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"57.5\" y=\"6.5\" width=\"3.2\" height=\"4.6\" rx=\"0.6\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"45\" y=\"6.7\" width=\"2\" height=\"4.2\" fill=\"#2E3339\"/>\n<rect x=\"30\" y=\"21.4\" width=\"23\" height=\"3\" rx=\"1\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M131 10.8H140.8Q143.2 10.8 143.2 13.2V18.8Q143.2 21.2 140.8 21.2H131Z\" fill=\"url(#steel)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<rect x=\"133.6\" y=\"11.7\" width=\"1.9\" height=\"8.6\" rx=\"0.5\" fill=\"#14171B\"/>\n<rect x=\"137.6\" y=\"11.7\" width=\"1.9\" height=\"8.6\" rx=\"0.5\" fill=\"#14171B\"/>\n<path d=\"M131.6 11.9H140\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.6\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" fill=\"#FF00FF\"/>\n<circle cx=\"29\" cy=\"16\" r=\"6.4\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" fill=\"url(#shade)\"/>\n<rect x=\"2\" y=\"3.5\" width=\"11\" height=\"26\" fill=\"url(#ao)\" clip-path=\"url(#mantClip)\"/>\n<rect x=\"2\" y=\"23\" width=\"42\" height=\"7\" fill=\"url(#grime)\" clip-path=\"url(#mantClip)\"/>\n<g fill=\"#000000\" fill-opacity=\"0.2\"><circle cx=\"15\" cy=\"7\" r=\"0.55\"/><circle cx=\"21\" cy=\"9.5\" r=\"0.5\"/><circle cx=\"36\" cy=\"12\" r=\"0.55\"/><circle cx=\"18\" cy=\"22\" r=\"0.6\"/><circle cx=\"37.5\" cy=\"20.5\" r=\"0.5\"/><circle cx=\"24\" cy=\"26\" r=\"0.55\"/><circle cx=\"14\" cy=\"16.5\" r=\"0.5\"/><circle cx=\"33\" cy=\"25.5\" r=\"0.5\"/></g>\n<g fill=\"#FFFFFF\" fill-opacity=\"0.18\"><circle cx=\"17\" cy=\"6.2\" r=\"0.45\"/><circle cx=\"31\" cy=\"6.4\" r=\"0.5\"/><circle cx=\"38.5\" cy=\"10.5\" r=\"0.45\"/><circle cx=\"22\" cy=\"13\" r=\"0.4\"/></g>\n<circle cx=\"29\" cy=\"16\" r=\"6.4\" fill=\"url(#shade)\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<circle cx=\"29\" cy=\"16\" r=\"5.1\" fill=\"none\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.6\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"29\" cy=\"11.6\" r=\"0.95\"/><circle cx=\"32.8\" cy=\"13.8\" r=\"0.95\"/><circle cx=\"32.8\" cy=\"18.2\" r=\"0.95\"/><circle cx=\"29\" cy=\"20.4\" r=\"0.95\"/><circle cx=\"25.2\" cy=\"18.2\" r=\"0.95\"/><circle cx=\"25.2\" cy=\"13.8\" r=\"0.95\"/></g>\n<circle cx=\"29\" cy=\"16\" r=\"2.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<circle cx=\"28.3\" cy=\"15.3\" r=\"0.8\" fill=\"#C4CAD0\" fill-opacity=\"0.7\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6\" cy=\"7.5\" r=\"1.25\"/><circle cx=\"6\" cy=\"12\" r=\"1.25\"/><circle cx=\"6\" cy=\"16.5\" r=\"1.25\"/><circle cx=\"6\" cy=\"21\" r=\"1.25\"/><circle cx=\"6\" cy=\"25.5\" r=\"1.25\"/></g>\n<path d=\"M10.5 5V28\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.9\" stroke-dasharray=\"1.2 0.8\" fill=\"none\"/>\n<rect x=\"33.5\" y=\"5.8\" width=\"5.2\" height=\"3.3\" rx=\"0.8\" fill=\"#14171B\"/>\n<rect x=\"34.3\" y=\"6.5\" width=\"3.6\" height=\"1.4\" rx=\"0.4\" fill=\"#7FB7C9\"/>\n<rect x=\"34.6\" y=\"6.6\" width=\"1.2\" height=\"0.6\" fill=\"#D8F0F7\"/>\n<path d=\"M17.2 3.6V2.4A2.2 2.2 0 0 1 21.6 2.4V3.6\" stroke=\"#3A3F45\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M7 5.2H25C31.5 5.2 36.5 7.6 39.4 11.2\" stroke=\"#FFFFFF\" stroke-opacity=\"0.34\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M13 4.1h2.5M28 4.3h2M40.6 13.5v2.2M39.8 21.5l-0.8 1.6\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M4 3.5H26C36 3.5 42 8.6 42 16S36 29.5 26 29.5H4Q2 29.5 2 27.5V5.5Q2 3.5 4 3.5Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n</svg>","mg":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 78.4 32\" data-part=\"mg\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<radialGradient id=\"ball\" cx=\"0.36\" cy=\"0.32\" r=\"0.72\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.4\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M0.6 0.6H31.4V31.4H0.6ZM8.8 16a10.4 10.4 0 1 0 20.8 0a10.4 10.4 0 1 0 -20.8 0Z\" fill=\"#FF00FF\" fill-rule=\"evenodd\"/>\n</g>\n<g class=\"detail\">\n<circle cx=\"19.2\" cy=\"16\" r=\"10.4\" fill=\"#2E3339\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M0.6 0.6H31.4V31.4H0.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M1.4 30.6V1.4H30.6\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M30.6 1.4V30.6H1.4\" stroke=\"#000000\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"4\" cy=\"4\" r=\"1\"/><circle cx=\"4\" cy=\"11\" r=\"1\"/><circle cx=\"4\" cy=\"18.4\" r=\"1\"/><circle cx=\"4\" cy=\"26\" r=\"1\"/><circle cx=\"11\" cy=\"28\" r=\"1\"/><circle cx=\"26\" cy=\"28\" r=\"1\"/><circle cx=\"11\" cy=\"4\" r=\"1\"/><circle cx=\"26\" cy=\"4\" r=\"1\"/></g>\n<circle cx=\"19.2\" cy=\"16\" r=\"11.4\" fill=\"none\" stroke=\"#4F565E\" stroke-width=\"1.4\"/>\n<path d=\"M8.8 16A10.4 10.4 0 0 1 26.6 8.6\" stroke=\"#000000\" stroke-width=\"1.6\" stroke-opacity=\"0.45\" fill=\"none\"/>\n<path d=\"M3 29.4h3M28.8 5v2\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M0.6 0.6H31.4V31.4H0.6Z\" stroke=\"#14171B\" stroke-width=\"1\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"19.2 16\">\n<g class=\"paint\">\n<circle cx=\"19.2\" cy=\"16\" r=\"9.2\" fill=\"#FF00FF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M64.4 14.8H73V17.2H64.4Z\" fill=\"#8A9199\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M72 14L78.2 12.6V19.4L72 18Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<rect x=\"77.2\" y=\"13.4\" width=\"1\" height=\"5.2\" fill=\"#14171B\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" fill=\"#8A9199\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" fill=\"url(#tube)\"/>\n<path d=\"M31 14.4h2.2v1.2h-2.2ZM33.6 16.6h2.2v1.2h-2.2ZM37 14.4h2.2v1.2h-2.2ZM39.6 16.6h2.2v1.2h-2.2ZM43 14.4h2.2v1.2h-2.2ZM45.6 16.6h2.2v1.2h-2.2ZM49 14.4h2.2v1.2h-2.2ZM51.6 16.6h2.2v1.2h-2.2ZM55 14.4h2.2v1.2h-2.2ZM57.6 16.6h2.2v1.2h-2.2Z\" fill=\"#14171B\" fill-opacity=\"0.85\"/>\n<rect x=\"26\" y=\"12.2\" width=\"3\" height=\"7.6\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"61.8\" y=\"12.2\" width=\"3\" height=\"7.6\" rx=\"0.4\" fill=\"#C9A04A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M30 13.6H61\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M26 12.8H64.4V19.2H26Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<circle cx=\"19.2\" cy=\"16\" r=\"9.2\" fill=\"url(#ball)\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<circle cx=\"22.6\" cy=\"11.8\" r=\"1.6\" fill=\"#14171B\"/>\n<circle cx=\"22.8\" cy=\"11.6\" r=\"0.9\" fill=\"#7FB7C9\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"16.87\" cy=\"22.39\" r=\"0.9\"/><circle cx=\"12.4\" cy=\"16\" r=\"0.9\"/><circle cx=\"16.87\" cy=\"9.61\" r=\"0.9\"/></g>\n</g>\n</g>\n</svg>","smoke":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" data-part=\"smoke\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n</defs>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M1.8 19.2H10.2V21.6H1.8Z\" fill=\"#FFFF00\"/>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M11.8 19.2H20.2V21.6H11.8Z\" fill=\"#FFFF00\"/>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" fill=\"#FF00FF\"/>\n<path d=\"M21.8 19.2H30.2V21.6H21.8Z\" fill=\"#FFFF00\"/>\n</g>\n<g class=\"detail\">\n<rect x=\"1\" y=\"15.4\" width=\"30\" height=\"2.6\" rx=\"0.3\" fill=\"#8E6035\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"0.6\" y=\"12.6\" width=\"2\" height=\"14.4\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"29.4\" y=\"12.6\" width=\"2\" height=\"14.4\" rx=\"0.4\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M1.8 16.6H10.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.8 13.8H10.2V25Q10.2 26.8 8.4 26.8H3.6Q1.8 26.8 1.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M1.4 14L3.4 9.8H8.6L10.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M1.4 14L3.4 9.8H8.6L10.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"4.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M3.4 10.4H8.6L9.4 12.2H2.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"6\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"8.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M11.8 16.6H20.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M11.8 13.8H20.2V25Q20.2 26.8 18.4 26.8H13.6Q11.8 26.8 11.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M11.4 14L13.4 9.8H18.6L20.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M11.4 14L13.4 9.8H18.6L20.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"14.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M13.4 10.4H18.6L19.4 12.2H12.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"16\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"13.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"18.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" fill=\"url(#cyl)\"/>\n<path d=\"M21.8 16.6H30.2\" stroke=\"#000000\" stroke-opacity=\"0.3\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M21.8 13.8H30.2V25Q30.2 26.8 28.4 26.8H23.6Q21.8 26.8 21.8 25Z\" stroke=\"#14171B\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M21.4 14L23.4 9.8H28.6L30.6 14Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<path d=\"M21.4 14L23.4 9.8H28.6L30.6 14Z\" fill=\"url(#cyl)\"/>\n<rect x=\"24.8\" y=\"7.2\" width=\"2.4\" height=\"2.8\" rx=\"0.3\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M23.4 10.4H28.6L29.4 12.2H22.6Z\" fill=\"#2A2622\" fill-opacity=\"0.5\"/>\n<circle cx=\"26\" cy=\"6.6\" r=\"2.2\" fill=\"#2A2622\" fill-opacity=\"0.35\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"23.2\" cy=\"24.6\" r=\"0.9\"/><circle cx=\"28.8\" cy=\"24.6\" r=\"0.9\"/></g>\n<path d=\"M6 7.4Q11 9 16 7.4Q21 9 26 7.4Q29.4 7.6 30.2 11.6\" stroke=\"#857650\" stroke-width=\"0.9\" fill=\"none\"/>\n<circle cx=\"30.2\" cy=\"13\" r=\"1.5\" fill=\"none\" stroke=\"#C9A04A\" stroke-width=\"0.9\"/>\n<rect x=\"0.8\" y=\"26.4\" width=\"30.4\" height=\"5.2\" rx=\"0.6\" fill=\"#A8743F\" stroke=\"#14171B\" stroke-width=\"0.8\"/>\n<path d=\"M1.6 27.2H30.4\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M1.4 29.2H30.6\" stroke=\"#6E4A26\" stroke-opacity=\"0.7\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"14.4\" y=\"26.4\" width=\"3.2\" height=\"5.2\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"3\" cy=\"29.8\" r=\"0.95\"/><circle cx=\"16\" cy=\"28.2\" r=\"0.95\"/><circle cx=\"16\" cy=\"30.4\" r=\"0.95\"/><circle cx=\"29\" cy=\"29.8\" r=\"0.95\"/></g>\n<path d=\"M0.8 28.6H31.2V31.6H0.8Z\" fill=\"url(#grime)\"/>\n<path d=\"M2.4 14.6h1.6M12.4 14.6h1.6M22.4 14.6h1.6M10 25.4v-1.4\" stroke=\"#C4CAD0\" stroke-opacity=\"0.6\" stroke-width=\"0.7\" fill=\"none\"/>\n</g>\n</g>\n</svg>","swivel":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 56 32\" data-part=\"swivel\" data-cell=\"32\">\n<defs>\n<linearGradient id=\"shade\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\" stop-opacity=\"0.3\"/><stop offset=\"0.35\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"0.65\" stop-color=\"#000000\" stop-opacity=\"0.08\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.42\"/></linearGradient>\n<linearGradient id=\"tube\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.22\"/><stop offset=\"0.2\" stop-color=\"#FFFFFF\" stop-opacity=\"0.46\"/><stop offset=\"0.36\" stop-color=\"#FFFFFF\" stop-opacity=\"0.08\"/><stop offset=\"0.72\" stop-color=\"#000000\" stop-opacity=\"0.2\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.52\"/></linearGradient>\n<linearGradient id=\"cyl\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000000\" stop-opacity=\"0.25\"/><stop offset=\"0.28\" stop-color=\"#FFFFFF\" stop-opacity=\"0.5\"/><stop offset=\"0.5\" stop-color=\"#FFFFFF\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000000\" stop-opacity=\"0.5\"/></linearGradient>\n<radialGradient id=\"bolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#C4CAD0\"/><stop offset=\"0.55\" stop-color=\"#8A9199\"/><stop offset=\"1\" stop-color=\"#2E3339\"/></radialGradient>\n<radialGradient id=\"bbolt\" cx=\"0.38\" cy=\"0.34\" r=\"0.7\"><stop offset=\"0\" stop-color=\"#D8F0F7\"/><stop offset=\"0.45\" stop-color=\"#C9A04A\"/><stop offset=\"1\" stop-color=\"#8A6A2A\"/></radialGradient>\n<linearGradient id=\"grime\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#1B1712\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#1B1712\" stop-opacity=\"0.42\"/></linearGradient>\n</defs>\n<g id=\"barrel\" data-role=\"barrel\" data-pivot=\"16 12\">\n<g class=\"detail\">\n<path d=\"M9 13.6L1.6 19.6\" stroke=\"#14171B\" stroke-width=\"3.2\" fill=\"none\"/>\n<path d=\"M9 13.6L1.6 19.6\" stroke=\"#A8743F\" stroke-width=\"2\" fill=\"none\"/>\n<path d=\"M8.4 13.4L2 18.6\" stroke=\"#CF9D63\" stroke-opacity=\"0.8\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"1.8\" cy=\"19.6\" r=\"1.5\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" fill=\"#C9A04A\"/>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" fill=\"url(#tube)\"/>\n<path d=\"M53.6 9.6H55V14.4H53.6Z\" fill=\"#14171B\" fill-opacity=\"0.85\"/>\n<rect x=\"21.5\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"34\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<rect x=\"47.6\" y=\"8\" width=\"1.8\" height=\"8\" rx=\"0.3\" fill=\"#8A6A2A\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M24 10.2H47\" stroke=\"#FFFFFF\" stroke-opacity=\"0.45\" stroke-width=\"0.8\" fill=\"none\"/>\n<path d=\"M27 15H47\" stroke=\"#1B1712\" stroke-opacity=\"0.35\" stroke-width=\"0.9\" fill=\"none\"/>\n<rect x=\"6.6\" y=\"7.8\" width=\"8.4\" height=\"8.4\" rx=\"0.8\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<rect x=\"6.6\" y=\"7.8\" width=\"8.4\" height=\"8.4\" rx=\"0.8\" fill=\"url(#tube)\"/>\n<path d=\"M11.2 5.6H13.4L13 7.8H11.6Z\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.4\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"8.4\" cy=\"9.6\" r=\"0.9\"/><circle cx=\"8.4\" cy=\"14.4\" r=\"0.9\"/></g>\n<path d=\"M14.6 8.4H49.4L50.6 8.2H54Q55.2 8.2 55.2 9.4V14.6Q55.2 15.8 54 15.8H50.6L49.4 15.6H14.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n</g>\n</g>\n<g id=\"body\">\n<g class=\"paint\">\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" fill=\"#FF00FF\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" fill=\"#FFFF00\"/>\n<path d=\"M4.6 28.6H27.4Q28.4 28.6 28.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z\" fill=\"#00FFFF\"/>\n</g>\n<g class=\"detail\">\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" fill=\"url(#cyl)\"/>\n<path d=\"M13 25V28.4M16.8 23.6V28\" stroke=\"#000000\" stroke-opacity=\"0.25\" stroke-width=\"0.7\" fill=\"none\"/>\n<rect x=\"11.6\" y=\"26.2\" width=\"8.8\" height=\"1.8\" fill=\"#4F565E\" stroke=\"#14171B\" stroke-width=\"0.5\"/>\n<path d=\"M12 24.2L6.4 28.6M20 24.2L25.6 28.6\" stroke=\"#14171B\" stroke-width=\"2.2\" fill=\"none\"/>\n<path d=\"M12 24.2L6.4 28.6M20 24.2L25.6 28.6\" stroke=\"#4F565E\" stroke-width=\"1.2\" fill=\"none\"/>\n<path d=\"M13.2 19.4L13.8 12.6Q14 9.4 16 9.4Q18 9.4 18.2 12.6L18.8 19.4Z\" fill=\"#3A3F45\" stroke=\"#14171B\" stroke-width=\"0.7\"/>\n<path d=\"M14.4 18.6L14.8 12.8\" stroke=\"#FFFFFF\" stroke-opacity=\"0.35\" stroke-width=\"0.7\" fill=\"none\"/>\n<circle cx=\"16\" cy=\"12\" r=\"2.2\" fill=\"url(#bbolt)\" stroke=\"#14171B\" stroke-width=\"0.6\"/>\n<circle cx=\"16\" cy=\"12\" r=\"0.9\" fill=\"#14171B\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" fill=\"url(#shade)\"/>\n<path d=\"M3.6 28.6H28.4V31.6H3.6Z\" fill=\"url(#shade)\"/>\n<g fill=\"url(#bolt)\"><circle cx=\"6.4\" cy=\"30.1\" r=\"0.95\"/><circle cx=\"25.6\" cy=\"30.1\" r=\"0.95\"/></g>\n<path d=\"M4.6 29.3H27.4\" stroke=\"#FFFFFF\" stroke-opacity=\"0.4\" stroke-width=\"0.7\" fill=\"none\"/>\n<path d=\"M12 31V20.6Q12 18.8 13.8 18.8H18.2Q20 18.8 20 20.6V31Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M4.6 28.6H27.4Q28.4 28.6 28.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z\" stroke=\"#14171B\" stroke-width=\"0.9\" fill=\"none\"/>\n<path d=\"M11.6 19.8H20.4V22.4H11.6Z\" stroke=\"#14171B\" stroke-width=\"0.6\" fill=\"none\"/>\n</g>\n</g>\n</svg>"},"vehicles":{"assault":{"id":"assault","name":"Assault gun","domain":"land","class":"tank","w":13,"h":5,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",1,4],["track",3,4],["track",5,4],["track",7,4],["track",9,4],["arm20",0,2],["arm20",0,3],["eng_m",1,2],["ammo",4,2],["fuel_s",4,3],["crew2",5,2],["arm40",7,2],["arm40",7,3],["slope40",8,2],["arm80",8,3],["slope40",9,2],["arm80",9,3],["arm40",5,1],["arm40",6,1],["arm40",7,1],["c105",8,1],["optics",6,0]]},"behemoth":{"id":"behemoth","name":"Behemoth heavy tank","domain":"land","class":"behemoth","w":17,"h":8,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",1,7],["track",3,7],["track",5,7],["track",7,7],["track",9,7],["track",11,7],["track",13,7],["track",15,7],["arm80",0,5],["arm80",0,6],["eng_h",1,5],["fuel_ss",5,5],["fuel_ss",5,6],["ammo_p",6,5],["ammo_p",6,6],["crew2",7,5],["fc",9,5],["ammo_p",9,6],["stab",10,5],["plate",10,6],["arm80",11,5],["arm80",12,5],["arm80",13,5],["arm80",14,5],["arm80",15,5],["slope40",16,5],["arm80",11,6],["arm80",12,6],["arm80",13,6],["arm80",14,6],["arm80",15,6],["arm80",16,6],["arm80",0,4],["arm80",1,4],["arm80",2,4],["arm80",3,4],["arm80",4,4],["arm80",5,4],["turret",6,4],["arm80",9,4],["arm80",10,4],["arm80",11,4],["arm80",12,4],["arm80",13,4],["arm80",14,4],["slope40",15,4],["arm80",5,3],["crew2",6,2],["arm80",8,3],["c105",9,3],["arm80",5,2],["arm80",8,2],["mg",9,2],["arm80",5,1],["arm80",6,1],["arm80",7,1],["arm80",8,1],["optics",6,0],["radio",7,0]]},"bomber":{"id":"bomber","name":"Bomber","domain":"aircraft","class":"aircraft","w":30,"h":7,"source":"v1 template (07_data.js TEMPLATES)","cells":[["tail",0,2],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["frame",6,3],["frame",7,3],["fuel_s",8,3],["fuel_s",9,3],["frame",10,3],["frame",11,3],["frame",12,3],["frame",13,3],["frame",14,3],["frame",15,3],["frame",16,3],["frame",17,3],["aero",18,3],["frame",20,3],["frame",21,3],["frame",22,3],["frame",23,3],["aero",24,3],["aprop",26,2],["turret",12,2],["crew2",13,0],["hmg",15,1],["crew2",20,1],["optics",22,2],["wing",10,4],["wing",12,4],["wing",14,4],["wing",16,4],["wing",18,4],["bomb",11,5],["bomb",15,5]]},"bunker":{"id":"bunker","name":"Anti-tank gun bunker","domain":"land","class":"tank","w":8,"h":4,"fixed":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["arm80",0,0],["arm80",1,0],["arm80",2,0],["arm80",3,0],["arm80",4,0],["arm80",0,1],["crew2",1,1],["arm40",3,1],["arm40",4,1],["c75",5,1],["arm80",0,2],["ammo_p",3,2],["plate",4,2],["arm80",5,2],["arm80",6,2],["slope40",7,2],["arm80",0,3],["arm80",1,3],["arm80",2,3],["arm80",3,3],["arm80",4,3],["arm80",5,3],["arm80",6,3],["arm80",7,3]]},"destroyer":{"id":"destroyer","name":"Destroyer","domain":"sea","class":"destroyer","w":42,"h":14,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,12],["prop",4,12],["keel",5,13],["keel",7,13],["keel",9,13],["keel",11,13],["keel",13,13],["keel",15,13],["keel",17,13],["keel",19,13],["keel",21,13],["keel",23,13],["keel",25,13],["keel",27,13],["keel",29,13],["keel",31,13],["keel",33,13],["keel",35,13],["keel",37,13],["hull",5,11],["hull",7,11],["bulk",9,11],["hull",10,11],["hull",12,11],["hull",14,11],["marine",16,10],["bulk",20,11],["hull",21,11],["hull",23,11],["hull",25,11],["hull",27,11],["hull",29,11],["hull",31,11],["bulk",33,11],["hull",34,11],["hull",36,11],["bow",38,11],["hull",5,9],["hull",7,9],["bulk",9,9],["hull",10,9],["hull",12,9],["hull",14,9],["plate",16,9],["plate",17,9],["plate",18,9],["plate",19,9],["bulk",20,9],["hull",21,9],["hull",23,9],["hull",25,9],["hull",27,9],["hull",29,9],["hull",31,9],["bulk",33,9],["hull",34,9],["hull",36,9],["hull",38,9],["bow",40,9],["turret",8,8],["crew2",8,6],["c75",10,7],["dc",5,8],["plate",7,8],["hmg",5,7],["plate",11,8],["plate",12,8],["plate",13,8],["hmg",14,8],["plate",15,8],["eng_s",16,7],["fuel_l",18,7],["fuel_l",20,7],["plate",22,8],["plate",23,8],["crew2",24,7],["crew2",24,5],["optics",24,4],["radio",25,4],["fc",26,6],["ammo_p",26,8],["ammo_p",27,8],["torp",28,8],["turret",31,8],["ngun",31,5],["plate",34,8],["plate",35,8],["plate",36,8],["hmg",37,8],["sonar",39,13]]},"fighter":{"id":"fighter","name":"Fighter","domain":"aircraft","class":"aircraft","w":18,"h":6,"source":"v1 template (07_data.js TEMPLATES)","cells":[["tail",0,2],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["fuel_ss",6,3],["frame",7,3],["frame",8,3],["frame",9,3],["frame",10,3],["frame",11,3],["frame",12,3],["frame",13,3],["aero",14,3],["aprop",16,2],["crew2",9,1],["radio",8,2],["hmg",12,2],["hmg",13,2],["wing",6,4],["wing",8,4],["wing",10,4]]},"gunboat":{"id":"gunboat","name":"Gunboat","domain":"sea","class":"corvette","w":26,"h":9,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,7],["keel",4,8],["keel",6,8],["keel",8,8],["keel",10,8],["keel",12,8],["keel",14,8],["keel",16,8],["keel",18,8],["keel",20,8],["hull",4,6],["hull",6,6],["hull",8,6],["bulk",10,6],["hull",11,6],["hull",13,6],["hull",15,6],["hull",17,6],["bulk",19,6],["hull",20,6],["hull",22,6],["bow",24,6],["eng_m",4,4],["fuel_s",7,5],["ammo",8,5],["plate",7,4],["plate",8,4],["plate",9,5],["crew2",10,4],["optics",10,3],["radio",11,3],["plate",12,5],["plate",13,5],["plate",14,5],["turret",15,5],["crew2",15,3],["c37",17,4],["plate",18,5],["plate",19,5],["plate",20,5],["hmg",21,5]]},"gunship_t0":{"id":"gunship_t0","name":"Canvas gunship","domain":"airship","class":"gunship","w":14,"h":6,"source":"Roster E3 (step 2.7): canvas bags, steam, air propeller, swivel gun","cells":[["canvas_bag",1,0],["canvas_bag",2,0],["canvas_bag",3,0],["canvas_bag",4,0],["canvas_bag",5,0],["canvas_bag",6,0],["canvas_bag",7,0],["canvas_bag",8,0],["canvas_bag",9,0],["canvas_bag",10,0],["canvas_bag",11,0],["canvas_bag",12,0],["canvas_bag",1,1],["canvas_bag",2,1],["canvas_bag",3,1],["canvas_bag",4,1],["canvas_bag",5,1],["canvas_bag",6,1],["canvas_bag",7,1],["canvas_bag",8,1],["canvas_bag",9,1],["canvas_bag",10,1],["canvas_bag",11,1],["canvas_bag",12,1],["timber",3,2],["timber",4,2],["timber",5,2],["timber",6,2],["timber",7,2],["timber",8,2],["timber",9,2],["timber",10,2],["aprop",1,3],["steam",2,3],["cabin",5,3],["fuel_s",7,3],["timber",8,3],["swivel",9,3],["timber",5,4],["timber",6,4],["timber",7,4],["timber",8,4]]},"gunship_t2":{"id":"gunship_t2","name":"Rigid gunship","domain":"airship","class":"gunship","w":16,"h":6,"source":"Roster E3 (step 2.7): rigid envelope, lift engines, 37 mm cannon","cells":[["rigid_env",2,0],["rigid_env",3,0],["rigid_env",4,0],["rigid_env",5,0],["rigid_env",6,0],["rigid_env",7,0],["rigid_env",8,0],["rigid_env",9,0],["rigid_env",10,0],["rigid_env",11,0],["rigid_env",12,0],["rigid_env",13,0],["rigid_env",2,1],["rigid_env",3,1],["rigid_env",4,1],["rigid_env",5,1],["rigid_env",6,1],["rigid_env",7,1],["rigid_env",8,1],["rigid_env",9,1],["rigid_env",10,1],["rigid_env",11,1],["rigid_env",12,1],["rigid_env",13,1],["lifteng",2,2],["lifteng",12,2],["plate",4,2],["plate",5,2],["plate",6,2],["plate",7,2],["plate",8,2],["plate",9,2],["plate",10,2],["plate",11,2],["aprop",1,4],["eng_s",2,4],["crew2",4,4],["fuel_s",6,4],["ammo",6,5],["c37",11,4],["plate",7,4],["plate",8,4],["plate",9,4],["plate",10,4],["arm20",7,5],["arm20",8,5],["arm20",9,5],["arm20",10,5]]},"heli":{"id":"heli","name":"Scout helicopter","domain":"aircraft","class":"aircraft","w":12,"h":4,"source":"v1 template (07_data.js TEMPLATES)","cells":[["rotor",5,0],["frame",8,1],["trotor",0,3],["frame",1,3],["frame",2,3],["frame",3,3],["frame",4,3],["frame",5,3],["aero",6,2],["fuel_ss",6,3],["frame",7,3],["crew2",8,2],["optics",10,2],["hmg",10,3]]},"howitzer":{"id":"howitzer","name":"Howitzer battery","domain":"land","class":"tank","w":10,"h":5,"fixed":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_l",1,3],["wheel_l",6,3],["frame",0,2],["frame",1,2],["frame",2,2],["frame",3,2],["frame",4,2],["frame",5,2],["frame",6,2],["frame",7,2],["frame",8,2],["frame",9,2],["crew2",1,0],["ammo",3,1],["how",4,0],["frame",8,1]]},"hunter":{"id":"hunter","name":"Tank hunter","domain":"land","class":"tank","w":10,"h":5,"soft":true,"source":"Part 2d template (07_data.js TEMPLATES)","cells":[["wheel_s",1,4],["wheel_s",3,4],["wheel_s",6,4],["wheel_s",8,4],["plate",0,3],["eng_s",1,2],["crew2",3,2],["fuel_s",5,3],["fc",5,2],["plate",6,3],["plate",7,3],["plate",8,3],["arm20",6,2],["arm20",7,2],["slope40",8,2],["atgm",4,1],["optics",3,1]]},"light":{"id":"light","name":"Light tank","domain":"land","class":"tank","w":12,"h":6,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",2,5],["track",4,5],["track",6,5],["track",8,5],["arm20",1,3],["arm20",1,4],["eng_m",2,3],["crew2",5,3],["fuel_s",7,3],["ammo",7,4],["arm20",8,3],["arm20",8,4],["slope40",9,3],["arm20",9,4],["mg",10,4],["turret",4,2],["radio",3,1],["arm20",4,1],["arm20",5,1],["c37",6,1],["optics",5,0]]},"medium":{"id":"medium","name":"Medium tank","domain":"land","class":"tank","w":14,"h":7,"source":"v1 template (07_data.js TEMPLATES)","cells":[["track",2,6],["track",4,6],["track",6,6],["track",8,6],["track",10,6],["arm20",1,4],["arm20",1,5],["eng_m",2,4],["fuel_s",5,4],["fuel_s",5,5],["crew2",6,4],["ammo",8,4],["plate",8,5],["arm40",9,4],["arm40",9,5],["arm40",10,4],["arm40",10,5],["slope40",11,4],["arm40",11,5],["mg",12,5],["turret",5,3],["arm20",4,1],["arm20",4,2],["crew2",5,1],["arm40",7,1],["arm40",7,2],["c75",8,2],["optics",6,0],["radio",4,0]]},"mgcar":{"id":"mgcar","name":"Machine-gun car","domain":"land","class":"tank","w":10,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_s",1,4],["wheel_s",3,4],["wheel_s",6,4],["wheel_s",8,4],["plate",0,3],["eng_s",1,2],["crew2",3,2],["fuel_s",5,3],["plate",5,2],["plate",6,3],["plate",7,3],["plate",8,3],["plate",6,2],["plate",7,2],["slope40",8,2],["mg",4,1]]},"samsite":{"id":"samsite","name":"SAM site","domain":"land","class":"tank","w":9,"h":4,"fixed":true,"source":"Part 2d template (07_data.js TEMPLATES)","cells":[["arm40",0,3],["arm40",1,3],["arm40",2,3],["arm40",3,3],["arm40",4,3],["arm40",5,3],["arm40",6,3],["arm40",7,3],["crew2",0,1],["gen",2,2],["radar_s",2,1],["sam",4,1],["aa40",6,1]]},"scout":{"id":"scout","name":"Scout car","domain":"land","class":"tank","w":10,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_s",1,4],["wheel_s",3,4],["wheel_s",6,4],["wheel_s",8,4],["plate",0,3],["eng_s",1,2],["crew2",3,2],["fuel_s",5,3],["radio",5,2],["plate",6,3],["plate",7,3],["plate",8,3],["arm20",6,2],["arm20",7,2],["slope40",8,2],["hmg",4,1],["optics",3,1]]},"sub":{"id":"sub","name":"Submarine","domain":"sea","class":"corvette","w":27,"h":8,"source":"v1 template (07_data.js TEMPLATES)","cells":[["prop",3,6],["keel",5,7],["keel",7,7],["keel",9,7],["keel",11,7],["keel",13,7],["keel",15,7],["keel",17,7],["keel",19,7],["keel",21,7],["sonar",23,7],["ballast",4,5],["emotor",6,5],["phull",8,5],["bulk",10,5],["phull",11,5],["ballast",13,5],["phull",15,5],["bulk",17,5],["phull",18,5],["ballast",20,5],["bow",22,5],["torp",24,6],["arm80",5,4],["arm80",5,3],["ballast",6,3],["phull",8,3],["eng_m",10,3],["arm80",13,3],["fuel_s",13,4],["crew2",14,3],["phull",16,3],["phull",18,3],["arm80",20,4],["arm80",21,4],["optics",14,2],["radio",15,2],["arm80",16,2],["arm80",17,2]]},"truck":{"id":"truck","name":"Supply truck","domain":"land","class":"tank","w":11,"h":5,"soft":true,"source":"v1 template (07_data.js TEMPLATES)","cells":[["wheel_l",1,3],["wheel_l",5,3],["wheel_l",8,3],["timber",0,2],["timber",1,2],["timber",2,2],["timber",3,2],["timber",4,2],["timber",5,2],["timber",6,2],["timber",7,2],["timber",8,2],["timber",9,2],["timber",10,2],["cargo",1,0],["cargo",3,0],["fuel_s",5,1],["timber",5,0],["crew2",6,0],["eng_s",8,0]]}},"noArt":["lifteng","ammo_p","blade","bridge_l","crane","fuel_l","fuel_ss","ramp","repair","tank_c","troop","aero","ballast","emotor","eng_h","eng_s","gen","jet","marine","radiator","rotor","thrust","trotor","turb","wheel_l","wheel_s","bow","bulk","hull","keel","phull","skirt","tail","wbow","whull","wing","cradio","ecm","fc","nsight","radar_n","radar_s","sonar","stab","aa40","ac20","atgm","bomb","c105","dc","hmg","how","ngun","rpod","sam","torp"]};
 /* ---------- 07_data.js ---------- */
 /* ==== 07 DATA ==== */
 // Part catalogue (design/05), terrain types, templates and battle setups.
@@ -2064,6 +2401,32 @@ const ROTOR_POWER = 400;          // kW each rotor needs for full lift
 const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
+// Airships (design/05 §3.2, step 2.7). An envelope cell's gasLift is in units of 100 kg.
+const GAS_LIFT_KG = 100;
+const AIRSHIP_CDA = 0.6;          // m² of drag area per metre of the airship's height
+const AIRSHIP_MIN_LIFT = 0.85;    // valving gas: an airship can shed lift down to this share of its weight
+const AIRSHIP_ALT = 30;           // metres over the ground an airship deploys at
+
+// Missiles, sensors and constraints (Part 2d). Battle numbers.
+// Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
+// A missile without a lock flies at a false point and misses.
+const MISSILE = {
+  atgm: { base: 0.6, turn: 1.6, life: 3.2, fuse: 0 },
+  sam: { base: 0.55, turn: 2.4, life: 5, fuse: 3, dmg: 90, radius: 4 },
+};
+const LOCK_FC = 0.2;              // added by a fire-control computer
+const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
+const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
+const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Heat (design/v1/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
+// in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
+// power and automatic fire rate; 20 s above 100% can start a fire.
+const ENGINE_COOLING = 30;
+const EXTRA_COOLING = 30;
+const OVERHEAT_FIRE_SECS = 20;
+// Reliability (design/v1/05 §7.5): checked every 30 s at 1/120 of the hourly breakdown rate.
+const BREAKDOWN_CHECK = 30;
+const REPAIR_RATE = 10;           // HP per second a repair workshop restores (to itself and allies within 12 m)
 
 // Parts come from the part library (src/parts, bundled by build.mjs as PART_LIBRARY;
 // design/04 §9). A game part is { id, name, cat, w, h, cost, tier, ...stats, ...behaviour };
@@ -2075,6 +2438,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   PARTS[id] = { id, name: m.name, cat: 'structure', w: 1, h: 1, mass: m.mass, hp: m.hp, armor: m.armor, power: 0, rel: 0.998, cost: m.cost, tier: m.tier };
   if (m.burns) PARTS[id].burns = m.burns;
   if (m.shape === 'slope') PARTS[id].sloped = true;
+  if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -2083,12 +2447,12 @@ for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -2097,13 +2461,13 @@ const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 const TEMPLATES = PART_LIBRARY.vehicles;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Gauntlet ladder (v1 Proving Ground; design/01 §15 optional Gauntlet)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { hunter: 250, samsite: 400, fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -2175,7 +2539,7 @@ function levelConfig(level) {
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
-      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['samsite', 1, 'fixed', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
       how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
@@ -2198,6 +2562,9 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // Aircraft over some maps, with a SAM site; tank hunters with guided missiles (Part 2d).
+    if (rng.next() < 0.25) c.enemies.push([rng.pick(['fighter', 'fighter', 'heli', 'bomber']), 1 + rng.int(0, 1), 'air', rng.int(0, 2)], ['samsite', 1, 'fixed', 0]);
+    if (n >= 3 && rng.next() < 0.3) c.enemies.push(['hunter', 1 + rng.int(0, 1), 'attack', rng.int(0, 2)]);
     // A coast with gunboats on some maps (Part 2a).
     if (rng.next() < 0.25) {
       c.sea = { from: Math.round(c.length * 0.64), depth: 14 };
@@ -2232,6 +2599,31 @@ const MEDALS = [
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
+// ---------- Battle Simulator (design/01 §15): a battlefield from the player's choices.
+const SIM_FIELDS = { inland: 'Inland', coast: 'Coast', sea: 'Open sea' };
+const SIM_WEATHER = { clear: 'Clear', rain: 'Rain' };
+const SIM_LIGHT = { day: 'Day', dusk: 'Dusk', night: 'Night' };
+// Enemy picks when the player leaves the force to the Simulator, by battlefield.
+const SIM_MIXED = {
+  inland: ['medium', 'light', 'assault', 'gunship_t0', 'mgcar', 'scout', 'hunter'],
+  coast: ['medium', 'light', 'gunboat', 'gunship_t2', 'assault', 'destroyer', 'mgcar'],
+  sea: ['gunboat', 'destroyer', 'gunship_t0', 'sub', 'gunboat', 'destroyer'],
+};
+
+function simulatorConfig(o) {
+  const c = levelConfig(3);
+  Object.assign(c, {
+    name: `${SIM_FIELDS[o.field] || 'Inland'} · ${SIM_WEATHER[o.weather] || 'Clear'} · ${SIM_LIGHT[o.light] || 'Day'}`,
+    goal: { type: 'destroy', text: 'Destroy the enemy force' },
+    seed: o.seed, enemies: [], length: 560, hills: 0.45, forest: 1, mud: 1, gaps: 0,
+    weather: o.weather === 'rain' ? 'rain' : 'clear', light: SIM_LIGHT[o.light] ? o.light : 'day',
+    how: 'Three ships a side on the field; the rest wait in reserve. Long-press (or right-click) a ship or its card for orders.',
+  });
+  if (o.field === 'coast') c.sea = { from: Math.round(c.length * 0.62), depth: 14 };
+  if (o.field === 'sea') Object.assign(c, { fleet: true, length: 640, hills: 0.2, forest: 0, mud: 0, sea: { from: 40, depth: 24 } });
+  return c;
+}
+
 function testDriveConfig(range = 'land') {
   const c = {
     level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
@@ -2242,6 +2634,81 @@ function testDriveConfig(range = 'land') {
   if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
   return c;
 }
+
+// ---------- Campaign (design/01 §2–§10, design/08, design/09). Tuning data for the world map.
+const WORLD_W = 192, WORLD_H = 144;   // map cells
+const WORLD_KM = 10;                  // km per map cell
+// Terrain types on the map. speed: × the fleet's march speed on land; road: × on roads.
+const MAP_TERRAIN = {
+  sea: { name: 'Sea', color: '#23507A' },
+  plains: { name: 'Plains', color: '#7E9A5A', speed: 1 },
+  forest: { name: 'Forest', color: '#4E6E3E', speed: 0.6 },
+  hills: { name: 'Hills', color: '#9A8F62', speed: 0.6 },
+  mountains: { name: 'Mountains', color: '#8C8A86', speed: 0 },   // impassable except at passes
+  pass: { name: 'Mountain pass', color: '#A09A8C', speed: 0.4 },
+  desert: { name: 'Desert', color: '#CDB27A', speed: 0.7 },
+  marsh: { name: 'Marsh', color: '#5F7A5E', speed: 0.4 },
+  tundra: { name: 'Tundra', color: '#A9B3A4', speed: 0.7 },
+  ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
+  ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
+};
+const ROAD_SPEED = 1.5;               // × on a road
+const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
+const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
+const STRANDED_SPEED = 0.1;           // an empty fleet crawls (land, sea); air can't move
+const DETECT_CELLS = { fleet: 8, settlement: 6 };
+const CONTACT_CELLS = 1.6;            // hostile fleets this close meet in battle
+const REINFORCE_CELLS = 4;            // fleets this close join a battle
+const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
+const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
+
+// Factions (09): where their territory sits (share of the map), capital type and name, looks.
+const FACTIONS = [
+  { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
+    identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },
+  { id: 'directorate', name: 'Directorate', at: [0.5, 0.5], capital: 'Forge Primus', capType: 'metropolis', coastal: false, color: '#C43C2C',
+    identity: 'Industrial state of foundry cities.', pros: ['Armour and tracks −15% cost', 'Metal production +20%'], cons: ['Fuel +15% price everywhere'] },
+  { id: 'skyreach', name: 'Skyreach Concord', at: [0.8, 0.22], capital: 'Aerie Crown', capType: 'citadel', coastal: false, color: '#E4DFD2',
+    identity: 'Mountain sky-clans sworn to a shared code.', pros: ['Lift +15%', 'Air fleets’ map fuel −15%'], cons: ['Metal production −20%'] },
+  { id: 'clans', name: 'Salvage Clans', at: [0.8, 0.8], capital: 'Rustmoor', capType: 'citadel', coastal: false, color: '#D9772E',
+    identity: 'Desert scavengers of the Precursor ruins.', pros: ['Salvage × 1.5'], cons: ['Few settlements produce wood'] },
+  { id: 'lumen', name: 'Lumen Collective', at: [0.5, 0.14], capital: 'Glasshold', capType: 'metropolis', coastal: false, color: '#4FD1C5',
+    identity: 'Relic technocrats of the frozen north.', pros: ['Research at their cities'], cons: ['Cold, slow land'] },
+];
+// Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
+const SETTLEMENT_TYPES = {
+  village: { name: 'Village', money: 15, stock: { fuel: 60, ammo: 30 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', money: 50, stock: { fuel: 200, ammo: 100 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', money: 150, stock: { fuel: 500, ammo: 250 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', money: -20, stock: { fuel: 250, ammo: 200 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', money: -60, stock: { fuel: 600, ammo: 500 }, price: 1.0, garrison: 12 },
+};
+const PRICES = { fuel: 6, ammo: 12 };        // money per unit (fuel 100 L, ammo 100 kg)
+const OWN_PRICE = 0.85, TRUCE_PRICE = 1.2, SELL_SHARE = 0.6, COASTAL_MONEY = 1.2;
+const STOCK_REFILL = 0.1;                    // share of normal market stock refilled per day
+const START_MONEY = 1500;
+const WAGES = { captain: 4, admiral: 15 };   // money per day × level
+// Ammo per shot in map units, by calibre (08 §8).
+const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0.06], [105, 0.14], [150, 0.35], [203, 0.8]];
+// XP (08 §10).
+const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
+const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
+const START_FLEETS = [
+  { domain: 'land', ships: ['medium', 'light', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
+];
+const AI_FLEETS = [
+  { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0'] },
+];
+// Name parts for officers and settlements (fictional).
+const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
+const NAME_LAST = ['Aldren', 'Brask', 'Corvel', 'Dunmore', 'Eskar', 'Falk', 'Garrow', 'Holt', 'Ivers', 'Jansk', 'Kestrel', 'Larkin', 'Morrow', 'Nettle', 'Orrin', 'Pell', 'Quarry', 'Rook', 'Sallow', 'Thorne', 'Vesk', 'Wick'];
+const PLACE_A = ['Ash', 'Brine', 'Cinder', 'Dun', 'Elder', 'Fell', 'Gull', 'Hollow', 'Iron', 'Kiln', 'Lark', 'Mire', 'North', 'Oak', 'Pike', 'Rust', 'Salt', 'Tarn', 'Vale', 'Wind'];
+const PLACE_B = ['by', 'ford', 'haven', 'mouth', 'reach', 'stead', 'wick', 'moor', 'cross', 'gate', 'hold', 'watch'];
 
 /* ---------- 08_design.js ---------- */
 /* ==== 08 DESIGN ==== */
@@ -2315,19 +2782,20 @@ function components(design, grid, alive) {
 // The domain comes from the parts used (design/01 §8.1): watertight hull parts make a ship.
 // Rotors make a helicopter, wings an aircraft; ballast tanks make a watertight hull a submarine.
 function domainOf(design) {
-  let sealed = false, wing = false, sub = false;
+  let sealed = false, wing = false, sub = false, gas = false;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) continue;
     if (d.rotor) return 'heli';
     if (d.lift) wing = true;
+    if (d.gasLift || d.liftForce) gas = true;
     if (d.ballast) sub = true;
     if (d.sealed) sealed = true;
   }
-  return wing ? 'air' : sub ? 'sub' : sealed ? 'naval' : 'ground';
+  return wing ? 'air' : gas ? 'airship' : sub ? 'sub' : sealed ? 'naval' : 'ground';
 }
-const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter' };
-const airDomain = (domain) => domain === 'air' || domain === 'heli';
+const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter', airship: 'Airship' };
+const airDomain = (domain) => domain === 'air' || domain === 'heli' || domain === 'airship';
 const seaDomain = (domain) => domain === 'naval' || domain === 'sub';
 
 // Placement rules (design/01 §8.1). Messages state facts only.
@@ -2367,6 +2835,8 @@ function validateDesign(design) {
     if (domain === 'air') {
       if (!tails) errors.push('No tail unit.');
       if (!jets && !airprops) errors.push('No jet or air propeller.');
+    } else if (domain === 'airship') {
+      if (!airprops) errors.push('No air propeller.');
     } else if (!trotors) errors.push('No tail rotor.');
   } else if (airOnly) {
     errors.push('Aero engines and bomb racks only work on aircraft.');
@@ -2396,6 +2866,11 @@ function validateDesign(design) {
     else if (!st.propsWet) errors.push('No propeller below the waterline.');
     if (st.reserve <= 0) errors.push(`Mass ${(st.mass / 1000).toFixed(1)} t; the hull displaces ${(st.dispMax / 1000).toFixed(1)} t. It sinks.`);
     else if (domain === 'sub' && st.diveNeed > st.ballastCap) errors.push(`Diving needs ${(st.diveNeed / 1000).toFixed(1)} t of ballast; the tanks hold ${(st.ballastCap / 1000).toFixed(1)} t.`);
+  }
+  // Missiles need their guidance: fire control for anti-tank missiles, radar for SAMs.
+  const has = (k) => design.cells.some((c) => PARTS[c.p] && (k === 'fc' ? PARTS[c.p].accuracy : PARTS[c.p].radarAir));
+  for (const need of new Set(design.cells.map((c) => PARTS[c.p] && PARTS[c.p].needs).filter(Boolean))) {
+    if (!has(need)) errors.push(need === 'fc' ? 'Guided anti-tank missiles need a fire-control computer.' : 'SAM launchers need a radar.');
   }
   if (!engines) errors.push('No engine.');
   if (crew < needCrew) errors.push(`Crew needed ${needCrew}, crew space ${crew}.`);
@@ -2471,7 +2946,7 @@ const dragRise = (v) => (v > DRAG_RISE_SPEED ? 1 + ((v - DRAG_RISE_SPEED) / 30) 
 
 // Aircraft and helicopters (design/05 §7.4), design-sheet units (m/s, N).
 function airNumbers(design, alive, mass, height) {
-  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0;
+  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0;
   design.cells.forEach((c, i) => {
     if (alive && !alive[i]) return;
     const d = PARTS[c.p];
@@ -2486,8 +2961,10 @@ function airNumbers(design, alive, mass, height) {
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.power > 0) power += d.power;
+    if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
+    if (d.liftForce) eng += d.liftForce;
   });
-  if (!S && !rotors) return { wingArea: 0, rotors: 0 };
+  if (!S && !rotors && !gas && !eng) return { wingArea: 0, rotors: 0 };
   const W = mass * GRAVITY;
   const out = { wingArea: S, tailArea: tailA, rotors, trotors, weight: W, jetThrust: jet };
   if (S) {
@@ -2507,6 +2984,13 @@ function airNumbers(design, alive, mass, height) {
     out.thrustAtStall = jet + (out.propPower * 1000 * AIRPROP_EFF) / Math.max(out.stallSpeed, 8);
   }
   if (rotors) out.rotorLift = rotors * ROTOR_LIFT * Math.min(1, power / (ROTOR_POWER * rotors));
+  if (gas || eng) {
+    // Airship (step 2.7): gas lift from envelopes plus lift engines; propellers push against drag.
+    out.gasLift = gas; out.engineLift = eng; out.airshipLift = gas + eng;
+    out.liftMargin = W ? (gas + eng) / W : 0;
+    out.propPower = airprops ? power : 0;
+    out.airshipCdA = AIRSHIP_CDA * height;
+  }
   return out;
 }
 
@@ -2567,6 +3051,12 @@ function subSpeed(st) {
   return Math.cbrt(P / (0.5 * 1000 * SHIP_CD * A)) * 3.6;
 }
 
+// Airship top speed (m/s, sheet): air propeller power against drag.
+function airshipSpeed(st) {
+  if (!st.propPower || (st.liftMargin || 0) < 1) return 0;
+  return Math.cbrt((st.propPower * 1000 * AIRPROP_EFF) / (0.5 * AIR_RHO * st.airshipCdA));
+}
+
 // Helicopter top speed (m/s, sheet): rotor lift tilted 15° forward against drag.
 function heliSpeed(st) {
   if (!st.rotorLift || st.rotorLift <= st.weight) return 0;
@@ -2591,7 +3081,32 @@ const CLASSES = {
   sub: { name: 'Submarine', w: 44, h: 16, domain: 'sub' },
   air: { name: 'Aircraft', w: 32, h: 12, domain: 'air' },
   heli: { name: 'Helicopter', w: 32, h: 12, domain: 'heli' },
+  airship: { name: 'Airship', w: 24, h: 10, domain: 'airship' },
 };
+
+// ---------- Ship classes (design/01 §5; src/parts/classes.json): each domain's classes set the
+// build grid and the part limit. Structure cells (materials) don't count towards the limit.
+const CLASS_CAT = { ground: 'land', naval: 'sea', sub: 'sea', airship: 'airship', air: 'aircraft', heli: 'aircraft' };
+const SHIP_CLASSES = [];
+for (const cat of ['land', 'sea', 'airship', 'aircraft']) for (const c of PART_LIBRARY.classes[cat] || []) SHIP_CLASSES.push(Object.assign({ cat }, c));
+const classById = (id) => SHIP_CLASSES.find((c) => c.id === id) || null;
+const classesOf = (domain) => SHIP_CLASSES.filter((c) => c.cat === CLASS_CAT[domain]);
+function partCount(design) { return design.cells.filter((c) => !PART_LIBRARY.materials[c.p]).length; }
+
+// Why a design doesn't fit a class (empty when it does). Facts only.
+function classMisfit(design, cls) {
+  const d = cropDesign(design);
+  const out = [];
+  if (d.w > cls.grid[0] || d.h > cls.grid[1]) out.push(`Needs a ${d.w} × ${d.h} grid; the ${cls.name} grid is ${cls.grid[0]} × ${cls.grid[1]}.`);
+  const n = partCount(d);
+  if (n > cls.parts) out.push(`${n} parts; the ${cls.name} class allows ${cls.parts}.`);
+  return out;
+}
+
+// The smallest class of the design's domain that it fits, or null (outside class limits).
+function classFor(design) {
+  return classesOf(domainOf(design)).find((c) => !classMisfit(design, c).length) || null;
+}
 
 function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
 function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
@@ -2655,6 +3170,7 @@ function designReport(design) {
   const speeds = {};
   if (domain === 'air') speeds.Air = Math.round((st.topSpeed || 0) * 3.6);
   else if (domain === 'heli') speeds.Air = Math.round(heliSpeed(st) * 3.6);
+  else if (domain === 'airship') speeds.Air = Math.round(airshipSpeed(st) * 3.6);
   else if (seaDomain(domain)) {
     speeds[domain === 'sub' ? 'Surfaced' : 'Sea'] = Math.round(shipSpeed(st));
     if (domain === 'sub') speeds.Submerged = Math.round(subSpeed(st));
@@ -2687,13 +3203,56 @@ function designReport(design) {
     if (st.topSpeed <= st.stallSpeed * 1.05) warnings.push(`Top speed ${Math.round(st.topSpeed * 3.6)} km/h; stall speed ${Math.round(st.stallSpeed * 3.6)} km/h.`);
     if (st.col && st.com.x < st.col.x) warnings.push(`Centre of mass ${(st.col.x - st.com.x).toFixed(2)} m behind the centre of lift.`);
   }
+  const sys = systemsOf(design);
+  if (sys.heatBalance > 0) warnings.push(`Heat made exceeds heat removed by ${sys.heatBalance} per second.`);
+  if (sys.loaders > sys.loadersFitted) warnings.push(`${sys.loaders - sys.loadersFitted} gun(s) of 75 mm or more without a loader: reload × 1.6.`);
   if (domain === 'heli' && (st.rotorLift || 0) <= st.weight) warnings.push(`Rotor lift ${(st.rotorLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN.`);
+  if (domain === 'airship' && (st.liftMargin || 0) < 1) warnings.push(`Lift ${(st.airshipLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN. Lift margin ${st.liftMargin.toFixed(2)}.`);
   return {
-    st, valid: v, speeds, weapons, warnings, domain,
+    st, valid: v, speeds, weapons, warnings, domain, sys,
     topSpeed: domain === 'naval' ? speeds.Sea : domain === 'sub' ? speeds.Surfaced : airDomain(domain) ? speeds.Air : speeds.Plains,
     climb: climbLimit(st),
     armour: armourFacings(design),
     cost: costOf(design),
+  };
+}
+
+// Heat, reliability, crew roles and sensors (design/01 §8.2, design/05 §7.5–7.6).
+// Heat in units per second on plains; engines also shed ENGINE_COOLING each, and ships,
+// submarines and aircraft EXTRA_COOLING more (water or airflow).
+function systemsOf(design) {
+  const domain = domainOf(design);
+  let made = 0, radiators = 0, engines = 0, unrel = 0, crew = 0, gunners = 0, loaders = 0;
+  let spot = 1, radarAir = 0, radarGround = 0, sonar = 0, ecm = false, fc = 1, lock = 0;
+  for (const c of design.cells) {
+    const d = PARTS[c.p];
+    if (d.heat > 0) made += d.heat;
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engines++;
+    unrel += 1 - d.rel;
+    if (d.crew) crew += d.crew;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) loaders++; }
+    if (d.spot) spot = Math.max(spot, d.spot);
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir); radarGround = Math.max(radarGround, d.radarGround); lock = Math.max(lock, d.lock); }
+    if (d.sonar) sonar = Math.max(sonar, d.sonar);
+    if (d.ecm) ecm = true;
+    if (d.accuracy) fc = Math.max(fc, d.accuracy);
+  }
+  const cooling = engines * (ENGINE_COOLING + (domain === 'ground' ? 0 : EXTRA_COOLING));
+  const needed = 1 + gunners;
+  const spare = crew - needed;
+  return {
+    heatMade: made,
+    heatRemoved: radiators + cooling,
+    heatBalance: made - radiators - cooling,
+    breakdownsPer100h: unrel * 0.5 * 100,
+    crew, crewNeeded: needed, loaders, loadersFitted: Math.max(0, Math.min(loaders, spare)),
+    commander: spare - loaders >= 1,
+    sightKm: (SPOT_BASE * spot * (spare - loaders >= 1 ? 1.15 : 1)) / BATTLE_DISTANCE_SCALE / 1000,
+    radarAirKm: radarAir / 1000, radarGroundKm: radarGround / 1000, sonarKm: sonar / 1000,
+    ecm,
+    lockAtgm: Math.min(0.97, MISSILE.atgm.base + (fc > 1 ? LOCK_FC : 0) + lock),
+    lockSam: Math.min(0.97, MISSILE.sam.base + (fc > 1 ? LOCK_FC : 0) + lock),
   };
 }
 
@@ -2729,7 +3288,7 @@ function randomDesign(seed, cls) {
     const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
     if (validateDesign(d).ok) return d;
   }
-  return designFromTemplate({ ship: 'gunboat', sub: 'sub', air: 'fighter', heli: 'heli' }[cls] || 'light');
+  return designFromTemplate({ ship: 'gunboat', sub: 'sub', air: 'fighter', heli: 'heli', airship: 'gunship_t0' }[cls] || 'light');
 }
 
 function tryRandomDesign(rng, cls) {
@@ -2737,6 +3296,7 @@ function tryRandomDesign(rng, cls) {
   if (cls === 'sub') return tryRandomSub(rng);
   if (cls === 'air') return tryRandomPlane(rng);
   if (cls === 'heli') return tryRandomHeli(rng);
+  if (cls === 'airship') return tryRandomAirship(rng);
   const C = CLASSES[cls];
   const heavy = cls === 'heavy';
   const cells = [];
@@ -2981,6 +3541,28 @@ function tryRandomHeli(rng) {
   put('rotor', ex - 1, row - 3);
   put(rng.pick(['hmg', 'mg', 'ac20']), ex + 4, row);
   if (rng.next() < 0.6) put('optics', ex + 4, row - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
+}
+
+// Airship (step 2.7): an envelope of gas cells over a timber keel, and a gondola with an
+// engine, an air propeller, a cabin, fuel and a gun.
+function tryRandomAirship(rng) {
+  const C = CLASSES.airship;
+  const cells = [];
+  const put = gridPutter(C.w, C.h, cells);
+  const bag = rng.pick(['canvas_bag', 'canvas_bag', 'rigid_env']);
+  const len = rng.int(10, 16), rows = rng.int(2, 3), x0 = 2;
+  for (let y = 0; y < rows; y++) for (let x = x0; x < x0 + len; x++) put(bag, x, y);
+  for (let x = x0 + 1; x < x0 + len - 2; x++) put('timber', x, rows);
+  const y = rows + 1;
+  put('aprop', x0, y);
+  const eng = rng.pick(['eng_s', 'steam']);
+  put(eng, x0 + 1, y);
+  const ex = x0 + 1 + PARTS[eng].w;
+  put('cabin', ex, y);
+  put('fuel_s', ex + 2, y);
+  put(rng.pick(['mg', 'hmg', 'swivel', 'c37']), ex + 3, y);
+  for (let x = ex; x < ex + 4; x++) put('timber', x, y + 1);
   return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
 }
 
@@ -3283,7 +3865,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
+        pivotGx: (p.x + barrelPivotX(d)) * CELL, pivotGy: (D.h - p.y - barrelPivotY(d)) * CELL, turret: false, rounds: d.rounds || 0,
       });
     }
   });
@@ -3317,6 +3899,26 @@ function rebuildVehicle(V, first) {
   V.spot = spot;
   V.fc = fc;
   V.sonar = sonar;
+  // Sensors and constraints (Part 2d), from the live parts.
+  let radarAir = 0, radarGround = 0, radarLock = 0, ecm = false, heatEngines = 0, heatOther = 0, radiators = 0, engineCount = 0, repair = 0, gunners = 0, bigGuns = 0;
+  for (const p of V.parts) {
+    if (!p.alive) continue;
+    const d = p.def;
+    if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir * BATTLE_DISTANCE_SCALE); radarGround = Math.max(radarGround, d.radarGround * BATTLE_DISTANCE_SCALE); radarLock = Math.max(radarLock, d.lock); }
+    if (d.ecm) ecm = true;
+    if (d.heat > 0) { if (d.power > 0 || d.jet) heatEngines += d.heat; else heatOther += d.heat; }
+    if (d.heat < 0) radiators -= d.heat;
+    if (d.power > 0 || d.jet) engineCount++;
+    if (d.repair) repair += d.repair;
+    if (d.cat === 'weapon' && d.id !== 'smoke' && !d.auto && !d.secondary) { gunners++; if (d.cal >= 75) bigGuns++; }
+  }
+  Object.assign(V, { radarAir, radarGround, radarLock, ecm, heatEngines, heatOther, radiators, engineCount, repair });
+  // Crew roles (design/05 §1): a driver and a gunner per main gun first; then loaders for
+  // guns of 75 mm and up (else reload × 1.6); anyone left over commands (+15% sight).
+  const spare = crew - 1 - gunners;
+  V.loaderShort = bigGuns > Math.max(0, spare);
+  V.commander = spare - bigGuns >= 1;
+  if (V.heatMul === undefined) V.heatMul = 1;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
   V.bounds = { minX, maxX, minY, maxY };
@@ -3340,7 +3942,7 @@ function stepVehicle(V, T, dt) {
   const eff = DRIVE_EFF[st.loco] || 0.8;
   const avail = V.power >= st.drawn ? 1 : V.power / Math.max(st.drawn, 1);
   const hasFuel = V.fuelMax === 0 || V.fuel > 0;
-  const Peff = V.canDrive && hasFuel ? V.power * 1000 * eff * avail : 0;
+  const Peff = V.canDrive && hasFuel ? V.power * (V.heatMul || 1) * 1000 * eff * avail : 0;
   const capBase = (st.cap / 3.6) * BATTLE_SPEED_SCALE * (V.speedMul || 1);
   const dragA = V.height * 2.5;
   const throttle = V.canDrive ? V.throttle : 0;
@@ -3464,6 +4066,8 @@ function separateVehicles(list) {
     for (let j = i + 1; j < list.length; j++) {
       const B = list[j];
       if (B.gone) continue;
+      // A ship pulling back passes its own side's ships (they make room on the road).
+      if (A.side === B.side && (A.pulling || B.pulling)) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;
@@ -3619,7 +4223,7 @@ function waterForces(V, T, ca, sa, throttle, h, out) {
       if (px >= T.seaX0 && py < sea - 0.1) wet++;
     }
     // Submerged, only electric motors run (design/05 §2); on the surface everything does.
-    let power = V.power, fuelled = V.fuelMax === 0 || V.fuel > 0;
+    let power = V.power * (V.heatMul || 1), fuelled = V.fuelMax === 0 || V.fuel > 0;
     if (V.submerged) {
       power = 0;
       for (const i of V.engineParts) if (V.parts[i].alive && V.parts[i].def.electric) power += V.parts[i].def.power;
@@ -3824,7 +4428,7 @@ function buildAirParts(V) {
   if (!V.flier) return;
   const st = V.stats;
   const D = V.design;
-  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0;
+  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0;
   V.parts.forEach((p) => {
     if (!p.alive) return;
     const d = p.def;
@@ -3834,7 +4438,12 @@ function buildAirParts(V) {
     if (d.trotor) trotors++;
     if (d.airprop) airprops++;
     if (d.jet) jet += d.jet;
+    if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
+    if (d.liftForce) eng += d.liftForce;
   });
+  V.gasLift = gas;
+  V.engLift = eng;
+  V.airshipCdA = AIRSHIP_CDA * V.height;
   const tmp = { x: 0, y: 0 };
   V.wingArea = st.wingArea || 0;
   if (st.col) { gridToLocal(V, st.col.x, st.col.y, tmp); V.colL = { x: tmp.x, y: tmp.y }; } else V.colL = null;
@@ -3897,12 +4506,20 @@ function airForces(V, T, ca, sa, out) {
     if (V.tailL) surfaceForce(V, V.tailL, V.tailArea, null, live ? -(V.pitchCmd || 0) * (ELEVATOR_DEG * Math.PI) / 180 : 0, ca, sa, out, false);
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.CdA * dragRise(v / AIR_SPEED_SCALE) * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.throttle > 0) {
-      const T = V.throttle * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
+      const T = V.throttle * (V.heatMul || 1) * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
       out.fx += V.dir * ca * T; out.fy += V.dir * sa * T;
     }
+  } else if (V.domain === 'airship') {
+    // Airship (step 2.7): lift straight up (set by the height controller within what the
+    // envelopes and lift engines give), propellers push either way, and the envelopes above
+    // the centre of mass keep it level.
+    out.fy += V.liftNow || 0;
+    if (live && V.airPower && V.moveCmd) out.fx += V.moveCmd * (V.heatMul || 1) * (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
+    if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.airshipCdA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
+    out.tq += b.I * (-3 * b.a - 2.5 * b.w);
   } else {
     // Helicopter: rotor lift along the mast; drag on the body; attitude held by the tail rotor.
-    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift : 0;
+    const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift * (V.heatMul || 1) : 0;
     out.fx += -sa * L; out.fy += ca * L;
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * HELI_CDA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     if (live && V.rotors) {
@@ -3928,6 +4545,19 @@ function flightControl(V, T, dt) {
     } else { V.pitchCmd = V.pitchOrder; V.trim = 0; }
     // Past the vertical in a loop: roll level, now facing the other way (a half loop and roll).
     if (Math.abs(b.a * V.dir) > 1.75 && !V.destroyed) flipFlier(V);
+  } else if (V.domain === 'airship') {
+    // Hold the height order with lift between what venting gas allows and what the envelopes
+    // and lift engines give. Below a lift margin of 1 it sinks; wrecks lose most of their gas.
+    if (V.altCmd === undefined || V.altCmd === null) V.altCmd = b.y;
+    const W = b.m * GRAVITY;
+    // Lift engines need only fuel (V.engLift counts the live ones), not the drive engine.
+    const live = !V.destroyed && (V.fuelMax === 0 || V.fuel > 0);
+    const max = V.gasLift + (live ? V.engLift : 0);
+    const min = Math.min(V.gasLift, W * AIRSHIP_MIN_LIFT);
+    const want = W + b.m * (0.8 * (V.altCmd - b.y) - 1.6 * b.vy);
+    V.liftNow = V.destroyed ? Math.min(V.gasLift, W * 0.5) : clamp(want, min, max);
+    const move = V.destroyed ? 0 : V.moveCmd || 0;
+    if (move && Math.sign(move) !== V.dir && b.vx * move > 0.5) flipFlier(V);
   } else {
     if (V.altCmd === undefined || V.altCmd === null) V.altCmd = b.y;
     const W = b.m * GRAVITY;
@@ -4015,7 +4645,7 @@ const weaponRange = (d) => d.range * BATTLE_DISTANCE_SCALE;
 function penAt(d, worldDist) {
   const r = worldDist / BATTLE_DISTANCE_SCALE;
   if (d.auto) return d.pen * Math.max(0.2, 1 - 0.25 * (r / 500));
-  if (d.he) return d.pen;
+  if (d.he || d.heat) return d.pen;
   return d.pen * Math.max(0.5, 1 - (0.12 * (r - 500)) / 500);
 }
 
@@ -4025,7 +4655,26 @@ function weaponPivot(V, w, out) {
   gridToLocal(V, w.pivotGx, w.pivotGy, out);
   return localToWorld(V, out.x, out.y, out);
 }
-function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+// Barrel geometry from the part's JSON (design/07 §6.4): the pivot (moving.barrel.pivot) and
+// the muzzle (anchors.muzzle), in cells from the footprint's top-left. { pivot, len } or null.
+const _barrelGeo = {};
+function barrelGeometry(d) {
+  if (_barrelGeo[d.id] === undefined) {
+    const L = PART_LIBRARY.parts[d.id];
+    const piv = L && L.moving && L.moving.barrel && L.moving.barrel.pivot;
+    const mz = L && L.anchors && L.anchors.muzzle;
+    _barrelGeo[d.id] = piv && mz && mz[0] > piv[0] ? { pivot: piv, len: mz[0] - piv[0] } : null;
+  }
+  return _barrelGeo[d.id];
+}
+// Pivot in cells from the part's top-left. v1 rule: the centre of the rearmost cell.
+function barrelPivotX(d) { const b = barrelGeometry(d); return b ? b.pivot[0] : 0.5; }
+function barrelPivotY(d) { const b = barrelGeometry(d); return b ? b.pivot[1] : d.h / 2; }
+// Metres from pivot to muzzle. v1 rule: from the part's width.
+function barrelLength(d) {
+  const b = barrelGeometry(d);
+  return b ? b.len * CELL : d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6);
+}
 const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
@@ -4034,6 +4683,8 @@ function weaponArc(V, w) {
   if (d.indirect) return { lo: -5, hi: 80, both: false };
   // Aircraft guns point along the nose; a helicopter's chin gun swings down; AA mounts swing
   // round and up (Part 2c).
+  // Airship gondola guns swing down at the ground and round to either side (step 2.7).
+  if (V.domain === 'airship') return { lo: -45, hi: 25, both: true };
   if (V.flier && !w.turret) return V.domain === 'heli' ? { lo: -50, hi: 12, both: false } : { lo: -4, hi: 4, both: false };
   if (d.aa && !V.flier) return { lo: -5, hi: 85, both: true };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
@@ -4226,6 +4877,7 @@ function shellVsVehicle(B, s, V) {
     }
     if (pen >= eff) {
       pen -= eff;
+      if (d.skirt && s.def.heat) pen *= 0.5;          // spaced skirt: the shaped charge spends itself
       if (!penetrated) { penetrated = true; hitName = d.name; }
       if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);
@@ -4380,6 +5032,7 @@ function checkVehicleState(B, V, source) {
 function knockOut(B, V, source, label, quiet) {
   if (V.destroyed) return;
   V.destroyed = true;
+  V.koLabel = label;               // why it went out of action (result facts, tests)
   V.throttle = 0;
   V.canDrive = false;
   B.hitStop = 0.05;
@@ -4733,7 +5386,7 @@ function gunUnderWater(B, V, w) {
 function engageRange(V) {
   const mw = mainWeapon(V);
   let r = mw ? weaponRange(mw.def) : 0;
-  for (const w of V.weapons) if (w.def.secondary === 'torpedo' && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
+  for (const w of V.weapons) if (/^(torpedo|atgm|rockets)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
   if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
   return r;
 }
@@ -4795,6 +5448,16 @@ function playerSecondary(B) {
     return '';
   }
   const tgt = autoTarget(B);
+  // Rockets and guided missiles (Part 2d) go at the target.
+  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') && w.rounds > 0);
+  if (aimed) {
+    if (!tgt) return 'No target';
+    if (aimed.reload > 0) return 'Reloading';
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(aimed.def)) return 'Out of range';
+    if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, aimed, a.x, a.y); }
+    return '';
+  }
   const sub = nearestTarget(B, V, 40, (U) => !!U.ballast);
   const dc = list.find((w) => w.def.secondary === 'depth' && w.rounds > 0);
   const tp = list.find((w) => w.def.secondary === 'torpedo' && w.rounds > 0);
@@ -4815,8 +5478,17 @@ function playerSecondary(B) {
 
 // AI use: torpedoes at ships and submarines in range, depth charges over a spotted submarine.
 function aiSecondary(B, V, w) {
-  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1) || !seaAt(B.T, V.body.x)) return;
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
   const ai = V.ai;
+  if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') {
+    const tgt = ai && ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && w.def.secondary === 'atgm')) return;
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(w.def)) return;
+    if (w.def.secondary === 'atgm') launchMissile(B, V, w, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, w, a.x, a.y); }
+    return;
+  }
+  if (!seaAt(B.T, V.body.x)) return;
   if (w.def.secondary === 'torpedo') {
     const tgt = ai && ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen || !tgt.hull || ai.react > 0) return;
@@ -4913,7 +5585,7 @@ const FLAK = { dmg: 30, radius: 3 };
 
 // Can V's weapons fight U? Aircraft only by weapons that can hit aircraft, or by other aircraft.
 function canEngage(V, U) {
-  if (!U.flier || V.flier) return true;
+  if (!U.flier || V.flier || U.domain === 'airship') return true;     // airships are big and slow: any gun reaches them
   return V.weapons.some((w) => w.def.aa && V.parts[w.part].alive);
 }
 
@@ -4990,6 +5662,218 @@ function flakBurst(B, x, y, source) {
   if (p) { p.grow = 0.8; p.shade = 0.05; }
 }
 
+/* ---------- 10e_systems.js ---------- */
+/* ==== 10e SYSTEMS ==== */
+// Rockets, guided missiles, radar, ECM, heat, breakdowns and field repair
+// (design/01 §7.4, §8.2, design/05 §3, §4, §7.5, §7.6).
+// A guided missile rolls for a lock when it is fired: fire control and radar raise the
+// chance, the target's ECM cuts it. Locked, it steers at the target within its turn rate;
+// unlocked, it flies straight on a bad heading and misses. That is what makes the sensors matter.
+
+const missiles = makePool(() => ({ alive: false, x: 0, y: 0, ang: 0, t: 0, kind: '', def: null, target: null, locked: false, shooter: null, side: 0, trail: 0 }), 24);
+const salvos = makePool(() => ({ alive: false, V: null, w: null, n: 0, gap: 0, tx: 0, ty: 0 }), 8);
+
+// Lock chance of V's missiles of this kind against U.
+function lockChance(V, U, kind) {
+  const p = MISSILE[kind].base + (V.fc > 1 ? LOCK_FC : 0) + (V.radarLock || 0);
+  return clamp(p * (U && U.ecm ? 1 - LOCK_ECM : 1), 0, 0.97);
+}
+
+function launchMissile(B, V, w, U) {
+  if (w.rounds <= 0 || w.reload > 0 || !U) return false;
+  const kind = w.def.secondary;
+  weaponPivot(V, w, _p);
+  const m = missiles.take();
+  m.x = _p.x; m.y = _p.y + 0.2;
+  m.kind = kind; m.def = w.def; m.target = U; m.t = 0; m.trail = 0;
+  m.shooter = V; m.side = V.side;
+  // SAMs leave the rail steeply toward the target's side; anti-tank missiles straight at it.
+  m.ang = kind === 'sam' ? (U.body.x >= m.x ? 0.35 : 0.65) * Math.PI : Math.atan2(U.body.y + U.height * 0.3 - m.y, U.body.x - m.x);
+  m.locked = B.rng.next() < lockChance(V, U, kind);
+  // Without a lock the missile doesn't steer and leaves 6–14° off.
+  if (!m.locked) m.ang += (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25);
+  w.rounds--;
+  w.reload = w.def.reload;
+  V.revealT = Math.max(V.revealT, 3);
+  B.stats.missiles = (B.stats.missiles || 0) + 1;
+  audio.sfx('rocket', B.panOf(m.x));
+  return true;
+}
+
+// A rocket-pod salvo: 8 unguided rockets, one every 0.1 s, at the aim point.
+function fireSalvo(B, V, w, tx, ty) {
+  if (w.rounds <= 0 || w.reload > 0) return false;
+  const s = salvos.take();
+  s.V = V; s.w = w; s.n = w.def.salvo; s.gap = 0; s.tx = tx; s.ty = ty;
+  w.rounds--;
+  w.reload = w.def.reload;
+  return true;
+}
+
+function stepSalvos(B, dt) {
+  salvos.forEachAlive((s) => {
+    const V = s.V;
+    if (V.destroyed || !V.parts[s.w.part].alive) { s.alive = false; return; }
+    s.gap -= dt;
+    if (s.gap > 0) return;
+    s.gap = ROCKET_SALVO_GAP;
+    aimWeapon(V, s.w, s.tx, s.ty, _aim);
+    const d = s.w.def;
+    const a = _aim.angle + (gauss(B.rng) * d.spread * Math.PI) / 180;
+    weaponPivot(V, s.w, _p);
+    const r = shells.take();
+    r.x = r.px = r.sx = _p.x + Math.cos(a) * 0.8; r.y = r.py = r.sy = _p.y + Math.sin(a) * 0.8;
+    r.vx = Math.cos(a) * d.vel + V.body.vx; r.vy = Math.sin(a) * d.vel + V.body.vy;
+    r.t = 0; r.side = V.side; r.shooter = V; r.def = d;
+    r.dmg = d.dmg; r.mg = false; r.he = false; r.ignore = V; r.ignoreT = 0.3; r.whistled = false; r.wet = false;
+    audio.sfx('rocket', B.panOf(r.x), 0.6);
+    const p = spawnParticle(FX_SMOKE, r.x, r.y, 0, 0.4, 0.8, 0.5);
+    if (p) { p.grow = 0.8; p.shade = 0.6; }
+    if (--s.n <= 0) s.alive = false;
+  });
+}
+
+function stepMissiles(B, dt) {
+  const T = B.T;
+  missiles.forEachAlive((m) => {
+    const M = MISSILE[m.kind];
+    m.t += dt;
+    const U = m.target;
+    if (m.t > M.life || m.x < 0 || m.x > T.length) { m.alive = false; if (m.kind === 'sam') flakBurst(B, m.x, m.y, m.shooter); return; }
+    // Locked: steer at where the target will be, within the turn rate.
+    if (m.locked && U && !U.gone && !U.destroyed && m.t > 0.25) {
+      let want = Math.atan2(U.body.y + U.height * 0.3 + U.body.vy * 0.3 - m.y, U.body.x + U.body.vx * 0.3 - m.x) - m.ang;
+      while (want > Math.PI) want -= Math.PI * 2;
+      while (want < -Math.PI) want += Math.PI * 2;
+      m.ang += clamp(want, -M.turn * dt, M.turn * dt);
+    }
+    const v = m.def.vel;
+    m.x += Math.cos(m.ang) * v * dt;
+    m.y += Math.sin(m.ang) * v * dt;
+    m.trail += dt;
+    if (m.trail > 0.05) { m.trail = 0; const p = spawnParticle(FX_SMOKE, m.x - Math.cos(m.ang) * 0.6, m.y - Math.sin(m.ang) * 0.6, 0, 0.3, 1.1, 0.35); if (p) { p.grow = 0.6; p.shade = 0.8; } }
+    if (m.y <= T.height(m.x) || (seaAt(T, m.x) && m.y < T.sea)) {
+      m.alive = false;
+      if (seaAt(T, m.x) && m.y < T.sea) fxSplash(B, m.x, T.sea, 1); else fxDirt(B, m.x, T.height(m.x), 5);
+      audio.sfx('thud', B.panOf(m.x));
+      return;
+    }
+    // SAM: proximity fuse against aircraft.
+    if (M.fuse) {
+      for (const V of B.units) {
+        if (!V.flier || V.destroyed || V.side === m.side) continue;
+        if (Math.hypot(V.body.x - m.x, V.body.y - m.y) < M.fuse + V.radius * 0.5) {
+          m.alive = false;
+          B.stats.missileHits = (B.stats.missileHits || 0) + 1;
+          explode(B, m.x, m.y, M.dmg, M.radius, m.shooter);
+          if (m.shooter === B.me || V === B.me) floatText('Missile hit', m.x, m.y + 2, true);
+          return;
+        }
+      }
+      return;
+    }
+    // Anti-tank missile: becomes a shaped-charge shell in its last metre, so the ordinary
+    // armour and penetration rules apply.
+    for (const V of B.units) {
+      if (V.gone || V.side === m.side && !V.destroyed || V === m.shooter) continue;
+      if (Math.abs(V.body.x - m.x) > V.radius + 1 || Math.abs(V.body.y - m.y) > V.radius + 1) continue;
+      const s = shells.take();
+      s.px = s.sx = m.x; s.py = s.sy = m.y;
+      s.vx = Math.cos(m.ang) * 150; s.vy = Math.sin(m.ang) * 150;
+      s.x = m.x + s.vx * dt; s.y = m.y + s.vy * dt;
+      s.t = 0; s.side = m.side; s.shooter = m.shooter; s.def = m.def;
+      s.dmg = m.def.dmg; s.mg = false; s.he = false; s.ignore = null; s.ignoreT = 0; s.whistled = true; s.wet = false;
+      m.alive = false;
+      B.stats.missileHits = (B.stats.missileHits || 0) + 1;
+      return;
+    }
+  });
+}
+
+// SAM launchers fire by themselves at aircraft in range, for either side.
+function autoSam(B, V, w) {
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
+  const U = nearestTarget(B, V, weaponRange(w.def), (U) => U.flier);
+  if (U) launchMissile(B, V, w, U);
+}
+
+// ---------- heat, breakdowns, field repair (per vehicle, every battle step)
+function stepSystems(B, V, dt) {
+  if (V.destroyed || V.gone) return;
+  // Heat: engines only run hot while driving (fliers always).
+  const running = V.flier || V.throttle !== 0;
+  const ter = B.T.terrainAt(V.body.x);
+  const inWater = V.hull && seaAt(B.T, V.body.x);
+  const made = (running ? V.heatEngines * (ter.heat || 1) : 0) + V.heatOther;
+  const removed = V.radiators + V.engineCount * (ENGINE_COOLING + (inWater || V.flier ? EXTRA_COOLING : 0));
+  const over = made > removed ? (made - removed) / Math.max(1, made) : 0;
+  V.overheat = over;
+  V.heatMul = 1 - 0.5 * over;
+  V.overheatT = over > 0 ? (V.overheatT || 0) + dt : 0;
+  if (V.overheatT > OVERHEAT_FIRE_SECS && over >= 0.5 && B.rng.next() < dt * 0.05) {
+    const i = V.parts.findIndex((p) => p.alive && p.def.power > 0);
+    if (i >= 0) {
+      const p = V.parts[i];
+      V.fires = V.fires || [];
+      V.fires.push({ gx: (p.x + p.def.w / 2) * CELL, gy: (V.design.h - p.y - p.def.h / 2) * CELL, t: 10 });
+      if (V.side === 0 || V.seen) floatText('Engine fire', V.body.x, V.body.y + V.height, false);
+      V.overheatT = 0;
+    }
+  }
+  if (V.side === 0 && over > 0 && B.time - (V.heatNoteT || -99) > 12) {
+    V.heatNoteT = B.time;
+    floatText(`Overheating · power ${Math.round(V.heatMul * 100)}%`, V.body.x, V.body.y + V.height + 1, false);
+  }
+  // Breakdowns: every 30 s, 1/120 of the hourly rate; one part fails, weighted by (1 − rel).
+  V.breakT = (V.breakT || 0) + dt;
+  if (V.breakT >= BREAKDOWN_CHECK) {
+    V.breakT = 0;
+    let sum = 0;
+    for (const p of V.parts) if (p.alive) sum += 1 - p.def.rel;
+    if (B.rng.next() < (sum * 0.5) / 120) {
+      let r = B.rng.next() * sum;
+      for (let i = 0; i < V.parts.length; i++) {
+        const p = V.parts[i];
+        if (!p.alive) continue;
+        r -= 1 - p.def.rel;
+        if (r <= 0) {
+          if (V.side === 0 || V.seen) floatText(`Breakdown · ${p.def.name}`, V.body.x, V.body.y + V.height + 1, false);
+          destroyPart(B, V, i, null);
+          break;
+        }
+      }
+    }
+  }
+  // Field repair: damaged (not destroyed) parts of this vehicle and allies within 12 m.
+  if (V.repair && Math.abs(V.speed) < 0.5) {
+    for (const U of B.units) {
+      if (U.side !== V.side || U.destroyed || U.gone || Math.abs(U.body.x - V.body.x) > 12) continue;
+      let left = V.repair * dt;
+      for (const p of U.parts) {
+        if (!p.alive || p.hp >= p.def.hp || left <= 0) continue;
+        const add = Math.min(left, p.def.hp - p.hp);
+        p.hp += add; left -= add;
+        p.scorch = Math.max(0, p.scorch - add / p.def.hp);
+        U.dirty = true;
+      }
+    }
+  }
+}
+
+function drawMissiles(g) {
+  const S = view.S;
+  missiles.forEachAlive((m) => {
+    g.save();
+    g.translate(view.sx(m.x), view.sy(m.y));
+    g.rotate(-m.ang);
+    g.fillStyle = '#3a3f47';
+    g.fillRect(-0.5 * S, -0.08 * S, S, 0.16 * S);
+    g.fillStyle = PAL.amber;
+    g.beginPath(); g.arc(-0.55 * S, 0, 0.12 * S, 0, Math.PI * 2); g.fill();
+    g.restore();
+  });
+}
+
 /* ---------- 11_ai.js ---------- */
 /* ==== 11 AI ==== */
 // Spotting, squad orders, enemy tactics and automatic weapons (design/01 §7.2, §7.4).
@@ -5015,6 +5899,14 @@ function spotRange(B, O, V) {
   if (V.revealT > 0) r = Math.max(r, SPOT_BASE * 1.6);
   if (V.flier) r *= AIR_SPOT;
   if (O.flier) r *= AIR_SIGHT;
+  if (O.commander) r *= 1.15;
+  // Radar (design/05 §4): long range against aircraft, shorter against surface targets and
+  // not into forest; ECM on the target cuts it by 30%.
+  if (O.radarAir) {
+    const k = V.ecm ? 1 - ECM_RADAR : 1;
+    if (V.flier) r = Math.max(r, O.radarAir * k);
+    else if (!B.T.inForest(V.body.x) && !V.submerged) r = Math.max(r, O.radarGround * k);
+  }
   return r;
 }
 
@@ -5097,14 +5989,18 @@ function trainWeapon(V, w, angle, face, dt) {
 
 // Reloading, automatic weapons and (for AI) the main gun.
 function runWeapons(B, V, dt, aiControlled) {
-  const loaderPenalty = V.crew < 3 ? 1.6 : 1;
+  const loaderPenalty = V.loaderShort ? 1.6 : 1;
   const tmp = { x: 0, y: 0 };
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
-    if (d.secondary) { if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); } continue; }
+    if (d.secondary) {
+      if (d.secondary === 'sam') autoSam(B, V, w);
+      else if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); }
+      continue;
+    }
     if (gunUnderWater(B, V, w)) { w.burst = 0; continue; }
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
@@ -5117,7 +6013,7 @@ function runWeapons(B, V, dt, aiControlled) {
       if (!_aim.ok || !ready || w.reload > 0) continue;
       fireWeapon(B, V, w, w.angle, aiControlled ? 1 / (V.ai ? V.ai.accuracy : 1) : 1);
       w.burst++;
-      w.reload = 60 / d.rpm * 1.5;
+      w.reload = 60 / d.rpm * 1.5 * (1 + (V.overheat || 0));
       if (w.burst >= d.burst) { w.burst = 0; w.reload = 1.4; }
       continue;
     }
@@ -5131,7 +6027,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
     if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
-      w.reload = d.reload * loaderPenalty;
+      w.reload = d.reload * (d.cal >= 75 ? loaderPenalty : 1);
       if (d.indirect && B.warnings) {
         const vx = Math.abs(Math.cos(w.angle)) * d.vel;
         B.warnings.push({ x: tmp.x, t: Math.abs(tmp.x - V.body.x) / Math.max(1, vx) });
@@ -5147,7 +6043,8 @@ function squadThink(B, V, dt) {
   const slot = B.squad.indexOf(V) < B.squad.indexOf(me) ? B.squad.indexOf(V) + 1 : B.squad.indexOf(V);
   const dir = 1;                      // the squad advances to the right
   let goal = null;
-  if (ai.hold !== null) goal = ai.hold;
+  if (V.pulling) goal = null;                       // pulling back: stepReserves drives it off the rear edge
+  else if (ai.hold !== null) goal = ai.hold;
   else if (B.order === 'Follow') goal = me.body.x - dir * 12 * slot;
   else if (B.order === 'Escort') goal = me.body.x + dir * (slot === 1 ? 10 : -10);
   else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
@@ -5157,7 +6054,10 @@ function squadThink(B, V, dt) {
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
   const range = engageRange(V);
   let tgt = null;
-  if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
+  // A "Fire at" order from the command wheel comes first, then the Attack order's target.
+  if (ai.fireAt && (ai.fireAt.destroyed || !ai.fireAt.seen)) ai.fireAt = null;
+  if (ai.fireAt && canEngage(V, ai.fireAt)) tgt = ai.fireAt;
+  else if (B.order === 'Attack' && B.target && !B.target.destroyed && B.target.seen && canEngage(V, B.target)) tgt = B.target;
   else tgt = nearestTarget(B, V, range, (U) => canEngage(V, U));
   if (tgt !== ai.target) { ai.target = tgt; ai.react = 0.6; }
   if (ai.react > 0) ai.react -= dt;
@@ -5253,7 +6153,7 @@ function airThink(B, V, dt) {
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const ground = Math.max(T.height(b.x), seaAt(T, b.x) ? T.sea : -Infinity);
-  if (V.domain === 'heli') { heliThink(B, V, tgt, ground); return; }
+  if (V.domain === 'heli' || V.domain === 'airship') { heliThink(B, V, tgt, ground); return; }
   const cruise = ground + (bomber ? 55 : 45);
   V.throttle = 0.9;
   V.pitchOrder = null;
@@ -5274,7 +6174,7 @@ function airThink(B, V, dt) {
 
 function heliThink(B, V, tgt, ground) {
   const b = V.body;
-  V.altCmd = ground + 20;
+  V.altCmd = ground + (V.domain === 'airship' ? AIRSHIP_ALT : 20);
   if (!tgt) { V.moveCmd = V.dir * 0.5; return; }
   const d = tgt.body.x - b.x;
   const want = engageRange(V) * 0.6;
@@ -5333,10 +6233,18 @@ function createBattle(level, opts = {}) {
   // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
   let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
   B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
-  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d)) && domainOf(d) !== 'airship') : [];   // airships fly over the sea
   squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  // Three on the field (design/01 §10.3): the rest of the line-up waits in reserve.
+  if (opts.reserves) {
+    const force = (opts.enemyForce || []).map((t) => (typeof t === 'string' ? designFromTemplate(t) : t)).filter((d) => canDeploy(B, d));
+    setupReserves(B, squad.slice(FIELD_MAX), force.slice(FIELD_MAX));
+    squad = squad.slice(0, FIELD_MAX);
+    B.enemyField = force.slice(0, FIELD_MAX);
+    B.goalTotal = force.length;
+  }
   let landX = 46, seaX = T.seaX0 + 16;
   let airX = 60;
   squad.forEach((d, i) => {
@@ -5346,7 +6254,7 @@ function createBattle(level, opts = {}) {
     const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
     if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
     const V = makeVehicle(d, 0, x, 1, T);
-    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : dom === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -5367,6 +6275,11 @@ function createBattle(level, opts = {}) {
     let best = T.length * 0.45, bh = -Infinity;
     for (let x = T.length * 0.38; x < T.length * 0.62; x += 2) if (T.height(x) > bh) { bh = T.height(x); best = x; }
     B.zone = { x0: best - 12, x1: best + 12 };
+  }
+
+  if (B.rotation) {
+    B.enemySlots = B.enemyField.map((d, k) => spawnEnemy(B, d, 'attack', T.length - 50 - k * 18));
+    delete B.enemyField;
   }
 
   // Enemies: wave 0 now, later waves from the right edge every cfg.wave seconds.
@@ -5403,8 +6316,9 @@ function createBattle(level, opts = {}) {
   return B;
 }
 
+// t: a template id, or a design (Battle Simulator forces).
 function spawnEnemy(B, t, mode, x) {
-  const d = designFromTemplate(t);
+  const d = typeof t === 'string' ? designFromTemplate(t) : t;
   // Ships spawn at sea; land vehicles on land (Part 2a).
   const T = B.T;
   if (T.seaX0 !== undefined) {
@@ -5412,9 +6326,9 @@ function spawnEnemy(B, t, mode, x) {
     else x = Math.min(x, T.seaX0 - 12);
   }
   const V = makeVehicle(d, 1, x, -1, B.T);
-  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : V.domain === 'airship' ? AIRSHIP_ALT : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
-  V.template = t;
+  V.template = typeof t === 'string' ? t : d.id;
   V.speedMul = B.cfg.speedMul;
   if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
   if (t === B.cfg.boss) { V.boss = true; V.name = B.cfg.bossName || d.name; }
@@ -5480,7 +6394,8 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
-  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  stepReserves(B, dt);
+  for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
@@ -5519,6 +6434,8 @@ function updateBattle(B, dt) {
   }
   stepShells(B, dt);
   stepUnderwater(B, dt);
+  stepSalvos(B, dt);
+  stepMissiles(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -5557,7 +6474,10 @@ function updateBattle(B, dt) {
   if (B.escort && !B.escort.destroyed) escortThink(B, B.escort);
 
   // Objectives.
-  if (!B.result && !B.test) {
+  if (!B.result && !B.test && B.rotation) {
+    if (sideBeaten(B, 1)) { B.result = 'win'; B.resultT = 0; }
+    else if (sideBeaten(B, 0)) { B.result = 'lost'; B.resultT = 0; }
+  } else if (!B.result && !B.test) {
     const g = B.cfg.goal;
     if (g.type === 'hold' && B.zone) {
       const inside = B.squad.some((V) => !V.destroyed && V.body.x >= B.zone.x0 && V.body.x <= B.zone.x1);
@@ -5596,7 +6516,7 @@ function playerFire(B, tx, ty, manual) {
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
   w.angle = _aim.angle;
   if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
-  w.reload = w.def.reload * (V.crew < 3 ? 1.6 : 1);
+  w.reload = w.def.reload * (V.loaderShort && w.def.cal >= 75 ? 1.6 : 1);
   B.stats.shots++;
   B.heat = Math.min(3, B.heat + 0.2);
   return '';
@@ -5627,8 +6547,8 @@ function trainPlayerGun(B, dt, aimX, aimY) {
 }
 
 // Smoke launcher: a screen in front of the vehicle.
-function playerSmoke(B) {
-  const V = B.me;
+// Smoke from one of your ships (the one you drive, or one given the order on the command wheel).
+function playerSmoke(B, V = B.me) {
   if (!V.smoke) return 'No smoke launcher';
   V.smoke--;
   const x = V.body.x + V.dir * 8;
@@ -5675,17 +6595,23 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge_l', 'ramp', 'wbow']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
-function drawPart(g, p, x, y, cs, side, seed) {
+function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
   const d = p.def;
   const w = d.w * cs, h = d.h * cs;
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
+  if (isTiled(d.id)) {
+    // Structure cell on its own (palette icons, a cell being moved): auto-tiled as a shape of one.
+    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], paint, x, y, cs);
+    drawPartDamage(g, p, x, y, cs, seed);
+    return;
+  }
   g.save();
-  if (drawPartArt(g, p, x, y, cs)) {
-    // Imported art: only the procedural damage overlay is added below.
+  if (drawPartArt(g, p, x, y, cs, paint)) {
+    // Part art: only the procedural damage overlay is added below.
   } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
@@ -5759,6 +6685,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.stroke();
       g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
       g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w * 0.65, y + h * 0.5); g.stroke();
+      break;
+    case 'wbow':
+      g.fillStyle = '#8E6035';
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w - (w * 0.7 * k) / 4, y + (h * k) / 4); g.stroke(); }
+      break;
+    case 'whull':
+      bevel(g, x, y, w, h, '#8E6035', 1);
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w, y + (h * k) / 4); g.stroke(); }
       break;
     case 'keel':
       bevel(g, x, y, w, h, '#5c3129', 1.4);
@@ -5890,6 +6827,90 @@ function drawPart(g, p, x, y, cs, side, seed) {
       roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
       if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
       break;
+    // Systems, missiles and logistics (Part 2d).
+    case 'skirt':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.15 + k * 0.3), y + h * 0.2, w * 0.08, h * 0.6);
+      break;
+    case 'rpod':
+      g.fillStyle = shade(steel, 0.7); roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.2); g.fill();
+      g.fillStyle = '#15181d';
+      for (let r0 = 0; r0 < 2; r0++) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w - cs * 0.12 - r0 * cs * 0.05, y + h * (0.28 + k * 0.15), cs * 0.05, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'atgm':
+      g.fillStyle = '#4a5a3a'; g.fillRect(x + w * 0.1, y + h * 0.35, w * 0.8, h * 0.35);
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.3, y + h * 0.7, w * 0.15, h * 0.3);
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.85, y + h * 0.4, w * 0.08, h * 0.25);
+      break;
+    case 'sam':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.35, y + h * 0.55, w * 0.3, h * 0.45);
+      g.save(); g.translate(x + w * 0.5, y + h * 0.6); g.rotate(-0.6);
+      g.fillStyle = '#4a5a3a';
+      for (const o of [-0.22, 0.22]) g.fillRect(-w * 0.45, o * h - h * 0.09, w * 0.9, h * 0.18);
+      g.restore();
+      break;
+    case 'radar_s': case 'radar_n': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.strokeStyle = '#c9d1dc'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.arc(x + w / 2, y + h * 0.55, w * 0.42, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      if (d.id === 'radar_n') { g.fillStyle = shade(steel, 0.8); g.fillRect(x + w * 0.2, y + h * 0.75, w * 0.6, h * 0.25); }
+      break;
+    }
+    case 'ecm':
+      bevel(g, x, y, w, h, '#3d4552', 1);
+      g.strokeStyle = PAL.amber; g.lineWidth = 1;
+      g.beginPath();
+      for (let k = 0; k <= 8; k++) { const px = x + w * (0.1 + k * 0.1), py = y + h * (k % 2 ? 0.3 : 0.7); if (k) g.lineTo(px, py); else g.moveTo(px, py); }
+      g.stroke();
+      break;
+    case 'cradio':
+      bevel(g, x, y, w, h, '#3f4a3a', 1);
+      g.fillStyle = '#b8c28a'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + w * (0.2 + k * 0.15), y + h * 0.45, cs * 0.08, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = '#1b1d21'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (const f of [0.7, 0.85]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.2); g.lineTo(x + w * f - cs * 0.2, y - cs * 3.6); g.stroke(); }
+      break;
+    case 'gen':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.6, y + h * 0.35, w * 0.25, h * 0.3);
+      break;
+    case 'troop':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.fillStyle = '#12151a';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.12 + k * 0.28), y + h * 0.25, w * 0.18, h * 0.16);
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.1, y + h * 0.7, w * 0.8, h * 0.08);
+      break;
+    case 'tank_c':
+      g.fillStyle = '#56613a'; roundRect(g, x + w * 0.02, y + h * 0.1, w * 0.96, h * 0.8, h * 0.4); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.1); g.lineTo(x + w * f, y + h * 0.9); g.stroke(); }
+      g.fillStyle = PAL.danger; g.fillRect(x + w * 0.42, y + h * 0.4, w * 0.16, h * 0.2);
+      break;
+    case 'repair':
+      bevel(g, x, y, w, h, '#4a4f3a', 1);
+      g.strokeStyle = PAL.linen; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.3, y + h * 0.7); g.lineTo(x + w * 0.65, y + h * 0.35); g.stroke();
+      g.beginPath(); g.arc(x + w * 0.7, y + h * 0.3, cs * 0.18, 0, Math.PI * 2); g.stroke();
+      break;
+    case 'crane':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.2, y + h * 0.8); g.lineTo(x + w * 0.9, y - h * 0.3); g.lineTo(x + w * 0.9, y + h * 0.3); g.stroke();
+      break;
+    case 'blade':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.moveTo(x + w * 0.6, y); g.quadraticCurveTo(x + w, y + h * 0.5, x + w * 0.7, y + h); g.lineTo(x, y + h); g.lineTo(x, y + h * 0.3); g.closePath(); g.fill();
+      break;
+    case 'bridge_l':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.3, w, h * 0.4);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
+      g.beginPath(); for (let k = 0; k <= 8; k++) { g.moveTo(x + (w * k) / 8, y + h * 0.3); g.lineTo(x + (w * (k + 0.5)) / 8, y + h * 0.7); } g.stroke();
+      break;
+    case 'ramp':
+      g.fillStyle = shade(steel, 0.85);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.3, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.28, 0, Math.PI * 2); g.fill();
@@ -5985,8 +7006,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
-  // Damage: scorch and holes.
+  drawPartDamage(g, p, x, y, cs, seed);
+  g.strokeStyle = 'rgba(8,10,14,0.55)';
+  g.lineWidth = 1;
+  if (!hasPartArt(d.id, paint) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.restore();
+}
+
+// Damage marks on a part's footprint: scorch, then holes.
+function drawPartDamage(g, p, x, y, cs, seed) {
   if (p.scorch > 0.05) {
+    const w = p.def.w * cs, h = p.def.h * cs;
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = `rgba(12,10,8,${Math.min(0.65, p.scorch * 0.7)})`;
     g.fillRect(x, y, w, h);
@@ -5998,11 +7028,10 @@ function drawPart(g, p, x, y, cs, side, seed) {
       for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x + rng.range(0.2, 0.8) * w, y + rng.range(0.2, 0.8) * h, cs * rng.range(0.06, 0.12), 0, Math.PI * 2); g.fill(); }
     }
   }
-  g.strokeStyle = 'rgba(8,10,14,0.55)';
-  g.lineWidth = 1;
-  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  g.restore();
 }
+
+// A vehicle's paint: its design's own, or its side's scheme (design/07 §3).
+function vehiclePaint(V) { return V.paint || (V.paint = resolvePaint(V.design, V.side)); }
 
 // Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
 function paintParts(V, idxs, ppm, pad) {
@@ -6013,20 +7042,9 @@ function paintParts(V, idxs, ppm, pad) {
   c.height = Math.ceil((D.h * CELL + pad * 2) * ppm);
   const g = c.getContext('2d');
   const o = pad * ppm;
-  // Structure first, then everything else, so fittings sit on top of plates.
-  const order = idxs.slice().sort((a, b) => (V.parts[a].def.cat === 'structure' ? 0 : 1) - (V.parts[b].def.cat === 'structure' ? 0 : 1));
-  for (const i of order) {
-    const p = V.parts[i];
-    drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
-  }
-  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
-  // still reads as enemy until faction paint masks arrive (design/07 §4).
-  if (V.side === 1) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = 'rgba(170,45,30,0.16)';
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'source-over';
-  }
+  // Auto-tiled structure first, then everything else, so fittings sit on top of plates.
+  // Each side is painted in its own scheme (design/07 §3, §6).
+  drawPainted(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs, vehiclePaint(V), D.w, D.h, 7);
   return c;
 }
 
@@ -6055,10 +7073,10 @@ function renderPartsSprite(V, idxs) {
   c.width = Math.max(1, Math.ceil((x1 - x0) * cs));
   c.height = Math.max(1, Math.ceil((y1 - y0) * cs));
   const g = c.getContext('2d');
-  for (const i of idxs) {
+  drawPlacedParts(g, idxs.map((i) => {
     const p = V.parts[i];
-    drawPart(g, Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), (p.x - x0) * cs, (p.y - y0) * cs, cs, V.side, i);
-  }
+    return { p: Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), x: p.x - x0, y: p.y - y0, seed: i };
+  }), V.side, 0, 0, cs, vehiclePaint(V));
   return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
 }
 
@@ -6075,6 +7093,7 @@ function drawVehicle(g, V) {
   if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
+  drawBarrels(g, V, true);              // barrels whose art sits behind the body
   const b = V.body;
   const k = S / spr.ppm;
   g.save();
@@ -6087,7 +7106,7 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  const tmp = { x: 0, y: 0 };
+  const tmp = _bp;
   if (art.debug) {
     for (const p of V.parts) {
       if (!p.alive || !art.get(p.def.id)) continue;
@@ -6096,9 +7115,17 @@ function drawVehicle(g, V) {
       drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
     }
   }
-  // Barrels, drawn live.
+  drawBarrels(g, V, false);
+}
+
+// Barrels, drawn live, with SVG art or as lines. behind: only those drawn before the vehicle.
+const _bp = { x: 0, y: 0 };
+function drawBarrels(g, V, behind) {
+  const S = view.S;
+  const tmp = _bp;
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive || w.def.secondary) continue;
+    if (barrelBehind(w.def, vehiclePaint(V)) !== behind) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -6106,7 +7133,10 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
-    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+    if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
+    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, vehiclePaint(V));
+    g.filter = 'none';
+    if (drawn) {
       if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
       continue;
     }
@@ -6383,8 +7413,1180 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);
+}
+
+/* ---------- 12c_reserves.js ---------- */
+/* ==== 12c RESERVES ==== */
+// Three on the field (design/01 §10.3). In battles created with opts.reserves (the Battle
+// Simulator; later the campaign) each side keeps at most FIELD_MAX ships in battle. The rest
+// wait in line and enter from their own rear edge ENTRY_DELAY seconds after a slot frees up:
+// a ship destroyed, or pulled back off the rear edge. Pulled-back ships keep their damage,
+// fuel and shells and join the end of the line. A side loses when it has no ship on the
+// field, none on the way in and none in reserve. The Gauntlet keeps its v1 waves.
+
+const FIELD_MAX = 3;
+const ENTRY_DELAY = 5;            // seconds between a slot freeing up and the next ship entering
+const EDGE_EXIT = 6;              // metres from the rear edge at which a pulling-back ship leaves
+const AIR_EXIT_SECS = 3;          // aircraft pulling back fly off after this long
+const ENEMY_PULL_HEALTH = 0.35;   // enemy captains pull back below this share of hit points
+
+function vehicleHealth(V) {
+  let hp = 0;
+  for (const p of V.parts) if (p.alive) hp += p.hp;
+  return V.hpMax ? hp / V.hpMax : 0;
+}
+
+// A reserve entry: the design, plus the state of a ship that has pulled back.
+function reserveEntry(design, V) {
+  const e = { design, name: markName(design), health: 1, hp: null, fuel: null, shells: null };
+  if (!V && design._state && design._state.hp) {
+    let a = 0, b = 0;
+    design.cells.forEach((c, i) => { a += design._state.hp[i]; b += PARTS[c.p].hp; });
+    e.health = b ? a / b : 1;
+  }
+  if (V) {
+    e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
+    e.health = vehicleHealth(V);
+    e.fuel = V.fuel; e.shells = V.shells;
+  }
+  return e;
+}
+
+// Can this design fight on this battlefield? (ships need sea; sea battles take no land units)
+function canDeploy(B, d) {
+  const naval = seaDomain(domainOf(d));
+  if (naval && B.T.seaX0 === undefined) return false;
+  if (!naval && B.cfg.fleet && !airDomain(domainOf(d))) return false;
+  return true;
+}
+
+function setupReserves(B, squadRest, enemyRest) {
+  B.rotation = true;
+  B.reserve = [squadRest.filter((d) => canDeploy(B, d)).map((d) => reserveEntry(d)), enemyRest.filter((d) => canDeploy(B, d)).map((d) => reserveEntry(d))];
+  B.entering = [];
+  B.pulledBack = [0, 0];
+  B.lostShips = [];
+}
+
+// Where a side's reinforcements enter: their own rear edge, in their own layer.
+function entryX(B, side, d) {
+  const T = B.T, dom = domainOf(d);
+  const L = cropDesign(d).w * CELL;
+  if (side === 0) {
+    if (airDomain(dom)) return 30;
+    if (seaDomain(dom)) return T.seaX0 + 10 + L / 2;
+    return 14;
+  }
+  if (airDomain(dom)) return T.length - 30;
+  if (seaDomain(dom)) return T.length - 10 - L / 2;
+  return T.seaX0 !== undefined ? T.seaX0 - 14 : T.length - 14;
+}
+
+function restoreDamage(V, e) {
+  if (!e.hp) return;
+  let lost = false;
+  V.parts.forEach((p, i) => {
+    if (e.hp[i] <= 0) { p.alive = false; V.alive[i] = 0; lost = true; } else p.hp = e.hp[i];
+  });
+  if (lost) rebuildVehicle(V);
+  if (e.fuel !== null) V.fuel = e.fuel;
+  if (e.shells !== null) V.shells = e.shells;
+}
+
+function enterFromReserve(B, side, slot) {
+  const e = B.reserve[side].shift();
+  if (!e) return null;
+  const x = entryX(B, side, e.design);
+  let V;
+  if (side === 0) {
+    V = makeVehicle(e.design, 0, x, 1, B.T);
+    if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : V.domain === 'airship' ? AIRSHIP_ALT : 45);
+    V.ai = makeAI('squad', B.cfg);
+    V.label = String(slot + 1);
+    B.units.push(V);
+    B.squad[slot] = V;
+    if (B.me.destroyed || B.me.withdrawn) takeVehicle(B, V);
+  } else {
+    V = spawnEnemy(B, e.design, 'attack', x);
+    B.enemySlots[slot] = V;
+  }
+  restoreDamage(V, e);
+  if (!e.hp) applyShipState(V);        // a campaign ship's damage, fuel and ammo
+  if (!B.demo) floatText(side === 0 ? `${V.name} enters` : 'Enemy reinforcement', V.body.x, V.body.y + V.height + 1.5, side === 1);
+  return V;
+}
+
+// Order a ship back to reserve (design/02 §3.4 "Pull back"). Returns a reason when it can't.
+function pullBack(B, V) {
+  if (!B.rotation) return 'No reserve line in this battle';
+  if (V.destroyed || V.withdrawn) return 'Out of action';
+  if (V.pulling) return '';
+  V.pulling = true;
+  V.pullT = 0;
+  V.ai.hold = null;
+  V.ai.fireAt = null;
+  if (V === B.me) {
+    const next = B.squad.find((U) => U !== V && !U.destroyed && !U.pulling);
+    if (next) takeVehicle(B, next);
+  }
+  return '';
+}
+
+function withdraw(B, V) {
+  const side = V.side;
+  B.reserve[side].push(reserveEntry(V.design, V));
+  B.pulledBack[side]++;
+  V.withdrawn = true;
+  V.destroyed = true;              // out of the fight: no longer targeted or simulated
+  V.gone = true;
+  V.throttle = 0;
+  const i = B.units.indexOf(V);
+  if (i >= 0) B.units.splice(i, 1);
+  if (B.target === V) B.target = null;
+  const slots = side === 0 ? B.squad : B.enemySlots;
+  const slot = slots.indexOf(V);
+  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+  if (V === B.me) {
+    const next = B.squad.find((U) => !U.destroyed);
+    if (next) takeVehicle(B, next);
+  }
+}
+
+// Once per frame, after the captains have chosen their throttle.
+function stepReserves(B, dt) {
+  if (!B.rotation) return;
+  const T = B.T;
+  for (const side of [0, 1]) {
+    const slots = side === 0 ? B.squad : B.enemySlots;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const V = slots[slot];
+      if (!V) continue;
+      if (V.destroyed && !V.withdrawn && !V.replaced) {
+        V.replaced = true;
+        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+        continue;
+      }
+      if (V.destroyed) continue;
+      // Enemy captains pull back badly damaged ships while they have others waiting.
+      if (side === 1 && !V.pulling && B.reserve[1].length && vehicleHealth(V) < ENEMY_PULL_HEALTH) pullBack(B, V);
+      if (!V.pulling) continue;
+      V.pullT += dt;
+      if (V !== B.me) V.throttle = side === 0 ? -1 : 1;
+      const out = V.flier ? V.pullT > AIR_EXIT_SECS : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
+      if (out) withdraw(B, V);
+    }
+  }
+  for (let i = B.entering.length - 1; i >= 0; i--) {
+    const en = B.entering[i];
+    if (B.time < en.at) continue;
+    B.entering.splice(i, 1);
+    enterFromReserve(B, en.side, en.slot);
+  }
+}
+
+// A side is beaten when it has nothing left to fight with.
+function sideBeaten(B, side) {
+  const slots = side === 0 ? B.squad : B.enemySlots;
+  if (slots.some((V) => V && !V.destroyed)) return false;
+  if (B.entering.some((en) => en.side === side)) return false;
+  return !B.reserve[side].length;
+}
+
+/* ---------- 13_autoresolve.js ---------- */
+/* ==== 13 AUTO-RESOLVE ==== */
+// Campaign battles (design/01 §10): the battlefield from the map location and weather, who can
+// deploy, the line-ups, and writing the results back to the map (damage, losses, captain
+// survival, XP, bounties). Auto-resolve runs the same battle rules headless and silent.
+
+const AUTO_SECS = 240;            // an auto-resolved battle runs at most this long
+const CAPTAIN_SURVIVES = 0.5;     // chance a captain survives the loss of their ship
+const BOUNTY = 0.05;              // money per destroyed enemy ship: 5% of its cost index (08 §6)
+
+// Where a battle at a map point is fought: open sea, coast or inland; the weather; the light.
+function battlePlace(x, y) {
+  let sea = 0, land = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) (isSeaCell(world, x + dx, y + dy) ? sea++ : land++);
+  const field = !land ? 'sea' : !sea ? 'inland' : 'coast';
+  const w = weatherAt(x, y);
+  const h = campaign.hour;
+  const light = h >= 20 || h < 5 ? 'night' : h >= 18 || h < 7 ? 'dusk' : 'day';
+  return { field, weather: w === 'clear' ? 'clear' : 'rain', weatherName: w, light, biome: terrainId(world, x, y) };
+}
+
+const DEPLOY = { inland: ['land', 'air'], sea: ['sea', 'air'], coast: ['land', 'sea', 'air'] };
+
+// Both sides' ships: every fleet within reinforcement range joins (01 §10.2); ships of domains
+// that can't fight here stay out.
+function battleSides(mine, theirs) {
+  const place = battlePlace(mine.x, mine.y);
+  const ok = DEPLOY[place.field];
+  const near = (fl, at) => fl.shipIds.length && Math.hypot(fl.x - at.x, fl.y - at.y) <= REINFORCE_CELLS;
+  const myFleets = [mine, ...playerFleets().filter((fl) => fl !== mine && near(fl, mine))];
+  const theirFleets = [theirs, ...campaign.fleets.filter((fl) => fl !== theirs && fl.faction !== campaign.faction && relation(fl.faction, campaign.faction) === 'war' && near(fl, theirs))];
+  const ships = (fleets) => fleets.filter((fl) => ok.includes(fl.domain)).flatMap((fl) => fleetShips(fl));
+  return { place, myFleets, theirFleets, mine: ships(myFleets), theirs: ships(theirFleets) };
+}
+
+function campaignBattleConfig(place) {
+  const c = simulatorConfig({ field: place.field, weather: place.weather, light: place.light, seed: (campaign.seed + campaign.day * 97 + Math.floor(campaign.hour) * 13) >>> 0 });
+  c.name = `${SIM_FIELDS[place.field]} · ${MAP_TERRAIN[place.biome] ? MAP_TERRAIN[place.biome].name : ''} · ${place.weatherName}`;
+  if (place.biome === 'forest') c.forest = 4;
+  if (place.biome === 'hills' || place.biome === 'pass') c.hills = 0.8;
+  if (place.biome === 'marsh') c.mud = 4;
+  c.how = 'Three ships a side on the field; the rest wait in reserve. Long-press a ship or its card for orders.';
+  return c;
+}
+
+// A ship's design for battle, carrying its damage, fuel and ammo.
+function battleDesign(ship) {
+  const d = shipDesign(ship);
+  d._shipId = ship.id;
+  d.paint = d.paint || { scheme: ship.faction };            // each faction's own colours (09)
+  d._state = {
+    hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
+    fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
+    ammo: ship.ammo,
+  };
+  return d;
+}
+
+// Apply a design's carried state to a vehicle made from it (the campaign's persistent damage).
+function applyShipState(V) {
+  const s = V.design._state;
+  if (!s) return;
+  if (s.hp) {
+    let lost = false;
+    V.parts.forEach((p, i) => { if (s.hp[i] <= 0) { p.alive = false; V.alive[i] = 0; lost = true; } else p.hp = Math.min(p.def.hp, s.hp[i]); });
+    if (lost) rebuildVehicle(V);
+  }
+  if (V.fuelMax) V.fuel = V.fuelMax * clamp(s.fuel, 0, 1);
+  if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
+}
+
+function createCampaignBattle(contact, headless) {
+  const mine = byId('fleets', contact.mine), theirs = byId('fleets', contact.theirs);
+  const sides = battleSides(mine, theirs);
+  const B = createBattle(0, {
+    cfg: campaignBattleConfig(sides.place), reserves: true, demo: !!headless,
+    squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
+  });
+  for (const V of B.units) applyShipState(V);
+  B.contact = contact;
+  B.sides = sides;
+  return B;
+}
+
+// Run a battle headless and silent (01 §10.1 Auto-resolve), then write the results back.
+function autoResolve(mine, theirs) {
+  const quiet = audio.quiet;
+  audio.quiet = true;
+  const B = createCampaignBattle({ mine: mine.id, theirs: theirs.id }, true);
+  for (let t = 0; t < AUTO_SECS && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  audio.quiet = quiet;
+  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+  if (!B.result) {
+    // Undecided when time runs out: the side with more of its strength left holds the field.
+    const left = (side) => B.units.filter((V) => V.side === side && !V.destroyed).reduce((a, V) => a + vehicleHealth(V), 0) + B.reserve[side].length;
+    B.result = left(0) >= left(1) ? 'win' : 'lost';
+  }
+  return applyBattleOutcome(B);
+}
+
+// Write a battle back to the campaign.
+function applyBattleOutcome(B) {
+  const win = B.result === 'win';
+  const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
+  const rec = new Map();
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null });
+  for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
+    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null });
+  }
+  let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
+  for (const [id, r] of rec) {
+    const ship = byId('ships', id);
+    if (!ship) continue;
+    const d = shipDesign(ship);
+    const cap = byId('officers', ship.captainId);
+    const st = shipStats(ship);
+    ship.battles++;
+    if (r.lost) {
+      if (ship.faction === campaign.faction) lostMine++;
+      else { lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
+      removeShip(ship, rng);
+      continue;
+    }
+    ship.hp = r.hp.map((hp, i) => hp / PARTS[d.cells[i].p].hp);
+    if (r.fuel !== null) ship.fuel = st.fuelCap * r.fuel;
+    if (r.ammo !== null) ship.ammo = r.ammo;
+    if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
+  }
+  if (!win) gaXp /= 2;
+  const ga = byId('officers', campaign.ga);
+  if (ga) gainXp(ga, gaXp);
+  campaign.treasury += win ? bounty : 0;
+  // Fleets that fought: emptied ones are gone; the losing side falls back; nobody meets again at once.
+  const sides = B.sides;
+  for (const fl of [...sides.myFleets, ...sides.theirFleets]) {
+    fl.cooldown = CONTACT_COOLDOWN;
+    if (!fl.shipIds.length) { fleetLost(fl); continue; }
+    const losing = (fl.faction === campaign.faction) !== win;
+    if (losing) fallBack(fl, fl.faction === campaign.faction ? sides.theirFleets[0] : sides.myFleets[0]);
+  }
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.`;
+  campaign.journal.push(`Day ${campaign.day}: ${summary}`);
+  campaignStore.save();
+  return { win, lostMine, lostTheirs, bounty, summary };
+}
+
+function gainXp(o, xp) {
+  o.xp += xp;
+  const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
+  if (o.rank !== 'grand') o.level = levelFromXp(o.xp, table);
+  else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
+}
+
+// A ship is gone; its captain survives half the time (01 §4.1) and stays with the fleet.
+function removeShip(ship, rng) {
+  const fl = byId('fleets', ship.fleetId);
+  if (fl) fl.shipIds = fl.shipIds.filter((id) => id !== ship.id);
+  campaign.ships = campaign.ships.filter((s) => s !== ship);
+  const cap = byId('officers', ship.captainId);
+  if (cap && cap.rank === 'captain') {
+    if (rng.next() < CAPTAIN_SURVIVES) { cap.shipId = null; cap.fleetId = fl ? fl.id : null; }
+    else cap.alive = false;
+  }
+}
+
+// An emptied fleet: its commander goes to the nearest own settlement (the Grand Admiral escapes
+// there, losing 20% of the treasury, 01 §14).
+function fleetLost(fl) {
+  campaign.fleets = campaign.fleets.filter((f) => f !== fl);
+  const own = world.settlements.filter((s) => s.faction === fl.faction).sort((a, b) => Math.hypot(a.x - fl.x, a.y - fl.y) - Math.hypot(b.x - fl.x, b.y - fl.y))[0];
+  for (const o of campaign.officers) {
+    if (o.fleetId !== fl.id) continue;
+    o.fleetId = null;
+    if (own) o.garrisonedAt = own.id; else o.alive = false;
+  }
+  if (fl.faction === campaign.faction && fl.admiralId === campaign.ga) {
+    campaign.treasury *= 0.8;
+    campaign.journal.push(`Day ${campaign.day}: the flag fleet was lost; the Grand Admiral escaped to ${own ? own.name : 'the wilds'}.`);
+  }
+}
+
+// Move a fleet a few cells away from an enemy along a passable line.
+function fallBack(fl, from) {
+  if (!from) return;
+  const dx = fl.x - from.x, dy = fl.y - from.y, d = Math.hypot(dx, dy) || 1;
+  for (let k = 4; k >= 1; k--) {
+    const x = fl.x + (dx / d) * k, y = fl.y + (dy / d) * k;
+    if (cellSpeed(world, cellAt(world, x, y), fl.domain) > 0) { fl.x = x; fl.y = y; break; }
+  }
+  fl.path = []; fl.dest = null;
+}
+
+// Retreat (01 §10.1): free if your slowest ship outpaces their fastest; otherwise the rearmost ship is lost.
+function retreatCheck(mineShips, theirShips) {
+  const slow = Math.min(...mineShips.map((s) => shipStats(s).speed), Infinity);
+  const fast = Math.max(...theirShips.map((s) => shipStats(s).speed), 0);
+  return { free: !mineShips.length || slow > fast, lose: mineShips[mineShips.length - 1] || null };
+}
+function retreat(mine, theirs, esc) {
+  if (!esc.free && esc.lose) {
+    const rng = makeRng(campaign.seed + campaign.day);
+    ui.toast(`${shipStats(esc.lose).name} was caught covering the retreat.`, 4000);
+    removeShip(esc.lose, rng);
+  }
+  mine.cooldown = theirs.cooldown = CONTACT_COOLDOWN;
+  if (!mine.shipIds.length) fleetLost(mine); else fallBack(mine, theirs);
+  campaignStore.save();
+}
+
+// ---------- garrisons and field outposts (01 §4.1): captains never move alone
+function detachShip(fl, ship) {
+  const s = fl.docked ? byId('settlements', fl.docked) : null;
+  if (s && s.faction === fl.faction) {
+    const gar = campaign.ships.filter((sh) => sh.garrison === s.id).length;
+    if (gar >= SETTLEMENT_TYPES[s.type].garrison) return `${s.name}'s garrison is full (${gar}).`;
+    ship.garrison = s.id;
+  } else {
+    let o = (campaign.outposts || []).find((q) => q.faction === fl.faction && Math.hypot(q.x - fl.x, q.y - fl.y) < 1);
+    if (!o) { o = { id: newId('p'), x: fl.x, y: fl.y, faction: fl.faction, domain: fl.domain }; campaign.outposts.push(o); }
+    ship.outpost = o.id;
+  }
+  fl.shipIds = fl.shipIds.filter((id) => id !== ship.id);
+  ship.fleetId = null;
+  const cap = byId('officers', ship.captainId);
+  if (cap) { cap.fleetId = null; cap.garrisonedAt = ship.garrison || ship.outpost; }
+  return '';
+}
+
+function pickUp(fl, ship) {
+  if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
+  const cap = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)];
+  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships at admiral level ${(fleetAdmiral(fl) || { level: 1 }).level}).`;
+  delete ship.garrison;
+  if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
+  ship.fleetId = fl.id;
+  fl.shipIds.push(ship.id);
+  const o = byId('officers', ship.captainId);
+  if (o) { o.fleetId = fl.id; delete o.garrisonedAt; }
+  return '';
+}
+
+/* ---------- 14_world.js ---------- */
+/* ==== 14 WORLD ==== */
+// The campaign world (design/01 §2, §7; design/09 layout). One seeded, generated map of
+// WORLD_W × WORLD_H cells (WORLD_KM each). The terrain is regenerated from the seed when a
+// campaign loads, so saves hold only what changes: settlements, fleets, ships, officers, time.
+// Also: path finding by domain, the map clock and weather.
+
+const T_IDS = Object.keys(MAP_TERRAIN);          // terrain index ↔ id
+const T_SEA = T_IDS.indexOf('sea'), T_MOUNT = T_IDS.indexOf('mountains'), T_PASS = T_IDS.indexOf('pass');
+
+// Smooth value noise in [0, 1], seeded.
+function makeNoise(seed) {
+  const rng = makeRng(seed);
+  const N = 256, perm = new Uint8Array(N * 2), val = new Float32Array(N);
+  for (let i = 0; i < N; i++) { perm[i] = i; val[i] = rng.next(); }
+  for (let i = N - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+  for (let i = 0; i < N; i++) perm[N + i] = perm[i];
+  const at = (x, y) => val[perm[(perm[x & 255] + y) & 511]];
+  const s = (t) => t * t * (3 - 2 * t);
+  const one = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), fx = s(x - xi), fy = s(y - yi);
+    return lerp(lerp(at(xi, yi), at(xi + 1, yi), fx), lerp(at(xi, yi + 1), at(xi + 1, yi + 1), fx), fy);
+  };
+  return (x, y, oct = 4) => {
+    let a = 0, amp = 1, f = 1, tot = 0;
+    for (let o = 0; o < oct; o++) { a += one(x * f, y * f) * amp; tot += amp; amp *= 0.5; f *= 2; }
+    return a / tot;
+  };
+}
+
+// ---------- generation
+function generateWorld(seed, playerFaction) {
+  const W = WORLD_W, H = WORLD_H;
+  const hN = makeNoise(seed), mN = makeNoise(seed + 11), rN = makeNoise(seed + 23);
+  const height = new Float32Array(W * H), ter = new Uint8Array(W * H);
+  const f = (id) => FACTIONS.find((x) => x.id === id);
+  const near = (x, y, fx, fy, r) => Math.exp(-(((x / W - fx) ** 2) + ((y / H - fy) ** 2)) / (2 * r * r));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let h = hN(x / 26, y / 26, 5);
+    const edge = Math.min(x, W - 1 - x, y, H - 1 - y) / 14;
+    h -= (1 - clamp(edge, 0, 1)) * 0.45;                                 // ocean around the edge
+    h -= near(x, y, 0.1, 0.9, 0.12) * 0.32;                              // the south-western gulf and archipelago
+    h += near(x, y, 0.8, 0.22, 0.12) * (0.22 + rN(x / 7, y / 7) * 0.25); // Skyreach highlands
+    h += near(x, y, 0.5, 0.5, 0.18) * 0.1;                               // the central plains rise a little
+    height[y * W + x] = h;
+  }
+  // Sea level: about 38% of the map is water.
+  const sorted = Array.from(height).sort((a, b) => a - b);
+  const seaLevel = sorted[Math.floor(sorted.length * 0.38)];
+  const mountLevel = sorted[Math.floor(sorted.length * 0.95)], hillLevel = sorted[Math.floor(sorted.length * 0.86)];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, h = height[i], m = mN(x / 18, y / 18, 3);
+    const lat = y / H;
+    let t;
+    if (h < seaLevel) t = 'sea';
+    else if (h > mountLevel) t = 'mountains';
+    else if (h > hillLevel) t = 'hills';
+    else if (lat < 0.16 + (m - 0.5) * 0.1) t = 'ice';
+    else if (lat < 0.3 + (m - 0.5) * 0.1) t = 'tundra';
+    else if (near(x, y, 0.8, 0.8, 0.14) > 0.45 && m < 0.62) t = rN(x / 5, y / 5) > 0.68 ? 'ruins' : 'desert';
+    else if (m > 0.66 && h < seaLevel + 0.05) t = 'marsh';
+    else if (m > 0.56) t = 'forest';
+    else t = rN(x / 6, y / 6) > 0.86 ? 'ruins' : 'plains';
+    ter[i] = T_IDS.indexOf(t);
+  }
+  // Small enclosed waters become marsh, so every sea fleet can reach the open sea.
+  const seen = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    if (seen[i] || ter[i] !== T_SEA) continue;
+    const comp = [i];
+    seen[i] = 1;
+    for (let k = 0; k < comp.length; k++) {
+      const j = comp[k], x = j % W, y = (j / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (!seen[n] && ter[n] === T_SEA) { seen[n] = 1; comp.push(n); }
+      }
+    }
+    if (comp.length < 400) for (const j of comp) ter[j] = T_IDS.indexOf('marsh');
+  }
+  const world = { seed, W, H, height, ter, seaLevel, road: new Uint8Array(W * H), owner: new Int8Array(W * H).fill(-1) };
+  world.settlements = placeSettlements(world, seed, playerFaction);
+  buildRoads(world);
+  computeTerritory(world);
+  return world;
+}
+
+const cellAt = (w, x, y) => clamp(Math.floor(y), 0, w.H - 1) * w.W + clamp(Math.floor(x), 0, w.W - 1);
+const isSeaCell = (w, x, y) => w.ter[cellAt(w, x, y)] === T_SEA;
+function isCoastal(w, x, y) {
+  if (isSeaCell(w, x, y)) return false;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isSeaCell(w, x + dx, y + dy)) return true;
+  return false;
+}
+const terrainId = (w, x, y) => T_IDS[w.ter[cellAt(w, x, y)]];
+
+function placeName(rng, used) {
+  for (let k = 0; k < 50; k++) {
+    const n = rng.pick(PLACE_A) + rng.pick(PLACE_B);
+    if (!used.has(n)) { used.add(n); return n; }
+  }
+  return 'Outpost ' + used.size;
+}
+
+// Every faction: a capital (the player's is a coastal home city, 01 §4.3), another coastal
+// settlement, 2 villages and a fort. Neutral villages fill the gaps (09).
+function placeSettlements(w, seed, playerFaction) {
+  const rng = makeRng(seed + 101);
+  const out = [], used = new Set();
+  const free = (x, y, gap) => !isSeaCell(w, x, y) && terrainId(w, x, y) !== 'mountains' && out.every((s) => Math.hypot(s.x - x, s.y - y) >= gap);
+  const find = (cx, cy, rMin, rMax, gap, want) => {
+    for (let k = 0; k < 600; k++) {
+      const a = rng.range(0, Math.PI * 2), r = rng.range(rMin, rMax + k / 40);
+      const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r);
+      if (x < 3 || y < 3 || x > w.W - 4 || y > w.H - 4) continue;
+      if (free(x, y, gap) && (!want || want(x, y))) return [x, y];
+    }
+    return null;
+  };
+  const add = (x, y, type, faction, name) => {
+    const s = { id: 's' + out.length, name: name || placeName(rng, used), type, faction, x, y, coastal: isCoastal(w, x, y), biome: terrainId(w, x, y), market: {} };
+    for (const k of Object.keys(SETTLEMENT_TYPES[type].stock)) s.market[k] = SETTLEMENT_TYPES[type].stock[k];
+    out.push(s);
+    return s;
+  };
+  for (const F of FACTIONS) {
+    const cx = F.at[0] * w.W, cy = F.at[1] * w.H;
+    const player = F.id === playerFaction;
+    used.add(F.capital);
+    const capType = player ? 'city' : F.capType;
+    // The player's home city must be coastal (01 §4.3): search outwards until a coast turns up.
+    let capAt = null;
+    if (player || F.coastal) for (let r = 6; r <= 60 && !capAt; r += 6) capAt = find(cx, cy, 0, r, 10, (x, y) => isCoastal(w, x, y));
+    if (!capAt) capAt = find(cx, cy, 0, 30, 8, null);
+    const cap = add(capAt[0], capAt[1], capType, F.id, F.capital);
+    cap.capital = true;
+    // AI factions get a coastal city too; the player's home city is already on the coast (01 §4.3).
+    const coast = player ? null : find(cx, cy, 6, 24, 7, (x, y) => isCoastal(w, x, y));
+    if (coast) add(coast[0], coast[1], 'city', F.id);
+    for (let k = 0; k < 2; k++) { const p = find(cap.x, cap.y, 6, 16, 7, null); if (p) add(p[0], p[1], 'village', F.id); }
+    // The fort faces the middle of the map.
+    const mx = w.W / 2 - cap.x, my = w.H / 2 - cap.y, ml = Math.hypot(mx, my) || 1;
+    const fp = find(cap.x + (mx / ml) * 12, cap.y + (my / ml) * 12, 0, 8, 7, null);
+    if (fp) add(fp[0], fp[1], 'fort', F.id);
+  }
+  for (let k = 0; k < 14; k++) {
+    const p = find(rng.range(20, w.W - 20), rng.range(16, w.H - 16), 0, 30, 11, null);
+    if (p) add(p[0], p[1], 'village', null);
+  }
+  return out;
+}
+
+// Roads join each settlement to its two nearest land neighbours; a road through mountains is a pass.
+function buildRoads(w) {
+  const S = w.settlements;
+  const cost = (i) => {
+    const t = T_IDS[w.ter[i]];
+    return t === 'sea' ? Infinity : t === 'mountains' ? 9 : t === 'plains' || t === 'desert' ? 1 : t === 'tundra' ? 1.4 : 2.2;
+  };
+  const done = new Set();
+  for (const a of S) {
+    const others = S.filter((b) => b !== a).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y)).slice(0, 2);
+    for (const b of others) {
+      const key = [a.id, b.id].sort().join('-');
+      if (done.has(key) || Math.hypot(a.x - b.x, a.y - b.y) > 40) continue;
+      done.add(key);
+      const path = gridPath(w, a.x, a.y, b.x, b.y, cost, 30000);
+      if (!path) continue;
+      for (const i of path) { w.road[i] = 1; if (w.ter[i] === T_MOUNT) w.ter[i] = T_PASS; }
+    }
+  }
+}
+
+// Territory: each land cell belongs to the nearest settlement's faction within 14 cells.
+function computeTerritory(w) {
+  const ids = FACTIONS.map((F) => F.id);
+  w.owner.fill(-1);
+  for (let y = 0; y < w.H; y++) for (let x = 0; x < w.W; x++) {
+    let best = 14 * 14, who = -1;
+    for (const s of w.settlements) {
+      if (!s.faction) continue;
+      const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      if (d < best) { best = d; who = ids.indexOf(s.faction); }
+    }
+    w.owner[y * w.W + x] = who;
+  }
+}
+
+// ---------- path finding (A* on the cell grid, 8 neighbours). cost(i): per-cell cost, Infinity = blocked.
+function gridPath(w, x0, y0, x1, y1, cost, maxNodes = 60000) {
+  const W = w.W, N = W * w.H;
+  const start = cellAt(w, x0, y0), goal = cellAt(w, x1, y1);
+  if (cost(goal) === Infinity) return null;
+  const g = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), shut = new Uint8Array(N);
+  const heap = [];   // [f, i] binary heap
+  const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  const hx = x1 | 0, hy = y1 | 0;
+  g[start] = 0; push(0, start);
+  let n = 0;
+  while (heap.length && n++ < maxNodes) {
+    const [, i] = pop();
+    if (i === goal) break;
+    if (shut[i]) continue;
+    shut[i] = 1;
+    const x = i % W, y = (i / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= w.H) continue;
+      const j = ny * W + nx;
+      if (shut[j]) continue;
+      const c = cost(j);
+      if (c === Infinity) continue;
+      const step = (dx && dy ? 1.414 : 1) * c;
+      if (g[i] + step < g[j]) { g[j] = g[i] + step; from[j] = i; push(g[j] + Math.hypot(hx - nx, hy - ny) * 0.9, j); }
+    }
+  }
+  if (from[goal] < 0 && goal !== start) return null;
+  const path = [];
+  for (let i = goal; i !== -1; i = from[i]) path.push(i);
+  return path.reverse();
+}
+
+// How slow a cell is for a domain (1 = the fleet's full march speed), 0 = can't enter.
+function cellSpeed(w, i, domain) {
+  const t = T_IDS[w.ter[i]];
+  if (domain === 'air') return 1;
+  if (domain === 'sea') return t === 'sea' ? 1 : 0;
+  if (t === 'sea') return 0;
+  return (MAP_TERRAIN[t].speed || 0) * (w.road[i] ? ROAD_SPEED : 1);
+}
+
+// Path for a fleet: cells to cross, as [[x, y], ...] cell centres (start excluded).
+function fleetPath(w, domain, x0, y0, x1, y1) {
+  const path = gridPath(w, x0, y0, x1, y1, (i) => { const s = cellSpeed(w, i, domain); return s > 0 ? 1 / s : Infinity; });
+  if (!path) return null;
+  return path.slice(1).map((i) => [(i % w.W) + 0.5, ((i / w.W) | 0) + 0.5]);
+}
+
+/* ---------- 14b_command.js ---------- */
+/* ==== 14b COMMAND ==== */
+// Officers, ships and fleets on the campaign map (design/01 §4, §6; design/08 §10, §13).
+// `campaign` is the whole running campaign as plain JSON-safe data (design/04 §7); the terrain
+// comes from its seed (`world`). Saved to irondoctrine.campaign.slot1.
+
+const CAMPAIGN_VERSION = 1;
+const CAMPAIGN_KEY = 'irondoctrine.campaign.slot1';
+let campaign = null;
+let world = null;
+
+// ---------- save and load (design/04 §8): the blob format and try/catch rules of 02_save
+const campaignStore = {
+  exists() { try { return !!localStorage.getItem(CAMPAIGN_KEY); } catch (_e) { return false; } },
+  save() {
+    if (!campaign) return false;
+    try {
+      localStorage.setItem(CAMPAIGN_KEY, JSON.stringify({ v: CAMPAIGN_VERSION, t: Date.now(), data: campaign }));
+      return true;
+    } catch (_e) { ui.toast('The campaign could not be saved (storage full or blocked).'); return false; }
+  },
+  load() {
+    let blob = null;
+    try { blob = JSON.parse(localStorage.getItem(CAMPAIGN_KEY) || 'null'); } catch (_e) { blob = null; }
+    if (!blob || !blob.data || blob.v !== CAMPAIGN_VERSION) {
+      if (blob) { try { localStorage.setItem('irondoctrine.backup.campaign', JSON.stringify(blob)); } catch (_e) { /* ignore */ } ui.toast('This campaign save is from another version; it was kept as a backup.'); }
+      return false;
+    }
+    campaign = blob.data;
+    world = generateWorld(campaign.seed, campaign.faction);
+    world.settlements = campaign.settlements;       // the saved state replaces the generated one
+    computeTerritory(world);
+    return true;
+  },
+};
+
+const newId = (p) => p + (campaign.nextId++).toString(36);
+const byId = (list, id) => campaign[list].find((o) => o.id === id) || null;
+const factionOf = (id) => FACTIONS.find((F) => F.id === id) || null;
+
+function officerName(rng) { return `${rng.pick(NAME_FIRST)} ${rng.pick(NAME_LAST)}`; }
+
+// ---------- ships: derived numbers from the design, cached by design id
+const _shipStats = {};
+function shipDesign(ship) {
+  if (TEMPLATES[ship.design]) return Object.assign(designFromTemplate(ship.design), { family: TEMPLATES[ship.design].name });
+  const d = save.designs.list.find((x) => x.id === ship.design);
+  return d ? JSON.parse(JSON.stringify(d)) : designFromTemplate('light');
+}
+function shipStats(ship) {
+  if (!_shipStats[ship.design]) {
+    const d = shipDesign(ship);
+    const rep = designReport(d);
+    let burn = 0;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.fuelUse && (P.power > 0 || P.liftForce)) burn += P.fuelUse; }
+    const cls = classFor(d);
+    _shipStats[ship.design] = {
+      name: markName(d), domain: mapDomain(rep.domain), speed: Math.max(5, rep.topSpeed || 0),
+      fuelCap: Math.max(0.5, rep.st.fuel / 100), burn: (burn * 0.25) / 100, cost: rep.cost,
+      cls: cls ? cls.id : null, clsName: cls ? cls.name : 'Outside class limits', captain: cls ? cls.captain : 99,
+    };
+  }
+  return _shipStats[ship.design];
+}
+// Map domains: land, sea, air (airships and aircraft fly).
+function mapDomain(dom) { return seaDomain(dom) ? 'sea' : airDomain(dom) ? 'air' : 'land'; }
+
+function makeShip(designId, faction, rng) {
+  const ship = { id: newId('h'), design: designId, faction, captainId: null, fleetId: null, hp: null, fuel: 0, ammo: 1, xp: 0, kills: 0, battles: 0 };
+  ship.fuel = shipStats(ship).fuelCap;
+  campaign.ships.push(ship);
+  const cap = { id: newId('o'), name: officerName(rng), rank: 'captain', faction, level: 1, xp: 0, alive: true, shipId: ship.id, fleetId: null };
+  campaign.officers.push(cap);
+  ship.captainId = cap.id;
+  return ship;
+}
+
+function makeFleet(faction, domain, x, y, designs, rng, admiral) {
+  const fleet = { id: newId('f'), faction, domain, x, y, path: [], dest: null, hold: { fuel: 0, ammo: 0 }, shipIds: [], admiralId: null, stranded: false, docked: null, ai: faction === campaign.faction ? null : { t: 0 } };
+  if (admiral) fleet.admiralId = admiral.id;
+  else {
+    const a = { id: newId('o'), name: officerName(rng), rank: 'admiral', faction, level: 1, xp: 0, alive: true, fleetId: fleet.id };
+    campaign.officers.push(a);
+    fleet.admiralId = a.id;
+  }
+  for (const id of designs) {
+    const s = makeShip(id, faction, rng);
+    s.fleetId = fleet.id;
+    byId('officers', s.captainId).fleetId = fleet.id;
+    fleet.shipIds.push(s.id);
+  }
+  fleet.name = `${factionOf(faction).name} ${domain} fleet`;
+  campaign.fleets.push(fleet);
+  return fleet;
+}
+
+// Where a fleet of a domain can sit next to a settlement: land on it, sea in the water beside it.
+function portCell(s, domain) {
+  if (domain !== 'sea') return [s.x + 0.5, s.y + 0.5];
+  let best = null, bd = Infinity;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (isSeaCell(world, s.x + dx, s.y + dy) && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = [s.x + dx + 0.5, s.y + dy + 0.5]; }
+  }
+  return best;
+}
+
+// ---------- a new campaign (01 §4.3; 08 §13; 09 relations)
+function newCampaign(factionId, seed) {
+  world = generateWorld(seed, factionId);
+  campaign = {
+    v: CAMPAIGN_VERSION, seed, faction: factionId, day: 1, hour: 6, speed: 1, running: false,
+    treasury: START_MONEY, nextId: 1, ships: [], fleets: [], officers: [], outposts: [], journal: [],
+    settlements: world.settlements, relations: {}, ga: null, gaXp: 0,
+  };
+  const rng = makeRng(seed + 7);
+  // Relations: the player is at war with the two nearest factions and in truce with the others;
+  // AI factions are at war with each other except one seeded pair.
+  const me = FACTIONS.find((F) => F.id === factionId);
+  const others = FACTIONS.filter((F) => F !== me).sort((a, b) => Math.hypot(a.at[0] - me.at[0], a.at[1] - me.at[1]) - Math.hypot(b.at[0] - me.at[0], b.at[1] - me.at[1]));
+  const rel = (a, b, r) => { campaign.relations[[a, b].sort().join('|')] = r; };
+  others.forEach((F, i) => rel(me.id, F.id, i < 2 ? 'war' : 'truce'));
+  for (const a of others) for (const b of others) if (a !== b) rel(a.id, b.id, 'war');
+  const pair = [rng.pick(others), rng.pick(others)];
+  if (pair[0] !== pair[1]) rel(pair[0].id, pair[1].id, 'truce');
+  initWeather(rng);
+  // The Grand Admiral commands the land fleet from the flagship.
+  const ga = { id: newId('o'), name: officerName(rng), rank: 'grand', faction: factionId, level: 1, xp: 0, alive: true };
+  campaign.officers.push(ga);
+  campaign.ga = ga.id;
+  for (const F of FACTIONS) {
+    const home = world.settlements.find((s) => s.faction === F.id && s.capital);
+    const player = F.id === factionId;
+    for (const spec of player ? START_FLEETS : AI_FLEETS) {
+      // Sea fleets start at the capital if it's coastal, otherwise at the faction's coastal settlement.
+      const base = spec.domain === 'sea' && !portCell(home, 'sea') ? world.settlements.find((s) => s.faction === F.id && portCell(s, 'sea')) : home;
+      if (!base) continue;
+      const at = portCell(base, spec.domain) || [base.x + 0.5, base.y + 0.5];
+      const fl = makeFleet(F.id, spec.domain, at[0], at[1], spec.ships, rng, player && spec.domain === 'land' ? ga : null);
+      if (player && spec.domain === 'land') { ga.fleetId = fl.id; fl.name = 'Flag fleet'; }
+      else if (player) fl.name = spec.domain === 'sea' ? 'Sea fleet' : 'Air fleet';
+      fl.docked = base.id;
+    }
+  }
+  campaignStore.save();
+  return campaign;
+}
+
+const relation = (a, b) => (a === b ? 'own' : !a || !b ? 'neutral' : campaign.relations[[a, b].sort().join('|')] || 'war');
+const fleetShips = (fl) => fl.shipIds.map((id) => byId('ships', id)).filter(Boolean);
+const playerFleets = () => campaign.fleets.filter((fl) => fl.faction === campaign.faction);
+const fleetAdmiral = (fl) => byId('officers', fl.admiralId);
+const levelFromXp = (xp, table) => { let l = 1; for (let i = 0; i < table.length; i++) if (xp >= table[i]) l = i + 1; return l; };
+
+// March speed (km/h): the slowest ship, × MARCH; League sea ships +10% (09).
+function fleetSpeed(fl) {
+  let v = Infinity;
+  for (const s of fleetShips(fl)) v = Math.min(v, shipStats(s).speed);
+  if (!Number.isFinite(v)) return 0;
+  v *= MARCH;
+  if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
+  return v;
+}
+// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
+function fleetBurn(fl) {
+  let b = 0;
+  for (const s of fleetShips(fl)) b += shipStats(s).burn;
+  if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
+  return b;
+}
+function fleetFuel(fl) {
+  let f = fl.hold.fuel || 0, cap = 0;
+  for (const s of fleetShips(fl)) { f += s.fuel; cap += shipStats(s).fuelCap; }
+  return { fuel: f, cap };
+}
+
+// ---------- movement (01 §6)
+// Travel hours and fuel for a path, from the fleet's speed and burn over each cell.
+function pathCost(fl, path) {
+  const v = fleetSpeed(fl), burn = fleetBurn(fl);
+  let hours = 0, fuel = 0, x = fl.x, y = fl.y;
+  for (const [px, py] of path) {
+    const i = cellAt(world, px, py);
+    const s = cellSpeed(world, i, fl.domain);
+    const h = (Math.hypot(px - x, py - y) * WORLD_KM) / Math.max(0.1, v * s);
+    hours += h;
+    fuel += h * burn * (world.road[i] && fl.domain === 'land' ? 0.85 : 1);
+    x = px; y = py;
+  }
+  return { hours, fuel };
+}
+
+// Order a fleet to a cell. Returns the preview { path, hours, fuel, held, strands } or a reason.
+function planMove(fl, tx, ty) {
+  if (!fleetShips(fl).length) return { why: 'This fleet has no ships.' };
+  const path = fleetPath(world, fl.domain, fl.x, fl.y, tx, ty);
+  if (!path || !path.length) return { why: fl.domain === 'sea' ? 'Sea fleets stay on water.' : fl.domain === 'land' ? 'No land route there (sea or mountains).' : 'Out of reach.' };
+  const c = pathCost(fl, path);
+  const held = fleetFuel(fl).fuel;
+  return { path, hours: c.hours, fuel: c.fuel, held, strands: c.fuel > held };
+}
+function orderMove(fl, plan) {
+  fl.path = plan.path.slice();
+  fl.dest = plan.path[plan.path.length - 1];
+  fl.docked = null;
+}
+
+// Burn fuel shared across the fleet's tanks (and its hold), keeping every tank at the same share.
+function burnFuel(fl, units) {
+  const ships = fleetShips(fl);
+  let tot = fl.hold.fuel || 0, cap = 0;
+  for (const s of ships) { tot += s.fuel; cap += shipStats(s).fuelCap; }
+  tot = Math.max(0, tot - units);
+  const inTanks = Math.min(tot, cap);
+  fl.hold.fuel = tot - inTanks;
+  for (const s of ships) s.fuel = cap ? (inTanks * shipStats(s).fuelCap) / cap : 0;
+  return tot;
+}
+
+// Move a fleet along its path for dt hours. Returns 'arrived' when it reaches the end.
+function stepFleet(fl, dt) {
+  if (!fl.path.length || !fl.shipIds.length) return '';
+  const { fuel } = fleetFuel(fl);
+  fl.stranded = fuel <= 0;
+  if (fl.stranded && fl.domain === 'air') return '';
+  let v = fleetSpeed(fl) * (fl.stranded ? STRANDED_SPEED : 1) * weatherSpeed(fl);
+  let left = dt;
+  while (left > 0 && fl.path.length) {
+    const [px, py] = fl.path[0];
+    const i = cellAt(world, px, py);
+    const cs = Math.max(0.1, cellSpeed(world, i, fl.domain)) * v / WORLD_KM;   // cells per hour
+    const d = Math.hypot(px - fl.x, py - fl.y);
+    const t = d / cs;
+    const used = Math.min(left, t);
+    if (!fl.stranded) burnFuel(fl, used * fleetBurn(fl) * (world.road[i] && fl.domain === 'land' ? 0.85 : 1));
+    if (t <= left) { fl.x = px; fl.y = py; fl.path.shift(); } else { fl.x += ((px - fl.x) * left) / t; fl.y += ((py - fl.y) * left) / t; }
+    left -= used;
+  }
+  if (!fl.path.length) {
+    fl.dest = null;
+    const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - fl.x, q.y + 0.5 - fl.y) < 2.2 && relation(q.faction, fl.faction) !== 'war');
+    fl.docked = s ? s.id : null;
+    return 'arrived';
+  }
+  return '';
+}
+
+// ---------- weather (01 §2.2): a few fronts drift across the map
+const WEATHER_KINDS = ['rain', 'fog', 'storm', 'snow', 'sandstorm'];
+function initWeather(rng) {
+  campaign.weather = [];
+  for (let k = 0; k < 5; k++) campaign.weather.push({ kind: rng.pick(WEATHER_KINDS), x: rng.range(0, WORLD_W), y: rng.range(0, WORLD_H), r: rng.range(8, 16), vx: rng.range(-1.2, 1.2), vy: rng.range(-0.6, 0.6) });
+}
+function stepWeather(dt) {
+  for (const f of campaign.weather) {
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    if (f.x < -20) f.x = WORLD_W + 19; if (f.x > WORLD_W + 20) f.x = -19;
+    if (f.y < -20) f.y = WORLD_H + 19; if (f.y > WORLD_H + 20) f.y = -19;
+  }
+}
+function weatherAt(x, y) {
+  for (const f of campaign.weather || []) if (Math.hypot(f.x - x, f.y - y) < f.r) {
+    const t = terrainId(world, x, y);
+    if (f.kind === 'snow' && !['ice', 'tundra', 'mountains', 'pass'].includes(t)) return 'rain';
+    if (f.kind === 'sandstorm' && !['desert', 'ruins'].includes(t)) return 'storm';
+    return f.kind;
+  }
+  return 'clear';
+}
+// Storms slow and push air fleets; any bad weather slows everyone a little.
+function weatherSpeed(fl) {
+  const w = weatherAt(fl.x, fl.y);
+  if (w === 'clear') return 1;
+  if (fl.domain === 'air' && (w === 'storm' || w === 'sandstorm')) return 0.6;
+  return 0.85;
+}
+
+/* ---------- 15_economy.js ---------- */
+/* ==== 15 ECONOMY ==== */
+// The basic economy of Part 3 (design/01 §7–§8; design/08 §6–§8, §13): the universal treasury,
+// fuel and ammo markets at every settlement, refuelling and rearming a docked fleet, the fleet
+// hold, and the daily income, wages and upkeep. Warehouses, crafting and convoys are Part 4.
+
+// Buy price per unit at a settlement for a faction; null when there's no trade (war).
+function buyPrice(s, good, faction) {
+  const rel = relation(s.faction, faction);
+  if (rel === 'war') return null;
+  let p = PRICES[good] * SETTLEMENT_TYPES[s.type].price * (rel === 'own' ? OWN_PRICE : rel === 'truce' ? TRUCE_PRICE : 1);
+  const normal = SETTLEMENT_TYPES[s.type].stock[good];
+  if (s.market[good] < normal * 0.2) p *= 1.5;
+  if (good === 'fuel' && faction === 'directorate') p *= 1.15;
+  if (faction === 'league' && rel === 'own') p *= 0.85;
+  return p;
+}
+const sellPrice = (s, good, faction) => { const b = buyPrice(s, good, faction); return b === null ? null : b * SELL_SHARE; };
+
+// Ammo units to refill a ship's magazine from its current share (08 §8 per-shot table).
+function ammoPerShot(cal) { let u = AMMO_PER_SHOT[0][1]; for (const [c, v] of AMMO_PER_SHOT) if (cal >= c) u = v; return u; }
+const _ammoFull = {};
+function shipAmmoFull(ship) {
+  if (_ammoFull[ship.design] === undefined) {
+    const d = shipDesign(ship);
+    const st = statsOf(d);
+    let cal = 0;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.cat === 'weapon' && P.cal && !P.auto) cal = Math.max(cal, P.cal); }
+    _ammoFull[ship.design] = (st.shells || 0) * ammoPerShot(cal || 8) + 0.05;
+  }
+  return _ammoFull[ship.design];
+}
+
+// Fleet hold capacity in units (cargo parts, kg ÷ 100).
+function holdCap(fl) {
+  let kg = 0;
+  for (const s of fleetShips(fl)) for (const c of shipDesign(s).cells) kg += PARTS[c.p].cargo || 0;
+  return kg / 100;
+}
+const holdUsed = (fl) => (fl.hold.fuel || 0) + (fl.hold.ammo || 0);
+
+function spend(amount) {
+  if (amount > campaign.treasury + 1e-6) return false;
+  campaign.treasury -= amount;
+  return true;
+}
+
+// What refuelling or rearming the whole fleet needs here: { units, cost } or { why }.
+function refuelQuote(fl, s) {
+  let need = 0;
+  for (const sh of fleetShips(fl)) need += shipStats(sh).fuelCap - sh.fuel;
+  const price = buyPrice(s, 'fuel', fl.faction);
+  if (price === null) return { why: 'No trade: at war.' };
+  const units = Math.min(need, s.market.fuel);
+  return { units, cost: units * price };
+}
+function rearmQuote(fl, s) {
+  let need = 0;
+  for (const sh of fleetShips(fl)) need += (1 - sh.ammo) * shipAmmoFull(sh);
+  const price = buyPrice(s, 'ammo', fl.faction);
+  if (price === null) return { why: 'No trade: at war.' };
+  const units = Math.min(need, s.market.ammo);
+  return { units, cost: units * price };
+}
+function refuel(fl, s) {
+  const q = refuelQuote(fl, s);
+  if (q.why || q.units <= 0) return q.why || 'Tanks are full.';
+  if (!spend(q.cost)) return `Needs ${Math.ceil(q.cost)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+  s.market.fuel -= q.units;
+  let left = q.units;
+  for (const sh of fleetShips(fl)) { const add = Math.min(left, shipStats(sh).fuelCap - sh.fuel); sh.fuel += add; left -= add; }
+  fl.stranded = false;
+  return '';
+}
+function rearm(fl, s) {
+  const q = rearmQuote(fl, s);
+  if (q.why || q.units <= 0) return q.why || 'Magazines are full.';
+  if (!spend(q.cost)) return `Needs ${Math.ceil(q.cost)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+  s.market.ammo -= q.units;
+  let left = q.units;
+  for (const sh of fleetShips(fl)) { const full = shipAmmoFull(sh); const add = Math.min(left, (1 - sh.ammo) * full); sh.ammo += add / full; left -= add; }
+  return '';
+}
+// Buy or sell goods for the fleet hold, n units at a time.
+function trade(fl, s, good, n) {
+  if (n > 0) {
+    const price = buyPrice(s, good, fl.faction);
+    if (price === null) return 'No trade: at war.';
+    n = Math.min(n, s.market[good], holdCap(fl) - holdUsed(fl));
+    if (n <= 0) return holdCap(fl) - holdUsed(fl) <= 0 ? 'The hold is full.' : 'The market has none left.';
+    if (!spend(n * price)) return `Needs ${Math.ceil(n * price)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+    s.market[good] -= n; fl.hold[good] = (fl.hold[good] || 0) + n;
+  } else {
+    const price = sellPrice(s, good, fl.faction);
+    if (price === null) return 'No trade: at war.';
+    n = Math.min(-n, fl.hold[good] || 0);
+    if (n <= 0) return 'Nothing to sell.';
+    fl.hold[good] -= n; s.market[good] += n; campaign.treasury += n * price;
+  }
+  return '';
+}
+
+// Once per in-game day: settlement income and upkeep, wages, markets refill.
+function dailyEconomy() {
+  let income = 0, wages = 0;
+  for (const s of world.settlements) {
+    const T = SETTLEMENT_TYPES[s.type];
+    for (const [k, v] of Object.entries(T.stock)) s.market[k] = Math.min(v, s.market[k] + v * STOCK_REFILL);
+    if (s.faction !== campaign.faction) continue;
+    income += T.money * (T.money > 0 && s.coastal ? COASTAL_MONEY : 1);
+  }
+  for (const o of campaign.officers) {
+    if (!o.alive || o.faction !== campaign.faction) continue;
+    if (o.rank === 'captain') wages += WAGES.captain * o.level;
+    else if (o.rank === 'admiral') wages += WAGES.admiral * o.level;
+  }
+  campaign.treasury += income - wages;
+  return { income, wages };
+}
+
+/* ---------- 15c_factions.js ---------- */
+/* ==== 15c FACTIONS ==== */
+// The campaign clock, fog of war, contacts and the factions' strategic AI (design/01 §2.2,
+// §6, §13; design/09). One in-game hour per second at 1×. The clock stops itself on contact,
+// arrival and low fuel. Part 3 AI: each AI fleet patrols its faction's settlements and, from
+// day 2, intercepts a player fleet it can see and thinks it can beat. AI fleets don't burn
+// map fuel yet (their logistics come with the economy in Part 4), and AI factions don't fight
+// each other on the map yet.
+
+const TICK_HOURS = 0.25;          // campaign sub-step
+const AI_THINK_HOURS = 3;
+const CONTACT_COOLDOWN = 4;       // hours after a battle before the same fleets meet again
+
+// A fleet's fighting strength: Σ ship cost × condition.
+function fleetStrength(fl) {
+  let s = 0;
+  for (const sh of fleetShips(fl)) s += shipStats(sh).cost * shipHealth(sh);
+  return s;
+}
+function shipHealth(sh) {
+  if (!sh.hp) return 1;
+  let a = 0;
+  for (const v of sh.hp) a += v;
+  return sh.hp.length ? a / sh.hp.length : 1;
+}
+
+// Fog of war (01 §2.2): enemy fleets are seen within reach of your fleets and settlements.
+function updateVisibility() {
+  const eyes = [];
+  for (const fl of playerFleets()) if (fl.shipIds.length) eyes.push([fl.x, fl.y, DETECT_CELLS.fleet * (fl.domain === 'air' ? 1.3 : 1)]);
+  for (const s of world.settlements) if (s.faction === campaign.faction) eyes.push([s.x + 0.5, s.y + 0.5, DETECT_CELLS.settlement]);
+  campaign.eyes = eyes;
+  for (const fl of campaign.fleets) {
+    if (fl.faction === campaign.faction) { fl.seen = true; continue; }
+    fl.seen = eyes.some(([x, y, r]) => Math.hypot(fl.x - x, fl.y - y) <= r);
+  }
+}
+
+function aiThink(fl) {
+  if (!fl.shipIds.length) return;
+  const rng = makeRng(campaign.seed + campaign.day * 131 + Math.floor(campaign.hour) * 7 + fl.id.length * 31 + fl.shipIds.length);
+  // AI fleets top up at their own settlements (abstracted until Part 4).
+  for (const s of fleetShips(fl)) { s.fuel = shipStats(s).fuelCap; s.ammo = 1; }
+  // Intercept a visible player fleet it can beat, from day 2.
+  if (campaign.day >= 2) {
+    let best = null, bd = 26;
+    for (const P of playerFleets()) {
+      if (!P.shipIds.length || relation(fl.faction, P.faction) !== 'war') continue;
+      const d = Math.hypot(P.x - fl.x, P.y - fl.y);
+      if (d < bd && fleetStrength(fl) >= fleetStrength(P) * 0.7) {
+        const plan = fleetPath(world, fl.domain, fl.x, fl.y, P.x, P.y);
+        if (plan) { best = { P, plan }; bd = d; }
+      }
+    }
+    if (best) { fl.path = best.plan; fl.ai.target = best.P.id; return; }
+  }
+  fl.ai.target = null;
+  if (fl.path.length) return;
+  // Patrol: another settlement of its own faction.
+  const own = world.settlements.filter((s) => s.faction === fl.faction);
+  const s = rng.pick(own);
+  if (!s) return;
+  const at = portCell(s, fl.domain);
+  if (!at) return;
+  const plan = fleetPath(world, fl.domain, fl.x, fl.y, at[0], at[1]);
+  if (plan) fl.path = plan;
+}
+
+// Advance the campaign by real seconds × speed. Returns events: { stop, msg, contact? }.
+function campaignTick(dtReal) {
+  const events = [];
+  if (!campaign.running) return events;
+  let hours = dtReal * (campaign.speed || 1);             // 1 in-game hour per second × 1, 3 or 10
+  while (hours > 1e-6 && campaign.running) {
+    const dt = Math.min(TICK_HOURS, hours);
+    hours -= dt;
+    campaign.hour += dt;
+    stepWeather(dt);
+    for (const fl of campaign.fleets) {
+      if (fl.cooldown > 0) fl.cooldown -= dt;
+      const mine = fl.faction === campaign.faction;
+      const f0 = mine ? fleetFuel(fl) : null;
+      if (mine) { if (stepFleet(fl, dt) === 'arrived') events.push({ stop: true, msg: `${fl.name} arrived${fl.docked ? ` at ${byId('settlements', fl.docked).name}` : ''}.` }); }
+      else {
+        const keep = fl.shipIds.map((id) => byId('ships', id).fuel);
+        stepFleet(fl, dt);
+        fleetShips(fl).forEach((s, i) => { s.fuel = keep[i]; });
+        fl.ai.t = (fl.ai.t || 0) - dt;
+        if (fl.ai.t <= 0) { fl.ai.t = AI_THINK_HOURS; aiThink(fl); }
+      }
+      if (mine && f0 && f0.cap) {
+        const f1 = fleetFuel(fl);
+        if (f0.fuel / f0.cap >= LOW_FUEL && f1.fuel / f1.cap < LOW_FUEL) events.push({ stop: true, msg: `${fl.name}: fuel below ${Math.round(LOW_FUEL * 100)}%.` });
+        if (f1.fuel <= 0 && f0.fuel > 0) events.push({ stop: true, msg: `${fl.name} is stranded: no fuel.` });
+      }
+    }
+    updateVisibility();
+    // Contact (01 §6, §10.1): a player fleet meets a hostile fleet.
+    for (const P of playerFleets()) {
+      if (!P.shipIds.length || P.cooldown > 0) continue;
+      const E = campaign.fleets.find((fl) => fl.faction !== campaign.faction && fl.shipIds.length && !(fl.cooldown > 0) && relation(fl.faction, P.faction) === 'war' && Math.hypot(fl.x - P.x, fl.y - P.y) <= CONTACT_CELLS);
+      if (E) { events.push({ stop: true, msg: `Contact: ${factionOf(E.faction).name} ${E.domain} fleet.`, contact: { mine: P.id, theirs: E.id } }); break; }
+    }
+    if (campaign.hour >= 24) {
+      while (campaign.hour >= 24) { campaign.hour -= 24; campaign.day++; }
+      const { income, wages } = dailyEconomy();
+      campaign.journal.push(`Day ${campaign.day}: income ${Math.round(income)}, wages ${Math.round(wages)}.`);
+      if (campaign.journal.length > 60) campaign.journal.shift();
+      campaignStore.save();
+    }
+    if (events.some((e) => e.stop)) campaign.running = false;
+  }
+  return events;
 }
 
 /* ---------- 16a_screens.js ---------- */
@@ -6443,6 +8645,14 @@ SCREENS.title = {
     r.appendChild(el('p', 'tagline', "No manual tells you how to win this war. You'll write your own."));
 
     const menu = el('div', 'menu');
+    // Campaign (design/06 Part 3).
+    const cg = el('div', 'menu-group');
+    cg.appendChild(el('div', 'menu-label', 'Campaign'));
+    const cRow = el('div', 'menu-row');
+    if (campaignStore.exists()) cRow.appendChild(button('Continue campaign', () => { if (campaignStore.load()) screens.go('map'); else this.build(); }, 'btn btn-primary'));
+    cRow.appendChild(button('New campaign', () => pickFaction(), campaignStore.exists() ? 'btn' : 'btn btn-primary'));
+    cg.appendChild(cRow);
+    menu.appendChild(cg);
     const pg = el('div', 'menu-group');
     pg.appendChild(el('div', 'menu-label', 'Gauntlet'));
     const pgRow = el('div', 'menu-row');
@@ -6457,6 +8667,7 @@ SCREENS.title = {
     menu.appendChild(pg);
 
     const row2 = el('div', 'menu-row');
+    row2.appendChild(button('Battle Simulator', () => screens.go('simulator'), 'btn btn-primary'));
     row2.appendChild(button('Workshop', () => screens.go('workshop')));
     row2.appendChild(button('Blueprints', () => screens.go('blueprints')));
     row2.appendChild(button('Settings', () => ui.openSettings()));
@@ -6559,18 +8770,49 @@ function enterFullscreen() {
     .catch(() => {});
 }
 
+// New campaign: choose a faction (design/01 §3, design/09). Facts only.
+function pickFaction() {
+  const c = ui.card('New campaign: choose your faction', 'card-faction');
+  const col = el('div', 'card-col faction-list');
+  let close = null;
+  for (const F of FACTIONS) {
+    const start = () => { newCampaign(F.id, ((Date.now() & 0xffffff) ^ 0x5eed) >>> 0); screens.go('map'); };
+    const b = button('', () => {
+      close();
+      if (!campaignStore.exists()) { start(); return; }
+      // Never wipe a save silently: ask first.
+      const q = ui.card('Replace your campaign?');
+      q.appendChild(el('p', 'card-text', 'Starting a new campaign replaces the saved one.'));
+      const row = el('div', 'card-row');
+      let shut = null;
+      row.appendChild(button('Keep it', () => shut(), 'btn', 'back'));
+      row.appendChild(button(`Start as ${F.name}`, () => { shut(); start(); }, 'btn btn-primary'));
+      q.appendChild(row);
+      shut = ui.open(q);
+    }, 'btn faction-btn');
+    b.textContent = '';
+    const dot = el('i', 'paint-dot'); dot.style.background = F.color;
+    const t = el('span', 'faction-txt');
+    const head = el('b', ''); head.appendChild(dot); head.appendChild(document.createTextNode(F.name));
+    t.appendChild(head);
+    t.appendChild(el('small', '', `${F.identity} ${F.pros.join('. ')}. ${F.cons.join('. ')}.`));
+    b.appendChild(t);
+    col.appendChild(b);
+  }
+  col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+  c.appendChild(col);
+  close = ui.open(c);
+}
+
 /* ---------- 16b_screen_battle.js ---------- */
 /* ==== 16b SCREEN: BATTLE ==== */
 // The battle screen (design/02 §3): world full screen, top bar, drive pad,
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-const TEST_RANGE_HOW = {
-  land: 'Mud, hills and a trench.',
-  sea: 'Open water off a beach.',
-  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
-  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
-};
+const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket' };
+const TEST_RANGE_HOW = { land: 'Mud, hills and a trench.', sea: 'Open water off a beach.', air: 'Open air over hills.', heli: 'Open air over hills.' };
+const FLIGHT_HOW = { air: '▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.', heli: '◀ ▶ move, ▲ ▼ height.', sub: '▲ ▼ depth.' };
 // The test range that suits a design's domain.
 const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
@@ -6595,10 +8837,14 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
-      : createBattle(this.level, { squad: ladder.squadDesigns() });
+      : opts.campaign
+        ? createCampaignBattle(opts.campaign, false)
+        : opts.sim
+        ? createBattle(0, { squad: opts.sim.squad(), cfg: simulatorConfig(opts.sim), reserves: true, enemyForce: opts.sim.enemy() })
+        : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
     B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
@@ -6613,6 +8859,8 @@ SCREENS.battle = {
     this.drive = 0;
     this.climb = 0;
     this.resultShown = false;
+    this.pick = null;
+    this.closeWheel();
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
@@ -6628,8 +8876,8 @@ SCREENS.battle = {
     const B = this.B;
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
-    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.campaign ? `Battle · ${B.cfg.name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -6640,12 +8888,15 @@ SCREENS.battle = {
 
   exit() {
     game.frozen = false;
+    this.closeWheel();
     this.B = null;
     if (this.howEl) { this.howEl.remove(); this.howEl = null; }
     uiLayer.classList.remove('has-howto');
   },
 
   pauseOpts() {
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
       restart: () => this.enter(this.opts),
@@ -6675,8 +8926,17 @@ SCREENS.battle = {
     C.pause = makeControl('pause', { shape: 'rect', glyph: 'pause', pad: 4, up: (p, x) => { if (!x) togglePause(); } });
     C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
     C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
-    C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
-    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+    // Ship cards: tap to drive; long-press for the command wheel (design/02 §3.1, §3.4).
+    C.cards = [0, 1, 2].map((i) => {
+      const cd = makeControl('card' + i, {
+        shape: 'rect', pad: 2,
+        down: () => { cd.downAt = performance.now(); cd.longDone = false; },
+        up: (p, x) => { if (!x && !cd.longDone) this.takeControl(i); cd.downAt = 0; },
+      });
+      return cd;
+    });
+    C.reserve = makeControl('reserve', { shape: 'rect', label: 'Reserve', pad: 2, hidden: true, up: (p, x) => { if (!x) this.openReserve(); } });
+    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.reserve, C.time, C.pause, C.settings];
   },
 
   layout() {
@@ -6691,6 +8951,7 @@ SCREENS.battle = {
     let bx = w - safe.r - 6;
     for (const b of [C.settings, C.pause, C.time]) { bx -= 44; b.x = bx; b.y = top + 3; b.w = 42; b.h = 28; bx -= 4; }
     for (let i = 0; i < 3; i++) { const cd = C.cards[i]; cd.x = safe.l + 6 + i * 50; cd.y = top + 3; cd.w = 46; cd.h = 28; }
+    C.reserve.x = C.cards[2].x + 52; C.reserve.y = top + 3; C.reserve.w = 78; C.reserve.h = 28;
     this.mini = { x: C.time.x - 10 - clamp(w * 0.18, 90, 200), y: top + 5, w: clamp(w * 0.18, 90, 200), h: 24 };
 
     const R = (FIRE_DIAMETER / 2) * s;
@@ -6778,6 +9039,112 @@ SCREENS.battle = {
 
   recenter() { this.cam.follow = true; audio.sfx('tap'); },
 
+  // ---------- command wheel (design/02 §3.4): orders for one of your ships
+  openWheel(V) {
+    const B = this.B;
+    if (!B || !V || V.destroyed || V.side !== 0 || B.demo) return;
+    this.closeWheel();
+    const r = el('div', 'cmd-wheel');
+    // Two columns of three orders, with a close button above, kept clear of the screen edges.
+    r.style.left = `${clamp(view.sx(V.body.x), layout.safe.l + 116, layout.w - layout.safe.r - 116)}px`;
+    r.style.top = `${clamp(view.sy(V.body.y + V.height / 2), layout.safe.t + 124, layout.h - layout.safe.b - 80)}px`;
+    const items = [
+      ['Drive', () => this.takeControl(B.squad.indexOf(V))],
+      ['Move to', () => this.startPick(V, 'move')],
+      ['Fire at', () => this.startPick(V, 'fire')],
+      ['Hold', () => { V.ai.hold = V.body.x; V.ai.fireAt = null; this.orderDone(V, 'Hold'); }],
+      ['Pull back', () => { const why = pullBack(B, V); if (why) this.say(why); else this.orderDone(V, 'Pulling back'); }, !B.rotation],
+      ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
+    ];
+    items.forEach(([label, fn, off], i) => {
+      const b = button(label, () => { this.closeWheel(); fn(); }, 'btn btn-small cmd-item');
+      b.disabled = !!off;
+      b.style.left = `${i < 3 ? -56 : 56}px`;
+      b.style.top = `${((i % 3) - 1) * 50}px`;
+      r.appendChild(b);
+    });
+    const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
+    x.setAttribute('aria-label', `Close orders for ${V.name}`);
+    r.appendChild(x);
+    r.appendChild(el('div', 'cmd-name', V.name));
+    uiLayer.appendChild(r);
+    this.wheel = r;
+    input.releaseAll();
+    audio.sfx('toggleOn');
+    haptic('tap');
+  },
+
+  closeWheel() { if (this.wheel) { this.wheel.remove(); this.wheel = null; } },
+
+  // Move to / Fire at: the next tap on the world picks the point or the target.
+  startPick(V, kind) {
+    this.pick = { V, kind };
+    ui.toast(kind === 'move' ? `${V.name}: tap where to go.` : `${V.name}: tap an enemy to fire at.`, 2200);
+  },
+
+  finishPick(wx, wy, hit) {
+    const B = this.B;
+    const { V, kind } = this.pick;
+    this.pick = null;
+    if (V.destroyed) return;
+    if (kind === 'move') {
+      const x = clamp(wx, 5, B.T.length - 5);
+      V.ai.hold = x;
+      V.pulling = false;
+      this.orderDone(V, 'Moving', x, B.T.height(x) + 3);
+      return;
+    }
+    const U = B.units.find((E) => E.side === 1 && !E.destroyed && E.seen && hit(E));
+    if (!U) { this.say('No enemy there'); return; }
+    V.ai.fireAt = U;
+    this.orderDone(V, 'Fire at', U.body.x, U.body.y + U.height + 1.5);
+  },
+
+  orderDone(V, label, x, y) {
+    audio.sfx('order');
+    haptic('tap');
+    floatText(label, x !== undefined ? x : V.body.x, y !== undefined ? y : V.body.y + V.height + 1);
+  },
+
+  // ---------- reserve drawer (design/02 §3.1): the line-up, reorder, "Send in"
+  openReserve() {
+    const B = this.B;
+    if (!B || !B.rotation) return;
+    const c = ui.card('Reserve line-up', 'card-reserve');
+    const list = el('div', 'rsv-list');
+    c.appendChild(list);
+    const btns = el('div', 'card-row');
+    let close = null;
+    const build = (sending) => {
+      list.textContent = '';
+      const R = B.reserve[0];
+      if (!R.length) list.appendChild(el('p', 'card-text', 'No ships in reserve.'));
+      R.forEach((e, i) => {
+        const row = el('div', 'rsv-row');
+        row.appendChild(el('span', 'rsv-num', String(i + 1)));
+        const t = el('span', 'rsv-name');
+        t.appendChild(el('b', '', e.name));
+        t.appendChild(el('small', '', `hull ${Math.round(e.health * 100)}%`));
+        row.appendChild(t);
+        if (i > 0) row.appendChild(button('▲', () => { R.splice(i - 1, 0, R.splice(i, 1)[0]); build(); }, 'btn btn-small'));
+        row.appendChild(button('Send in', () => { R.unshift(R.splice(i, 1)[0]); build(true); }, 'btn btn-small'));
+        list.appendChild(row);
+      });
+      if (sending) {
+        list.appendChild(el('p', 'card-text', `${R[0].name} goes in next. Which ship pulls back for it?`));
+        const row = el('div', 'card-row');
+        for (const V of B.squad) {
+          if (!V.destroyed && !V.pulling) row.appendChild(button(`Pull back ${V.name}`, () => { pullBack(B, V); this.orderDone(V, 'Pulling back'); close(); }, 'btn btn-small'));
+        }
+        list.appendChild(row);
+      }
+    };
+    build();
+    btns.appendChild(button('Close', () => close(), 'btn btn-primary', 'back'));
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
   toggleTime() {
     this.frozen = !this.frozen;
     game.frozen = this.frozen;
@@ -6840,6 +9207,12 @@ SCREENS.battle = {
     if (r) this.say(r); else { audio.sfx('smoke', this.B.panOf(this.B.me.body.x)); haptic('tap'); }
   },
 
+  ownShipAt(x, y) {
+    const B = this.B;
+    const wx = view.wx(x), wy = view.wy(y);
+    return B.squad.find((V) => !V.destroyed && Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5) || null;
+  },
+
   // ---------- camera
   // While following, the camera may pull back to frame the target, unless you pinched a zoom yourself.
   scale() { return BASE_PX_PER_M * (layout.h / 360) * (this.cam.follow && !this.cam.manual ? Math.min(this.cam.zoom, this.cam.fit || 9) : this.cam.zoom); },
@@ -6850,6 +9223,8 @@ SCREENS.battle = {
       const B = S.B;
       const wx = view.wx(x), wy = view.wy(y);
       const hit = (V) => Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5;
+      if (S.wheel) { S.closeWheel(); return; }
+      if (S.pick) { S.finishPick(wx, wy, hit); return; }
       for (let i = 0; i < B.squad.length; i++) if (!B.squad[i].destroyed && hit(B.squad[i])) { S.takeControl(i); return; }
       for (const V of B.units) {
         if (V.side !== 1 || V.destroyed || !V.seen || !hit(V)) continue;
@@ -6860,10 +9235,14 @@ SCREENS.battle = {
         return;
       }
     },
+    // Desktop: right-click one of your ships for its command wheel.
+    contextMenu(x, y) { const S = SCREENS.battle; const own = S.ownShipAt(x, y); if (own) S.openWheel(own); },
     doubleTap() { const c = SCREENS.battle.cam; c.zoom = DEFAULT_ZOOM; c.manual = false; audio.sfx('tap'); },
-    longPress(x) {
+    longPress(x, y) {
       const S = SCREENS.battle;
       const B = S.B;
+      const own = S.ownShipAt(x, y);
+      if (own) { S.openWheel(own); return; }
       const wx = clamp(view.wx(x), 5, B.T.length - 5);
       let k = 0;
       for (const V of B.squad) if (V !== B.me && !V.destroyed) { V.ai.hold = wx + (k++ ? -7 : 0); }
@@ -6942,16 +9321,23 @@ SCREENS.battle = {
     this.updateCamera(dt);
     const C = this.c;
     for (let i = 0; i < 5; i++) C.chips[i].lit = ORDERS[i] === B.order;
-    for (let i = 0; i < 3; i++) { C.cards[i].lit = B.squad[i] === B.me; C.cards[i].disabled = !B.squad[i] || B.squad[i].destroyed; }
+    for (let i = 0; i < 3; i++) {
+      const cd = C.cards[i];
+      cd.lit = B.squad[i] === B.me; cd.disabled = !B.squad[i] || B.squad[i].destroyed;
+      if (cd.pressCount > 0 && cd.downAt && !cd.longDone && performance.now() - cd.downAt >= LONG_PRESS_MS) { cd.longDone = true; this.openWheel(B.squad[i]); }
+    }
+    C.reserve.hidden = !B.rotation;
+    if (B.rotation) C.reserve.label = `Reserve ${B.reserve[0].length}`;
     C.recenter.hidden = this.cam.follow;
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
-    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    // Alt: the secondary weapon and what is left (SAMs fire by themselves).
+    const sec = B.me.weapons.filter((w) => w.def.secondary && w.def.secondary !== 'sam' && B.me.parts[w.part].alive);
     C.alt.hidden = !sec.length;
     if (sec.length) {
       const n = sec.reduce((a, w) => a + w.rounds, 0);
-      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      const label = `${ALT_LABEL[sec[0].def.secondary] || 'Alt'} ${n}`;
       if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
       C.alt.disabled = this.frozen || n === 0;
     }
@@ -7012,7 +9398,31 @@ SCREENS.battle = {
     let close = null;
     const secs = Math.round(B.time);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    if (win) {
+    if (this.opts.campaign) {
+      // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
+      const res = applyBattleOutcome(B);
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', res.lostTheirs);
+      row('Your ships lost', res.lostMine);
+      if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.sim) {
+      // Battle Simulator (design/01 §15): facts only, no campaign effects.
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', `${B.goalDone} of ${B.goalTotal}`);
+      row('Your ships lost', B.stats.lost);
+      row('Pulled back (yours / theirs)', `${B.pulledBack[0]} / ${B.pulledBack[1]}`);
+      row('Shots fired, penetrations', `${B.stats.shots}, ${B.stats.pens}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+      btns.appendChild(button('Simulator', () => { close(); screens.go('simulator'); }));
+      btns.appendChild(button('Fight again', () => { close(); this.enter(this.opts); }, 'btn btn-primary'));
+    } else if (win) {
       const res = ladder.onWin(B);
       haptic('clear');
       audio.sfx('fanfare');
@@ -7160,13 +9570,15 @@ SCREENS.battle = {
       g.fillStyle = PAL.linen;
       g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
     }
+    if (!C.reserve.hidden) drawControl(g, C.reserve, nowMs, 1);
     // Objective with a progress bar.
-    const left = C.cards[2].x + C.cards[2].w + 10;
+    const left = (C.reserve.hidden ? C.cards[2].x + C.cards[2].w : C.reserve.x + C.reserve.w) + 10;
     const right = this.mini.x - 10;
     if (right - left > 70) {
       const goal = B.cfg.goal;
       let text, f;
       if (B.test) { text = `Test drive · ${Math.round(B.me.body.x)} m`; f = B.me.body.x / B.T.length; }
+      else if (B.rotation) { text = `Enemy ${B.goalTotal - B.goalDone}/${B.goalTotal} · reserve ${B.reserve[1].length}`; f = B.goalDone / Math.max(1, B.goalTotal); }
       else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
       else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
       else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
@@ -7176,7 +9588,7 @@ SCREENS.battle = {
       g.fillText(text, left, safe.t + 9, right - left);
       g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
       g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
-      if (!B.test) {
+      if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
         g.font = `700 12px ${FONT_UI}`;
@@ -7222,7 +9634,7 @@ SCREENS.battle = {
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
     }
     const mw = mainWeapon(B.me);
-    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
+    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.loaderShort && mw.def.cal >= 75 ? 1.6 : 1)), ghost);
   },
 
   // Minimap strip: terrain line, spotted units, camera window.
@@ -7372,6 +9784,46 @@ function designLibrary() {
   return out;
 }
 
+// Design lineage (design/01 §8.4): the family tree of saved marks, from the template or
+// design they started from, with each mark's change log.
+function lineageOf(design) {
+  const list = save.designs.list;
+  const byId = new Map(list.map((d) => [d.id, d]));
+  // Walk up to the oldest saved ancestor, then collect everything below it.
+  let root = design;
+  for (let k = 0; k < 50 && root.parent && byId.has(root.parent); k++) root = byId.get(root.parent);
+  const rows = [];
+  const walk = (d, depth) => {
+    rows.push({ d, depth });
+    for (const c of list) if (c.parent === d.id && c !== d) walk(c, depth + 1);
+  };
+  walk(root, 0);
+  return { origin: root.parent && !byId.has(root.parent) ? (TEMPLATES[root.parent] ? `${TEMPLATES[root.parent].name} Mk.I (template)` : 'a blueprint') : null, rows };
+}
+
+function showLineage(design) {
+  const tree = lineageOf(design);
+  const c = ui.card(`Lineage · ${design.family || design.name}`);
+  c.classList.add('card-scroll');
+  const box = el('div', 'lineage');
+  if (tree.origin) box.appendChild(el('div', 'lin-origin', `From ${tree.origin}`));
+  for (const { d, depth } of tree.rows) {
+    const row = el('div', 'lin-row' + (d.id === design.id ? ' on' : ''));
+    row.style.marginLeft = `${depth * 16}px`;
+    const st = statsOf(d);
+    row.appendChild(el('b', '', markName(d)));
+    row.appendChild(el('small', '', ` ${(st.mass / 1000).toFixed(1)} t · cost ${costOf(d)}`));
+    for (const l of d.changelog || []) row.appendChild(el('div', 'lin-log', l));
+    box.appendChild(row);
+  }
+  c.appendChild(box);
+  let close = null;
+  const r = el('div', 'card-row');
+  r.appendChild(button('Close', () => close(), 'btn', 'back'));
+  c.appendChild(r);
+  close = ui.open(c);
+}
+
 SCREENS.workshop = {
   root: null,
   slot: 0,
@@ -7405,7 +9857,7 @@ SCREENS.workshop = {
     top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
     top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
     const lc = levelConfig(level);
-    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle: ships and submarines only' : lc.sea ? 'Map has sea' : 'No sea: ships stay in port'));
+    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle' : lc.sea ? 'Coast' : 'No sea'));
     r.appendChild(top);
 
     // Squad slots.
@@ -7442,7 +9894,10 @@ SCREENS.workshop = {
         this.build();
       });
       card.appendChild(pick);
-      card.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      const btns = el('div', 'ws-btns');
+      btns.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      if (o.src === 'Your design') btns.appendChild(button('Lineage', () => showLineage(o.design), 'btn btn-small ws-lineage'));
+      card.appendChild(btns);
       list.appendChild(card);
     }
     r.appendChild(list);
@@ -7487,7 +9942,7 @@ SCREENS.workshop = {
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const markName = (d) => `${d.family || d.name} Mk.${ROMAN[d.mark || 1] || d.mark}`;
-const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
+const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['lift', 'Lift'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
 const BLUEPRINT = { bg: '#13466B', grid: '#2A6A92', line: 'rgba(214,238,255,0.85)', valid: '#7FD3FF', invalid: '#FF6B5A' };
 
 // A thumbnail of a design, drawn with the battle part art.
@@ -7531,17 +9986,18 @@ SCREENS.designer = {
     canvas.removeEventListener('pointermove', this.onHover);
   },
 
-  // Put a design into a class-sized grid, bottom-aligned.
+  // Put a design into its class grid (design/01 §5), bottom-aligned: the smallest class of its
+  // domain that it fits. A design that fits none keeps working and is marked outside class limits.
   load(design, base, owned) {
     const d0 = cropDesign(design);
-    const dom = domainOf(d0);
-    const cls = dom === 'sub' ? 'sub' : dom === 'naval' ? 'ship' : airDomain(dom) ? dom : d0.w <= CLASSES.light.w - 2 && d0.h <= CLASSES.light.h ? 'light' : 'heavy';
-    const C = CLASSES[cls];
-    const W = Math.max(C.w, d0.w + 2), H = Math.max(C.h, d0.h);
-    const ox = 1, oy = H - d0.h;
+    const list = classesOf(domainOf(d0));
+    const fit = classFor(d0);
+    const cls = fit || list[list.length - 1];
+    const W = Math.max(cls.grid[0], d0.w), H = Math.max(cls.grid[1], d0.h);
+    const ox = Math.min(1, W - d0.w), oy = H - d0.h;
     this.st = {
-      cls,
-      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id },
+      cls: cls.id,
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
@@ -7556,6 +10012,7 @@ SCREENS.designer = {
     const cells = [];
     if (cls === 'ship') for (let x = 4; x < 20; x += 2) cells.push(['keel', x, C.h - 1]);
     else if (cls === 'air') { for (let x = 4; x < 16; x++) cells.push(['frame', x, C.h - 5]); cells.push(['wing', 8, C.h - 4]); }
+    else if (cls === 'airship') { for (let x = 4; x < 16; x++) cells.push(['canvas_bag', x, 1], ['canvas_bag', x, 2]); for (let x = 6; x < 14; x++) cells.push(['timber', x, 3]); }
     else for (let x = 2; x < 10; x++) cells.push(['frame', x, C.h - 2]);
     return { id: 'scratch', name: 'New design', family: 'New design', w: C.w, h: C.h, cells: cells.map(([p, x, y]) => ({ p, x, y })) };
   },
@@ -7566,6 +10023,9 @@ SCREENS.designer = {
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
+    // The class part limit (structure cells don't count).
+    const cls = classById(this.st.cls);
+    if (ignore < 0 && cls && !PART_LIBRARY.materials[id] && partCount(d) >= cls.parts) return `${cls.name} class: ${cls.parts} parts at most.`;
     let touches = false, others = 0;
     for (let i = 0; i < d.cells.length; i++) {
       if (i === ignore) continue;
@@ -7722,6 +10182,8 @@ SCREENS.designer = {
     top.appendChild(button('‹ Back', () => this.back(), 'btn btn-small', 'back'));
     this.nameBtn = button('', () => this.rename(), 'btn btn-small dz-name');
     top.appendChild(this.nameBtn);
+    this.classBtn = button('', () => this.classMenu(), 'btn btn-small dz-class');
+    top.appendChild(this.classBtn);
     this.chips = el('div', 'dz-chips');
     top.appendChild(this.chips);
     top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
@@ -7754,6 +10216,7 @@ SCREENS.designer = {
     const br = el('div', 'dz-br');
     this.testBtn = button('Test drive', () => this.testDrive(), 'btn btn-small');
     this.saveBtn = button('Save', () => this.saveDesign(), 'btn btn-small btn-primary');
+    br.appendChild(button('Paint', () => this.paintMenu(), 'btn btn-small'));
     br.appendChild(this.testBtn);
     br.appendChild(this.saveBtn);
     r.appendChild(br);
@@ -7786,13 +10249,24 @@ SCREENS.designer = {
       if (P.tier !== undefined) nm.appendChild(el('span', 'dz-tier', `T${P.tier}`));
       nm.appendChild(document.createTextNode(P.name));
       txt.appendChild(nm);
-      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}`));
+      txt.appendChild(el('small', '', `${P.w}×${P.h} · ${P.mass} kg · cost ${partCost(P)}${P.info ? ` · ${P.info}` : ''}`));
       b.appendChild(txt);
       if (this.st.brush === P.id) b.classList.add('on');
       // Tap to pick up the part as a brush; drag it straight onto the grid.
       b.addEventListener('pointerdown', (e) => this.paletteDown(e, P.id, b));
       list.appendChild(b);
     }
+  },
+
+  // Barrel at zero elevation, from the part's pivot (SVG art, or a line).
+  drawBarrelPreview(g, P, ox, oy, x, y, cs) {
+    const px = ox + (x + barrelPivotX(P)) * cs, py = oy + (y + barrelPivotY(P)) * cs;
+    const len = (barrelLength(P) / CELL) * cs;
+    if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+    if (drawBarrelArt(g, P, px, py, 0, len, resolvePaint(this.st.d, 0))) return;
+    g.strokeStyle = '#30343b';
+    g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + len, py); g.stroke();
   },
 
   paletteDown(e, id, btn) {
@@ -7846,8 +10320,15 @@ SCREENS.designer = {
     const rep = designReport(d);
     this.rep = rep;
     const st = rep.st;
+    // The class follows the domain (adding wings makes an aircraft); the grid stays as it is.
+    let cls = classById(s.cls);
+    if (!cls || cls.cat !== CLASS_CAT[rep.domain]) { const list = classesOf(rep.domain); cls = classFor(d) || list[list.length - 1]; s.cls = cls.id; }
+    const misfit = classMisfit(d, cls);
+    this.classBtn.textContent = `${cls.name} ▾`;
     this.chips.textContent = '';
-    const chip = (t) => this.chips.appendChild(el('span', 'dz-chip', t));
+    const chip = (t, cl = '') => this.chips.appendChild(el('span', 'dz-chip' + cl, t));
+    chip(`parts ${partCount(d)}/${cls.parts}`);
+    if (misfit.length) chip('outside class limits: refit needed', ' dz-chip-warn');
     const naval = seaDomain(rep.domain);
     chip(`${(st.mass / 1000).toFixed(1)} t`);
     chip(`${st.power}/${st.drawn} kW`);
@@ -7855,6 +10336,7 @@ SCREENS.designer = {
     if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
     else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
     else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'airship') chip(`lift/W ${(st.liftMargin || 0).toFixed(2)}`);
     else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
     chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
@@ -7892,6 +10374,11 @@ SCREENS.designer = {
       row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
       if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
       if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'airship') {
+      row('Gas lift (envelopes)', `${((st.gasLift || 0) / 1000).toFixed(1)} kN`);
+      row('Lift engines', `${((st.engineLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift margin', (st.liftMargin || 0).toFixed(2));
     } else if (rep.domain === 'heli') {
       row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
       row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);
@@ -7902,8 +10389,23 @@ SCREENS.designer = {
       row('Tip angle', `${Math.round(st.tipAngle)}°`);
       row('Climb limit', `${rep.climb}°`);
     }
-    row('Crew space', `${st.crew}`);
+    const sys = rep.sys;
+    row('Crew space', `${sys.crew}`);
+    row('Crew needed (driver, gunners)', `${sys.crewNeeded}`);
+    if (sys.loaders) row('Loaders (guns of 75 mm up)', `${sys.loadersFitted} of ${sys.loaders}`);
+    row('Commander', sys.commander ? 'yes (+15% sight)' : 'no');
     row('Fuel', `${st.fuel} L`);
+    head('Heat and reliability');
+    row('Heat made', `${sys.heatMade} per s`);
+    row('Heat removed', `${sys.heatRemoved} per s`);
+    row('Breakdowns per 100 h', sys.breakdownsPer100h.toFixed(1));
+    head('Sensors');
+    row('Sight', `${sys.sightKm.toFixed(1)} km`);
+    if (sys.radarAirKm) row('Radar', `air ${sys.radarAirKm} km, surface ${sys.radarGroundKm} km`);
+    if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
+    if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
+    if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
     for (const [k, v] of Object.entries(rep.speeds)) row(k, `${v} km/h`);
@@ -7913,7 +10415,7 @@ SCREENS.designer = {
     row('Top', rep.armour.top);
     head('Weapons');
     if (!rep.weapons.length) row('None', '');
-    for (const w of rep.weapons) row(w.name, `${w.pen} mm · ${Math.round(weaponRange(w))} m`);
+    for (const w of rep.weapons) row(w.name, [w.pen ? `${w.pen} mm` : '', w.range ? `${Math.round(weaponRange(w))} m` : '', w.rounds ? `${w.rounds} carried` : ''].filter(Boolean).join(' · '));
     head('Cost');
     row('Parts', rep.cost);
     row('Requisition to build', this.buildCost());
@@ -7934,6 +10436,7 @@ SCREENS.designer = {
   },
 
   changed() {
+    if (JSON.stringify(this.st.d.paint || null) !== JSON.stringify(this.st.base.paint || null)) return true;
     const a = cropDesign(this.st.d), b = cropDesign(this.st.base);
     if (a.cells.length !== b.cells.length) return true;
     const key = (d) => d.cells.map((c) => `${c.p}@${c.x},${c.y}`).sort().join('|');
@@ -7947,6 +10450,98 @@ SCREENS.designer = {
     return Math.max(0, now - before);
   },
 
+  // Paint (design/02 §6, design/07 §3): a faction scheme, custom P1/P2/P3 from the paint-shop
+  // palette, and a camouflage pattern. Stored with the design; the preview shows the result.
+  paintMenu() {
+    const s = this.st;
+    const P = PART_LIBRARY.paints;
+    const c = ui.card('Paint', 'card-paint');
+    let close = null;
+    let slot = 'p1';
+    const body = el('div', 'paint-body');
+    c.appendChild(body);
+    const cur = () => s.d.paint || { scheme: playerScheme(), camo: 'none' };
+    const set = (patch) => { s.d.paint = Object.assign({}, cur(), patch); this.refresh(); draw(); };
+    const draw = () => {
+      body.textContent = '';
+      const p = cur();
+      const paint = resolvePaint(s.d, 0);
+      const prev = el('div', 'paint-preview');
+      prev.appendChild(designThumb(s.d, 220, 84));
+      body.appendChild(prev);
+      const row = (label) => { const r = el('div', 'paint-row'); r.appendChild(el('span', 'paint-label', label)); body.appendChild(r); return r; };
+      const sch = row('Scheme');
+      for (const [id, sc] of Object.entries(P.schemes)) {
+        const b = button(sc.name, () => set({ scheme: id, p1: undefined, p2: undefined, p3: undefined }), 'btn btn-small paint-chip' + (p.scheme === id && !p.p1 && !p.p2 && !p.p3 ? ' on' : ''));
+        b.prepend(el('i', 'paint-dot'));
+        b.firstChild.style.background = sc.p1;
+        sch.appendChild(b);
+      }
+      const sl = row('Colour');
+      for (const k of ['p1', 'p2', 'p3']) {
+        const b = button({ p1: 'Primary', p2: 'Secondary', p3: 'Accent' }[k], () => { slot = k; draw(); }, 'btn btn-small paint-chip' + (slot === k ? ' on' : ''));
+        b.prepend(el('i', 'paint-dot'));
+        b.firstChild.style.background = paint[k];
+        sl.appendChild(b);
+      }
+      const sw = el('div', 'paint-swatches');
+      for (const col of P.palette) {
+        const b = button('', () => set({ [slot]: col }), 'paint-swatch' + (paint[slot] === col ? ' on' : ''));
+        b.style.background = col;
+        b.setAttribute('aria-label', col);
+        sw.appendChild(b);
+      }
+      body.appendChild(sw);
+      const cm = row('Camouflage');
+      for (const id of P.camo) cm.appendChild(button(id[0].toUpperCase() + id.slice(1), () => set({ camo: id }), 'btn btn-small paint-chip' + (p.camo === id ? ' on' : '')));
+    };
+    draw();
+    // Redraw the preview when newly painted art finishes loading.
+    let seen = art.version;
+    const timer = setInterval(() => { if (art.version !== seen) { seen = art.version; const pv = body.querySelector('.paint-preview'); if (pv) { pv.textContent = ''; pv.appendChild(designThumb(s.d, 220, 84)); } } }, 250);
+    const btns = el('div', 'card-row');
+    btns.appendChild(button('Done', () => close(), 'btn btn-primary'));
+    c.appendChild(btns);
+    close = ui.open(c, () => clearInterval(timer));
+  },
+
+  // Class selector (design/02 §6): the classes of this design's domain, with their grid, part
+  // limit and captain level. Choosing one re-grids the design if it fits.
+  classMenu() {
+    const s = this.st;
+    const dom = domainOf(s.d);
+    const c = ui.card(`${DOMAIN_NAMES[dom]} classes`);
+    const col = el('div', 'card-col');
+    let close = null;
+    for (const cls of classesOf(dom)) {
+      const why = classMisfit(s.d, cls);
+      const b = button(`${cls.name} · ${cls.grid[0]} × ${cls.grid[1]} grid · ${cls.parts} parts · captain level ${cls.captain}`, () => {
+        if (why.length) { audio.sfx('error'); ui.toast(why.join(' ')); return; }
+        close();
+        this.setClass(cls);
+      }, 'btn' + (cls.id === s.cls ? ' btn-primary' : ''));
+      if (why.length) b.classList.add('btn-disabled');
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
+  },
+
+  setClass(cls) {
+    const s = this.st;
+    s.undo.length = 0; s.redo.length = 0;      // undo keeps cells only, not the grid size
+    const d0 = cropDesign(s.d);
+    const W = cls.grid[0], H = cls.grid[1];
+    const ox = Math.min(1, W - d0.w), oy = H - d0.h;
+    s.cls = cls.id;
+    s.d.w = W; s.d.h = H;
+    s.d.cells = d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy }));
+    s.sel = -1;
+    this.refresh();
+    requestAnimationFrame(() => this.layout());
+  },
+
   newMenu() {
     const c = ui.card('New design');
     const col = el('div', 'card-col');
@@ -7958,6 +10553,7 @@ SCREENS.designer = {
     col.appendChild(button('Scratch build (ground)', () => { close(); this.load(this.scratch(), null, false); this.build(); }));
     col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
     col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
+    col.appendChild(button('Scratch build (airship)', () => { close(); this.load(this.scratch('airship'), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -7967,7 +10563,7 @@ SCREENS.designer = {
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
     const d = randomDesign(this.seed * 104729, cls);
-    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design' }[cls] || 'Light design';
+    d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design', airship: 'Airship design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();
     audio.sfx('swap');
@@ -8011,7 +10607,9 @@ SCREENS.designer = {
       mark,
       w: out.w, h: out.h,
       cells: out.cells,
-      changelog: s.baseOwned ? changeLog(s.base, out) : ['New design'],
+      changelog: s.baseOwned ? changeLog(s.base, out).concat(JSON.stringify(s.d.paint || null) !== JSON.stringify(s.base.paint || null) ? ['Repainted'] : []) : ['New design'],
+      cls: s.cls,
+      paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),
@@ -8031,11 +10629,24 @@ SCREENS.designer = {
     this.build();
   },
 
+  // Test range picker (design/06 Part 2d): land, sea or sky. Ships and submarines need the sea.
   testDrive() {
     const d = cropDesign(this.st.d);
     if (!validateDesign(d).ok) { this.say('Test drive needs a valid design.', true); return; }
     d.name = markName(this.st.d);
-    screens.go('battle', { test: d, back: { restore: this.st } });
+    const dom = domainOf(d);
+    const c = ui.card('Test range');
+    const col = el('div', 'card-col');
+    let close = null;
+    const go = (range) => { close(); screens.go('battle', { test: d, range, back: { restore: this.st } }); };
+    for (const [range, label] of [['land', 'Land: mud, hills and a trench'], ['sea', 'Sea: a beach and open water'], ['air', 'Sky: open air over hills']]) {
+      const b = button(label, () => go(range), range === rangeFor(dom) || (range === 'air' && dom === 'heli') ? 'btn btn-primary' : 'btn');
+      if (seaDomain(dom) && range !== 'sea') { b.disabled = true; b.textContent += ' (needs sea)'; }
+      col.appendChild(b);
+    }
+    col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+    c.appendChild(col);
+    close = ui.open(c);
   },
 
   back() {
@@ -8087,26 +10698,18 @@ SCREENS.designer = {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
-    // Parts: structure first.
-    const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
-    for (const i of order) {
-      if (this.move && this.move.idx === i) continue;
-      const c = d.cells[i];
-      drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
-        // Barrel preview at zero elevation.
-        const P = PARTS[c.p];
-        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
-        const len = barrelLength(P) * cs * 2;
-        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
-        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
-        g.strokeStyle = '#30343b';
-        g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
-        g.beginPath();
-        g.moveTo(ox + (c.x + 0.5) * cs, oy + (c.y + P.h / 2) * cs);
-        g.lineTo(ox + (c.x + 0.5) * cs + barrelLength(P) * cs * 2, oy + (c.y + P.h / 2) * cs);
-        g.stroke();
-      }
+    // Parts: auto-tiled structure first, then the rest with their barrels at zero elevation.
+    const items = [];
+    d.cells.forEach((c, i) => { if (!(this.move && this.move.idx === i)) items.push({ p: { def: PARTS[c.p], scorch: 0 }, x: c.x, y: c.y, seed: i }); });
+    const paint = resolvePaint(d, 0);
+    drawPlacedParts(g, items.filter((it) => isTiled(it.p.def.id)), 0, ox, oy, cs, paint);
+    for (const it of items) {
+      const P = it.p.def;
+      if (isTiled(P.id)) continue;
+      const gun = P.cat === 'weapon' && P.id !== 'smoke' && !P.secondary;
+      if (gun && barrelBehind(P, paint)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
+      drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, 0, it.seed, paint);
+      if (gun && !barrelBehind(P, paint)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
     }
     if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.
@@ -8263,6 +10866,649 @@ SCREENS.blueprints = {
   update() {},
   render(g) { SCREENS.workshop.render(g); },
 };
+
+/* ---------- 16g_screen_simulator.js ---------- */
+/* ==== 16g SCREEN: BATTLE SIMULATOR ==== */
+// The Battle Simulator (design/01 §15, design/06 step 2.6): pick your line-up (any number;
+// three fight at a time, the rest wait in reserve in this order), a battlefield, weather and
+// time of day, and the enemy force; then fight. No campaign effects: the result card shows
+// facts only. Choices are remembered in save.profile.sim.
+
+const SIM_SIZE_MAX = 9;
+
+SCREENS.simulator = {
+  root: null,
+
+  enter() {
+    this.build();
+    audio.playTheme('title');
+  },
+
+  exit() { if (this.root) this.root.remove(); this.root = null; },
+
+  opts() { return save.profile.sim; },
+
+  // Enemy templates the player can pick (fixed positions such as bunkers are left out).
+  enemyChoices() { return Object.keys(TEMPLATES).filter((id) => !TEMPLATES[id].fixed); },
+
+  // The battle's inputs, read when the battle starts (and again on "Fight again").
+  battleArg() {
+    const o = this.opts();
+    const lib = designLibrary();
+    return {
+      sim: {
+        field: o.field, weather: o.weather, light: o.light, seed: (Date.now() & 0xffff) + 1,
+        squad: () => o.lineup.map((id) => lib.find((d) => d.id === id)).filter(Boolean).map((d) => JSON.parse(JSON.stringify(d.design))),
+        enemy: () => {
+          const pool = o.enemy.length ? o.enemy : SIM_MIXED[o.field] || SIM_MIXED.inland;
+          const n = o.enemy.length ? o.enemy.length : o.size;
+          const out = [];
+          for (let i = 0; i < n; i++) out.push(designFromTemplate(pool[i % pool.length]));
+          return out;
+        },
+      },
+    };
+  },
+
+  build() {
+    if (this.root) this.root.remove();
+    const o = this.opts();
+    const lib = designLibrary();
+    const find = (id) => lib.find((d) => d.id === id);
+    o.lineup = o.lineup.filter((id) => find(id));
+    const set = (k, v) => { o[k] = v; save.touch('profile'); audio.sfx('tap'); this.build(); };
+
+    const r = el('div', 'workshop sim');
+    this.root = r;
+    const top = el('div', 'ws-top');
+    top.appendChild(button('‹ Title', () => screens.go('title'), 'btn btn-small', 'back'));
+    top.appendChild(el('h2', 'ws-title', 'Battle Simulator'));
+    top.appendChild(el('span', 'ws-fact', 'No campaign effects'));
+    r.appendChild(top);
+    const fightSlot = el('span', 'sim-fight');
+    top.appendChild(fightSlot);
+
+    // Battlefield, weather and time of day.
+    const chips = (label, key, names) => {
+      const row = el('div', 'sim-row');
+      row.appendChild(el('span', 'sim-label', label));
+      for (const [k, name] of Object.entries(names)) {
+        const b = button(name, () => set(key, k), 'btn btn-small sim-chip' + (o[key] === k ? ' on' : ''));
+        b.setAttribute('aria-pressed', String(o[key] === k));
+        row.appendChild(b);
+      }
+      return row;
+    };
+    r.appendChild(chips('Battlefield', 'field', SIM_FIELDS));
+    r.appendChild(chips('Weather', 'weather', SIM_WEATHER));
+    r.appendChild(chips('Time', 'light', SIM_LIGHT));
+    // Your colours (design/06 step 2.8): the scheme for designs without their own paint.
+    const schemes = {};
+    for (const [id, sc] of Object.entries(PART_LIBRARY.paints.schemes)) schemes[id] = sc.name;
+    if (!o.scheme) o.scheme = 'league';
+    r.appendChild(chips('Colours', 'scheme', schemes));
+
+    // Your line-up, in order.
+    const fits = (d) => {
+      const naval = seaDomain(domainOf(d));
+      if (naval) return o.field !== 'inland';
+      return o.field !== 'sea' || airDomain(domainOf(d));
+    };
+    const idle = o.lineup.filter((id) => !fits(find(id).design)).length;
+    r.appendChild(el('div', 'ws-label', `Your line-up: ${o.lineup.length} ships · the first 3 start, the rest wait in reserve in this order${idle ? ` · ${idle} can't fight on this battlefield` : ''}`));
+    const line = el('div', 'ws-slots sim-line');
+    o.lineup.forEach((id, i) => {
+      const d = find(id).design;
+      const card = el('div', 'ws-card sim-slot' + (fits(d) ? '' : ' sim-idle'));
+      card.appendChild(el('span', 'ws-num', String(i + 1)));
+      card.appendChild(designThumb(d, 104, 38));
+      card.appendChild(el('b', '', markName(d)));
+      const btns = el('div', 'ws-btns');
+      if (i > 0) btns.appendChild(button('▲', () => { o.lineup.splice(i - 1, 0, o.lineup.splice(i, 1)[0]); set('lineup', o.lineup); }, 'btn btn-small'));
+      btns.appendChild(button('✕', () => { o.lineup.splice(i, 1); set('lineup', o.lineup); }, 'btn btn-small', 'back'));
+      card.appendChild(btns);
+      line.appendChild(card);
+    });
+    if (!o.lineup.length) line.appendChild(el('p', 'card-text', 'Tap designs below to add them.'));
+    r.appendChild(line);
+
+    r.appendChild(el('div', 'ws-label', 'Your designs · tap to add to the line-up'));
+    const list = el('div', 'ws-lib');
+    for (const d of lib) {
+      const pick = el('button', 'ws-card ws-pick');
+      pick.type = 'button';
+      pick.appendChild(designThumb(d.design, 104, 38));
+      pick.appendChild(el('b', '', markName(d.design)));
+      pick.appendChild(el('small', '', `${d.src} · ${DOMAIN_NAMES[domainOf(d.design)]} · cost ${costOf(d.design)}`));
+      pick.addEventListener('click', () => { audio.sfx('order'); o.lineup.push(d.id); set('lineup', o.lineup); });
+      list.appendChild(pick);
+    }
+    r.appendChild(list);
+
+    // Enemy force: a number of ships picked by the Simulator for this battlefield, or your own picks.
+    const er = el('div', 'sim-row');
+    er.appendChild(el('span', 'sim-label', 'Enemy'));
+    if (!o.enemy.length) {
+      er.appendChild(button('−', () => set('size', Math.max(1, o.size - 1)), 'btn btn-small'));
+      er.appendChild(el('b', 'sim-count', `${o.size} ships, mixed for the battlefield`));
+      er.appendChild(button('+', () => set('size', Math.min(SIM_SIZE_MAX, o.size + 1)), 'btn btn-small'));
+    } else {
+      er.appendChild(el('b', 'sim-count', `${o.enemy.length}: ${o.enemy.map((id) => TEMPLATES[id].name).join(', ')}`));
+      er.appendChild(button('Clear', () => set('enemy', []), 'btn btn-small', 'back'));
+    }
+    r.appendChild(er);
+    r.appendChild(el('div', 'ws-label', 'Or pick the enemy yourself · tap to add'));
+    const en = el('div', 'sim-row sim-wrap');
+    for (const id of this.enemyChoices()) {
+      en.appendChild(button(TEMPLATES[id].name, () => { if (o.enemy.length < SIM_SIZE_MAX) { o.enemy.push(id); set('enemy', o.enemy); } else audio.sfx('error'); }, 'btn btn-small sim-chip'));
+    }
+    r.appendChild(en);
+
+    const ready = o.lineup.some((id) => fits(find(id).design));
+    const go = button('Fight', () => {
+      if (!ready) { audio.sfx('error'); ui.toast('Add a ship that can fight on this battlefield.'); return; }
+      screens.go('battle', this.battleArg());
+    }, 'btn btn-primary');
+    if (!ready) go.classList.add('btn-disabled');
+    fightSlot.appendChild(go);
+    uiLayer.insertBefore(r, ui.toastBox);
+  },
+};
+
+/* ---------- 16h_screen_map.js ---------- */
+/* ==== 16h SCREEN: WORLD MAP ==== */
+// The campaign map (design/02 §4, design/03 §4): a painted topographic map, faction territory,
+// roads, settlements and fleet counters; the top bar (date, treasury, the selected fleet's
+// cargo); thumb buttons to cycle fleets, clock speeds and Start/Stop; fleet and settlement
+// panels; tap a destination for a path preview with time and fuel; the pre-battle card on contact.
+
+const MAP_PX = 6;                 // pre-rendered pixels per cell
+
+SCREENS.map = {
+  pausable: true,
+  cam: { x: 0, y: 0, z: 6 },
+  sel: null,                      // { kind: 'fleet'|'settlement', id }
+  plan: null,                     // move preview for the selected fleet
+  base: null, terr: null, fog: null,
+  root: null,
+
+  enter() {
+    if (!campaign) { screens.go('title'); return; }
+    this.base = renderBaseMap();
+    this.terr = renderTerritory();
+    const flag = playerFleets().find((fl) => fl.shipIds.length) || campaign.fleets[0];
+    this.cam.x = flag.x; this.cam.y = flag.y;
+    this.cam.z = clamp(layout.h / 46, 5, 14);
+    this.sel = { kind: 'fleet', id: flag.id };
+    this.tab = 'ships';
+    this.plan = null;
+    campaign.running = false;
+    updateVisibility();
+    this.build();
+    audio.playTheme('title');
+  },
+  exit() { if (this.root) this.root.remove(); this.root = null; campaignStore.save(); },
+  pauseOpts() {
+    return { restartLabel: 'Save now', restart: () => { campaignStore.save(); ui.toast('Campaign saved.'); }, quitLabel: 'Save and quit to title', quit: () => { campaignStore.save(); screens.go('title'); } };
+  },
+
+  // ---------- DOM: top bar, thumbs, panel, move bar
+  build() {
+    if (this.root) this.root.remove();
+    const r = el('div', 'mapui');
+    this.root = r;
+    const top = el('div', 'map-top');
+    this.dateEl = el('span', 'map-fact map-date');
+    this.moneyEl = el('span', 'map-fact');
+    this.cargoEl = el('span', 'map-fact map-cargo');
+    top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
+    const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
+    top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
+    r.appendChild(top);
+    const bot = el('div', 'map-bottom');
+    bot.appendChild(button('◀ Fleet', () => this.cycle(-1), 'btn btn-small'));
+    bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
+    const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
+    this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
+    this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
+    bot.appendChild(this.goBtn);
+    r.appendChild(bot);
+    this.panel = el('div', 'map-panel');
+    r.appendChild(this.panel);
+    this.moveBar = el('div', 'map-move');
+    r.appendChild(this.moveBar);
+    uiLayer.insertBefore(r, ui.toastBox);
+    this.refresh();
+  },
+
+  toggleClock() {
+    campaign.running = !campaign.running;
+    if (campaign.running) { this.plan = null; }
+    audio.sfx(campaign.running ? 'toggleOn' : 'toggleOff');
+    this.refresh();
+  },
+
+  cycle(k) {
+    const list = playerFleets().filter((fl) => fl.shipIds.length);
+    if (!list.length) return;
+    const i = this.sel && this.sel.kind === 'fleet' ? list.findIndex((fl) => fl.id === this.sel.id) : -1;
+    const fl = list[(i + k + list.length) % list.length];
+    this.select('fleet', fl.id);
+    this.cam.x = fl.x; this.cam.y = fl.y;
+  },
+
+  select(kind, id) {
+    this.sel = { kind, id };
+    this.plan = null;
+    this.tab = kind === 'fleet' ? 'ships' : 'overview';
+    audio.sfx('tap');
+    this.refresh();
+  },
+
+  selFleet() { return this.sel && this.sel.kind === 'fleet' ? byId('fleets', this.sel.id) : null; },
+
+  refresh() {
+    if (!this.root) return;
+    const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
+    this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;
+    const fl = this.selFleet();
+    if (fl) {
+      const f = fleetFuel(fl);
+      this.cargoEl.textContent = `${fl.name} · fuel ${f.fuel.toFixed(1)}/${f.cap.toFixed(1)} · hold ${holdUsed(fl).toFixed(1)}/${holdCap(fl).toFixed(0)}`;
+    } else this.cargoEl.textContent = '';
+    this.cargoEl.hidden = !this.cargoEl.textContent;
+    this.speedBtns.forEach((b, i) => b.classList.toggle('on', campaign.speed === CLOCK_SPEEDS[i]));
+    this.goBtn.textContent = campaign.running ? 'Stop ❚❚' : 'Start ▶';
+    this.buildPanel();
+    this.buildMoveBar();
+  },
+
+  buildMoveBar() {
+    const m = this.moveBar;
+    m.textContent = '';
+    const p = this.plan, fl = this.selFleet();
+    if (!p || !fl) { m.hidden = true; return; }
+    m.hidden = false;
+    if (p.why) { m.appendChild(el('span', 'map-fact', p.why)); m.appendChild(button('OK', () => { this.plan = null; this.refresh(); }, 'btn btn-small')); return; }
+    const txt = `${Math.round(p.hours)} h · fuel ${p.fuel.toFixed(1)} needed, ${p.held.toFixed(1)} held${p.strands ? ' · strands on the way' : ''}`;
+    m.appendChild(el('span', 'map-fact' + (p.strands ? ' map-warn' : ''), txt));
+    m.appendChild(button('Cancel', () => { this.plan = null; this.refresh(); }, 'btn btn-small', 'back'));
+    m.appendChild(button('Move', () => { orderMove(fl, p); this.plan = null; audio.sfx('order'); this.refresh(); }, 'btn btn-small btn-primary'));
+  },
+
+  // ---------- panels (02 §4.3, §4.4)
+  buildPanel() {
+    const P = this.panel;
+    P.textContent = '';
+    if (!this.sel) { P.hidden = true; return; }
+    P.hidden = false;
+    const tabs = el('div', 'map-tabs');
+    const tab = (id, label) => { const b = button(label, () => { this.tab = id; this.refresh(); }, 'btn btn-small map-tab' + (this.tab === id ? ' on' : '')); tabs.appendChild(b); };
+    const body = el('div', 'map-body');
+    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); body.appendChild(r); };
+    if (this.sel.kind === 'fleet') {
+      const fl = byId('fleets', this.sel.id);
+      if (!fl) { this.sel = null; P.hidden = true; return; }
+      const mine = fl.faction === campaign.faction;
+      P.appendChild(el('h3', 'map-title', mine ? fl.name : `${factionOf(fl.faction).name} ${fl.domain} fleet`));
+      if (!mine) {
+        const rel = relation(fl.faction, campaign.faction);
+        row('Relation', rel === 'war' ? 'At war' : 'Truce');
+        row('Ships', fl.shipIds.length);
+        row('Domain', fl.domain);
+        P.appendChild(body);
+        return;
+      }
+      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab('admiral', 'Admiral');
+      P.appendChild(tabs);
+      const adm = fleetAdmiral(fl);
+      if (this.tab === 'ships') {
+        for (const sh of fleetShips(fl)) {
+          const st = shipStats(sh), cap = byId('officers', sh.captainId);
+          const r = el('div', 'map-ship');
+          r.appendChild(el('b', '', st.name));
+          r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
+          r.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          body.appendChild(r);
+        }
+        if (!fl.shipIds.length) body.appendChild(el('p', 'card-text', 'No ships.'));
+        // Ships left at a field outpost here can rejoin (same domain).
+        for (const o of (campaign.outposts || []).filter((q) => q.faction === fl.faction && q.domain === fl.domain && Math.hypot(q.x - fl.x, q.y - fl.y) < 1.5)) {
+          for (const sh of campaign.ships.filter((s) => s.outpost === o.id)) body.appendChild(button(`Take ${shipStats(sh).name} from the outpost`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
+        }
+        const spare = campaign.officers.filter((o) => o.alive && o.fleetId === fl.id && o.rank === 'captain' && !o.shipId);
+        if (spare.length) row('Captains without a ship', spare.map((o) => o.name).join(', '));
+      } else if (this.tab === 'cargo') {
+        const f = fleetFuel(fl);
+        row('Fuel in tanks and hold', `${f.fuel.toFixed(1)} of ${f.cap.toFixed(1)} units`);
+        row('Burn on the move', `${fleetBurn(fl).toFixed(2)} units/h`);
+        row('March speed', `${Math.round(fleetSpeed(fl))} km/h`);
+        row('Hold', `${holdUsed(fl).toFixed(1)} of ${holdCap(fl).toFixed(0)} units (fuel ${(fl.hold.fuel || 0).toFixed(1)}, ammo ${(fl.hold.ammo || 0).toFixed(1)})`);
+        row('State', fl.stranded ? 'Stranded: no fuel' : fl.path.length ? 'Moving' : fl.docked ? `Docked at ${byId('settlements', fl.docked).name}` : 'Holding');
+        if (fl.path.length) body.appendChild(button('Stop here', () => { fl.path = []; fl.dest = null; this.refresh(); }, 'btn btn-small'));
+      } else {
+        const lvl = adm ? adm.level : 1;
+        row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
+        row('Level', lvl);
+        row('XP', adm ? Math.round(adm.xp) : 0);
+        row('Fleet size', `${fl.shipIds.length} of ${FLEET_SIZE[Math.min(9, lvl - 1)]}`);
+      }
+      P.appendChild(body);
+      return;
+    }
+    const s = byId('settlements', this.sel.id);
+    const T = SETTLEMENT_TYPES[s.type];
+    P.appendChild(el('h3', 'map-title', `${s.name}${s.capital ? ' (capital)' : ''}`));
+    tab('overview', 'Overview'); tab('market', 'Market');
+    P.appendChild(tabs);
+    const rel = relation(s.faction, campaign.faction);
+    if (this.tab === 'overview') {
+      row('Type', T.name + (s.coastal ? ', coastal' : ''));
+      row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
+      row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
+      row('Terrain', MAP_TERRAIN[s.biome].name);
+      if (s.faction === campaign.faction) row('Money per day', Math.round(T.money * (T.money > 0 && s.coastal ? COASTAL_MONEY : 1)));
+      const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
+      row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
+      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
+      for (const fl of docked) {
+        const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
+        for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
+          if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
+        }
+      }
+    } else {
+      for (const good of ['fuel', 'ammo']) {
+        const b = buyPrice(s, good, campaign.faction);
+        row(good === 'fuel' ? 'Fuel (100 L)' : 'Ammo (100 kg)', b === null ? 'No trade (at war)' : `buy ${b.toFixed(1)} · sell ${(b * SELL_SHARE).toFixed(1)} · stock ${Math.floor(s.market[good])}`);
+      }
+      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
+      if (!docked.length) body.appendChild(el('p', 'card-text', 'Dock a fleet here to trade: move it onto the settlement (ships to the water beside it).'));
+      for (const fl of docked) {
+        body.appendChild(el('div', 'ws-label', fl.name));
+        const rf = refuelQuote(fl, s), ra = rearmQuote(fl, s);
+        const act = el('div', 'map-row');
+        act.appendChild(button(rf.why ? 'Refuel' : rf.units < 0.05 ? 'Tanks full' : `Refuel ${rf.units.toFixed(1)} units for ${Math.ceil(rf.cost)}`, () => { const why = refuel(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        act.appendChild(button(ra.why ? 'Rearm' : ra.units < 0.005 ? 'Magazines full' : `Rearm ${ra.units.toFixed(2)} units for ${Math.ceil(ra.cost)}`, () => { const why = rearm(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        if (holdCap(fl) > 0) for (const good of ['fuel', 'ammo']) {
+          act.appendChild(button(`Buy 5 ${good}`, () => { const why = trade(fl, s, good, 5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+          act.appendChild(button(`Sell 5 ${good}`, () => { const why = trade(fl, s, good, -5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+        }
+        body.appendChild(act);
+      }
+    }
+    P.appendChild(body);
+  },
+
+  // ---------- clock and events
+  update(dt, simRunning) {
+    if (!campaign || !simRunning) return;
+    const was = campaign.running;
+    const events = campaignTick(dt);
+    for (const e of events) if (e.msg) ui.toast(e.msg, 3500);
+    const contact = events.find((e) => e.contact);
+    if (contact) this.preBattle(contact.contact);
+    this.t = (this.t || 0) + dt;
+    if (was !== campaign.running || this.t > 0.25) { this.t = 0; this.refresh(); }
+  },
+
+  // ---------- gestures
+  world: {
+    tap(x, y) {
+      const S = SCREENS.map;
+      const cx = S.toCellX(x), cy = S.toCellY(y);
+      const r = 1.2 * Math.max(1, 12 / S.cam.z);
+      const fl = campaign.fleets.find((f) => f.shipIds.length && (f.faction === campaign.faction || f.seen) && Math.abs(S.sx(f.x) + (f.drawDx || 0) - x) < 16 && Math.abs(S.sy(f.y) - y) < 14);
+      const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < r);
+      const mine = S.selFleet();
+      // With one of your fleets selected, a tap elsewhere plans a move there (a settlement: dock at it).
+      if (mine && mine.faction === campaign.faction && !(fl && fl.faction === campaign.faction)) {
+        if (s && (!fl || fl.faction !== campaign.faction) && S.plan && S.plan.target === s.id) { S.select('settlement', s.id); return; }
+        const to = s ? portCell(s, mine.domain) || [cx, cy] : [cx, cy];
+        S.plan = planMove(mine, to[0], to[1]);
+        if (s) S.plan.target = s.id;
+        audio.sfx('tap');
+        S.refresh();
+        return;
+      }
+      if (fl) { S.select('fleet', fl.id); return; }
+      if (s) { S.select('settlement', s.id); return; }
+      S.sel = null; S.plan = null; S.refresh();
+    },
+    doubleTap() { const S = SCREENS.map; S.cam.z = clamp(layout.h / 46, 5, 14); },
+    pan(dx, dy) { const S = SCREENS.map; S.cam.x -= dx / S.cam.z; S.cam.y -= dy / S.cam.z; S.clampCam(); },
+    pinch(f, cx, cy) {
+      const S = SCREENS.map;
+      const bx = S.toCellX(cx), by = S.toCellY(cy);
+      S.cam.z = clamp(S.cam.z * f, 2.5, 40);
+      S.cam.x += bx - S.toCellX(cx); S.cam.y += by - S.toCellY(cy);
+      S.clampCam();
+    },
+  },
+  clampCam() { this.cam.x = clamp(this.cam.x, 0, WORLD_W); this.cam.y = clamp(this.cam.y, 0, WORLD_H); },
+  toCellX(sx) { return (sx - layout.w / 2) / this.cam.z + this.cam.x; },
+  toCellY(sy) { return (sy - layout.h / 2) / this.cam.z + this.cam.y; },
+  sx(cx) { return (cx - this.cam.x) * this.cam.z + layout.w / 2; },
+  sy(cy) { return (cy - this.cam.y) * this.cam.z + layout.h / 2; },
+
+  key(code, down) {
+    if (!down) return;
+    if (code === 'Space' || code === 'KeyT') this.toggleClock();
+    else if (code === 'KeyE' || code === 'Tab') this.cycle(1);
+    else if (code === 'KeyQ') this.cycle(-1);
+    else if (/^Digit[123]$/.test(code)) { campaign.speed = CLOCK_SPEEDS[+code[5] - 1]; this.refresh(); }
+  },
+
+  // ---------- drawing
+  render(g) {
+    const { w, h } = layout;
+    const z = this.cam.z;
+    g.fillStyle = MAP_TERRAIN.sea.color;
+    g.fillRect(0, 0, w, h);
+    const ox = this.sx(0), oy = this.sy(0);
+    g.drawImage(this.base, ox, oy, WORLD_W * z, WORLD_H * z);
+    g.drawImage(this.terr, ox, oy, WORLD_W * z, WORLD_H * z);
+    // Weather fronts.
+    for (const f of campaign.weather || []) {
+      g.fillStyle = f.kind === 'storm' || f.kind === 'sandstorm' ? 'rgba(60,64,80,0.2)' : f.kind === 'snow' || f.kind === 'fog' ? 'rgba(235,240,245,0.12)' : 'rgba(120,140,170,0.14)';
+      g.beginPath(); g.arc(this.sx(f.x), this.sy(f.y), f.r * z, 0, Math.PI * 2); g.fill();
+    }
+    // Paths of your fleets and the move preview.
+    g.lineWidth = 2;
+    for (const fl of playerFleets()) if (fl.path.length) this.drawPath(g, fl.x, fl.y, fl.path, 'rgba(123,196,127,0.8)');
+    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, true);
+    // Settlements.
+    for (const s of world.settlements) this.drawSettlement(g, s);
+    // Fog of war over what your fleets and settlements can't see.
+    this.drawFog(g);
+    // Fleets: yours, and the enemy fleets you can see.
+    // Counters at the same spot stand side by side.
+    const shown = campaign.fleets.filter((fl) => fl.shipIds.length && (fl.faction === campaign.faction || fl.seen));
+    const placed = [];
+    for (const fl of shown) {
+      const k = placed.filter((p) => Math.hypot(p.x - fl.x, p.y - fl.y) * this.cam.z < 24).length;
+      placed.push(fl);
+      fl.drawDx = k * 30;
+      this.drawFleet(g, fl);
+    }
+    for (const o of campaign.outposts || []) { g.fillStyle = PAL.amber; g.fillRect(this.sx(o.x) - 4, this.sy(o.y) - 4, 8, 8); }
+  },
+
+  drawPath(g, x, y, path, col, dashed) {
+    g.strokeStyle = col;
+    g.setLineDash(dashed ? [6, 4] : []);
+    g.beginPath(); g.moveTo(this.sx(x), this.sy(y));
+    for (const [px, py] of path) g.lineTo(this.sx(px), this.sy(py));
+    g.stroke();
+    g.setLineDash([]);
+  },
+
+  drawSettlement(g, s) {
+    const x = this.sx(s.x + 0.5), y = this.sy(s.y + 0.5);
+    if (x < -40 || y < -40 || x > layout.w + 40 || y > layout.h + 40) return;
+    const F = s.faction ? factionOf(s.faction) : null;
+    const k = { village: 5, city: 7, metropolis: 9, fort: 7, citadel: 9 }[s.type];
+    g.fillStyle = '#2A2622';
+    g.strokeStyle = PAL.linen; g.lineWidth = 1.5;
+    if (s.type === 'fort' || s.type === 'citadel') {
+      g.beginPath();
+      for (let i = 0; i < 10; i++) { const a = (i * Math.PI) / 5 - Math.PI / 2, r = i % 2 ? k * 0.55 : k; g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+      g.closePath(); g.fill(); g.stroke();
+    } else {
+      g.fillRect(x - k, y - k * 0.7, k * 2, k * 1.4); g.strokeRect(x - k, y - k * 0.7, k * 2, k * 1.4);
+      if (s.type !== 'village') { g.fillStyle = PAL.linen; g.fillRect(x - k * 0.6, y - k * 1.2, k * 0.4, k * 0.6); g.fillRect(x + k * 0.2, y - k * 1.5, k * 0.4, k * 0.9); }
+    }
+    // Pennant in the owner's colour.
+    g.fillStyle = F ? F.color : '#9A9DA1';
+    g.beginPath(); g.moveTo(x - k, y - k * 0.7); g.lineTo(x - k, y - k * 2); g.lineTo(x - k + 8, y - k * 1.7); g.lineTo(x - k, y - k * 1.4); g.fill();
+    if (this.cam.z >= 5 || s.capital) {
+      g.font = `${s.capital ? 700 : 400} 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'top';
+      g.fillStyle = 'rgba(10,14,20,0.7)';
+      const tw = g.measureText(s.name).width;
+      g.fillRect(x - tw / 2 - 3, y + k + 1, tw + 6, 15);
+      g.fillStyle = PAL.linen;
+      g.fillText(s.name, x, y + k + 2);
+    }
+    if (this.sel && this.sel.kind === 'settlement' && this.sel.id === s.id) { g.strokeStyle = PAL.amber; g.lineWidth = 2; g.strokeRect(x - k - 4, y - k * 2 - 2, k * 2 + 8, k * 3); }
+  },
+
+  drawFleet(g, fl) {
+    const x = this.sx(fl.x) + (fl.drawDx || 0), y = this.sy(fl.y);
+    const F = factionOf(fl.faction);
+    const W = 26, H = 18;
+    g.fillStyle = 'rgba(12,14,20,0.85)';
+    roundRect(g, x - W / 2, y - H / 2, W, H, 4); g.fill();
+    g.strokeStyle = F.color; g.lineWidth = 2;
+    roundRect(g, x - W / 2, y - H / 2, W, H, 4); g.stroke();
+    // Domain glyph: tank, hull or envelope.
+    g.fillStyle = F.color;
+    if (fl.domain === 'land') { g.fillRect(x - 9, y - 1, 12, 5); g.fillRect(x - 6, y - 4, 6, 3); g.fillRect(x, y - 3, 6, 1.5); }
+    else if (fl.domain === 'sea') { g.beginPath(); g.moveTo(x - 10, y); g.lineTo(x + 4, y); g.lineTo(x + 1, y + 4); g.lineTo(x - 8, y + 4); g.fill(); g.fillRect(x - 5, y - 4, 4, 4); }
+    else { g.beginPath(); g.ellipse(x - 3, y - 1, 7, 3.5, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x - 5, y + 3, 4, 2); }
+    g.font = `700 12px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.fillStyle = PAL.linen;
+    g.fillText(String(fl.shipIds.length), x + W / 2 - 2, y);
+    if (fl.faction === campaign.faction) {
+      const f = fleetFuel(fl);
+      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - W / 2, y + H / 2 + 1, W, 3);
+      g.fillStyle = f.fuel <= 0 ? PAL.danger : f.fuel / f.cap < LOW_FUEL ? PAL.warning : PAL.good;
+      g.fillRect(x - W / 2, y + H / 2 + 1, W * clamp(f.fuel / Math.max(0.01, f.cap), 0, 1), 3);
+    }
+    if (this.sel && this.sel.kind === 'fleet' && this.sel.id === fl.id) { g.strokeStyle = PAL.amber; g.lineWidth = 2; g.strokeRect(x - W / 2 - 4, y - H / 2 - 4, W + 8, H + 12); }
+  },
+
+  drawFog(g) {
+    const { w, h } = layout;
+    if (!this.fog || this.fog.width !== Math.ceil(w) || this.fog.height !== Math.ceil(h)) { this.fog = document.createElement('canvas'); this.fog.width = Math.ceil(w); this.fog.height = Math.ceil(h); }
+    const f = this.fog.getContext('2d');
+    f.globalCompositeOperation = 'source-over';
+    f.clearRect(0, 0, this.fog.width, this.fog.height);
+    f.fillStyle = 'rgba(8,12,22,0.42)';
+    f.fillRect(0, 0, this.fog.width, this.fog.height);
+    f.globalCompositeOperation = 'destination-out';
+    f.fillStyle = '#000';
+    for (const [x, y, r] of campaign.eyes || []) { f.beginPath(); f.arc(this.sx(x), this.sy(y), r * this.cam.z, 0, Math.PI * 2); f.fill(); }
+    g.drawImage(this.fog, 0, 0);
+  },
+
+  // ---------- contact and the pre-battle card (01 §10.1)
+  preBattle(contact) {
+    const mine = byId('fleets', contact.mine), theirs = byId('fleets', contact.theirs);
+    if (!mine || !theirs) return;
+    const place = battlePlace(mine.x, mine.y);
+    const c = ui.card('Contact', 'card-prebattle');
+    const facts = el('div', 'result-facts');
+    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+    const sides = battleSides(mine, theirs);
+    row('Battlefield', `${SIM_FIELDS[place.field]} · ${place.weather}`);
+    row('Your ships', sides.mine.map((sh) => shipStats(sh).name).join(', ') || 'none that can fight here');
+    row('Enemy (spotted)', sides.theirs.map((sh) => shipStats(sh).clsName).join(', '));
+    const esc = retreatCheck(sides.mine, sides.theirs);
+    row('Retreat', esc.free ? 'Your slowest ship outpaces them' : `Costs your rearmost ship (${esc.lose ? shipStats(esc.lose).name : '—'})`);
+    c.appendChild(facts);
+    const btns = el('div', 'card-row');
+    let close = null;
+    btns.appendChild(button('Retreat', () => { close(); retreat(mine, theirs, esc); this.refresh(); }, 'btn', 'back'));
+    btns.appendChild(button('Auto-resolve', () => { close(); const res = autoResolve(mine, theirs); this.afterBattle(res); }));
+    const fight = button('Fight', () => { close(); screens.go('battle', { campaign: { mine: mine.id, theirs: theirs.id } }); }, 'btn btn-primary');
+    if (!sides.mine.length) fight.classList.add('btn-disabled'), fight.disabled = true;
+    btns.appendChild(fight);
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
+  afterBattle(res) {
+    if (!res) return;
+    ui.toast(res.summary, 5000);
+    this.refresh();
+  },
+};
+
+// ---------- pre-rendered layers
+function renderBaseMap() {
+  const c = document.createElement('canvas');
+  c.width = WORLD_W * MAP_PX; c.height = WORLD_H * MAP_PX;
+  const g = c.getContext('2d');
+  const P = MAP_PX;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const i = y * WORLD_W + x;
+    const t = T_IDS[world.ter[i]];
+    const h = world.height[i];
+    let col = MAP_TERRAIN[t].color;
+    // Hill shading from the height difference to the north-west neighbour; deeper sea is darker.
+    const nw = world.height[Math.max(0, y - 1) * WORLD_W + Math.max(0, x - 1)];
+    const k = t === 'sea' ? clamp(0.75 + (h - world.seaLevel) * 2.2, 0.55, 1.05) : clamp(1 + (h - nw) * 4, 0.8, 1.2);
+    g.fillStyle = shade(col, k);
+    g.fillRect(x * P, y * P, P, P);
+    if (t === 'mountains') { g.strokeStyle = 'rgba(40,36,32,0.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x * P + 1, y * P + P - 1); g.lineTo(x * P + P / 2, y * P + 1); g.lineTo(x * P + P - 1, y * P + P - 1); g.stroke(); }
+    if (t === 'forest' && (x + y) % 2 === 0) { g.fillStyle = 'rgba(20,40,20,0.35)'; g.beginPath(); g.arc(x * P + P / 2, y * P + P / 2, P * 0.3, 0, Math.PI * 2); g.fill(); }
+    if (t === 'ruins' && (x * 7 + y) % 3 === 0) { g.fillStyle = 'rgba(40,30,24,0.5)'; g.fillRect(x * P + 1, y * P + 2, P - 3, 2); }
+  }
+  // Coastline and roads in ink.
+  g.strokeStyle = 'rgba(20,24,30,0.55)'; g.lineWidth = 1;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const sea = world.ter[y * WORLD_W + x] === T_SEA;
+    if (x + 1 < WORLD_W && sea !== (world.ter[y * WORLD_W + x + 1] === T_SEA)) { g.beginPath(); g.moveTo((x + 1) * P, y * P); g.lineTo((x + 1) * P, (y + 1) * P); g.stroke(); }
+    if (y + 1 < WORLD_H && sea !== (world.ter[(y + 1) * WORLD_W + x] === T_SEA)) { g.beginPath(); g.moveTo(x * P, (y + 1) * P); g.lineTo((x + 1) * P, (y + 1) * P); g.stroke(); }
+  }
+  g.strokeStyle = 'rgba(60,40,24,0.8)'; g.lineWidth = 1.5;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    if (!world.road[y * WORLD_W + x]) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < WORLD_W && ny >= 0 && ny < WORLD_H && world.road[ny * WORLD_W + nx]) { g.beginPath(); g.moveTo((x + 0.5) * P, (y + 0.5) * P); g.lineTo((nx + 0.5) * P, (ny + 0.5) * P); g.stroke(); }
+    }
+  }
+  return c;
+}
+
+// Territory: a faint tint and a grease-pencil border in each faction's colour.
+function renderTerritory() {
+  const c = document.createElement('canvas');
+  c.width = WORLD_W * MAP_PX; c.height = WORLD_H * MAP_PX;
+  const g = c.getContext('2d');
+  const P = MAP_PX;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const o = world.owner[y * WORLD_W + x];
+    if (o < 0 || world.ter[y * WORLD_W + x] === T_SEA) continue;
+    const col = FACTIONS[o].color;
+    g.globalAlpha = 0.14; g.fillStyle = col; g.fillRect(x * P, y * P, P, P);
+    g.globalAlpha = 0.85; g.strokeStyle = col; g.lineWidth = 2;
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= WORLD_W || ny >= WORLD_H) continue;
+      if (world.owner[ny * WORLD_W + nx] === o) continue;
+      g.beginPath();
+      if (dx) { const X = (dx > 0 ? x + 1 : x) * P; g.moveTo(X, y * P); g.lineTo(X, (y + 1) * P); } else { const Y = (dy > 0 ? y + 1 : y) * P; g.moveTo(x * P, Y); g.lineTo((x + 1) * P, Y); }
+      g.stroke();
+    }
+  }
+  g.globalAlpha = 1;
+  return c;
+}
 
 /* ---------- 17_main.js ---------- */
 /* ==== 17 MAIN ==== */

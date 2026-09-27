@@ -18,7 +18,7 @@ const weaponRange = (d) => d.range * BATTLE_DISTANCE_SCALE;
 function penAt(d, worldDist) {
   const r = worldDist / BATTLE_DISTANCE_SCALE;
   if (d.auto) return d.pen * Math.max(0.2, 1 - 0.25 * (r / 500));
-  if (d.he) return d.pen;
+  if (d.he || d.heat) return d.pen;
   return d.pen * Math.max(0.5, 1 - (0.12 * (r - 500)) / 500);
 }
 
@@ -28,7 +28,26 @@ function weaponPivot(V, w, out) {
   gridToLocal(V, w.pivotGx, w.pivotGy, out);
   return localToWorld(V, out.x, out.y, out);
 }
-function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+// Barrel geometry from the part's JSON (design/07 §6.4): the pivot (moving.barrel.pivot) and
+// the muzzle (anchors.muzzle), in cells from the footprint's top-left. { pivot, len } or null.
+const _barrelGeo = {};
+function barrelGeometry(d) {
+  if (_barrelGeo[d.id] === undefined) {
+    const L = PART_LIBRARY.parts[d.id];
+    const piv = L && L.moving && L.moving.barrel && L.moving.barrel.pivot;
+    const mz = L && L.anchors && L.anchors.muzzle;
+    _barrelGeo[d.id] = piv && mz && mz[0] > piv[0] ? { pivot: piv, len: mz[0] - piv[0] } : null;
+  }
+  return _barrelGeo[d.id];
+}
+// Pivot in cells from the part's top-left. v1 rule: the centre of the rearmost cell.
+function barrelPivotX(d) { const b = barrelGeometry(d); return b ? b.pivot[0] : 0.5; }
+function barrelPivotY(d) { const b = barrelGeometry(d); return b ? b.pivot[1] : d.h / 2; }
+// Metres from pivot to muzzle. v1 rule: from the part's width.
+function barrelLength(d) {
+  const b = barrelGeometry(d);
+  return b ? b.len * CELL : d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6);
+}
 const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
@@ -37,6 +56,8 @@ function weaponArc(V, w) {
   if (d.indirect) return { lo: -5, hi: 80, both: false };
   // Aircraft guns point along the nose; a helicopter's chin gun swings down; AA mounts swing
   // round and up (Part 2c).
+  // Airship gondola guns swing down at the ground and round to either side (step 2.7).
+  if (V.domain === 'airship') return { lo: -45, hi: 25, both: true };
   if (V.flier && !w.turret) return V.domain === 'heli' ? { lo: -50, hi: 12, both: false } : { lo: -4, hi: 4, both: false };
   if (d.aa && !V.flier) return { lo: -5, hi: 85, both: true };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
@@ -229,6 +250,7 @@ function shellVsVehicle(B, s, V) {
     }
     if (pen >= eff) {
       pen -= eff;
+      if (d.skirt && s.def.heat) pen *= 0.5;          // spaced skirt: the shaped charge spends itself
       if (!penetrated) { penetrated = true; hitName = d.name; }
       if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
       damagePart(B, V, idx, dmg, s.shooter);
@@ -383,6 +405,7 @@ function checkVehicleState(B, V, source) {
 function knockOut(B, V, source, label, quiet) {
   if (V.destroyed) return;
   V.destroyed = true;
+  V.koLabel = label;               // why it went out of action (result facts, tests)
   V.throttle = 0;
   V.canDrive = false;
   B.hitStop = 0.05;

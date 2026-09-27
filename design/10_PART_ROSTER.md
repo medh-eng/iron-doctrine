@@ -84,8 +84,8 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
 | D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
 | D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
-| D4 | whull | Wooden hull section | structure | 2×2 | todo |
-| D5 | wbow | Wooden bow section | structure | 2×2 | todo |
+| D4 | whull | Wooden hull section | structure | 2×2 | JSON added in step 2.8 (art todo) |
+| D5 | wbow | Wooden bow section | structure | 2×2 | JSON added in step 2.8 (art todo) |
 | D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
 | D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
 | D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
@@ -96,7 +96,7 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 |---|---|---|---|
 | E1 | lifteng | Lift engine (JSON + art) | todo |
 | E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | todo |
-| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | todo |
+| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | JSON built in step 2.7 (art todo) |
 
 ## Batch F: faction starting designs (`src/vehicles/`, tier 0 parts only)
 

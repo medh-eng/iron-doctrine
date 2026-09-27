@@ -3,12 +3,9 @@
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-const TEST_RANGE_HOW = {
-  land: 'Mud, hills and a trench.',
-  sea: 'Open water off a beach.',
-  air: 'Open sky. ▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.',
-  heli: 'Open sky. ◀ ▶ move, ▲ ▼ height.',
-};
+const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket' };
+const TEST_RANGE_HOW = { land: 'Mud, hills and a trench.', sea: 'Open water off a beach.', air: 'Open air over hills.', heli: 'Open air over hills.' };
+const FLIGHT_HOW = { air: '▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.', heli: '◀ ▶ move, ▲ ▼ height.', sub: '▲ ▼ depth.' };
 // The test range that suits a design's domain.
 const rangeFor = (domain) => (seaDomain(domain) ? 'sea' : domain === 'air' ? 'air' : domain === 'heli' ? 'heli' : 'land');
 const BASE_PX_PER_M = 12;       // at 360 px screen height and zoom 1
@@ -33,10 +30,14 @@ SCREENS.battle = {
     const opts = typeof arg === 'object' && arg ? arg : { level: arg || 1 };
     this.opts = opts;
     this.level = opts.level || 1;
-    for (const pool of [shells, torpedoes, charges, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+    for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
-      : createBattle(this.level, { squad: ladder.squadDesigns() });
+      : opts.campaign
+        ? createCampaignBattle(opts.campaign, false)
+        : opts.sim
+        ? createBattle(0, { squad: opts.sim.squad(), cfg: simulatorConfig(opts.sim), reserves: true, enemyForce: opts.sim.enemy() })
+        : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
     view.B = B;
     B.panOf = (wx) => clamp((view.sx(wx) / layout.w) * 2 - 1, -1, 1) * 0.8;
@@ -51,6 +52,8 @@ SCREENS.battle = {
     this.drive = 0;
     this.climb = 0;
     this.resultShown = false;
+    this.pick = null;
+    this.closeWheel();
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
@@ -66,8 +69,8 @@ SCREENS.battle = {
     const B = this.B;
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
-    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
-    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} Pause to go back to the Workshop.` : B.cfg.how;
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.campaign ? `Battle · ${B.cfg.name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
     uiLayer.classList.add('has-howto');
@@ -78,12 +81,15 @@ SCREENS.battle = {
 
   exit() {
     game.frozen = false;
+    this.closeWheel();
     this.B = null;
     if (this.howEl) { this.howEl.remove(); this.howEl = null; }
     uiLayer.classList.remove('has-howto');
   },
 
   pauseOpts() {
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
       restart: () => this.enter(this.opts),
@@ -113,8 +119,17 @@ SCREENS.battle = {
     C.pause = makeControl('pause', { shape: 'rect', glyph: 'pause', pad: 4, up: (p, x) => { if (!x) togglePause(); } });
     C.settings = makeControl('settings', { shape: 'rect', glyph: 'gear', pad: 4, up: (p, x) => { if (!x) openSettingsPaused(); } });
     C.recenter = makeControl('recenter', { shape: 'rect', label: 'Recenter', hidden: true, up: (p, x) => { if (!x) this.recenter(); } });
-    C.cards = [0, 1, 2].map((i) => makeControl('card' + i, { shape: 'rect', pad: 2, up: (p, x) => { if (!x) this.takeControl(i); } }));
-    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.time, C.pause, C.settings];
+    // Ship cards: tap to drive; long-press for the command wheel (design/02 §3.1, §3.4).
+    C.cards = [0, 1, 2].map((i) => {
+      const cd = makeControl('card' + i, {
+        shape: 'rect', pad: 2,
+        down: () => { cd.downAt = performance.now(); cd.longDone = false; },
+        up: (p, x) => { if (!x && !cd.longDone) this.takeControl(i); cd.downAt = 0; },
+      });
+      return cd;
+    });
+    C.reserve = makeControl('reserve', { shape: 'rect', label: 'Reserve', pad: 2, hidden: true, up: (p, x) => { if (!x) this.openReserve(); } });
+    this.controls = [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips, C.recenter, ...C.cards, C.reserve, C.time, C.pause, C.settings];
   },
 
   layout() {
@@ -129,6 +144,7 @@ SCREENS.battle = {
     let bx = w - safe.r - 6;
     for (const b of [C.settings, C.pause, C.time]) { bx -= 44; b.x = bx; b.y = top + 3; b.w = 42; b.h = 28; bx -= 4; }
     for (let i = 0; i < 3; i++) { const cd = C.cards[i]; cd.x = safe.l + 6 + i * 50; cd.y = top + 3; cd.w = 46; cd.h = 28; }
+    C.reserve.x = C.cards[2].x + 52; C.reserve.y = top + 3; C.reserve.w = 78; C.reserve.h = 28;
     this.mini = { x: C.time.x - 10 - clamp(w * 0.18, 90, 200), y: top + 5, w: clamp(w * 0.18, 90, 200), h: 24 };
 
     const R = (FIRE_DIAMETER / 2) * s;
@@ -216,6 +232,112 @@ SCREENS.battle = {
 
   recenter() { this.cam.follow = true; audio.sfx('tap'); },
 
+  // ---------- command wheel (design/02 §3.4): orders for one of your ships
+  openWheel(V) {
+    const B = this.B;
+    if (!B || !V || V.destroyed || V.side !== 0 || B.demo) return;
+    this.closeWheel();
+    const r = el('div', 'cmd-wheel');
+    // Two columns of three orders, with a close button above, kept clear of the screen edges.
+    r.style.left = `${clamp(view.sx(V.body.x), layout.safe.l + 116, layout.w - layout.safe.r - 116)}px`;
+    r.style.top = `${clamp(view.sy(V.body.y + V.height / 2), layout.safe.t + 124, layout.h - layout.safe.b - 80)}px`;
+    const items = [
+      ['Drive', () => this.takeControl(B.squad.indexOf(V))],
+      ['Move to', () => this.startPick(V, 'move')],
+      ['Fire at', () => this.startPick(V, 'fire')],
+      ['Hold', () => { V.ai.hold = V.body.x; V.ai.fireAt = null; this.orderDone(V, 'Hold'); }],
+      ['Pull back', () => { const why = pullBack(B, V); if (why) this.say(why); else this.orderDone(V, 'Pulling back'); }, !B.rotation],
+      ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
+    ];
+    items.forEach(([label, fn, off], i) => {
+      const b = button(label, () => { this.closeWheel(); fn(); }, 'btn btn-small cmd-item');
+      b.disabled = !!off;
+      b.style.left = `${i < 3 ? -56 : 56}px`;
+      b.style.top = `${((i % 3) - 1) * 50}px`;
+      r.appendChild(b);
+    });
+    const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
+    x.setAttribute('aria-label', `Close orders for ${V.name}`);
+    r.appendChild(x);
+    r.appendChild(el('div', 'cmd-name', V.name));
+    uiLayer.appendChild(r);
+    this.wheel = r;
+    input.releaseAll();
+    audio.sfx('toggleOn');
+    haptic('tap');
+  },
+
+  closeWheel() { if (this.wheel) { this.wheel.remove(); this.wheel = null; } },
+
+  // Move to / Fire at: the next tap on the world picks the point or the target.
+  startPick(V, kind) {
+    this.pick = { V, kind };
+    ui.toast(kind === 'move' ? `${V.name}: tap where to go.` : `${V.name}: tap an enemy to fire at.`, 2200);
+  },
+
+  finishPick(wx, wy, hit) {
+    const B = this.B;
+    const { V, kind } = this.pick;
+    this.pick = null;
+    if (V.destroyed) return;
+    if (kind === 'move') {
+      const x = clamp(wx, 5, B.T.length - 5);
+      V.ai.hold = x;
+      V.pulling = false;
+      this.orderDone(V, 'Moving', x, B.T.height(x) + 3);
+      return;
+    }
+    const U = B.units.find((E) => E.side === 1 && !E.destroyed && E.seen && hit(E));
+    if (!U) { this.say('No enemy there'); return; }
+    V.ai.fireAt = U;
+    this.orderDone(V, 'Fire at', U.body.x, U.body.y + U.height + 1.5);
+  },
+
+  orderDone(V, label, x, y) {
+    audio.sfx('order');
+    haptic('tap');
+    floatText(label, x !== undefined ? x : V.body.x, y !== undefined ? y : V.body.y + V.height + 1);
+  },
+
+  // ---------- reserve drawer (design/02 §3.1): the line-up, reorder, "Send in"
+  openReserve() {
+    const B = this.B;
+    if (!B || !B.rotation) return;
+    const c = ui.card('Reserve line-up', 'card-reserve');
+    const list = el('div', 'rsv-list');
+    c.appendChild(list);
+    const btns = el('div', 'card-row');
+    let close = null;
+    const build = (sending) => {
+      list.textContent = '';
+      const R = B.reserve[0];
+      if (!R.length) list.appendChild(el('p', 'card-text', 'No ships in reserve.'));
+      R.forEach((e, i) => {
+        const row = el('div', 'rsv-row');
+        row.appendChild(el('span', 'rsv-num', String(i + 1)));
+        const t = el('span', 'rsv-name');
+        t.appendChild(el('b', '', e.name));
+        t.appendChild(el('small', '', `hull ${Math.round(e.health * 100)}%`));
+        row.appendChild(t);
+        if (i > 0) row.appendChild(button('▲', () => { R.splice(i - 1, 0, R.splice(i, 1)[0]); build(); }, 'btn btn-small'));
+        row.appendChild(button('Send in', () => { R.unshift(R.splice(i, 1)[0]); build(true); }, 'btn btn-small'));
+        list.appendChild(row);
+      });
+      if (sending) {
+        list.appendChild(el('p', 'card-text', `${R[0].name} goes in next. Which ship pulls back for it?`));
+        const row = el('div', 'card-row');
+        for (const V of B.squad) {
+          if (!V.destroyed && !V.pulling) row.appendChild(button(`Pull back ${V.name}`, () => { pullBack(B, V); this.orderDone(V, 'Pulling back'); close(); }, 'btn btn-small'));
+        }
+        list.appendChild(row);
+      }
+    };
+    build();
+    btns.appendChild(button('Close', () => close(), 'btn btn-primary', 'back'));
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
   toggleTime() {
     this.frozen = !this.frozen;
     game.frozen = this.frozen;
@@ -278,6 +400,12 @@ SCREENS.battle = {
     if (r) this.say(r); else { audio.sfx('smoke', this.B.panOf(this.B.me.body.x)); haptic('tap'); }
   },
 
+  ownShipAt(x, y) {
+    const B = this.B;
+    const wx = view.wx(x), wy = view.wy(y);
+    return B.squad.find((V) => !V.destroyed && Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5) || null;
+  },
+
   // ---------- camera
   // While following, the camera may pull back to frame the target, unless you pinched a zoom yourself.
   scale() { return BASE_PX_PER_M * (layout.h / 360) * (this.cam.follow && !this.cam.manual ? Math.min(this.cam.zoom, this.cam.fit || 9) : this.cam.zoom); },
@@ -288,6 +416,8 @@ SCREENS.battle = {
       const B = S.B;
       const wx = view.wx(x), wy = view.wy(y);
       const hit = (V) => Math.abs(wx - V.body.x) < V.len / 2 + 1.5 && wy > V.body.y - 2.5 && wy < V.body.y + V.height + 1.5;
+      if (S.wheel) { S.closeWheel(); return; }
+      if (S.pick) { S.finishPick(wx, wy, hit); return; }
       for (let i = 0; i < B.squad.length; i++) if (!B.squad[i].destroyed && hit(B.squad[i])) { S.takeControl(i); return; }
       for (const V of B.units) {
         if (V.side !== 1 || V.destroyed || !V.seen || !hit(V)) continue;
@@ -298,10 +428,14 @@ SCREENS.battle = {
         return;
       }
     },
+    // Desktop: right-click one of your ships for its command wheel.
+    contextMenu(x, y) { const S = SCREENS.battle; const own = S.ownShipAt(x, y); if (own) S.openWheel(own); },
     doubleTap() { const c = SCREENS.battle.cam; c.zoom = DEFAULT_ZOOM; c.manual = false; audio.sfx('tap'); },
-    longPress(x) {
+    longPress(x, y) {
       const S = SCREENS.battle;
       const B = S.B;
+      const own = S.ownShipAt(x, y);
+      if (own) { S.openWheel(own); return; }
       const wx = clamp(view.wx(x), 5, B.T.length - 5);
       let k = 0;
       for (const V of B.squad) if (V !== B.me && !V.destroyed) { V.ai.hold = wx + (k++ ? -7 : 0); }
@@ -380,16 +514,23 @@ SCREENS.battle = {
     this.updateCamera(dt);
     const C = this.c;
     for (let i = 0; i < 5; i++) C.chips[i].lit = ORDERS[i] === B.order;
-    for (let i = 0; i < 3; i++) { C.cards[i].lit = B.squad[i] === B.me; C.cards[i].disabled = !B.squad[i] || B.squad[i].destroyed; }
+    for (let i = 0; i < 3; i++) {
+      const cd = C.cards[i];
+      cd.lit = B.squad[i] === B.me; cd.disabled = !B.squad[i] || B.squad[i].destroyed;
+      if (cd.pressCount > 0 && cd.downAt && !cd.longDone && performance.now() - cd.downAt >= LONG_PRESS_MS) { cd.longDone = true; this.openWheel(B.squad[i]); }
+    }
+    C.reserve.hidden = !B.rotation;
+    if (B.rotation) C.reserve.label = `Reserve ${B.reserve[0].length}`;
     C.recenter.hidden = this.cam.follow;
     C.fire.disabled = this.frozen || B.me.destroyed;
     C.special.disabled = this.frozen || !B.me.smoke;
     C.special.hidden = B.me.smoke === 0 && !B.squad.some((V) => V.smoke);
-    const sec = B.me.weapons.filter((w) => w.def.secondary && B.me.parts[w.part].alive);
+    // Alt: the secondary weapon and what is left (SAMs fire by themselves).
+    const sec = B.me.weapons.filter((w) => w.def.secondary && w.def.secondary !== 'sam' && B.me.parts[w.part].alive);
     C.alt.hidden = !sec.length;
     if (sec.length) {
       const n = sec.reduce((a, w) => a + w.rounds, 0);
-      const label = `${sec.some((w) => w.def.secondary === 'torpedo') ? 'Torp' : 'Charge'} ${n}`;
+      const label = `${ALT_LABEL[sec[0].def.secondary] || 'Alt'} ${n}`;
       if (C.alt.label !== label) { C.alt.label = label; C.alt.glyphLines = null; }
       C.alt.disabled = this.frozen || n === 0;
     }
@@ -450,7 +591,31 @@ SCREENS.battle = {
     let close = null;
     const secs = Math.round(B.time);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    if (win) {
+    if (this.opts.campaign) {
+      // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
+      const res = applyBattleOutcome(B);
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', res.lostTheirs);
+      row('Your ships lost', res.lostMine);
+      if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.sim) {
+      // Battle Simulator (design/01 §15): facts only, no campaign effects.
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', `${B.goalDone} of ${B.goalTotal}`);
+      row('Your ships lost', B.stats.lost);
+      row('Pulled back (yours / theirs)', `${B.pulledBack[0]} / ${B.pulledBack[1]}`);
+      row('Shots fired, penetrations', `${B.stats.shots}, ${B.stats.pens}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, 'btn', 'back'));
+      btns.appendChild(button('Simulator', () => { close(); screens.go('simulator'); }));
+      btns.appendChild(button('Fight again', () => { close(); this.enter(this.opts); }, 'btn btn-primary'));
+    } else if (win) {
       const res = ladder.onWin(B);
       haptic('clear');
       audio.sfx('fanfare');
@@ -598,13 +763,15 @@ SCREENS.battle = {
       g.fillStyle = PAL.linen;
       g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
     }
+    if (!C.reserve.hidden) drawControl(g, C.reserve, nowMs, 1);
     // Objective with a progress bar.
-    const left = C.cards[2].x + C.cards[2].w + 10;
+    const left = (C.reserve.hidden ? C.cards[2].x + C.cards[2].w : C.reserve.x + C.reserve.w) + 10;
     const right = this.mini.x - 10;
     if (right - left > 70) {
       const goal = B.cfg.goal;
       let text, f;
       if (B.test) { text = `Test drive · ${Math.round(B.me.body.x)} m`; f = B.me.body.x / B.T.length; }
+      else if (B.rotation) { text = `Enemy ${B.goalTotal - B.goalDone}/${B.goalTotal} · reserve ${B.reserve[1].length}`; f = B.goalDone / Math.max(1, B.goalTotal); }
       else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
       else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
       else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
@@ -614,7 +781,7 @@ SCREENS.battle = {
       g.fillText(text, left, safe.t + 9, right - left);
       g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
       g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
-      if (!B.test) {
+      if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
         g.font = `700 12px ${FONT_UI}`;
@@ -660,7 +827,7 @@ SCREENS.battle = {
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
     }
     const mw = mainWeapon(B.me);
-    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.crew < 3 ? 1.6 : 1)), ghost);
+    if (mw && !B.me.destroyed) drawRing(g, C.fire, 1 - Math.max(0, mw.reload) / (mw.def.reload * (B.me.loaderShort && mw.def.cal >= 75 ? 1.6 : 1)), ghost);
   },
 
   // Minimap strip: terrain line, spotted units, camera window.

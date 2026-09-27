@@ -172,11 +172,19 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(ac.stall.maxAlpha > 12 && ac.stall.minAlt < 2, `aircraft with too little wing did not stall and come down (${JSON.stringify(ac.stall)})`);
       check(ac.heli.alt > 15 && ac.fatHeli.alt < 2, `helicopter lift wrong (${JSON.stringify([ac.heli, ac.fatHeli])})`);
       check(ac.bomb.destroyed, `bombs did not destroy the truck (${JSON.stringify(ac.bomb)})`);
+      const mc = await G(() => window.__GAME__.missileCheck());
+      check(!mc.noRadarValid, 'a SAM launcher without radar was accepted');
+      check(mc.atgmFcRadar > mc.atgmFc + 0.05 && mc.atgmVsEcm < mc.atgmFc - 0.1, `radar and ECM don't change anti-tank missile hit rates (${JSON.stringify(mc)})`);
+      check(mc.samNaval > mc.samSearch + 0.05 && mc.samVsEcm < mc.samSearch - 0.1, `radar and ECM don't change SAM hit rates (${JSON.stringify(mc)})`);
+      console.log(`     missile hit rates: ATGM ${mc.atgmFc} / +radar ${mc.atgmFcRadar} / vs ECM ${mc.atgmVsEcm}; SAM ${mc.samSearch} / naval radar ${mc.samNaval} / vs ECM ${mc.samVsEcm}`);
+      const sy = await G(() => window.__GAME__.systemsCheck());
+      check(sy.hotPower < 0.95 && sy.coolPower === 1, `heat did not cut power or radiators did not help (${JSON.stringify(sy)})`);
+      check(sy.repaired > 20 && sy.brokeDown, `repair or breakdown failed (${JSON.stringify(sy)})`);
       const hw = await G(() => window.__GAME__.howitzerCheck());
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('part library matches v1, templates, physics, damage, ships, submarines, aircraft');
+      steps.push('part library matches v1, templates, physics, damage, ships, submarines, aircraft, missiles, systems');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }
@@ -413,6 +421,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     const saved = await G(() => window.__GAME__.save.designs.list.slice(-1)[0]);
     check(saved && saved.mark === 2 && /Mk\.II/.test(saved.name) && saved.changelog.some((l) => /Armour 40/.test(l)), `save did not create Mk.II with a change log (${saved && saved.name})`);
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     check((await G(() => window.__GAME__.screens.name)) === 'battle' && (await G(() => window.__GAME__.battle().test)), 'test drive did not start');
     await wait(500);
     await shot('14-test-drive');
@@ -425,6 +435,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     check(/reserve/.test(await page.locator('.dz-top').textContent()), 'ship chips missing on the blueprint');
     await shot('13b-designer-ship');
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     await wait(400);
     const sea0 = await G(() => { const B = window.__GAME__.battle(); return { range: B.cfg.range, x: B.me.body.x }; });
     check(sea0.range === 'sea', 'ship test drive did not use the sea range');
@@ -445,6 +457,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await G(() => { const S = window.__GAME__.SCREENS.designer; S.load(window.__GAME__.designFromTemplate('heli'), null, true); S.build(); });
     await wait(200);
     await tapButton('Test drive');
+    await page.locator('.card .btn-primary').first().click();
+    await wait(120);
     await wait(400);
     const h0 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x, range: B.cfg.range }; });
     const hold = async (id, ms) => {
@@ -456,13 +470,21 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await hold('up', 2500);
     await hold('right', 2000);
     const h1 = await G(() => { const B = window.__GAME__.battle(); return { y: B.me.body.y, x: B.me.body.x }; });
-    check(h0.range === 'heli' && h1.y > h0.y + 5 && h1.x > h0.x + 2, `helicopter did not fly with the pad (${JSON.stringify([h0, h1])})`);
+    check(h0.range === 'air' && h1.y > h0.y + 5 && h1.x > h0.x + 2, `helicopter did not fly with the pad (${JSON.stringify([h0, h1])})`);
     await shot('14c-test-flight');
     await tapCtrl('pause');
     await tapButton('Back to the Workshop');
+    // Design lineage (Part 2d): the Mk.II saved above shows its family tree.
+    await G(() => window.__GAME__.go('workshop'));
+    await wait(200);
+    await page.locator('.ws-lineage').first().click();
+    await wait(200);
+    check((await page.locator('.lin-row').count()) >= 1 && /template/.test(await page.locator('.lin-origin').textContent()), 'lineage view did not show the family tree');
+    await shot('15b-lineage');
+    await tapButton('Close');
     await G(() => window.__GAME__.ladder.resume());
     await wait(200);
-    steps.push('designer, Mk.II, test drive, sea trial, test flight');
+    steps.push('designer, Mk.II, test drive, sea trial, test flight, lineage');
 
     // ---------- 9e. Art contract (design/07): placeholder art with origin, pivot and muzzle markers
     if (!vp.mobile) {
@@ -482,6 +504,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(300);
       await shot('art-1-designer');
       await G(() => { const S = window.__GAME__.SCREENS.designer; S.testDrive(); });
+      await page.locator('.card .btn-primary').first().click();
       await wait(600);
       await G(() => { const S = window.__GAME__.SCREENS.battle; S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 2; S.cam.x = S.B.me.body.x; S.cam.y = S.B.me.body.y + 1; window.__GAME__.input.lastWorldTouch = performance.now() + 1e5; });
       await wait(300);
@@ -491,6 +514,161 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await shot('art-3-enemy-mirrored');
       await G(() => { const A = window.__GAME__.art; A.usePlaceholders = false; A.debug = false; A.init(); });
       steps.push('art contract placeholders');
+    }
+
+    // ---------- 9f. SVG part art (step 2.5b): both sides' colours, barrel pivot and muzzle, phone scale
+    {
+      await wait(300);
+      const sv = await G(() => window.__GAME__.svgArtCheck());
+      check(!sv.missing.length && !sv.failed.length, `SVG art not ready: missing ${sv.missing.join(', ')}; failed ${sv.failed.join(', ')}`);
+      for (const m of sv.muzzle) check(m.off < 0.01 && m.kick > 0, `c75 shell did not leave from the art's muzzle (facing ${m.dir}): ${m.off.toFixed(3)} m off, kick ${m.kick}`);
+      const closeUp = async (level, side, elev, name) => {
+        await G(([level, side, elev]) => {
+          const g = window.__GAME__;
+          g.go('battle', level ? { level } : { test: g.designFromTemplate('medium') });
+          for (const p of g.SCREENS.battle.B.pending) p.at = 0;      // later waves arrive now
+        }, [level, side, elev]);
+        await wait(300);
+        await G(([level, side, elev]) => {
+          const g = window.__GAME__;
+          const S = g.SCREENS.battle;
+          S.B.cfg.light = 'day'; S.B.cfg.weather = 'clear'; S.B.revealAll = true;
+          const V = S.B.units.find((u) => u.side === side && u.weapons.some((w) => w.def.id === 'c75'));
+          const w = V.weapons.find((x) => x.def.id === 'c75');
+          if (!S.frozen) g.toggleTime();
+          w.angle = V.dir > 0 ? V.body.a + elev * Math.PI / 180 : V.body.a + Math.PI - elev * Math.PI / 180;
+          S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 3; S.cam.x = V.body.x + V.dir * 1.5; S.cam.y = V.body.y + 1.5;
+          g.input.lastWorldTouch = performance.now() + 1e5;
+        }, [level, side, elev]);
+        await wait(400);
+        await shot(name);
+        await G(() => { const g = window.__GAME__; if (g.SCREENS.battle.frozen) g.toggleTime(); });
+      };
+      await closeUp(0, 0, 15, 'svg-1-league-c75');
+      await closeUp(11, 1, 8, 'svg-2-directorate-c75');
+      steps.push('SVG art');
+    }
+
+    // ---------- 9g. Step 2.6: three on the field, command wheel, reserve drawer, Battle Simulator
+    {
+      if (!vp.mobile) {
+        const rc = await G(() => window.__GAME__.reserveCheck());
+        check(rc.start.field === 3 && rc.start.enemies === 3 && rc.start.reserve.join() === 'assault,truck' && rc.start.enemyReserve === 2, `three on the field: wrong start ${JSON.stringify(rc.start)}`);
+        check(rc.replaced.slot0 === 'assault' && rc.replaced.reserve.join() === 'truck', `destroyed ship not replaced in line-up order ${JSON.stringify(rc.replaced)}`);
+        check(rc.pulled.withdrawn && rc.pulled.last === 'light' && rc.pulledReplaced.fromReserve && rc.pulledReplaced.slot1 === 'truck', `pull back did not rotate ${JSON.stringify([rc.pulled, rc.pulledReplaced])}`);
+        check(rc.enemyPulls.pulling, `enemy did not pull back a damaged ship ${JSON.stringify(rc.enemyPulls)}`);
+        check(rc.result === 'win' && rc.kills === rc.total, `battle not won when the enemy ran out ${JSON.stringify(rc)}`);
+      }
+      await G(() => window.__GAME__.go('title'));
+      await wait(200);
+      await tapButton('Battle Simulator');
+      await wait(300);
+      await shot('16-simulator');
+      await tapButton('Fight');
+      await wait(700);
+      check(await G(() => { const B = window.__GAME__.SCREENS.battle.B; return !!(B && B.rotation && B.squad.length === 3 && B.reserve[0].length === 1); }), 'Battle Simulator did not start a battle with reserves');
+      // Long-press ship card 2: the command wheel opens; Pull back orders that ship off the field.
+      const c2 = await ctrl('card1');
+      if (vp.mobile) { await touch('touchStart', [{ x: c2.cx, y: c2.cy, id: 7 }]); await wait(650); await touch('touchEnd', [{ x: c2.cx, y: c2.cy, id: 7 }]); }
+      else { await page.mouse.move(c2.cx, c2.cy); await page.mouse.down(); await wait(650); await page.mouse.up(); }
+      await wait(150);
+      check(await page.locator('.cmd-wheel').count() === 1, 'long-press on a ship card did not open the command wheel');
+      await shot('17-command-wheel');
+      await tapButton('Pull back');
+      check(await G(() => window.__GAME__.SCREENS.battle.B.squad[1].pulling === true), 'Pull back from the command wheel did nothing');
+      await tapCtrl('reserve');
+      await wait(200);
+      check(await page.locator('.card-reserve').count() === 1, 'reserve drawer did not open');
+      await shot('18-reserve-drawer');
+      await tapButton('Close');
+      if (!vp.mobile) {
+        // Right-click one of your ships for its wheel.
+        const at = await G(() => { const B = window.__GAME__.SCREENS.battle.B; const V = B.squad[0]; return { x: window.__GAME__.view.sx(V.body.x), y: window.__GAME__.view.sy(V.body.y + V.height / 2) }; });
+        await page.mouse.click(at.x, at.y, { button: 'right' });
+        await wait(150);
+        check(await page.locator('.cmd-wheel').count() === 1, 'right-click on your ship did not open the command wheel');
+        await page.mouse.click(640, 150);
+      }
+      // ---------- 9h. Step 2.7: airships fly, climb, descend, move, fall when holed, and fight inland and at sea
+      if (!vp.mobile) {
+        const as = await G(() => window.__GAME__.airshipCheck());
+        check(as.hold.domain === 'airship' && Math.abs(as.hold.alt - 30) <= 2, `airship did not hold its height ${JSON.stringify(as.hold)}`);
+        check(as.climb.alt >= 45 && as.descend.alt <= 15, `airship did not climb and descend ${JSON.stringify([as.climb, as.descend])}`);
+        check(as.move.dx > 40 && Math.abs(as.hold.tilt) < 5, `airship did not move or keep level ${JSON.stringify(as.move)}`);
+        check(as.holed.alt <= 2, `airship with its envelope shot away did not come down ${JSON.stringify(as.holed)}`);
+        for (const k of ['inland', 'sea']) check(as[k].deployed && as[k].shots > 0 && as[k].alt > 10, `gunship did not fight ${k} ${JSON.stringify(as[k])}`);
+      }
+      // ---------- 9i. Step 2.8: classes and paint
+      if (!vp.mobile) {
+        const cc = await G(() => window.__GAME__.classCheck());
+        check(!cc.none.length, `templates without a class: ${cc.none.join(', ')}`);
+        check(cc.misfit.length === 2, `class limits not explained: ${JSON.stringify(cc.misfit)}`);
+        const pc = await G(() => window.__GAME__.paintCheck());
+        check(pc.ready && pc.svg.directorate > 8 && pc.structure.directorate > 50 && pc.leagueInDirectorate.svg < 2 && pc.leagueInDirectorate.structure < 2, `Directorate paint not shown on SVG parts and structure ${JSON.stringify(pc)}`);
+        await G(() => { const g = window.__GAME__; g.go('designer', { design: g.designFromTemplate('medium'), base: null, owned: true }); const D = g.SCREENS.designer; D.st.d.paint = { scheme: 'clans', camo: 'splinter' }; D.refresh(); });
+        await tapButton('Paint');
+        await wait(900);
+        await shot('20-paint');
+        await tapButton('Done');
+        await tapButton('Tank ▾');
+        await wait(200);
+        await shot('21-classes');
+        await tapButton('Cancel');
+      }
+      await G(() => {
+        const g = window.__GAME__;
+        Object.assign(g.save.profile.sim, { field: 'coast', lineup: ['light', 'gunship_t2', 'gunboat'], enemy: [] });
+        g.go('battle', g.SCREENS.simulator.battleArg());
+      });
+      await wait(2500);
+      await G(() => {
+        const S = window.__GAME__.SCREENS.battle;
+        const V = S.B.squad.find((U) => U.domain === 'airship');
+        S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 1.6; S.cam.x = V.body.x + 4; S.cam.y = V.body.y + 2;
+        window.__GAME__.input.lastWorldTouch = performance.now() + 1e5;
+      });
+      await wait(300);
+      await shot('19-airship');
+      // ---------- 9j. Part 3: the campaign (world map, fleets, fuel, markets, contact, results)
+      if (!vp.mobile) {
+        const cc = await G(() => window.__GAME__.campaignCheck());
+        for (const [f, st] of Object.entries(cc.starts)) check(st.home === 'city,fort,village,village' && st.capCoastal && st.fleets === 'land:3,sea:3,air:3' && st.ga, `campaign start wrong for ${f}: ${JSON.stringify(st)}`);
+        check(cc.rules.landToSea && cc.rules.seaToLand && cc.rules.airAnywhere, `domain movement rules wrong ${JSON.stringify(cc.rules)}`);
+        check(cc.burn.after < cc.burn.before && cc.burn.moved, `moving did not burn fuel ${JSON.stringify(cc.burn)}`);
+        check(cc.strandWarn && cc.airStranded.stranded && !cc.airStranded.moved, `stranding wrong ${JSON.stringify([cc.strandWarn, cc.airStranded])}`);
+        check(!cc.refuel.why && cc.refuel.spent === cc.refuel.quote && cc.refuel.spent > 0 && cc.refuel.full, `refuel from the treasury wrong ${JSON.stringify(cc.refuel)}`);
+        check(cc.contact && cc.auto.shipsAfter === cc.auto.shipsBefore - cc.auto.lostMine - cc.auto.lostTheirs, `contact or auto-resolve wrong ${JSON.stringify([cc.contact, cc.auto])}`);
+        check(cc.persist.saved && cc.reload, `campaign results did not persist through save and load ${JSON.stringify([cc.persist, cc.reload])}`);
+        check(cc.detach.inGarrison && cc.detach.outpost && cc.detach.back && cc.detach.alone === 0, `detach, garrison or outpost wrong ${JSON.stringify(cc.detach)}`);
+        check(cc.deploy.field === 'inland' && cc.deploy.domains === 'land', `a ship deployed inland ${JSON.stringify(cc.deploy)}`);
+      }
+      await G(() => window.__GAME__.go('title'));
+      await wait(200);
+      await tapButton('New campaign');
+      await wait(200);
+      if (await page.getByRole('button', { name: 'Keep it', exact: true }).count()) await tapButton('Keep it');
+      await shot('22-factions');
+      await page.locator('.faction-btn').first().click();
+      await wait(300);
+      if (await page.getByRole('button', { name: /^Start as / }).count()) { await page.getByRole('button', { name: /^Start as / }).click(); await wait(300); }
+      check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
+      await wait(500);
+      await shot('23-world-map');
+      await G(() => {
+        const g = window.__GAME__, C = g.camp;
+        const land = C.playerFleets().find((f) => f.domain === 'land');
+        const e = C.campaign.fleets.find((f) => f.faction !== C.campaign.faction && C.relation(f.faction, C.campaign.faction) === 'war' && f.domain === 'land');
+        e.x = land.x + 1; e.y = land.y; e.path = []; e.cooldown = 0; land.cooldown = 0;
+        g.SCREENS.map.toggleClock();
+      });
+      await page.locator('.card-prebattle').waitFor({ timeout: 4000 });
+      await shot('24-contact');
+      await tapButton('Auto-resolve');
+      await wait(300);
+      check((await G(() => window.__GAME__.camp.campaign.journal.slice(-1)[0] || '')).includes('enemy ships destroyed'), 'auto-resolve did not record the battle');
+      await G(() => window.__GAME__.go('battle', { level: 1 }));
+      await wait(200);
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

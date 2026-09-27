@@ -11,6 +11,46 @@ function designLibrary() {
   return out;
 }
 
+// Design lineage (design/01 §8.4): the family tree of saved marks, from the template or
+// design they started from, with each mark's change log.
+function lineageOf(design) {
+  const list = save.designs.list;
+  const byId = new Map(list.map((d) => [d.id, d]));
+  // Walk up to the oldest saved ancestor, then collect everything below it.
+  let root = design;
+  for (let k = 0; k < 50 && root.parent && byId.has(root.parent); k++) root = byId.get(root.parent);
+  const rows = [];
+  const walk = (d, depth) => {
+    rows.push({ d, depth });
+    for (const c of list) if (c.parent === d.id && c !== d) walk(c, depth + 1);
+  };
+  walk(root, 0);
+  return { origin: root.parent && !byId.has(root.parent) ? (TEMPLATES[root.parent] ? `${TEMPLATES[root.parent].name} Mk.I (template)` : 'a blueprint') : null, rows };
+}
+
+function showLineage(design) {
+  const tree = lineageOf(design);
+  const c = ui.card(`Lineage · ${design.family || design.name}`);
+  c.classList.add('card-scroll');
+  const box = el('div', 'lineage');
+  if (tree.origin) box.appendChild(el('div', 'lin-origin', `From ${tree.origin}`));
+  for (const { d, depth } of tree.rows) {
+    const row = el('div', 'lin-row' + (d.id === design.id ? ' on' : ''));
+    row.style.marginLeft = `${depth * 16}px`;
+    const st = statsOf(d);
+    row.appendChild(el('b', '', markName(d)));
+    row.appendChild(el('small', '', ` ${(st.mass / 1000).toFixed(1)} t · cost ${costOf(d)}`));
+    for (const l of d.changelog || []) row.appendChild(el('div', 'lin-log', l));
+    box.appendChild(row);
+  }
+  c.appendChild(box);
+  let close = null;
+  const r = el('div', 'card-row');
+  r.appendChild(button('Close', () => close(), 'btn', 'back'));
+  c.appendChild(r);
+  close = ui.open(c);
+}
+
 SCREENS.workshop = {
   root: null,
   slot: 0,
@@ -44,7 +84,7 @@ SCREENS.workshop = {
     top.appendChild(el('span', 'ws-fact', `Requisition ${p.requisition}`));
     top.appendChild(el('span', 'ws-fact' + (used > budget ? ' bad' : ''), `Level ${level} budget: ${used} of ${budget}`));
     const lc = levelConfig(level);
-    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle: ships and submarines only' : lc.sea ? 'Map has sea' : 'No sea: ships stay in port'));
+    top.appendChild(el('span', 'ws-fact', lc.fleet ? 'Sea battle' : lc.sea ? 'Coast' : 'No sea'));
     r.appendChild(top);
 
     // Squad slots.
@@ -81,7 +121,10 @@ SCREENS.workshop = {
         this.build();
       });
       card.appendChild(pick);
-      card.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      const btns = el('div', 'ws-btns');
+      btns.appendChild(button('Edit', () => this.edit(o), 'btn btn-small ws-edit'));
+      if (o.src === 'Your design') btns.appendChild(button('Lineage', () => showLineage(o.design), 'btn btn-small ws-lineage'));
+      card.appendChild(btns);
       list.appendChild(card);
     }
     r.appendChild(list);

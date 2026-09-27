@@ -2,7 +2,7 @@
 
 - **Releases:** each step is a playable release on the GitHub Pages link. Sessions end with a Progress log row.
 - **What v2.1 does:** it fits design v2 onto the game that already exists. v1 reached v0.2.2 (land, sea, submarine, aircraft and helicopter battles), and none of that is thrown away.
-- **Order:** first bridge the existing game to v2 (steps 2.5–2.8), then build the campaign (0.3 onwards).
+- **Order:** first bridge the existing game to v2 (steps 2.5–2.8, with 2.5d bringing Part 2d across), then build the campaign (0.3 onwards).
 
 ## Where the build stands (v0.2.3)
 
@@ -51,10 +51,23 @@
 ### Acceptance (2.5)
 
 - [x] The game plays exactly as before (all v1 tests pass). Parts and templates now come from `src/parts` and `src/vehicles`. (v0.2.4, step 2.5a)
-- [ ] A new foundry zip (SVG plus the JSON art fields) shows up in the game after integration, with no code changes.
-- [ ] The c75 SVG art renders in both League and Directorate colours, at phone scale, with the barrel moving correctly.
+- [x] A new foundry zip (SVG plus the JSON art fields) shows up in the game after integration, with no code changes. (v0.2.5: every part with a `.svg` is drawn from it)
+- [x] The c75 SVG art renders in both League and Directorate colours, at phone scale, with the barrel moving correctly. (v0.2.5; smoke test `svg-1`, `svg-2` screenshots and the muzzle check)
 
-## Step 2.6: three on the field and the Battle Simulator (v0.2.5)
+## Step 2.5d: bring Part 2d across (v0.2.6)
+
+The producer chose to keep Part 2d, which was built on the v1 game in another session and never merged (branch `claude/design-06-part-2-vehicles-f07cv0`, one commit): radar, ECM and guided missiles, heat, breakdowns and crew roles, a test range picker and design lineage. It is brought across now, before the code moves further away from it.
+
+- **Rebuild it on the current game,** not by merging the branch: its new parts go into `src/parts` as JSON (no art yet), and its code changes are re-applied file by file (`10e_systems.js` is new).
+- **Design docs:** its v1 doc changes go into the v2.1 docs. Radar, ECM, missiles and heat arrive earlier than Part 5 planned; Part 5 keeps the rest (missile designer, warheads, drones, energy weapons).
+- **Test:** its own smoke checks come across with it; everything else still passes.
+
+### Acceptance (2.5d)
+
+- [x] Every Part 2d feature works as it did on its branch, with its parts read from the library. (v0.2.6)
+- [x] All existing tests pass, and the Part 2d branch can be deleted. (v0.2.6)
+
+## Step 2.6: three on the field and the Battle Simulator (v0.2.7)
 
 - **Reserves and line-up for both sides:**
   - at most 3 ships on the field each
@@ -72,27 +85,37 @@
   - fight; the result card shows losses and damage, with no campaign effects
 - **Aircraft and helicopters** fight as ordinary units here for now (01 §5).
 - **The Gauntlet keeps its v1 rules** (waves, lives, score). Reserves don't apply there.
+- **As built (v0.2.7):**
+  - Reserves apply to battles started with a line-up (the Battle Simulator now, the campaign later). Enemy captains pull back ships below 35% hit points while they have others waiting. A ship pulling back passes its own side's ships.
+  - The v1 order chips (Follow, Escort, Hold, Attack, Back) stay as squad-wide stances; the command wheel gives orders to one ship. It opens by long-pressing a ship card or your ship in the world, or right-clicking your ship: Drive, Move to, Fire at, Hold, Pull back, Smoke (flares and drones arrive with their parts).
+  - The line-up editor is part of the Simulator screen (order, ▲, ✕); a campaign pre-battle card comes with Part 3.
 
 ### Acceptance (2.6)
 
-- [ ] Both sides rotate ships correctly. Line-up order is respected. The reserve drawer and "Send in" work with thumbs.
-- [ ] The command wheel works on phone (long-press) and desktop (right-click).
-- [ ] The Battle Simulator runs land, coast and sea battles. The Gauntlet is unchanged.
+- [x] Both sides rotate ships correctly. Line-up order is respected. The reserve drawer and "Send in" work with thumbs. (v0.2.7)
+- [x] The command wheel works on phone (long-press) and desktop (right-click). (v0.2.7)
+- [x] The Battle Simulator runs land, coast and sea battles. The Gauntlet is unchanged. (v0.2.7)
 
-## Step 2.7: airships (v0.2.6)
+## Step 2.7: airships (v0.2.8)
 
 - **New parts:** envelope materials `canvas_bag` and `rigid_env` (remove `planned`), and the `lifteng` part (05 §3.2).
 - **Physics:** lift from envelopes and lift engines against mass, using the helicopter controller for movement and height. Burst or burning envelopes lose lift; below a lift margin of 1.0 the airship sinks, and it crashes the way a helicopter does.
 - **Domains:** a design with envelopes or lift engines and no wings or rotors is an `airship`. The Drafting Office shows lift, mass and lift margin, with factual warnings.
 - **Templates:** the airship templates from roster batch E. Placeholder art is fine until the Foundry delivers.
 - **Battlefields:** airships can deploy on every battlefield (01 §10.2).
+- **As built (v0.2.8):**
+  - Envelope cells give fixed gas lift (gasLift × 100 kg); lift engines add up to 44 kN each while they have fuel, even if the drive engine is lost. The height controller works between venting gas (down to 85% of weight) and full lift. Below a lift margin of 1 it sinks; a wreck keeps at most half its weight in lift and comes down.
+  - Air propellers push either way against drag (0.6 m² per metre of height); the envelopes keep it level.
+  - Gondola guns swing from 45° down to 25° up on either side. Any gun can engage an airship (big and slow); aircraft still need AA.
+  - Airships deploy at 30 m, including over the open sea. Drafting Office: Lift tab, the Airship class (the 24 × 10 gunship grid), lift, weight, lift margin, air speed and a warning below margin 1. Randomise makes airships too.
+  - Templates: Canvas gunship (`gunship_t0`) and Rigid gunship (`gunship_t2`), in the starting templates and in the Simulator's mixed enemy forces.
 
 ### Acceptance (2.7)
 
-- [ ] An airship designed from scratch flies, climbs, descends, fights and falls when its envelopes are shot up.
-- [ ] A gunship can fight alongside tanks inland and alongside ships at sea.
+- [x] An airship designed from scratch flies, climbs, descends, fights and falls when its envelopes are shot up. (v0.2.8; the randomiser's airships and both templates)
+- [x] A gunship can fight alongside tanks inland and alongside ships at sea. (v0.2.8)
 
-## Step 2.8: classes, tiers and paint (v0.2.7)
+## Step 2.8: classes, tiers and paint (v0.2.9)
 
 - **Designer class selector:** domain and class set the grid and part limit (`classes.json`). The v1 grid sizes are replaced by the classes.
 - **Existing designs that no longer fit a class** keep working. They're marked "outside class limits: refit needed" (campaign only).
@@ -102,11 +125,15 @@
   - the player's scheme is chosen in the Simulator for now
 - **New tier 0 parts** (roster batch D: steam, wheel_w, swivel, whull, wbow), plus the plank and ironwood cells.
 - **Faction starting designs** (roster batch F) appear as templates when delivered.
+- **As built (v0.2.9):**
+  - A design loads into the smallest class of its domain that it fits (grid and part count; structure cells don't count). The class button in the Drafting Office lists the domain's classes with grid, part limit and captain level; choosing one re-grids the design if it fits and says why not otherwise. Placing a part beyond the limit is refused with the reason. A design that fits no class keeps working and shows "outside class limits: refit needed".
+  - Paint card (Drafting Office): scheme, custom primary, secondary and accent colours from the 24-colour palette, and camouflage (bands, blotch, splinter, stripes: P1 and P2 darkened inside the pattern, P3 kept). Paint is saved with the design and shown in thumbnails and battle. Designs without their own paint use "Your colours", chosen in the Simulator; the enemy uses the Directorate scheme.
+  - Wooden hull and bow sections (`whull`, `wbow`) added; plank and iron-banded plank cells were already live.
 
 ### Acceptance (2.8)
 
-- [ ] Every template and blueprint loads with a class. Class limits are enforced in the designer with factual messages.
-- [ ] A design painted in the Directorate scheme shows its colours on SVG parts and paintable structure cells.
+- [x] Every template and blueprint loads with a class. Class limits are enforced in the designer with factual messages. (v0.2.9)
+- [x] A design painted in the Directorate scheme shows its colours on SVG parts and paintable structure cells. (v0.2.9)
 
 ## Part 3: world map and fleets (v0.3)
 
@@ -132,14 +159,24 @@ This is v2 "Part 2" (the world map): the open world, the five factions, settleme
 - **Contact → pre-battle card → battle (using the 2.6 rotation) or auto-resolve → results back on the map.**
 - **Persistence:** ship damage, losses and XP, captain survival; saves and loads.
 - **Title menu:** **Campaign** appears here, not before.
+- **As built (v0.3.0):**
+  - World: 192 × 144 cells of 10 km, seeded; sea (small enclosed waters become marsh), plains, forest, hills, mountains with passes where roads cross, desert and ruins in the south-east, marsh, tundra and ice in the north. The terrain is regenerated from the seed on load, so saves hold only what changes (`irondoctrine.campaign.slot1`, its own version and backup rule).
+  - Settlements: every AI faction has its capital (09 types), a coastal city, 2 villages and a fort; the player has a coastal home city, 2 villages and a fort (01 §4.3); 14 neutral villages. Roads join neighbours; territory is the nearest settlement's within 14 cells.
+  - Fleets: the player's land fleet under the Grand Admiral, a sea and an air fleet (3 ships each: Medium, Light and Scout; 3 Gunboats; 3 Canvas gunships, until batch F designs arrive); each AI faction has land, sea and air fleets. Every ship has a captain. March speed = half the slowest ship's top speed × terrain (roads × 1.5); map fuel from engine fuel use (08 §8), shared across the fleet's tanks; stranded fleets crawl at 10% (air can't move). Tapping a destination shows hours and fuel needed vs held, warning of stranding.
+  - Clock: Start/Stop, 1×/3×/10× (1 in-game hour per second at 1×); it stops on contact, arrival, fuel below 15% and stranding. Weather fronts drift and slow fleets (storms slow air fleets most) and set a battle's weather; the hour sets its light.
+  - Markets: fuel and ammo at every settlement with the 08 §6 prices, multipliers, stock and daily refill; refuel and rearm a docked fleet, or trade with its hold. Daily: settlement money, fort upkeep and wages.
+  - Contact: a pre-battle card (battlefield, both sides as spotted, retreat cost) with Fight (the 2.6 rotation, persistent damage, fuel and ammo), Auto-resolve (the same battle headless, at most 240 s) and Retreat (free if your slowest ship outpaces their fastest, else the rearmost ship is lost). Every fleet within 4 cells joins; only domains allowed on the battlefield deploy. Results: ship damage, losses, captain survival (50%), captain and Grand Admiral XP, a 5% bounty; emptied fleets are gone (the Grand Admiral escapes to the nearest settlement, losing 20% of the treasury); the loser falls back.
+  - Detach puts a ship and its captain in the settlement's garrison (up to its limit) or in a field outpost; a fleet of the same domain picks them up.
+  - Fog of war over units: enemy fleets show within 8 cells of your fleets (air × 1.3) and 6 of your settlements.
+  - Simplified for now: AI fleets patrol and, from day 2, intercept player fleets they can see and expect to beat; they don't burn map fuel or fight each other yet. Settings toggles for the clock's automatic stops, salvage, and export of the campaign save come later.
 
 ### Acceptance (Part 3)
 
-- [ ] A new campaign in any faction starts with the correct home territory and 3 fleets.
-- [ ] Fleets move by domain rules; fuel burns; an empty fleet is stranded; path previews warn before it happens.
-- [ ] Buying fuel and ammo uses the global treasury from any docked fleet.
-- [ ] Battles start from map contact. Only allowed domains deploy. Results persist.
-- [ ] Removing a captain garrisons them where they're left. Captains can't move alone.
+- [x] A new campaign in any faction starts with the correct home territory and 3 fleets. (v0.3.0)
+- [x] Fleets move by domain rules; fuel burns; an empty fleet is stranded; path previews warn before it happens. (v0.3.0)
+- [x] Buying fuel and ammo uses the global treasury from any docked fleet. (v0.3.0)
+- [x] Battles start from map contact. Only allowed domains deploy. Results persist. (v0.3.0)
+- [x] Removing a captain garrisons them where they're left. Captains can't move alone. (v0.3.0)
 
 ## Part 4: economy, logistics and sieges (v0.4)
 
@@ -217,6 +254,12 @@ This is v2 "Part 2" (the world map): the open world, the five factions, settleme
 | 2026-09-27 | Design v2.1 | 0.2.3 | Design v2.1 applied: the part library now uses the game's own ids, categories and stat names, and holds all 52 v1 parts, 15 structure cells and the 15 v1 templates, copied exactly from the game's data (bridge check: 0 differences). The golden sample 75 mm gun is now `c75`. v1 design docs archived in `design/v1/`. Roadmap now continues from v0.2.3 with steps 2.5 to 2.8. Docs, tools and data only; no game code changed. | Two art zips on `main` (`foundry-batch-a`, `foundry-bridge`) use the pre-v2.1 part names (`wpn_c37_std` etc.) and are not integrated yet; waiting on the producer: rename to the game's ids, or have the Foundry resend. | Step 2.5a: parts from the library |
 | 2026-09-27 | Art | 0.2.3 | Art: Foundry batch A and the bridge. The zips used the old v2 names, so they were renamed to the game's ids. Art added to 9 existing parts (c37, mg, optics, smoke, ammo, cargo, fuel_s, prop, aprop): only the SVG and art fields; stats unchanged (bridge check still 0 differences). 5 new tier 0 parts added with art: steam, wheel_w, swivel (stats from 05 §3.1), and bridge and cabin (new; stats from the Foundry sheet in the game's stat names, added to 05 §3.1 and roster D7–D8). Library now 57 parts. | The game doesn't draw from the library yet, so the art isn't visible in play until step 2.5. The new parts aren't used by any design yet. The embedded SVG art adds about 115 KB to game.js. | Step 2.5a: parts from the library |
 | 2026-09-27 | 2.5a | 0.2.4 | Art batch A1 integrated first (track, eng_m, crew2, turret, radio; new art for c37, mg, optics, fuel_s, ammo): the Light and Medium tanks are now fully covered in the previews. Step 2.5a: the game now builds its parts and templates from the part library (`PART_LIBRARY`) instead of the tables in `07_data.js`, which are removed. A smoke test compares every v1 part and template with a snapshot taken before the switch (`tests/v1-parts-snapshot.json`): no differences. The Drafting Office shows each part's tier as a small T0–T4 tag. The palette lists parts by tier, then mass. The v2 library entries not marked planned now appear in the palette: plank, iron-banded plank, composite and light alloy cells, the steam engine, spoked wheel, swivel gun, command bridge and crew cabin. Deleted the one-off import and bridge-check tools. | The new parts and cells still use the plain code drawing (their SVG art arrives with 2.5b) and haven't been balance-tested in battle. The palette's details line (size, mass, cost) is cut off at the right edge on phones (existing layout, unchanged). The autoplay time in the smoke test varies with machine speed (12–18 s); it isn't a balance measure. | Step 2.5b: SVG part art in the game |
+| 2026-09-27 | 2.5b | 0.2.5 | SVG part art in the game. Every part with a `.svg` in the library is painted in its side's colours (player League, enemy Directorate), split into body and barrel, and turned into images at 64 px per cell when the game starts. SVG art is used first, then the old PNG route, then the v1 code drawing. Barrels rotate about the pivot in the part's JSON, and shells and muzzle flashes start at its muzzle; a barrel written behind its body in the SVG is drawn behind the vehicle. Structure cells (plate, armour, frames, timber and the new plank cells) are auto-tiled from `materials.json`: painted in the side's colours, with joined-up edges, seams and rivets. The red wash on enemy vehicles is gone, since enemies now have their own paint. New smoke check: the art is ready for both sides, a 75 mm shell leaves exactly from the art's muzzle facing either way, and the barrel recoils; close-ups at every screen size. Headless performance unchanged (about 0.5 ms of game work per frame). Roadmap: step 2.5d added to bring Part 2d across; later steps' versions moved up by two. | 2.5c housekeeping (updating old `design/0N` comments to `design/v1/`) is only partly done: new comments point at the right docs, old ones are unchanged. Moving parts other than barrels (wheels, tracks, propellers, the steam engine's flywheel) are drawn still for now. The Drafting Office parts list shows the art only if it had loaded before the list was opened (it loads within a second of starting the game). | Step 2.5d: bring Part 2d across |
+| 2026-09-27 | 2.5d | 0.2.6 | Part 2d brought across onto the current game. Its code was re-applied file by file: radar and ECM, guided anti-tank missiles, SAM launchers, rocket pods, spaced skirts, heat, breakdowns, crew roles, a repair workshop, the test range picker (land, sea, sky), the design lineage view, and Tank hunter and SAM site enemies (random levels and level 17). Its 16 parts are now library files (`src/parts`, tiers from the 08 tech tree), its 2 enemy designs are in `src/vehicles`, and its v1 doc changes are in `design/v1/`. The bridge layer's id is now `bridge_l`, because `bridge` is the command bridge. The snapshot test now uses the Part 2d tables, and all Part 2d checks pass (missile hit rates: ATGM 78%, with radar 95%, against ECM 50%). Producer decision: art integration paused until Part 3 is done (CLAUDE.md). | The branch `claude/design-06-part-2-vehicles-f07cv0` can be deleted. Campaign-only parts (troop compartment, fuel cargo tank, winch, dozer blade, bridge layer, landing ramp, command radio's platoon) only have mass, cost and hit points until the campaign uses them. | Step 2.6: three on the field and the Battle Simulator |
+| 2026-09-27 | 2.6 | 0.2.7 | Three on the field and the Battle Simulator. Battles with a line-up keep 3 ships a side on the field; the rest wait in order and enter from their own rear edge 5 s after a ship is destroyed or pulls back. Pulled-back ships keep their damage and rejoin the end of the line, and enemy captains pull back badly damaged ships. A side loses when nothing is left on the field, on the way in or in reserve. Command wheel: long-press a ship card or your ship (right-click on desktop) for Drive, Move to, Fire at, Hold, Pull back and Smoke. Reserve drawer in the top bar: the line-up with hull condition, ▲ to reorder, Send in (then pick which ship pulls back). Battle Simulator on the title screen: line-up, battlefield (inland, coast, open sea), weather and time of day, and the enemy (a number of ships mixed for the battlefield, or your own picks). Its result card shows facts only. Gauntlet unchanged. New smoke checks: rotation rules on both sides, and the Simulator, wheel, Pull back and drawer on phone and desktop. | Enemy reserves enter at their edge even when the sea there is narrow. Aircraft pulling back simply leave after 3 s. Reserve ships don't repair yet (repair bay rule, 01 §10.3). The order chips and the wheel both exist; the chips may go once the campaign's fleet orders arrive. | Step 2.7: airships |
+| 2026-09-27 | 2.7 | 0.2.8 | Airships. Canvas gas bags and rigid envelopes are live, and the lift engine is a new part (Lift tab). A design with envelopes or lift engines and no wings or rotors is an airship: it flies with the helicopter controls (◀ ▶ move, ▲ ▼ height), lift comes from the gas cells plus lift engines, it sinks below a lift margin of 1 and comes down when its envelope is shot away. Any gun can hit an airship; its own guns swing down at the ground. Drafting Office shows gas lift, lift engines, weight, lift margin and air speed. Two templates (Canvas gunship, Rigid gunship) and an airship randomiser. Airships deploy on every battlefield, including the open sea. New smoke checks: height hold, climb, descend, move, falling when holed, and a gunship firing inland and at sea for a minute. | Envelopes and the lift engine use the plain code drawing (no art yet). Lift engines have no animation. Airships don't yet turn to face a target they pass. | Step 2.8: classes, tiers and paint |
+| 2026-09-27 | 2.8 | 0.2.9 | Classes, tiers and paint. The Drafting Office uses the classes from `classes.json` (Tank, Behemoth, Landship, Land dreadnought; Corvette to Battleship; Gunship to Sky fortress; Aircraft): a class button with grid, part limit and captain level, a parts counter, refusal past the part limit with the reason, and an "outside class limits" mark for designs that fit no class. Every template has a class. Paint card: faction schemes, custom colours from the paint-shop palette, and four camouflage patterns, saved with the design and shown everywhere it's drawn. "Your colours" in the Simulator; the enemy is the Directorate. SVG art is now prepared for any paint on demand. Wooden hull and bow sections added. New smoke checks: every template has a class; misfit reasons; Directorate paint on SVG parts and structure (no League blue left); paint and class screenshots. | Camouflage isn't shown on the Drafting Office grid itself (it is in the paint preview, thumbnails and battle). Batch F faction designs haven't been delivered. | Part 3: world map and fleets |
+| 2026-09-27 | Part 3 | 0.3.0 | The campaign: New campaign (choose one of five factions) and Continue campaign on the title screen. A seeded open world map with terrain, sea, roads, faction territory, settlements of every type, weather and fog of war. Your land fleet (under the Grand Admiral), sea fleet and air fleet move by domain rules with a path preview of time and fuel; fuel burns and empty fleets strand. Markets sell fuel and ammo for the global treasury; settlements earn money and officers draw wages daily. Enemy fleets patrol and hunt; contact brings a pre-battle card, then Fight (a real three-on-the-field battle), Auto-resolve or Retreat, and the damage, losses, XP and bounty carry back to the map. Ships and captains can be left in a garrison or a field outpost and picked up again. The campaign saves to its own slot and autosaves daily and after battles. New smoke checks cover starts in all five factions, movement rules, fuel and stranding, refuelling, contact and auto-resolve, persistence through save and load, garrisons and outposts, and which domains deploy; screenshots of the faction choice, map and contact card. | Map art is simple painted cells, not yet the From the Depths-style painted map. AI fleets don't burn fuel or fight each other, and there's no siege, salvage, crafting or convoy yet (Part 4). Settings has no toggles for the clock's automatic stops yet. Starting fleets use v1 templates until the Foundry's batch F designs arrive. | Part 4: economy, logistics and sieges (paused here at the producer's request: art integration next) |
 
 ### v1 progress log (before design v2)
 

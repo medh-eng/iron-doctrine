@@ -362,8 +362,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .workshop > *, .designer > * { pointer-events: auto; }
 .workshop { display: flex; flex-direction: column; gap: 6px; }
 .ws-top, .dz-top { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
-.ws-title { font-size: 20px; margin-right: auto; }
-.ws-fact { font-size: 13px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 4px 8px; white-space: nowrap; }
+.ws-title { font-size: 20px; margin-right: auto; white-space: nowrap; }
+.ws-top > .btn { flex-shrink: 0; }
+.ws-fact { font-size: 13px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 4px 8px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ws-fact.bad { color: #FF6B5A; }
 .ws-slots { display: flex; gap: 8px; }
 .ws-card {
@@ -383,6 +384,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ws-libcard { flex: 0 0 140px; display: flex; flex-direction: column; padding: 4px; gap: 4px; }
 .ws-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 2px 4px; min-height: 44px; text-align: left; }
 .ws-edit { align-self: stretch; }
+.ws-btns { display: flex; gap: 4px; }
+.ws-btns .btn { flex: 1; min-width: 0; padding-left: 4px; padding-right: 4px; }
+.lineage { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.lin-origin { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+.lin-row { border-left: 2px solid rgba(214, 238, 255, 0.35); padding: 2px 8px; }
+.lin-row.on { border-left-color: var(--amber); }
+.lin-row small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+.lin-log { font-size: 12px; color: rgba(230, 220, 195, 0.85); }
 .ws-bottom { display: flex; justify-content: space-between; gap: 8px; }
 .btn-disabled, .btn:disabled { opacity: 0.45; }
 .btn:disabled { pointer-events: none; }
@@ -450,3 +459,76 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .bp-medal-txt { display: flex; flex-direction: column; }
 .bp-medal-txt b { font-size: 13px; }
 .bp-medal-txt small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+
+/* Battle Simulator (step 2.6): the Workshop layout, scrolling as one page */
+.workshop.sim { pointer-events: auto; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; background: rgba(9, 22, 36, 0.55); }
+.sim > * { flex: none; }
+.sim-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; }
+.sim-wrap { flex-wrap: wrap; overflow: visible; }
+.sim-label { font-size: 13px; min-width: 76px; color: rgba(214, 238, 255, 0.85); }
+.sim-chip.on { background: rgba(255, 178, 62, 0.28); box-shadow: inset 0 0 0 1px var(--amber); }
+.sim-count { font-size: 14px; }
+.sim-line { overflow-x: auto; touch-action: pan-x; }
+.sim-slot { flex: 0 0 140px; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; position: relative; }
+.sim-slot b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sim-idle { opacity: 0.5; }
+.sim .ws-lib { flex: none; }
+.sim .ws-pick { flex: 0 0 140px; }
+.sim-fight { flex-shrink: 0; }
+
+/* Command wheel (design/02 §3.4) */
+.cmd-wheel { position: absolute; width: 0; height: 0; z-index: 5; }
+.cmd-wheel .btn { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; width: 104px; padding: 0 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+.cmd-wheel .cmd-close { left: 76px; top: -98px; width: 44px; background: rgba(9, 22, 36, 0.9); border-color: var(--amber); }
+.cmd-name { position: absolute; left: -110px; top: -98px; width: 170px; transform: translateY(-50%); font-size: 13px; font-weight: 700; color: var(--linen); text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-wheel .btn:disabled { opacity: 0.4; }
+
+/* Reserve drawer (design/02 §3.1) */
+.rsv-list { display: flex; flex-direction: column; gap: 6px; min-width: min(420px, 80vw); max-height: 52vh; overflow-y: auto; }
+.rsv-row { display: flex; align-items: center; gap: 8px; }
+.rsv-num { color: var(--amber); font-weight: 700; width: 16px; }
+.rsv-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rsv-name small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+
+/* Drafting Office class selector (step 2.8) */
+.dz-class { flex-shrink: 0; white-space: nowrap; }
+.dz-chip-warn { color: #FFB23E; border: 1px solid rgba(255, 178, 62, 0.6); }
+
+/* Paint card (step 2.8) */
+.card-paint { max-width: min(640px, 94vw); }
+.paint-body { display: flex; flex-direction: column; gap: 6px; max-height: 64vh; overflow-y: auto; }
+.paint-preview { display: flex; justify-content: center; background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 4px; }
+.paint-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.paint-label { font-size: 13px; min-width: 82px; color: rgba(214, 238, 255, 0.85); }
+.paint-chip.on { background: rgba(255, 178, 62, 0.28); box-shadow: inset 0 0 0 1px var(--amber); }
+.paint-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 6px; border: 1px solid rgba(0, 0, 0, 0.5); vertical-align: -2px; }
+.paint-swatches { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; padding: 3px; }
+.paint-swatch { min-height: 36px; border-radius: 6px; border: 2px solid rgba(0, 0, 0, 0.35); }
+.paint-swatch.on { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber); }
+
+/* Campaign: faction choice and the world map (Part 3) */
+.faction-list { max-height: 70vh; overflow-y: auto; }
+.faction-list > * { flex-shrink: 0; }
+.faction-btn { text-align: left; height: auto; min-height: 56px; padding: 6px 10px; white-space: normal; line-height: 1.25; display: block; width: 100%; }
+.faction-txt { display: flex; flex-direction: column; gap: 2px; }
+.faction-txt small { font-size: 12px; font-weight: 400; color: rgba(230, 220, 195, 0.8); white-space: normal; }
+.mapui { position: absolute; inset: 0; pointer-events: none; }
+.mapui > * { pointer-events: auto; }
+.map-top { position: absolute; left: calc(var(--safe-l) + 6px); right: calc(var(--safe-r) + 6px); top: calc(var(--safe-t) + 4px); display: flex; gap: 6px; align-items: center; }
+.map-bottom { position: absolute; left: calc(var(--safe-l) + 6px); right: calc(var(--safe-r) + 6px); bottom: calc(var(--safe-b) + 6px); display: flex; gap: 6px; align-items: center; pointer-events: none; }
+.map-bottom > * { pointer-events: auto; }
+.map-spacer { flex: 1; pointer-events: none; }
+.map-fact { font-size: 13px; background: rgba(10, 14, 20, 0.78); border-radius: 8px; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.map-cargo { flex-shrink: 1; }
+.map-icon { min-width: 44px; }
+.map-speed.on, .map-tab.on { background: rgba(255, 178, 62, 0.28); box-shadow: inset 0 0 0 1px var(--amber); }
+.map-panel { position: absolute; right: calc(var(--safe-r) + 6px); top: calc(var(--safe-t) + 54px); bottom: calc(var(--safe-b) + 58px); width: min(310px, 42vw); background: rgba(10, 14, 20, 0.86); border: 1px solid rgba(230, 220, 195, 0.25); border-radius: 10px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.map-title { flex-shrink: 0; font-size: 15px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-tabs { flex-shrink: 0; display: flex; gap: 4px; flex-wrap: wrap; }
+.map-body { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.map-ship { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid rgba(230, 220, 195, 0.12); padding-bottom: 4px; }
+.map-ship small { font-size: 12px; color: rgba(230, 220, 195, 0.8); }
+.map-ship .btn { align-self: flex-start; }
+.map-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.map-move { position: absolute; left: calc(var(--safe-l) + 6px); bottom: calc(var(--safe-b) + 58px); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - min(310px, 42vw) - var(--safe-l) - var(--safe-r) - 24px); }
+.map-warn { color: #FFB23E; }

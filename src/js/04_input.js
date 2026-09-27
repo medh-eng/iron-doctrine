@@ -216,6 +216,12 @@ const input = {
     canvas.addEventListener('pointercancel', (e) => this.up(e, true));
     canvas.addEventListener('lostpointercapture', (e) => { if (this.pointers.has(e.pointerId)) this.up(e, true); });
     canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    // Right-click: the screen's context action (the battle's command wheel).
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const scr = screens.cur;
+      if (scr && scr.world && scr.world.contextMenu) { const [x, y] = this.local(e); scr.world.contextMenu(x, y); }
+    });
     window.addEventListener('keydown', (e) => this.keyDown(e));
     window.addEventListener('keyup', (e) => this.keyUp(e));
   },

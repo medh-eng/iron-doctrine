@@ -162,6 +162,7 @@ After 4 s without touching the world, the camera recenters on its own (this can 
   - factual warnings
   - changes compared with the previous mark
 - **Palette and stats drawers** collapse so the grid can use the whole screen.
+- **Test drive** (v0.2.3) opens a range picker: Land (mud, hills, a trench), Sea (a beach and open water), Sky (open air over hills). Ships and submarines need the sea. The stats drawer adds crew roles, heat made and removed, breakdowns per 100 h, sight, radar, sonar, ECM and missile lock chances; part notes in the palette name effects that arrive with the campaign.
 
 ## 6. Other screens
 

@@ -1,0 +1,35 @@
+{
+  "id": "skirt",
+  "name": "Spaced skirt",
+  "family": "skirt",
+  "variant": "std",
+  "category": "structure",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 90,
+    "hp": 30,
+    "armor": 8,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "skirt": true
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "hull_iron"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+}

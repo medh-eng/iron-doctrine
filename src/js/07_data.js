@@ -47,6 +47,32 @@ const ROTOR_POWER = 400;          // kW each rotor needs for full lift
 const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
+// Airships (design/05 §3.2, step 2.7). An envelope cell's gasLift is in units of 100 kg.
+const GAS_LIFT_KG = 100;
+const AIRSHIP_CDA = 0.6;          // m² of drag area per metre of the airship's height
+const AIRSHIP_MIN_LIFT = 0.85;    // valving gas: an airship can shed lift down to this share of its weight
+const AIRSHIP_ALT = 30;           // metres over the ground an airship deploys at
+
+// Missiles, sensors and constraints (Part 2d). Battle numbers.
+// Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
+// A missile without a lock flies at a false point and misses.
+const MISSILE = {
+  atgm: { base: 0.6, turn: 1.6, life: 3.2, fuse: 0 },
+  sam: { base: 0.55, turn: 2.4, life: 5, fuse: 3, dmg: 90, radius: 4 },
+};
+const LOCK_FC = 0.2;              // added by a fire-control computer
+const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
+const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
+const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Heat (design/v1/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
+// in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
+// power and automatic fire rate; 20 s above 100% can start a fire.
+const ENGINE_COOLING = 30;
+const EXTRA_COOLING = 30;
+const OVERHEAT_FIRE_SECS = 20;
+// Reliability (design/v1/05 §7.5): checked every 30 s at 1/120 of the hourly breakdown rate.
+const BREAKDOWN_CHECK = 30;
+const REPAIR_RATE = 10;           // HP per second a repair workshop restores (to itself and allies within 12 m)
 
 // Parts come from the part library (src/parts, bundled by build.mjs as PART_LIBRARY;
 // design/04 §9). A game part is { id, name, cat, w, h, cost, tier, ...stats, ...behaviour };
@@ -58,6 +84,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   PARTS[id] = { id, name: m.name, cat: 'structure', w: 1, h: 1, mass: m.mass, hp: m.hp, armor: m.armor, power: 0, rel: 0.998, cost: m.cost, tier: m.tier };
   if (m.burns) PARTS[id].burns = m.burns;
   if (m.shape === 'slope') PARTS[id].sloped = true;
+  if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -66,12 +93,12 @@ for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -80,13 +107,13 @@ const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 const TEMPLATES = PART_LIBRARY.vehicles;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
 // ---------- the Gauntlet ladder (v1 Proving Ground; design/01 §15 optional Gauntlet)
 // Enemy value for scoring (points per kill).
-const ENEMY_VALUE = { fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
+const ENEMY_VALUE = { hunter: 250, samsite: 400, fighter: 350, bomber: 600, heli: 400, sub: 600, gunboat: 400, destroyer: 800, truck: 100, mgcar: 150, scout: 150, light: 300, medium: 450, assault: 500, bunker: 400, howitzer: 350, behemoth: 1500 };
 
 // Caps that keep high levels possible (design/01 §14.3).
 const LADDER_CAPS = { onScreen: 10, accuracy: 0.7, reaction: 0.35, speedMul: 1.5, waveGap: 6 };
@@ -158,7 +185,7 @@ function levelConfig(level) {
       enemies: [['sub', 1, 'attack', 0], ['gunboat', 1, 'attack', 0], ['sub', 1, 'attack', 1]],
       how: 'Sea battle: submarines hide under water. Sonar finds them within 100 m; Alt drops depth charges over them.' }),
     17: () => Object.assign(c, { name: 'Air raid', hills: 0.4, forest: 1, length: 560,
-      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
+      enemies: [['fighter', 2, 'air', 0], ['light', 1, 'attack', 0], ['samsite', 1, 'fixed', 0], ['bomber', 1, 'air', 1], ['heli', 1, 'air', 1]],
       how: 'Aircraft: only heavy machine guns, autocannons and AA guns reach them. Fit AA in the Workshop.' }),
     15: () => Object.assign(c, { name: 'Night', light: 'night', forest: 2,
       enemies: [['light', 2, 'attack', 0], ['medium', 2, 'attack', 1]], how: 'Night: crews see a short way. A night sight helps.' }),
@@ -181,6 +208,9 @@ function levelConfig(level) {
     if (rng.next() < 0.35) c.enemies.push(['bunker', 1 + rng.int(0, 1), 'fixed', 0]);
     if (rng.next() < 0.3) c.enemies.push(['howitzer', 1, 'fixed', 0]);
     if (rng.next() < 0.2) c.goal = { type: 'hold', text: 'Hold the ridge', time: 60 + Math.min(40, n) };
+    // Aircraft over some maps, with a SAM site; tank hunters with guided missiles (Part 2d).
+    if (rng.next() < 0.25) c.enemies.push([rng.pick(['fighter', 'fighter', 'heli', 'bomber']), 1 + rng.int(0, 1), 'air', rng.int(0, 2)], ['samsite', 1, 'fixed', 0]);
+    if (n >= 3 && rng.next() < 0.3) c.enemies.push(['hunter', 1 + rng.int(0, 1), 'attack', rng.int(0, 2)]);
     // A coast with gunboats on some maps (Part 2a).
     if (rng.next() < 0.25) {
       c.sea = { from: Math.round(c.length * 0.64), depth: 14 };
@@ -215,6 +245,31 @@ const MEDALS = [
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
+// ---------- Battle Simulator (design/01 §15): a battlefield from the player's choices.
+const SIM_FIELDS = { inland: 'Inland', coast: 'Coast', sea: 'Open sea' };
+const SIM_WEATHER = { clear: 'Clear', rain: 'Rain' };
+const SIM_LIGHT = { day: 'Day', dusk: 'Dusk', night: 'Night' };
+// Enemy picks when the player leaves the force to the Simulator, by battlefield.
+const SIM_MIXED = {
+  inland: ['medium', 'light', 'assault', 'gunship_t0', 'mgcar', 'scout', 'hunter'],
+  coast: ['medium', 'light', 'gunboat', 'gunship_t2', 'assault', 'destroyer', 'mgcar'],
+  sea: ['gunboat', 'destroyer', 'gunship_t0', 'sub', 'gunboat', 'destroyer'],
+};
+
+function simulatorConfig(o) {
+  const c = levelConfig(3);
+  Object.assign(c, {
+    name: `${SIM_FIELDS[o.field] || 'Inland'} · ${SIM_WEATHER[o.weather] || 'Clear'} · ${SIM_LIGHT[o.light] || 'Day'}`,
+    goal: { type: 'destroy', text: 'Destroy the enemy force' },
+    seed: o.seed, enemies: [], length: 560, hills: 0.45, forest: 1, mud: 1, gaps: 0,
+    weather: o.weather === 'rain' ? 'rain' : 'clear', light: SIM_LIGHT[o.light] ? o.light : 'day',
+    how: 'Three ships a side on the field; the rest wait in reserve. Long-press (or right-click) a ship or its card for orders.',
+  });
+  if (o.field === 'coast') c.sea = { from: Math.round(c.length * 0.62), depth: 14 };
+  if (o.field === 'sea') Object.assign(c, { fleet: true, length: 640, hills: 0.2, forest: 0, mud: 0, sea: { from: 40, depth: 24 } });
+  return c;
+}
+
 function testDriveConfig(range = 'land') {
   const c = {
     level: 0, name: 'Test range', goal: { type: 'test', text: 'Test drive' }, seed: 777, length: 520,
@@ -225,3 +280,78 @@ function testDriveConfig(range = 'land') {
   if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
   return c;
 }
+
+// ---------- Campaign (design/01 §2–§10, design/08, design/09). Tuning data for the world map.
+const WORLD_W = 192, WORLD_H = 144;   // map cells
+const WORLD_KM = 10;                  // km per map cell
+// Terrain types on the map. speed: × the fleet's march speed on land; road: × on roads.
+const MAP_TERRAIN = {
+  sea: { name: 'Sea', color: '#23507A' },
+  plains: { name: 'Plains', color: '#7E9A5A', speed: 1 },
+  forest: { name: 'Forest', color: '#4E6E3E', speed: 0.6 },
+  hills: { name: 'Hills', color: '#9A8F62', speed: 0.6 },
+  mountains: { name: 'Mountains', color: '#8C8A86', speed: 0 },   // impassable except at passes
+  pass: { name: 'Mountain pass', color: '#A09A8C', speed: 0.4 },
+  desert: { name: 'Desert', color: '#CDB27A', speed: 0.7 },
+  marsh: { name: 'Marsh', color: '#5F7A5E', speed: 0.4 },
+  tundra: { name: 'Tundra', color: '#A9B3A4', speed: 0.7 },
+  ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
+  ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
+};
+const ROAD_SPEED = 1.5;               // × on a road
+const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
+const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
+const STRANDED_SPEED = 0.1;           // an empty fleet crawls (land, sea); air can't move
+const DETECT_CELLS = { fleet: 8, settlement: 6 };
+const CONTACT_CELLS = 1.6;            // hostile fleets this close meet in battle
+const REINFORCE_CELLS = 4;            // fleets this close join a battle
+const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
+const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
+
+// Factions (09): where their territory sits (share of the map), capital type and name, looks.
+const FACTIONS = [
+  { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
+    identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },
+  { id: 'directorate', name: 'Directorate', at: [0.5, 0.5], capital: 'Forge Primus', capType: 'metropolis', coastal: false, color: '#C43C2C',
+    identity: 'Industrial state of foundry cities.', pros: ['Armour and tracks −15% cost', 'Metal production +20%'], cons: ['Fuel +15% price everywhere'] },
+  { id: 'skyreach', name: 'Skyreach Concord', at: [0.8, 0.22], capital: 'Aerie Crown', capType: 'citadel', coastal: false, color: '#E4DFD2',
+    identity: 'Mountain sky-clans sworn to a shared code.', pros: ['Lift +15%', 'Air fleets’ map fuel −15%'], cons: ['Metal production −20%'] },
+  { id: 'clans', name: 'Salvage Clans', at: [0.8, 0.8], capital: 'Rustmoor', capType: 'citadel', coastal: false, color: '#D9772E',
+    identity: 'Desert scavengers of the Precursor ruins.', pros: ['Salvage × 1.5'], cons: ['Few settlements produce wood'] },
+  { id: 'lumen', name: 'Lumen Collective', at: [0.5, 0.14], capital: 'Glasshold', capType: 'metropolis', coastal: false, color: '#4FD1C5',
+    identity: 'Relic technocrats of the frozen north.', pros: ['Research at their cities'], cons: ['Cold, slow land'] },
+];
+// Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
+const SETTLEMENT_TYPES = {
+  village: { name: 'Village', money: 15, stock: { fuel: 60, ammo: 30 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', money: 50, stock: { fuel: 200, ammo: 100 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', money: 150, stock: { fuel: 500, ammo: 250 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', money: -20, stock: { fuel: 250, ammo: 200 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', money: -60, stock: { fuel: 600, ammo: 500 }, price: 1.0, garrison: 12 },
+};
+const PRICES = { fuel: 6, ammo: 12 };        // money per unit (fuel 100 L, ammo 100 kg)
+const OWN_PRICE = 0.85, TRUCE_PRICE = 1.2, SELL_SHARE = 0.6, COASTAL_MONEY = 1.2;
+const STOCK_REFILL = 0.1;                    // share of normal market stock refilled per day
+const START_MONEY = 1500;
+const WAGES = { captain: 4, admiral: 15 };   // money per day × level
+// Ammo per shot in map units, by calibre (08 §8).
+const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0.06], [105, 0.14], [150, 0.35], [203, 0.8]];
+// XP (08 §10).
+const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
+const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
+const START_FLEETS = [
+  { domain: 'land', ships: ['medium', 'light', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
+];
+const AI_FLEETS = [
+  { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0'] },
+];
+// Name parts for officers and settlements (fictional).
+const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
+const NAME_LAST = ['Aldren', 'Brask', 'Corvel', 'Dunmore', 'Eskar', 'Falk', 'Garrow', 'Holt', 'Ivers', 'Jansk', 'Kestrel', 'Larkin', 'Morrow', 'Nettle', 'Orrin', 'Pell', 'Quarry', 'Rook', 'Sallow', 'Thorne', 'Vesk', 'Wick'];
+const PLACE_A = ['Ash', 'Brine', 'Cinder', 'Dun', 'Elder', 'Fell', 'Gull', 'Hollow', 'Iron', 'Kiln', 'Lark', 'Mire', 'North', 'Oak', 'Pike', 'Rust', 'Salt', 'Tarn', 'Vale', 'Wind'];
+const PLACE_B = ['by', 'ford', 'haven', 'mouth', 'reach', 'stead', 'wick', 'moor', 'cross', 'gate', 'hold', 'watch'];

@@ -241,6 +241,20 @@ These are starting values. Tune them freely for feel and balance, but never show
   - automatic weapon fire rate drops
   - after 20 s above 100%, fire can break out
 
+### 7.6b As built in 2d (tuning data in `07_data.js`, `10e_systems.js`)
+
+- **Heat:** engines shed 30 per second each by themselves (so a petrol S or diesel M needs no radiator), ships, submarines and aircraft 30 more (water or airflow); radiators 12 each. Heat made = engines (while driving; aircraft always) × terrain heat factor (sand 1.3, forest and rock 0.9, others 1) + other parts (ECM 10, generator 8). Over the limit: engine power and automatic fire rate × (1 − 0.5 × overheat share); 20 s at 50% or more can start an engine fire. The Drafting Office shows heat made and removed on plains.
+- **Reliability:** as §7.5. The Drafting Office shows breakdowns per 100 h = Σ(1 − rel) × 50.
+- **Crew roles:** a driver and one gunner per main gun first; the next crew members load guns of 75 mm and up (without one, reload × 1.6); anyone left over commands (+15% sight). A command radio takes one crew slot (radio operator).
+- **Missile lock:** base 60% (anti-tank) or 55% (SAM), +20% with fire control, +12% search radar or +20% naval radar, × 0.6 against ECM, at most 97%. Rolled once at launch.
+- **Anti-tank missile:** 45 m/s, 125 m, turns 1.6 rad/s; 200 mm shaped charge (no loss with range), 160 damage, bursting charge 60 within 1.4 m. 4 carried, 6 s.
+- **SAM:** 70 m/s, 300 m, turns 2.4 rad/s; bursts within 3 m of an aircraft: 90 damage within 4 m. 2 carried, 8 s. Fires by itself at aircraft in range.
+- **Rocket pod:** salvo of 8 at 0.1 s, 110 m/s, 2.2° spread, 70 mm shaped charge, 50 damage. 2 salvos, 12 s.
+- **Spaced skirt:** a shaped charge that passes through it keeps half its remaining penetration.
+- **Radar in battle:** search radar air 400 m, surface 150 m; naval radar air 750 m, surface 500 m; not into forest, not at submerged submarines. ECM on the target: × 0.7.
+- **Repair workshop:** 10 HP per second, shared across damaged parts of itself and allies within 12 m, while it is stopped.
+- **Campaign-only parts** (troop compartment, fuel cargo tank, recovery winch, dozer blade, bridge layer, landing ramp, command radio's platoon): mass, cost and hit points now; their effects arrive with the campaign. The fuel cargo tank already has its 50% fire chance.
+
 ### 7.7 Cost and build time
 
 - **Cost** = sum of all part costs.

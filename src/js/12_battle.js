@@ -42,10 +42,18 @@ function createBattle(level, opts = {}) {
   // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
   let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
   B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
-  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d)) && domainOf(d) !== 'airship') : [];   // airships fly over the sea
   squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
+  // Three on the field (design/01 §10.3): the rest of the line-up waits in reserve.
+  if (opts.reserves) {
+    const force = (opts.enemyForce || []).map((t) => (typeof t === 'string' ? designFromTemplate(t) : t)).filter((d) => canDeploy(B, d));
+    setupReserves(B, squad.slice(FIELD_MAX), force.slice(FIELD_MAX));
+    squad = squad.slice(0, FIELD_MAX);
+    B.enemyField = force.slice(0, FIELD_MAX);
+    B.goalTotal = force.length;
+  }
   let landX = 46, seaX = T.seaX0 + 16;
   let airX = 60;
   squad.forEach((d, i) => {
@@ -55,7 +63,7 @@ function createBattle(level, opts = {}) {
     const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
     if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
     const V = makeVehicle(d, 0, x, 1, T);
-    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : dom === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -76,6 +84,11 @@ function createBattle(level, opts = {}) {
     let best = T.length * 0.45, bh = -Infinity;
     for (let x = T.length * 0.38; x < T.length * 0.62; x += 2) if (T.height(x) > bh) { bh = T.height(x); best = x; }
     B.zone = { x0: best - 12, x1: best + 12 };
+  }
+
+  if (B.rotation) {
+    B.enemySlots = B.enemyField.map((d, k) => spawnEnemy(B, d, 'attack', T.length - 50 - k * 18));
+    delete B.enemyField;
   }
 
   // Enemies: wave 0 now, later waves from the right edge every cfg.wave seconds.
@@ -112,8 +125,9 @@ function createBattle(level, opts = {}) {
   return B;
 }
 
+// t: a template id, or a design (Battle Simulator forces).
 function spawnEnemy(B, t, mode, x) {
-  const d = designFromTemplate(t);
+  const d = typeof t === 'string' ? designFromTemplate(t) : t;
   // Ships spawn at sea; land vehicles on land (Part 2a).
   const T = B.T;
   if (T.seaX0 !== undefined) {
@@ -121,9 +135,9 @@ function spawnEnemy(B, t, mode, x) {
     else x = Math.min(x, T.seaX0 - 12);
   }
   const V = makeVehicle(d, 1, x, -1, B.T);
-  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : V.domain === 'airship' ? AIRSHIP_ALT : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
-  V.template = t;
+  V.template = typeof t === 'string' ? t : d.id;
   V.speedMul = B.cfg.speedMul;
   if (mode === 'convoy') { V.ai.a = x - 70; V.ai.b = x + 10; }
   if (t === B.cfg.boss) { V.boss = true; V.name = B.cfg.bossName || d.name; }
@@ -189,7 +203,8 @@ function updateBattle(B, dt) {
     if (V !== B.me || B.demo) domainGuard(B, V);
     mobilityNotes(B, V, dt);
   }
-  for (const V of B.units) if (V.flier) flightControl(V, B.T, dt);
+  stepReserves(B, dt);
+  for (const V of B.units) { if (V.flier) flightControl(V, B.T, dt); stepSystems(B, V, dt); }
   if (B.T.seaX0 !== undefined) for (const V of B.units) subControl(V, B.T, dt);
   for (const V of B.units) stepVehicle(V, B.T, dt);
   if (B.T.seaX0 !== undefined) for (const V of B.units) { stepFlooding(B, V, dt); waterChecks(B, V); }
@@ -228,6 +243,8 @@ function updateBattle(B, dt) {
   }
   stepShells(B, dt);
   stepUnderwater(B, dt);
+  stepSalvos(B, dt);
+  stepMissiles(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -266,7 +283,10 @@ function updateBattle(B, dt) {
   if (B.escort && !B.escort.destroyed) escortThink(B, B.escort);
 
   // Objectives.
-  if (!B.result && !B.test) {
+  if (!B.result && !B.test && B.rotation) {
+    if (sideBeaten(B, 1)) { B.result = 'win'; B.resultT = 0; }
+    else if (sideBeaten(B, 0)) { B.result = 'lost'; B.resultT = 0; }
+  } else if (!B.result && !B.test) {
     const g = B.cfg.goal;
     if (g.type === 'hold' && B.zone) {
       const inside = B.squad.some((V) => !V.destroyed && V.body.x >= B.zone.x0 && V.body.x <= B.zone.x1);
@@ -305,7 +325,7 @@ function playerFire(B, tx, ty, manual) {
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
   w.angle = _aim.angle;
   if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
-  w.reload = w.def.reload * (V.crew < 3 ? 1.6 : 1);
+  w.reload = w.def.reload * (V.loaderShort && w.def.cal >= 75 ? 1.6 : 1);
   B.stats.shots++;
   B.heat = Math.min(3, B.heat + 0.2);
   return '';
@@ -336,8 +356,8 @@ function trainPlayerGun(B, dt, aimX, aimY) {
 }
 
 // Smoke launcher: a screen in front of the vehicle.
-function playerSmoke(B) {
-  const V = B.me;
+// Smoke from one of your ships (the one you drive, or one given the order on the command wheel).
+function playerSmoke(B, V = B.me) {
   if (!V.smoke) return 'No smoke launcher';
   V.smoke--;
   const x = V.body.x + V.dir * 8;
@@ -400,6 +420,240 @@ function physicsCheck() {
 }
 
 // Howitzer aim: a battery can reach targets from close range out to its full range.
+// Step 2.5b: SVG art is ready for both sides, and a shell leaves exactly from the art's muzzle
+// (anchors.muzzle in the part's JSON), facing right and mirrored; firing kicks the barrel back.
+function svgArtCheck() {
+  const out = { missing: [], failed: art.failed.slice(), muzzle: [] };
+  for (const id of Object.keys(PART_LIBRARY.svg)) {
+    const hasBarrel = PART_LIBRARY.svg[id].includes('data-role="barrel"');
+    for (let s = 0; s < 2; s++) {
+      const e = (art.painted[sideScheme(s).key] || {})[id];
+      if (!e || !e.body || (hasBarrel && !e.barrel)) out.missing.push(`${id}/${s}`);
+    }
+  }
+  const B = createBattle(1);
+  for (const dir of [1, -1]) {
+    const V = makeVehicle(designFromTemplate('medium'), dir > 0 ? 0 : 1, 60, dir, B.T);
+    const w = V.weapons.find((x) => x.def.id === 'c75');
+    const p = V.parts[w.part], mz = PART_LIBRARY.parts.c75.anchors.muzzle;
+    const want = { x: 0, y: 0 };
+    gridToLocal(V, (p.x + mz[0]) * CELL, (V.design.h - p.y - mz[1]) * CELL, want);
+    localToWorld(V, want.x, want.y, want);
+    fireWeapon(B, V, w, angleFromElevation(V, 0, dir), 0);
+    let shell = null;
+    shells.forEachAlive((sh) => { if (sh.shooter === V) { shell = { x: sh.x, y: sh.y }; sh.alive = false; } });
+    out.muzzle.push({ dir, off: shell ? Math.hypot(shell.x - want.x, shell.y - want.y) : 99, kick: w.kick || 0 });
+  }
+  return out;
+}
+
+// Step 2.6: three on the field. Both sides start with 3; a destroyed ship is replaced from
+// reserve after ENTRY_DELAY in line-up order; a pulled-back ship drives off its rear edge,
+// joins the end of the line and is replaced; an enemy pulls back a badly damaged ship;
+// the battle is won when the enemy has nothing left.
+function reserveCheck() {
+  const out = {};
+  const cfg = simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 77 });
+  const squad = ['medium', 'light', 'scout', 'assault', 'truck'].map(designFromTemplate);
+  const B = createBattle(0, { cfg, squad, reserves: true, enemyForce: ['light', 'light', 'mgcar', 'medium', 'scout'] });
+  const run = (secs) => { for (let t = 0; t < secs && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP); };
+  out.start = { field: B.squad.length, reserve: B.reserve[0].map((e) => e.design.id), enemies: B.enemySlots.length, enemyReserve: B.reserve[1].length };
+  knockOut(B, B.squad[0], null, 'test', true);
+  run(ENTRY_DELAY + 0.5);
+  out.replaced = { slot0: B.squad[0].design.id, reserve: B.reserve[0].map((e) => e.design.id), me: B.me === B.squad[0] || !B.me.destroyed };
+  const V = B.squad[1];
+  pullBack(B, V);
+  for (let t = 0; t < 90 && !V.withdrawn; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.pulled = { withdrawn: !!V.withdrawn, last: B.reserve[0].length ? B.reserve[0][B.reserve[0].length - 1].design.id : null };
+  run(ENTRY_DELAY + 0.5);
+  out.pulledReplaced = { slot1: B.squad[1].design.id, fromReserve: B.squad[1] !== V };
+  const E = B.enemySlots[0];
+  for (const p of E.parts) if (p.alive) p.hp = Math.max(1, p.hp * 0.2);
+  const waiting = B.reserve[1].length;
+  run(1);
+  out.enemyPulls = { waiting, pulling: !!E.pulling || !!E.withdrawn };
+  // Destroy the enemy as it arrives, until none are left.
+  for (let k = 0; k < 40 && !B.result; k++) {
+    for (const U of B.enemySlots) if (U && !U.destroyed) knockOut(B, U, null, 'test', true);
+    run(ENTRY_DELAY + 0.5);
+  }
+  out.result = B.result;
+  out.kills = B.goalDone;
+  out.total = B.goalTotal;
+  return out;
+}
+
+// Step 2.7: airships hold height, climb, descend and move; one with its envelopes shot away
+// falls; a gunship fights alongside tanks inland and alongside ships at sea.
+function airshipCheck() {
+  const T = makeTerrain({ seed: 3, length: 900, hills: 0.1, rough: 0.1, mud: 0, forest: 0, gaps: 0 });
+  const fly = (id, secs, setup, each) => {
+    const V = makeVehicle(designFromTemplate(id), 0, 200, 1, T);
+    launchFlier(V, T, AIRSHIP_ALT);
+    if (setup) setup(V);
+    let minAlt = Infinity;
+    const x0 = V.body.x;
+    for (let t = 0; t < secs; t += SIM_STEP) {
+      if (each) each(V, t);
+      flightControl(V, T, SIM_STEP);
+      stepVehicle(V, T, SIM_STEP);
+      minAlt = Math.min(minAlt, V.body.y - T.height(V.body.x));
+    }
+    return { domain: V.domain, alt: Math.round(V.body.y - T.height(V.body.x)), minAlt: Math.round(minAlt), dx: Math.round(V.body.x - x0), tilt: Math.round((V.body.a * 180) / Math.PI), vy: +V.body.vy.toFixed(1) };
+  };
+  const ground = (V) => T.height(V.body.x);
+  const out = {
+    hold: fly('gunship_t0', 15),
+    climb: fly('gunship_t2', 20, (V) => { V.altCmd = ground(V) + AIRSHIP_ALT + 20; }),
+    descend: fly('gunship_t0', 20, (V) => { V.altCmd = ground(V) + 12; }),
+    move: fly('gunship_t0', 15, null, (V) => { V.moveCmd = 1; }),
+    // Shoot away most of the envelope: it sinks and comes down.
+    holed: fly('gunship_t0', 30, (V) => {
+      V.parts.forEach((p, i) => { if (p.def.gasLift && i % 3) { p.alive = false; V.alive[i] = 0; } });
+      rebuildVehicle(V);
+    }),
+  };
+  // Fights alongside tanks inland and alongside ships at sea: it engages and hits the enemy.
+  const fight = (cfg, squad) => {
+    const B = createBattle(0, { cfg, squad: squad.map(designFromTemplate), reserves: true, enemyForce: cfg.fleet ? ['gunboat'] : ['light'] });
+    B.revealAll = true;
+    const G = B.squad.find((V) => V.domain === 'airship');
+    const seen = new Set();
+    for (let t = 0; t < 60 && !B.result; t += SIM_STEP) {
+      updateBattle(B, SIM_STEP);
+      shells.forEachAlive((sh) => { if (sh.shooter === G) seen.add(sh); });
+    }
+    return { deployed: !!G, alt: G ? Math.round(G.body.y - B.T.height(G.body.x)) : 0, out: G ? G.koLabel || '' : '', shots: seen.size, result: B.result, enemyHp: Math.round(vehicleHealth(B.enemySlots[0]) * 100) };
+  };
+  out.inland = fight(simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 21 }), ['light', 'gunship_t2']);
+  out.sea = fight(simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 22 }), ['gunboat', 'gunship_t2']);
+  return out;
+}
+
+// Step 2.8: a design painted in a scheme shows it on SVG parts and on paintable structure cells.
+// Counts pixels close to the scheme's primary colour inside a part's footprint.
+function paintCheck() {
+  const count = (scheme, partId, measure = scheme) => {
+    const d = designFromTemplate('medium');
+    d.paint = { scheme, camo: 'none' };
+    const V = { design: d, parts: d.cells.map((cl) => ({ def: PARTS[cl.p], x: cl.x, y: cl.y, hp: 1, alive: true, scorch: 0 })), side: 0, id: 3 };
+    const ppm = 32, cs = CELL * ppm;
+    const c = paintParts(V, V.parts.map((_, i) => i), ppm, 0);
+    const P = V.parts.find((p) => p.def.id === partId);
+    const px = c.getContext('2d').getImageData(Math.round(P.x * cs), Math.round(P.y * cs), Math.round(P.def.w * cs), Math.round(P.def.h * cs)).data;
+    const want = PART_LIBRARY.paints.schemes[measure].p1;
+    const [R, G, B] = [1, 3, 5].map((k) => parseInt(want.slice(k, k + 2), 16));
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 200 && Math.abs(px[i] - R) + Math.abs(px[i + 1] - G) + Math.abs(px[i + 2] - B) < 90) n++;
+    return Math.round((n * 100) / (px.length / 4));
+  };
+  return {
+    svg: { directorate: count('directorate', 'c75'), league: count('league', 'c75') },
+    structure: { directorate: count('directorate', 'arm20'), league: count('league', 'arm20') },
+    leagueInDirectorate: { svg: count('directorate', 'c75', 'league'), structure: count('directorate', 'arm20', 'league') },
+    ready: !!svgArt('c75', resolvePaint({ paint: { scheme: 'directorate' } }, 0)),
+  };
+}
+
+// Step 2.8: every template loads with a class; class limits give factual reasons.
+function classCheck() {
+  const out = { none: [], classes: {} };
+  for (const id of Object.keys(TEMPLATES)) {
+    if (TEMPLATES[id].fixed) continue;
+    const c = classFor(designFromTemplate(id));
+    if (!c) out.none.push(id); else out.classes[id] = c.id;
+  }
+  const big = designFromTemplate('destroyer');
+  out.misfit = classMisfit(big, classById('corvette'));
+  return out;
+}
+
+// Part 3: a campaign in every faction starts right; fleets move by domain rules, burn fuel and
+// strand; refuelling uses the treasury; contact starts a battle whose results persist.
+function campaignCheck() {
+  const out = { starts: {} };
+  for (const F of FACTIONS) {
+    newCampaign(F.id, 4242);
+    const home = world.settlements.filter((s) => s.faction === F.id);
+    const cap = home.find((s) => s.capital);
+    out.starts[F.id] = {
+      home: home.map((s) => s.type).sort().join(','), capCoastal: cap.coastal, capType: cap.type,
+      fleets: playerFleets().map((fl) => `${fl.domain}:${fl.shipIds.length}`).join(','),
+      ga: byId('officers', campaign.ga).fleetId === playerFleets().find((fl) => fl.domain === 'land').id,
+    };
+  }
+  newCampaign('league', 5151);
+  const land = playerFleets().find((fl) => fl.domain === 'land'), sea = playerFleets().find((fl) => fl.domain === 'sea'), air = playerFleets().find((fl) => fl.domain === 'air');
+  // Domain rules: a land fleet can't go to sea; a sea fleet can't go ashore.
+  let seaCell = null, farLand = null;
+  for (let r = 2; r < 30 && !seaCell; r++) for (let a = 0; a < 16 && !seaCell; a++) { const x = land.x + Math.cos(a) * r, y = land.y + Math.sin(a) * r; if (isSeaCell(world, x, y)) seaCell = [x, y]; }
+  const inland = world.settlements.filter((s) => !s.coastal && s.faction !== 'league').sort((a, b) => Math.hypot(a.x - land.x, a.y - land.y) - Math.hypot(b.x - land.x, b.y - land.y));
+  farLand = [inland[0].x + 0.5, inland[0].y + 0.5];
+  out.rules = { landToSea: !!planMove(land, seaCell[0], seaCell[1]).why, seaToLand: !!planMove(sea, farLand[0], farLand[1]).why, airAnywhere: !planMove(air, seaCell[0], seaCell[1]).why };
+  // Moving burns fuel; the preview warns before stranding; an empty land fleet crawls, air can't move.
+  const plan = planMove(land, farLand[0], farLand[1]);
+  out.plan = { hours: Math.round(plan.hours), fuel: +plan.fuel.toFixed(2), held: +plan.held.toFixed(2), strands: plan.strands };
+  orderMove(land, plan);
+  campaign.running = true;
+  const f0 = fleetFuel(land).fuel;
+  let ev = [];
+  for (let k = 0; k < 8 && campaign.running; k++) ev = ev.concat(campaignTick(1));
+  out.burn = { before: +f0.toFixed(2), after: +fleetFuel(land).fuel.toFixed(2), moved: land.path.length < plan.path.length };
+  for (const s of fleetShips(air)) s.fuel = 0;
+  const far = planMove(air, air.x + 20, air.y);
+  out.strandWarn = far.strands;
+  orderMove(air, far);
+  const ax = air.x;
+  campaign.running = true;
+  campaignTick(2);
+  out.airStranded = { stranded: air.stranded, moved: Math.abs(air.x - ax) > 0.01 };
+  // Refuel at the home city from the treasury.
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  air.x = home.x + 0.5; air.y = home.y + 0.5; air.path = []; air.docked = home.id;
+  const t0 = campaign.treasury;
+  const q = refuelQuote(air, home);
+  const why = refuel(air, home);
+  out.refuel = { why, spent: Math.round(t0 - campaign.treasury), quote: Math.round(q.cost), full: fleetFuel(air).fuel > 0 };
+  // Contact: an enemy fleet at war next to the land fleet → auto-resolve; results persist.
+  const enemy = campaign.fleets.find((fl) => fl.faction !== 'league' && relation(fl.faction, 'league') === 'war' && fl.domain === 'land');
+  enemy.x = land.x + 1; enemy.y = land.y; enemy.path = []; enemy.cooldown = 0; land.cooldown = 0; land.path = [];
+  campaign.running = true;
+  const evs = campaignTick(0.5);
+  out.contact = !!evs.find((e) => e.contact);
+  const shipsBefore = campaign.ships.length;
+  const t1 = performance.now();
+  const res = autoResolve(land, enemy);
+  out.auto = { ms: Math.round(performance.now() - t1), win: res.win, lostMine: res.lostMine, lostTheirs: res.lostTheirs, shipsAfter: campaign.ships.length, shipsBefore };
+  const hurt = campaign.ships.filter((s) => s.hp && s.hp.some((v) => v < 1)).length;
+  out.persist = { damaged: hurt, saved: campaignStore.save() };
+  // Detaching: at an own settlement the ship and captain join its garrison; in the open they
+  // become a field outpost; either can be picked up again. Captains never travel alone.
+  const sea2 = playerFleets().find((fl) => fl.domain === 'sea');
+  const homeS = world.settlements.find((q) => q.faction === 'league' && q.capital);
+  sea2.docked = homeS.id;
+  const g1 = fleetShips(sea2)[0];
+  const w1 = detachShip(sea2, g1);
+  const inGarrison = g1.garrison === homeS.id && byId('officers', g1.captainId).garrisonedAt === homeS.id && !g1.fleetId;
+  sea2.docked = null; sea2.x += 0; 
+  const g2 = fleetShips(sea2)[0];
+  detachShip(sea2, g2);
+  const outpost = !!g2.outpost && campaign.outposts.some((o) => o.id === g2.outpost);
+  const back = pickUp(sea2, g2) === '' && sea2.shipIds.includes(g2.id) && !campaign.outposts.length;
+  const alone = campaign.officers.filter((o) => o.alive && o.rank === 'captain' && !o.shipId && !o.fleetId && !o.garrisonedAt).length;
+  out.detach = { why: w1, inGarrison, outpost, back, alone };
+  // Only allowed domains deploy: inland keeps ships out, open sea keeps tanks out.
+  const inl = world.settlements.find((q) => !q.coastal && !isSeaCell(world, q.x, q.y) && battlePlace(q.x, q.y).field === 'inland');
+  const lf = playerFleets().find((fl) => fl.domain === 'land');
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.shipIds.length && relation(fl.faction, 'league') === 'war');
+  lf.x = inl.x + 0.5; lf.y = inl.y + 0.5; sea2.x = lf.x + 1; sea2.y = lf.y; en.x = lf.x + 0.5; en.y = lf.y;
+  const sd = battleSides(lf, en);
+  out.deploy = { field: sd.place.field, domains: [...new Set(sd.mine.map((sh) => mapDomain(designReport(shipDesign(sh)).domain)))].join(',') };
+  const snap = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh']));
+  campaignStore.load();
+  out.reload = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh'])) === snap;
+  return out;
+}
+
 function howitzerCheck() {
   const B = createBattle(7);
   const H = B.units.find((u) => u.template === 'howitzer');
@@ -543,8 +797,89 @@ function airCheck() {
   return out;
 }
 
+// Sensors (design/06 Part 2 acceptance): radar, ECM and fire control measurably change missile
+// hit rates. 40 missiles per case against a parked tank (anti-tank) or a passing fighter (SAM).
+function missileCheck(n = 40) {
+  const add = (d, cells) => { d.cells.push(...cells.map(([p, x, y]) => ({ p, x, y }))); return d; };
+  const rate = (kind, extra, ecm) => {
+    const B = createBattle(4);
+    B.units = []; B.squad = [];
+    const S = makeVehicle(add(designFromTemplate(kind === 'sam' ? 'scout' : 'light'), kind === 'sam' ? [['sam', 6, 0], ...extra] : [['atgm', 8, 1], ['fc', 1, 2], ...extra]), 0, 100, 1, B.T);
+    B.units.push(S); B.squad.push(S); B.me = S;
+    const w = S.weapons.find((x) => x.def.secondary === kind);
+    let hits = 0;
+    for (let i = 0; i < n; i++) {
+      const T = kind === 'sam' ? makeVehicle(add(designFromTemplate('fighter'), ecm ? [['ecm', 4, 2]] : []), 1, 30, 1, B.T)
+        : makeVehicle(add(designFromTemplate('light'), ecm ? [['ecm', 8, 1]] : []), 1, 190, -1, B.T);
+      if (T.flier) launchFlier(T, B.T, 45);
+      B.units = [S, T];
+      w.reload = 0; w.rounds = 99;
+      const before = B.stats.missileHits || 0;
+      launchMissile(B, S, w, T);
+      for (let t = 0; t < 6; t += SIM_STEP) {
+        if (T.flier) { flightControl(T, B.T, SIM_STEP); stepVehicle(T, B.T, SIM_STEP); }
+        stepMissiles(B, SIM_STEP);
+        let live = 0;
+        missiles.forEachAlive(() => live++);
+        if (!live) break;
+      }
+      missiles.forEachAlive((m) => { m.alive = false; });
+      shells.forEachAlive((s) => { s.alive = false; });
+      if ((B.stats.missileHits || 0) > before) hits++;
+    }
+    return hits / n;
+  };
+  return {
+    atgmFc: rate('atgm', [], false),
+    atgmFcRadar: rate('atgm', [['radar_s', 6, 0]], false),
+    atgmVsEcm: rate('atgm', [], true),
+    samSearch: rate('sam', [['radar_s', 8, 1]], false),
+    samNaval: rate('sam', [['radar_n', 8, 0]], false),
+    samVsEcm: rate('sam', [['radar_s', 8, 1]], true),
+    noRadarValid: validateDesign(add(designFromTemplate('scout'), [['sam', 6, 0]])).ok,
+  };
+}
+
+// Constraints (Part 2d): an engine making more heat than is removed loses power until radiators
+// are fitted; a repair workshop heals a damaged neighbour; breakdowns disable a part.
+function systemsCheck() {
+  const B = createBattle(1);
+  const hot = makeVehicle(designFromTemplate('behemoth'), 0, 60, 1, B.T);
+  hot.throttle = 1;
+  stepSystems(B, hot, SIM_STEP);
+  const cool = designFromTemplate('behemoth');
+  cool.h += 1;
+  for (const c of cool.cells) c.y += 1;
+  cool.cells.push({ p: 'radiator', x: 1, y: 3 }, { p: 'radiator', x: 2, y: 3 });
+  const cv = makeVehicle(cool, 0, 60, 1, B.T);
+  cv.throttle = 1;
+  stepSystems(B, cv, SIM_STEP);
+  const rep = designFromTemplate('truck');
+  rep.cells = rep.cells.filter((c) => !(c.p === 'cargo' && c.x === 1)).concat([{ p: 'repair', x: 1, y: 0 }]);
+  const R = makeVehicle(rep, 0, 80, 1, B.T);
+  const ally = B.squad[0];
+  ally.body.x = 86;
+  B.units.push(R);
+  const part = ally.parts.find((p) => p.alive && p.def.hp >= 80);
+  part.hp -= 50;
+  const hp0 = part.hp;
+  for (let t = 0; t < 3; t += SIM_STEP) stepSystems(B, R, SIM_STEP);
+  const real = B.rng.next;
+  B.rng.next = () => 0;
+  const alive0 = hot.parts.filter((p) => p.alive).length;
+  hot.breakT = BREAKDOWN_CHECK;
+  stepSystems(B, hot, SIM_STEP);
+  B.rng.next = real;
+  return {
+    hotPower: hot.heatMul, coolPower: cv.heatMul,
+    repaired: part.hp - hp0,
+    brokeDown: hot.parts.filter((p) => p.alive).length < alive0,
+  };
+}
+
 // Part effects: engine, gun, turret ring, ammo detonation.
 function damageCheck() {
+  debris.forEachAlive((d) => { d.alive = false; });   // earlier checks may have filled the pool
   const B = createBattle(4);
   const find = (V, id) => V.parts.findIndex((p) => p.alive && p.def.id === id);
   const V = B.units.find((u) => u.side === 1);

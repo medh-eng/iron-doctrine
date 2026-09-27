@@ -33,17 +33,23 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge_l', 'ramp', 'wbow']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
-function drawPart(g, p, x, y, cs, side, seed) {
+function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
   const d = p.def;
   const w = d.w * cs, h = d.h * cs;
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
+  if (isTiled(d.id)) {
+    // Structure cell on its own (palette icons, a cell being moved): auto-tiled as a shape of one.
+    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], paint, x, y, cs);
+    drawPartDamage(g, p, x, y, cs, seed);
+    return;
+  }
   g.save();
-  if (drawPartArt(g, p, x, y, cs)) {
-    // Imported art: only the procedural damage overlay is added below.
+  if (drawPartArt(g, p, x, y, cs, paint)) {
+    // Part art: only the procedural damage overlay is added below.
   } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
@@ -117,6 +123,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.stroke();
       g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
       g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w * 0.65, y + h * 0.5); g.stroke();
+      break;
+    case 'wbow':
+      g.fillStyle = '#8E6035';
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w - (w * 0.7 * k) / 4, y + (h * k) / 4); g.stroke(); }
+      break;
+    case 'whull':
+      bevel(g, x, y, w, h, '#8E6035', 1);
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w, y + (h * k) / 4); g.stroke(); }
       break;
     case 'keel':
       bevel(g, x, y, w, h, '#5c3129', 1.4);
@@ -248,6 +265,90 @@ function drawPart(g, p, x, y, cs, side, seed) {
       roundRect(g, x + w * 0.1, y + h * (d.id === 'aa40' ? 0.45 : 0.3), w * 0.6, h * (d.id === 'aa40' ? 0.5 : 0.6), cs * 0.1); g.fill();
       if (d.id === 'aa40') { g.fillStyle = '#2b2d31'; g.fillRect(x, y + h * 0.9, w, h * 0.1); g.fillStyle = PAL.amber; g.fillRect(x + w * 0.15, y + h * 0.55, w * 0.12, h * 0.1); }
       break;
+    // Systems, missiles and logistics (Part 2d).
+    case 'skirt':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.15 + k * 0.3), y + h * 0.2, w * 0.08, h * 0.6);
+      break;
+    case 'rpod':
+      g.fillStyle = shade(steel, 0.7); roundRect(g, x, y + h * 0.15, w, h * 0.7, h * 0.2); g.fill();
+      g.fillStyle = '#15181d';
+      for (let r0 = 0; r0 < 2; r0++) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + w - cs * 0.12 - r0 * cs * 0.05, y + h * (0.28 + k * 0.15), cs * 0.05, 0, Math.PI * 2); g.fill(); }
+      break;
+    case 'atgm':
+      g.fillStyle = '#4a5a3a'; g.fillRect(x + w * 0.1, y + h * 0.35, w * 0.8, h * 0.35);
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.3, y + h * 0.7, w * 0.15, h * 0.3);
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.85, y + h * 0.4, w * 0.08, h * 0.25);
+      break;
+    case 'sam':
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.35, y + h * 0.55, w * 0.3, h * 0.45);
+      g.save(); g.translate(x + w * 0.5, y + h * 0.6); g.rotate(-0.6);
+      g.fillStyle = '#4a5a3a';
+      for (const o of [-0.22, 0.22]) g.fillRect(-w * 0.45, o * h - h * 0.09, w * 0.9, h * 0.18);
+      g.restore();
+      break;
+    case 'radar_s': case 'radar_n': {
+      g.fillStyle = '#2b2d31'; g.fillRect(x + w * 0.45, y + h * 0.4, w * 0.1, h * 0.6);
+      g.strokeStyle = '#c9d1dc'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.arc(x + w / 2, y + h * 0.55, w * 0.42, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      if (d.id === 'radar_n') { g.fillStyle = shade(steel, 0.8); g.fillRect(x + w * 0.2, y + h * 0.75, w * 0.6, h * 0.25); }
+      break;
+    }
+    case 'ecm':
+      bevel(g, x, y, w, h, '#3d4552', 1);
+      g.strokeStyle = PAL.amber; g.lineWidth = 1;
+      g.beginPath();
+      for (let k = 0; k <= 8; k++) { const px = x + w * (0.1 + k * 0.1), py = y + h * (k % 2 ? 0.3 : 0.7); if (k) g.lineTo(px, py); else g.moveTo(px, py); }
+      g.stroke();
+      break;
+    case 'cradio':
+      bevel(g, x, y, w, h, '#3f4a3a', 1);
+      g.fillStyle = '#b8c28a'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + w * (0.2 + k * 0.15), y + h * 0.45, cs * 0.08, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = '#1b1d21'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (const f of [0.7, 0.85]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.2); g.lineTo(x + w * f - cs * 0.2, y - cs * 3.6); g.stroke(); }
+      break;
+    case 'gen':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w * 0.3, y + h / 2, h * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = PAL.amber; g.fillRect(x + w * 0.6, y + h * 0.35, w * 0.25, h * 0.3);
+      break;
+    case 'troop':
+      bevel(g, x, y, w, h, shade(steel, 0.9), 1);
+      g.fillStyle = '#12151a';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * (0.12 + k * 0.28), y + h * 0.25, w * 0.18, h * 0.16);
+      g.fillStyle = FACTION_MARK[side]; g.fillRect(x + w * 0.1, y + h * 0.7, w * 0.8, h * 0.08);
+      break;
+    case 'tank_c':
+      g.fillStyle = '#56613a'; roundRect(g, x + w * 0.02, y + h * 0.1, w * 0.96, h * 0.8, h * 0.4); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+      for (const f of [0.33, 0.66]) { g.beginPath(); g.moveTo(x + w * f, y + h * 0.1); g.lineTo(x + w * f, y + h * 0.9); g.stroke(); }
+      g.fillStyle = PAL.danger; g.fillRect(x + w * 0.42, y + h * 0.4, w * 0.16, h * 0.2);
+      break;
+    case 'repair':
+      bevel(g, x, y, w, h, '#4a4f3a', 1);
+      g.strokeStyle = PAL.linen; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.3, y + h * 0.7); g.lineTo(x + w * 0.65, y + h * 0.35); g.stroke();
+      g.beginPath(); g.arc(x + w * 0.7, y + h * 0.3, cs * 0.18, 0, Math.PI * 2); g.stroke();
+      break;
+    case 'crane':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.strokeStyle = '#2b2d31'; g.lineWidth = Math.max(1.5, cs * 0.12);
+      g.beginPath(); g.moveTo(x + w * 0.2, y + h * 0.8); g.lineTo(x + w * 0.9, y - h * 0.3); g.lineTo(x + w * 0.9, y + h * 0.3); g.stroke();
+      break;
+    case 'blade':
+      g.fillStyle = shade(steel, 0.7);
+      g.beginPath(); g.moveTo(x + w * 0.6, y); g.quadraticCurveTo(x + w, y + h * 0.5, x + w * 0.7, y + h); g.lineTo(x, y + h); g.lineTo(x, y + h * 0.3); g.closePath(); g.fill();
+      break;
+    case 'bridge_l':
+      g.fillStyle = shade(steel, 0.85); g.fillRect(x, y + h * 0.3, w, h * 0.4);
+      g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
+      g.beginPath(); for (let k = 0; k <= 8; k++) { g.moveTo(x + (w * k) / 8, y + h * 0.3); g.lineTo(x + (w * (k + 0.5)) / 8, y + h * 0.7); } g.stroke();
+      break;
+    case 'ramp':
+      g.fillStyle = shade(steel, 0.85);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.3, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      break;
     case 'thrust':
       bevel(g, x, y, w, h, shade(steel, 0.8), 1);
       g.fillStyle = '#15181d'; g.beginPath(); g.arc(x + w / 2, y + h / 2, cs * 0.28, 0, Math.PI * 2); g.fill();
@@ -343,8 +444,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
-  // Damage: scorch and holes.
+  drawPartDamage(g, p, x, y, cs, seed);
+  g.strokeStyle = 'rgba(8,10,14,0.55)';
+  g.lineWidth = 1;
+  if (!hasPartArt(d.id, paint) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.restore();
+}
+
+// Damage marks on a part's footprint: scorch, then holes.
+function drawPartDamage(g, p, x, y, cs, seed) {
   if (p.scorch > 0.05) {
+    const w = p.def.w * cs, h = p.def.h * cs;
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = `rgba(12,10,8,${Math.min(0.65, p.scorch * 0.7)})`;
     g.fillRect(x, y, w, h);
@@ -356,11 +466,10 @@ function drawPart(g, p, x, y, cs, side, seed) {
       for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x + rng.range(0.2, 0.8) * w, y + rng.range(0.2, 0.8) * h, cs * rng.range(0.06, 0.12), 0, Math.PI * 2); g.fill(); }
     }
   }
-  g.strokeStyle = 'rgba(8,10,14,0.55)';
-  g.lineWidth = 1;
-  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  g.restore();
 }
+
+// A vehicle's paint: its design's own, or its side's scheme (design/07 §3).
+function vehiclePaint(V) { return V.paint || (V.paint = resolvePaint(V.design, V.side)); }
 
 // Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
 function paintParts(V, idxs, ppm, pad) {
@@ -371,20 +480,9 @@ function paintParts(V, idxs, ppm, pad) {
   c.height = Math.ceil((D.h * CELL + pad * 2) * ppm);
   const g = c.getContext('2d');
   const o = pad * ppm;
-  // Structure first, then everything else, so fittings sit on top of plates.
-  const order = idxs.slice().sort((a, b) => (V.parts[a].def.cat === 'structure' ? 0 : 1) - (V.parts[b].def.cat === 'structure' ? 0 : 1));
-  for (const i of order) {
-    const p = V.parts[i];
-    drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
-  }
-  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
-  // still reads as enemy until faction paint masks arrive (design/07 §4).
-  if (V.side === 1) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = 'rgba(170,45,30,0.16)';
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'source-over';
-  }
+  // Auto-tiled structure first, then everything else, so fittings sit on top of plates.
+  // Each side is painted in its own scheme (design/07 §3, §6).
+  drawPainted(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs, vehiclePaint(V), D.w, D.h, 7);
   return c;
 }
 
@@ -413,10 +511,10 @@ function renderPartsSprite(V, idxs) {
   c.width = Math.max(1, Math.ceil((x1 - x0) * cs));
   c.height = Math.max(1, Math.ceil((y1 - y0) * cs));
   const g = c.getContext('2d');
-  for (const i of idxs) {
+  drawPlacedParts(g, idxs.map((i) => {
     const p = V.parts[i];
-    drawPart(g, Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), (p.x - x0) * cs, (p.y - y0) * cs, cs, V.side, i);
-  }
+    return { p: Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), x: p.x - x0, y: p.y - y0, seed: i };
+  }), V.side, 0, 0, cs, vehiclePaint(V));
   return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
 }
 
@@ -433,6 +531,7 @@ function drawVehicle(g, V) {
   if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
+  drawBarrels(g, V, true);              // barrels whose art sits behind the body
   const b = V.body;
   const k = S / spr.ppm;
   g.save();
@@ -445,7 +544,7 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  const tmp = { x: 0, y: 0 };
+  const tmp = _bp;
   if (art.debug) {
     for (const p of V.parts) {
       if (!p.alive || !art.get(p.def.id)) continue;
@@ -454,9 +553,17 @@ function drawVehicle(g, V) {
       drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
     }
   }
-  // Barrels, drawn live.
+  drawBarrels(g, V, false);
+}
+
+// Barrels, drawn live, with SVG art or as lines. behind: only those drawn before the vehicle.
+const _bp = { x: 0, y: 0 };
+function drawBarrels(g, V, behind) {
+  const S = view.S;
+  const tmp = _bp;
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive || w.def.secondary) continue;
+    if (barrelBehind(w.def, vehiclePaint(V)) !== behind) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -464,7 +571,10 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
-    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+    if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
+    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, vehiclePaint(V));
+    g.filter = 'none';
+    if (drawn) {
       if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
       continue;
     }
@@ -741,6 +851,7 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);
 }

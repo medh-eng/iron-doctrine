@@ -18,7 +18,7 @@ function gunUnderWater(B, V, w) {
 function engageRange(V) {
   const mw = mainWeapon(V);
   let r = mw ? weaponRange(mw.def) : 0;
-  for (const w of V.weapons) if (w.def.secondary === 'torpedo' && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
+  for (const w of V.weapons) if (/^(torpedo|atgm|rockets)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
   if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
   return r;
 }
@@ -80,6 +80,16 @@ function playerSecondary(B) {
     return '';
   }
   const tgt = autoTarget(B);
+  // Rockets and guided missiles (Part 2d) go at the target.
+  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') && w.rounds > 0);
+  if (aimed) {
+    if (!tgt) return 'No target';
+    if (aimed.reload > 0) return 'Reloading';
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(aimed.def)) return 'Out of range';
+    if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, aimed, a.x, a.y); }
+    return '';
+  }
   const sub = nearestTarget(B, V, 40, (U) => !!U.ballast);
   const dc = list.find((w) => w.def.secondary === 'depth' && w.rounds > 0);
   const tp = list.find((w) => w.def.secondary === 'torpedo' && w.rounds > 0);
@@ -100,8 +110,17 @@ function playerSecondary(B) {
 
 // AI use: torpedoes at ships and submarines in range, depth charges over a spotted submarine.
 function aiSecondary(B, V, w) {
-  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1) || !seaAt(B.T, V.body.x)) return;
+  if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
   const ai = V.ai;
+  if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') {
+    const tgt = ai && ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && w.def.secondary === 'atgm')) return;
+    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(w.def)) return;
+    if (w.def.secondary === 'atgm') launchMissile(B, V, w, tgt);
+    else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, w, a.x, a.y); }
+    return;
+  }
+  if (!seaAt(B.T, V.body.x)) return;
   if (w.def.secondary === 'torpedo') {
     const tgt = ai && ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen || !tgt.hull || ai.react > 0) return;
