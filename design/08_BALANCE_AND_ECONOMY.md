@@ -272,7 +272,7 @@ Salvage only happens if you **win and hold the field**.
 - The whole tree costs about 160 CP (11 T1, 14 T2, 12 T3 and 8 T4 nodes). A Grand Admiral earns about 58, so **choosing a doctrine is unavoidable**.
 - The tree only applies to campaigns. The Gauntlet and the Battle Simulator have every part.
 
-Parts already in the game are placed in the tree by `tools/import-v1-parts.mjs` (the `TECH` table), and shown in 05 §2.
+Parts already in the game were placed in the tree by the one-off v1 import (step 2.5a; each part's `tier` and `unlock` in its JSON), and are shown in 05 §2.
 
 | Branch | T1 | T2 | T3 | T4 |
 |---|---|---|---|---|

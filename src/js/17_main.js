@@ -126,6 +126,8 @@ function boot() {
 /*TEST:BEGIN*/
 window.__GAME__ = {
   state: game,
+  PARTS,
+  TEMPLATES,
   layout,
   version: GAME_VERSION,
   saveVersion: SAVE_VERSION,

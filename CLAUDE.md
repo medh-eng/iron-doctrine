@@ -30,7 +30,7 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
     - Ids, categories and stat names are the game's own (`c75`, `eng_m`; `pen`, `rel`, `fuelUse`).
     - Since v2.1 it holds every v1 part with the exact v1 numbers.
   - `src/vehicles/`: designs in the game's template format (all 15 v1 templates, then faction designs).
-- `tools/`: `part-lib.mjs` (shared rules), `check-parts.mjs`, `preview-parts.mjs`, `part-render.js` (the reference renderer to port), `import-v1-parts.mjs` (one-off; delete after step 2.5a), `png.mjs` (PNG writer/reader used by the build) and `make-art-placeholders.mjs`.
+- `tools/`: `part-lib.mjs` (shared rules), `check-parts.mjs`, `preview-parts.mjs`, `part-render.js` (the reference renderer to port), `png.mjs` (PNG writer/reader used by the build) and `make-art-placeholders.mjs`.
 - `build.mjs`: validates the part library, bundles it as `PART_LIBRARY`, and builds the game as a small static site.
   - `node build.mjs` writes the release build to `docs/` (`index.html`, `game.js`, `game.css`, `assets/`, the home-screen manifest and icons). GitHub Pages serves this folder as the live game.
   - `node build.mjs --test` writes a test build to `build-test/`, with test hooks included.

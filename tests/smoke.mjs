@@ -125,6 +125,25 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
 
     // ---------- 1b. Designs, physics and damage rules (once, on desktop)
     if (!vp.mobile) {
+      // Step 2.5a: parts and templates from PART_LIBRARY must match the v1 tables (snapshot).
+      // Allowed: cost keys may differ with the same total (rubber -> metal, fuel -> wood), and new fields/parts.
+      const snap = JSON.parse(readFileSync(join(ROOT, 'tests', 'v1-parts-snapshot.json'), 'utf8'));
+      const lib = await G(() => ({ PARTS: window.__GAME__.PARTS, TEMPLATES: window.__GAME__.TEMPLATES }));
+      const total = (c) => Object.values(c || {}).reduce((a, b) => a + b, 0);
+      const libDiffs = [];
+      for (const [id, a] of Object.entries(snap.PARTS)) {
+        const b = lib.PARTS[id];
+        if (!b) { libDiffs.push(`part ${id} missing`); continue; }
+        for (const [k, v] of Object.entries(a)) {
+          if (k === 'cost' ? total(v) !== total(b.cost) : JSON.stringify(v) !== JSON.stringify(b[k])) libDiffs.push(`${id}.${k}`);
+        }
+      }
+      for (const [id, a] of Object.entries(snap.TEMPLATES)) {
+        const b = lib.TEMPLATES[id];
+        if (!b) { libDiffs.push(`template ${id} missing`); continue; }
+        for (const [k, v] of Object.entries(a)) if (JSON.stringify(v) !== JSON.stringify(b[k])) libDiffs.push(`template ${id}.${k}`);
+      }
+      check(!libDiffs.length, `parts or templates differ from the v1 snapshot: ${libDiffs.join(', ')}`);
       const self = await G(() => window.__GAME__.selfCheck());
       for (const [id, r] of Object.entries(self)) check(r.ok, `template ${id} breaks placement rules: ${r.errors.join(' ')}`);
       const ph = await G(() => window.__GAME__.physicsCheck());
@@ -157,7 +176,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(Object.values(hw).every(Boolean), `howitzer can't aim at every range: ${JSON.stringify(hw)}`);
       const dm = await G(() => window.__GAME__.damageCheck());
       for (const [k, v] of Object.entries(dm)) check(v, `damage rule failed: ${k}`);
-      steps.push('templates, physics, damage, ships, submarines, aircraft');
+      steps.push('part library matches v1, templates, physics, damage, ships, submarines, aircraft');
       await G(() => window.__GAME__.go('title'));
       await wait(300);
     }
