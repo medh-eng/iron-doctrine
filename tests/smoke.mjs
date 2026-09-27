@@ -673,6 +673,11 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         R(rc.wreck.left === 12 && rc.wreck.sites === 1 && rc.collect === '' && rc.collected.scrap === 12 && rc.collected.items === 1 && rc.collected.sites === 0 && rc.expired, 'wreck sites wrong');
         R(rc.fields >= 6 && rc.noCrane && rc.gather.got === 8 && rc.gather.field === 8, 'scrap fields wrong');
         R(rc.studyCity && !rc.lockedBefore && rc.study === '' && rc.consumed && rc.unlocked, 'reverse-engineering wrong');
+        const vc = await G(() => window.__GAME__.convoyCheck());
+        const V = (c, what) => check(c, `${what} ${JSON.stringify(vc)}`);
+        V(vc.form === '' && vc.convoy.ships === 3 && vc.convoy.combat === 1 && vc.convoy.cap > 0, 'forming a convoy wrong');
+        V(vc.noGoods && vc.route === '' && vc.run.trips >= 2 && vc.run.fuelGot > 0 && vc.run.ammo > 0.9 && !vc.run.stranded && vc.run.storeUsed > 0, 'the supply route did not keep the fleet going');
+        V(vc.raid && vc.contact && vc.lost.gone, 'convoy raiding or interception wrong');
         E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -756,9 +761,29 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       });
       await wait(200);
       await shot('29-barracks');
+      // A convoy with a route, and the Supply layer.
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const home = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.capital);
+        C.campaign.treasury += 5000;
+        C.hire(home, C.offersAt(home).find((o) => o.kind === 'quartermaster'));
+        const t = C.makeShip("truck", C.campaign.faction, C.rng(1)); t.garrison = home.id;
+        C.formConvoy(home, C.idleAt(home, 'quartermaster')[0], 'land');
+        const cv = C.campaign.fleets.find((f) => f.convoy);
+        const land = C.playerFleets().find((f) => f.domain === 'land' && !f.convoy);
+        C.setRoute(cv, home.id, { fleet: land.id }, ['fuel', 'ammo']);
+        S.cam.x = home.x + 6; S.cam.y = home.y;
+        S.select('fleet', cv.id); S.tab = 'route'; S.logistics = true; S.refresh();
+      });
+      await wait(200);
+      await shot('30-convoy-route');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.panelOpen = false; S.refresh(); });
+      await wait(200);
+      await shot('31-supply-view');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.logistics = false; S.refresh(); });
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage, convoys');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

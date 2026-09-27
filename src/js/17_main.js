@@ -169,10 +169,12 @@ window.__GAME__ = {
   economyCheck: () => economyCheck(),
   workshopCheck: () => workshopCheck(),
   recruitCheck: () => recruitCheck(),
+  convoyCheck: () => convoyCheck(),
   camp: {
     get campaign() { return campaign; }, get world() { return world; },
     newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,
     autoResolve, battleSides, detachShip, pickUp, relation, byId, shipStats, fleetStrength, updateVisibility, retreatCheck, retreat, store: campaignStore,
+    hire, offersAt, idleAt, makeShip, formConvoy, setRoute, rng: makeRng,
   },
   paintCheck: () => paintCheck(),
   view,

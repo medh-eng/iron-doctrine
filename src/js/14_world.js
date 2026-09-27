@@ -28,7 +28,8 @@ function makeNoise(seed) {
 }
 
 // ---------- generation
-function generateWorld(seed, playerFaction) {
+// gen: the generator version a campaign was started with; saves keep theirs so their map never changes.
+function generateWorld(seed, playerFaction, gen = WORLD_GEN) {
   const W = WORLD_W, H = WORLD_H;
   const hN = makeNoise(seed), mN = makeNoise(seed + 11), rN = makeNoise(seed + 23);
   const height = new Float32Array(W * H), ter = new Uint8Array(W * H);
@@ -80,6 +81,29 @@ function generateWorld(seed, playerFaction) {
     if (comp.length < 400) for (const j of comp) ter[j] = T_IDS.indexOf('marsh');
   }
   const world = { seed, W, H, height, ter, seaLevel, road: new Uint8Array(W * H), owner: new Int8Array(W * H).fill(-1) };
+  // Since generator 2, settlements stand only on the largest stretch of land a land fleet can
+  // cross (no sea, no mountains), so no home is marooned on an island or in a mountain pocket.
+  if (gen >= 2) {
+    const lab = new Int32Array(W * H).fill(-1), T_M = T_IDS.indexOf('mountains');
+    let best = -1, bestN = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (lab[i] >= 0 || ter[i] === T_SEA || ter[i] === T_M) continue;
+      const comp = [i];
+      lab[i] = i;
+      for (let k = 0; k < comp.length; k++) {
+        const j = comp[k], x = j % W, y = (j / W) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const n = ny * W + nx;
+          if (lab[n] < 0 && ter[n] !== T_SEA && ter[n] !== T_M) { lab[n] = i; comp.push(n); }
+        }
+      }
+      if (comp.length > bestN) { bestN = comp.length; best = i; }
+    }
+    world.main = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) if (lab[i] === best) world.main[i] = 1;
+  }
   world.settlements = placeSettlements(world, seed, playerFaction);
   buildRoads(world);
   computeTerritory(world);
@@ -108,7 +132,7 @@ function placeName(rng, used) {
 function placeSettlements(w, seed, playerFaction) {
   const rng = makeRng(seed + 101);
   const out = [], used = new Set();
-  const free = (x, y, gap) => !isSeaCell(w, x, y) && terrainId(w, x, y) !== 'mountains' && out.every((s) => Math.hypot(s.x - x, s.y - y) >= gap);
+  const free = (x, y, gap) => !isSeaCell(w, x, y) && terrainId(w, x, y) !== 'mountains' && (!w.main || w.main[cellAt(w, x, y)]) && out.every((s) => Math.hypot(s.x - x, s.y - y) >= gap);
   const find = (cx, cy, rMin, rMax, gap, want) => {
     for (let k = 0; k < 600; k++) {
       const a = rng.range(0, Math.PI * 2), r = rng.range(rMin, rMax + k / 40);
@@ -133,6 +157,7 @@ function placeSettlements(w, seed, playerFaction) {
     let capAt = null;
     if (player || F.coastal) for (let r = 6; r <= 60 && !capAt; r += 6) capAt = find(cx, cy, 0, r, 10, (x, y) => isCoastal(w, x, y));
     if (!capAt) capAt = find(cx, cy, 0, 30, 8, null);
+    if (!capAt) capAt = find(cx, cy, 0, 100, 4, null);
     const cap = add(capAt[0], capAt[1], capType, F.id, F.capital);
     cap.capital = true;
     // AI factions get a coastal city too; the player's home city is already on the coast (01 §4.3).

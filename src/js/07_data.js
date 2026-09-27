@@ -298,6 +298,7 @@ const MAP_TERRAIN = {
   ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
   ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
 };
+const WORLD_GEN = 2;                  // map generator version (saves keep the one they started with)
 const ROAD_SPEED = 1.5;               // × on a road
 const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
 const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
@@ -366,6 +367,11 @@ const SALVAGE = { part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap:
 const WRECK_HOURS = 24;                      // salvage left on the field is lost after a day
 const SCRAP_FIELDS = 10, SCRAP_FIELD_SIZE = [200, 600], SCRAP_FIELD_RATE = 4;   // fields, scrap each, scrap per hour
 const STUDY_DAYS = 3;                        // reverse-engineering at a metropolis
+// Convoys (01 §8.4).
+const CONVOY_SIZE = 6, CONVOY_COMBAT = 2;    // ships in a convoy, of which combat ships
+const CONVOY_WAIT = 6;                       // hours a convoy waits at its loading point when there's nothing to load
+const CONVOY_REPLAN = 6;
+const RAID_PULL = 0.6;                       // AI fleets treat convoys as this much closer (raiding)                     // path steps before a convoy chasing a fleet looks again
 const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
 const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;

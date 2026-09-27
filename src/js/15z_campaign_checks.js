@@ -231,4 +231,56 @@ function recruitCheck() {
   out.unlocked = partUnlocked('c105');
   return out;
 }
+
+// Part 4d (01 §8.4): a quartermaster's convoy on a standing route keeps a stranded fleet going,
+// runs by itself, is raided by preference, and its loss stops the deliveries.
+function convoyCheck() {
+  newCampaign('league', 7272);
+  const out = {};
+  campaign.treasury = 1e6;
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  home.store.fuel = 300; home.store.ammo = 60;
+  // Keep the enemy away while the route runs.
+  for (const fl of campaign.fleets) if (fl.faction !== 'league') { fl.x = fl.y = 1; fl.path = []; fl.cooldown = 1e6; fl.ai.t = 1e6; }
+  hire(home, offersAt(home).find((o) => o.kind === 'quartermaster'));
+  for (let k = 0; k < 2; k++) { const t = makeShip('truck', 'league', makeRng(k)); t.garrison = home.id; }
+  const esc = makeShip('light', 'league', makeRng(5)); esc.garrison = home.id;
+  const qm = idleAt(home, 'quartermaster')[0];
+  out.form = formConvoy(home, qm, 'land');
+  const cv = campaign.fleets.find((fl) => fl.convoy);
+  out.convoy = { ships: cv.shipIds.length, combat: fleetShips(cv).filter(isCombat).length, cap: holdCap(cv) };
+  // The land fleet sits dry at another of your settlements.
+  const land = playerFleets().find((fl) => fl.domain === 'land' && !fl.convoy);
+  const far = world.settlements.filter((s) => s.faction === 'league' && s !== home && fleetPath(world, 'land', home.x + 0.5, home.y + 0.5, s.x + 0.5, s.y + 0.5)).sort((a, b) => Math.hypot(b.x - home.x, b.y - home.y) - Math.hypot(a.x - home.x, a.y - home.y))[0];
+  land.x = far.x + 0.5; land.y = far.y + 0.5; land.path = []; land.docked = far.id;
+  for (const sh of fleetShips(land)) { sh.fuel = 0; sh.ammo = 0; }
+  land.stranded = true;
+  out.noGoods = setRoute(cv, home.id, { fleet: land.id }, []) !== '';
+  out.route = setRoute(cv, home.id, { fleet: land.id }, ['fuel', 'ammo']);
+  const f0 = fleetFuel(land).fuel, s0 = home.store.fuel;
+  let hours = 0;
+  while (hours < 240 && cv.route && cv.route.trips < 2) { campaign.running = true; campaignTick(1); hours++; }
+  out.run = { trips: cv.route ? cv.route.trips : -1, hours, fuelGot: +(fleetFuel(land).fuel - f0).toFixed(2), ammo: +fleetAmmo(land).toFixed(2), stranded: land.stranded, storeUsed: +(s0 - home.store.fuel).toFixed(1) };
+  // Raiders prefer the convoy over a slightly closer fleet.
+  const raider = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  raider.cooldown = 0;
+  campaign.day = 3;
+  const cx = cv.x, cy = cv.y;
+  cv.path = []; cv.x = cx; cv.y = cy;
+  land.x = cx + 8; land.y = cy; land.path = [];
+  raider.x = cx + 5; raider.y = cy; raider.path = [];   // land 3 cells away, convoy 5 × 0.6 = 3 … closer by the pull
+  land.x = cx + 8.4;
+  aiThink(raider);
+  out.raid = raider.ai.target === cv.id;
+  // Interception: contact, then the convoy is beaten and its cargo lost with it.
+  raider.x = cv.x + 1; raider.y = cv.y; raider.path = []; cv.cooldown = 0; land.x = cv.x + 30;
+  campaign.running = true;
+  const ev = campaignTick(0.25);
+  const c = ev.find((e) => e.contact);
+  out.contact = !!(c && c.contact.mine === cv.id);
+  for (const sh of fleetShips(cv)) sh.hp = shipDesign(sh).cells.map(() => 0.05);
+  autoResolve(cv, raider);
+  out.lost = { gone: !campaign.fleets.includes(cv) || !cv.shipIds.length };
+  return out;
+}
 /*TEST:END*/

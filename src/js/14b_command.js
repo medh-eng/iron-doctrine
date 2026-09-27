@@ -31,7 +31,7 @@ const campaignStore = {
       return false;
     }
     campaign = blob.data;
-    world = generateWorld(campaign.seed, campaign.faction);
+    world = generateWorld(campaign.seed, campaign.faction, campaign.gen || 1);
     world.settlements = campaign.settlements;       // the saved state replaces the generated one
     if (!campaign.scrapFields) makeScrapFields(makeRng(campaign.seed + 11));
     computeTerritory(world);
@@ -126,11 +126,11 @@ function portCell(s, domain) {
 
 // ---------- a new campaign (01 §4.3; 08 §13; 09 relations)
 function newCampaign(factionId, seed) {
-  world = generateWorld(seed, factionId);
+  world = generateWorld(seed, factionId, WORLD_GEN);
   campaign = {
     v: CAMPAIGN_VERSION, seed, faction: factionId, day: 1, hour: 6, speed: 1, running: false,
     treasury: START_MONEY, nextId: 1, ships: [], fleets: [], officers: [], outposts: [], journal: [],
-    settlements: world.settlements, relations: {}, ga: null, gaXp: 0, unpaid: 0,
+    settlements: world.settlements, relations: {}, ga: null, gaXp: 0, unpaid: 0, gen: WORLD_GEN,
   };
   const home = world.settlements.find((s) => s.faction === factionId && s.capital);
   if (home) Object.assign(home.store, HOME_STORE);

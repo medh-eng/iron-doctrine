@@ -53,6 +53,8 @@ SCREENS.map = {
     bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
     this.detailsBtn = button('Details', () => { this.panelOpen = true; this.refresh(); }, 'btn btn-small');
     bot.appendChild(this.detailsBtn);
+    this.supplyBtn = button('Supply', () => { this.logistics = !this.logistics; this.refresh(); }, 'btn btn-small map-speed');
+    bot.appendChild(this.supplyBtn);
     const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
     this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
     this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
@@ -105,6 +107,7 @@ SCREENS.map = {
     } else this.cargoEl.textContent = '';
     this.cargoEl.hidden = !this.cargoEl.textContent;
     this.speedBtns.forEach((b, i) => b.classList.toggle('on', campaign.speed === CLOCK_SPEEDS[i]));
+    this.supplyBtn.classList.toggle('on', !!this.logistics);
     this.goBtn.textContent = campaign.running ? 'Stop ❚❚' : 'Start ▶';
     this.buildPanel();
     this.buildMoveBar();
@@ -165,7 +168,9 @@ SCREENS.map = {
         P.appendChild(body);
         return;
       }
-      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab('admiral', 'Admiral');
+      if (fl.convoy && this.tab === 'admiral') this.tab = 'route';
+      if (!fl.convoy && this.tab === 'route') this.tab = 'admiral';
+      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab(fl.convoy ? 'route' : 'admiral', fl.convoy ? 'Route' : 'Admiral');
       P.appendChild(tabs);
       const adm = fleetAdmiral(fl);
       if (this.tab === 'ships') {
@@ -212,6 +217,8 @@ SCREENS.map = {
         const items = {};
         for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
         if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
+      } else if (this.tab === 'route') {
+        this.routeTab(fl, body, row);
       } else {
         const lvl = adm ? adm.level : 1;
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
@@ -434,6 +441,7 @@ SCREENS.map = {
       g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.moveTo(x + 5, y - 5); g.lineTo(x - 5, y + 5); g.stroke();
     }
     this.drawFog(g);
+    if (this.logistics) this.drawLogistics(g);
     // Fleets: yours, and the enemy fleets you can see.
     // Counters at the same spot stand side by side.
     const shown = campaign.fleets.filter((fl) => fl.shipIds.length && (fl.faction === campaign.faction || fl.seen));

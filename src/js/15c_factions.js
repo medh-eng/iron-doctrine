@@ -45,7 +45,7 @@ function aiThink(fl) {
     let best = null, bd = 26;
     for (const P of playerFleets()) {
       if (!P.shipIds.length || relation(fl.faction, P.faction) !== 'war') continue;
-      const d = Math.hypot(P.x - fl.x, P.y - fl.y);
+      const d = Math.hypot(P.x - fl.x, P.y - fl.y) * (P.convoy ? RAID_PULL : 1);   // raiders prefer convoys
       if (d < bd && fleetStrength(fl) >= fleetStrength(P) * 0.7) {
         const plan = fleetPath(world, fl.domain, fl.x, fl.y, P.x, P.y);
         if (plan) { best = { P, plan }; bd = d; }
@@ -79,7 +79,7 @@ function campaignTick(dtReal) {
       if (fl.cooldown > 0) fl.cooldown -= dt;
       const mine = fl.faction === campaign.faction;
       const f0 = mine ? fleetFuel(fl) : null;
-      if (mine) { if (stepFleet(fl, dt) === 'arrived') events.push({ stop: true, msg: `${fl.name} arrived${fl.docked ? ` at ${byId('settlements', fl.docked).name}` : ''}.` }); }
+      if (mine) { if (stepFleet(fl, dt) === 'arrived' && !fl.route) events.push({ stop: true, msg: `${fl.name} arrived${fl.docked ? ` at ${byId('settlements', fl.docked).name}` : ''}.` }); }
       else {
         const keep = fl.shipIds.map((id) => byId('ships', id).fuel);
         stepFleet(fl, dt);
@@ -95,6 +95,7 @@ function campaignTick(dtReal) {
     }
     for (const fl of playerFleets()) if (!fl.path.length) fieldRepair(fl, dt);
     stepSalvage(dt);
+    for (const n of stepConvoys(dt)) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
     for (const n of stepWorks(dt)) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
     updateVisibility();
     // Contact (01 §6, §10.1): a player fleet meets a hostile fleet.

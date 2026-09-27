@@ -158,7 +158,10 @@ Object.assign(SCREENS.map, {
     for (const a of idleAt(s, 'admiral')) for (const dom of domains) {
       act().appendChild(button(`Adm. ${a.name}: form a ${dom} fleet`, () => done(formFleet(s, a, dom)), 'btn btn-small'));
     }
-    if (idleAt(s, 'admiral').length && !domains.length) body.appendChild(el('p', 'card-text map-note', 'An admiral here can form a fleet from ships in the garrison.'));
+    for (const q of idleAt(s, 'quartermaster')) for (const dom of domains) {
+      act().appendChild(button(`QM ${q.name}: form a ${dom} convoy`, () => done(formConvoy(s, q, dom)), 'btn btn-small'));
+    }
+    if ((idleAt(s, 'admiral').length || idleAt(s, 'quartermaster').length) && !domains.length) body.appendChild(el('p', 'card-text map-note', 'Officers here can form a fleet or a convoy from ships in the garrison.'));
   },
 });
 
