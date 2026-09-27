@@ -116,7 +116,7 @@ Hull and armour cells are **not** SVG files. The game draws them from `materials
   | 2 | Top-left |
   | 3 | Top-right |
 
-The reference implementation is `tools/part-render.js`. The game ports it as `05b_partrender.js`.
+The reference implementation is `tools/part-render.js`. The game ports it as `05c_partrender.js`.
 
 ## 5. SVG format (component parts)
 
@@ -178,7 +178,7 @@ The reference implementation is `tools/part-render.js`. The game ports it as `05
 ## 6. How the game renders parts
 
 1. **Paint:** replace the tokens in the SVG text with the side's colours. Until factions arrive, the player side uses `league` and the enemy uses `directorate`.
-2. **Rasterise** the body, and each moving group separately, to offscreen images at 64 px per cell. The game then draws them through the same path as the old PNG route (`05b_art.js`), so sprite caching and damage overlays are unchanged.
+2. **Rasterise** the body, and each moving group separately (for now only the barrel moves; other moving groups are drawn into the body), to offscreen images at 64 px per cell. The game then draws them through the same path as the old PNG route (`05b_art.js`), so sprite caching and damage overlays are unchanged.
 3. **Order of preference:** SVG art first, then the legacy PNG route, then the code drawing in `drawPart()`.
 4. **Barrels:**
    - The barrel image rotates about `moving.barrel.pivot`.

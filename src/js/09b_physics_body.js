@@ -159,7 +159,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
+        pivotGx: (p.x + barrelPivotX(d)) * CELL, pivotGy: (D.h - p.y - barrelPivotY(d)) * CELL, turret: false, rounds: d.rounds || 0,
       });
     }
   });

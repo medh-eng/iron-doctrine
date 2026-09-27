@@ -41,9 +41,15 @@ function drawPart(g, p, x, y, cs, side, seed) {
   const w = d.w * cs, h = d.h * cs;
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
+  if (isTiled(d.id)) {
+    // Structure cell on its own (palette icons, a cell being moved): auto-tiled as a shape of one.
+    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], side, x, y, cs);
+    drawPartDamage(g, p, x, y, cs, seed);
+    return;
+  }
   g.save();
-  if (drawPartArt(g, p, x, y, cs)) {
-    // Imported art: only the procedural damage overlay is added below.
+  if (drawPartArt(g, p, x, y, cs, side)) {
+    // Part art: only the procedural damage overlay is added below.
   } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
@@ -343,8 +349,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
-  // Damage: scorch and holes.
+  drawPartDamage(g, p, x, y, cs, seed);
+  g.strokeStyle = 'rgba(8,10,14,0.55)';
+  g.lineWidth = 1;
+  if (!hasPartArt(d.id, side) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.restore();
+}
+
+// Damage marks on a part's footprint: scorch, then holes.
+function drawPartDamage(g, p, x, y, cs, seed) {
   if (p.scorch > 0.05) {
+    const w = p.def.w * cs, h = p.def.h * cs;
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = `rgba(12,10,8,${Math.min(0.65, p.scorch * 0.7)})`;
     g.fillRect(x, y, w, h);
@@ -356,10 +371,6 @@ function drawPart(g, p, x, y, cs, side, seed) {
       for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x + rng.range(0.2, 0.8) * w, y + rng.range(0.2, 0.8) * h, cs * rng.range(0.06, 0.12), 0, Math.PI * 2); g.fill(); }
     }
   }
-  g.strokeStyle = 'rgba(8,10,14,0.55)';
-  g.lineWidth = 1;
-  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  g.restore();
 }
 
 // Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
@@ -371,20 +382,9 @@ function paintParts(V, idxs, ppm, pad) {
   c.height = Math.ceil((D.h * CELL + pad * 2) * ppm);
   const g = c.getContext('2d');
   const o = pad * ppm;
-  // Structure first, then everything else, so fittings sit on top of plates.
-  const order = idxs.slice().sort((a, b) => (V.parts[a].def.cat === 'structure' ? 0 : 1) - (V.parts[b].def.cat === 'structure' ? 0 : 1));
-  for (const i of order) {
-    const p = V.parts[i];
-    drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
-  }
-  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
-  // still reads as enemy until faction paint masks arrive (design/07 §4).
-  if (V.side === 1) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = 'rgba(170,45,30,0.16)';
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'source-over';
-  }
+  // Auto-tiled structure first, then everything else, so fittings sit on top of plates.
+  // Each side is painted in its own scheme (design/07 §3, §6).
+  drawPlacedParts(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs);
   return c;
 }
 
@@ -413,10 +413,10 @@ function renderPartsSprite(V, idxs) {
   c.width = Math.max(1, Math.ceil((x1 - x0) * cs));
   c.height = Math.max(1, Math.ceil((y1 - y0) * cs));
   const g = c.getContext('2d');
-  for (const i of idxs) {
+  drawPlacedParts(g, idxs.map((i) => {
     const p = V.parts[i];
-    drawPart(g, Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), (p.x - x0) * cs, (p.y - y0) * cs, cs, V.side, i);
-  }
+    return { p: Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), x: p.x - x0, y: p.y - y0, seed: i };
+  }), V.side, 0, 0, cs);
   return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
 }
 
@@ -433,6 +433,7 @@ function drawVehicle(g, V) {
   if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
+  drawBarrels(g, V, true);              // barrels whose art sits behind the body
   const b = V.body;
   const k = S / spr.ppm;
   g.save();
@@ -445,7 +446,7 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  const tmp = { x: 0, y: 0 };
+  const tmp = _bp;
   if (art.debug) {
     for (const p of V.parts) {
       if (!p.alive || !art.get(p.def.id)) continue;
@@ -454,9 +455,17 @@ function drawVehicle(g, V) {
       drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
     }
   }
-  // Barrels, drawn live.
+  drawBarrels(g, V, false);
+}
+
+// Barrels, drawn live, with SVG art or as lines. behind: only those drawn before the vehicle.
+const _bp = { x: 0, y: 0 };
+function drawBarrels(g, V, behind) {
+  const S = view.S;
+  const tmp = _bp;
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive || w.def.secondary) continue;
+    if (barrelBehind(w.def, V.side) !== behind) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -464,7 +473,10 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
-    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+    if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
+    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, V.side);
+    g.filter = 'none';
+    if (drawn) {
       if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
       continue;
     }

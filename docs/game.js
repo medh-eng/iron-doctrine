@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.4';
+const GAME_VERSION = '0.2.5';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -1585,7 +1585,12 @@ function drawAcetate(g, x, y, w, h) {
 
 /* ---------- 05b_art.js ---------- */
 /* ==== 05b ART ==== */
-// Imported part art (design/07 contract). ART_MANIFEST is embedded by the build from
+// Part art, in order of preference (design/07 §6, design/04 §9):
+//   1. SVG from PART_LIBRARY.svg: paint tokens swapped for the side's scheme, then the body
+//      and the barrel rasterised separately at SVG_PX pixels per cell;
+//   2. the legacy PNG route (design/07_ART_INTEGRATION), below;
+//   3. the code drawing in drawPart().
+// Legacy PNG art: ART_MANIFEST is embedded by the build from
 // src/assets/parts/**/<name>.json. Images load in the background; until one has
 // loaded (or if it fails, or its size is wrong) the procedural drawing is used.
 // Art is drawn at the part's footprint: canvas scaled by (cell px ÷ pxPerCell),
@@ -1600,7 +1605,10 @@ const art = {
   debug: false,        // draw origin, pivot and muzzle markers
   failed: [],
 
+  svg: [{}, {}],        // side → partId → { body, barrel, l, t, W, H, barrelBehind }
+
   init() {
+    this.initSvg();
     this.byPart = {};
     for (const m of ART_MANIFEST) {
       const live = ART_LIVE_STATUS.includes(m.status) || (m.status === 'placeholder' && this.usePlaceholders);
@@ -1623,14 +1631,87 @@ const art = {
     }
   },
 
+  // SVG art for every part that has it, painted for both sides. Images load in the
+  // background; `version` bumps as each one is ready, so cached sprites redraw.
+  initSvg() {
+    this.svg = [{}, {}];
+    if (typeof DOMParser === 'undefined') return;
+    for (const id of Object.keys(PART_LIBRARY.svg)) {
+      const def = PART_LIBRARY.parts[id];
+      if (!def || !PARTS[id]) continue;
+      for (let side = 0; side < 2; side++) this.loadSvg(id, def, paintSvg(PART_LIBRARY.svg[id], sideScheme(side)), side);
+    }
+  },
+
+  loadSvg(id, def, text, side) {
+    const o = def.overhang || {};
+    const l = o.left || 0, t = o.top || 0;
+    const W = def.footprint.w + l + (o.right || 0), H = def.footprint.h + t + (o.bottom || 0);
+    const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+    if (root.nodeName !== 'svg') { this.failed.push(`${id}.svg: not an SVG`); return; }
+    root.setAttribute('width', W * SVG_PX);
+    root.setAttribute('height', H * SVG_PX);
+    const groups = [...root.children].filter((n) => n.nodeName === 'g');
+    const isBarrel = (n) => n.getAttribute('data-role') === 'barrel';
+    const barrel = groups.find(isBarrel);
+    const body = groups.find((n) => n.getAttribute('id') === 'body');
+    // A barrel group written before the body sits behind it (document order, design/07 §5.2).
+    const entry = { body: null, barrel: null, l, t, W, H, barrelBehind: !!barrel && groups.indexOf(barrel) < groups.indexOf(body) };
+    this.svg[side][id] = entry;
+    const raster = (keep, done) => {
+      const svg = root.cloneNode(true);
+      for (const n of [...svg.children]) if (n.nodeName === 'g' && !keep(n)) svg.removeChild(n);
+      const im = new Image();
+      im.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = W * SVG_PX; c.height = H * SVG_PX;
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        done(c);
+        this.version++;
+      };
+      im.onerror = () => this.failed.push(`${id}.svg: failed to rasterise`);
+      im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+    };
+    // The body image holds every group except the barrel (other moving groups stay still for now).
+    raster((n) => !isBarrel(n), (c) => { entry.body = c; });
+    if (barrel) raster(isBarrel, (c) => { entry.barrel = c; });
+  },
+
   get(partId) {
     const e = this.byPart[partId];
     return e && e.img ? e : null;
   },
 };
 
-// Draw imported art for a part into a footprint rectangle at (x, y), cell size cs. Returns false if none.
-function drawPartArt(g, p, x, y, cs) {
+const SVG_PX = 64;                 // raster pixels per cell for SVG part art
+const PAINT_TOKENS = [['#FF00FF', 'p1'], ['#00FFFF', 'p2'], ['#FFFF00', 'p3']];
+
+function paintSvg(text, scheme) {
+  for (const [token, k] of PAINT_TOKENS) text = text.split(token).join(scheme[k]).split(token.toLowerCase()).join(scheme[k]);
+  return text;
+}
+
+function svgArt(id, side) {
+  const e = art.svg[side] && art.svg[side][id];
+  return e && e.body ? e : null;
+}
+
+// Whether a part is drawn from art (SVG or PNG) rather than code.
+function hasPartArt(id, side) { return !!(svgArt(id, side) || art.get(id)); }
+
+// Whether a weapon's SVG barrel sits behind its body, so it's drawn before the vehicle sprite.
+function barrelBehind(d, side) {
+  const e = svgArt(d.id, side);
+  return !!(e && e.barrel && e.barrelBehind);
+}
+
+// Draw a part's art into a footprint rectangle at (x, y), cell size cs. Returns false if none.
+function drawPartArt(g, p, x, y, cs, side = 0) {
+  const S = svgArt(p.def.id, side);
+  if (S) {
+    g.drawImage(S.body, x - S.l * cs, y - S.t * cs, S.W * cs, S.H * cs);
+    return true;
+  }
   const A = art.get(p.def.id);
   if (!A) return false;
   const m = A.meta;
@@ -1641,7 +1722,20 @@ function drawPartArt(g, p, x, y, cs) {
 }
 
 // Barrel image rotated about its pivot. (px, py) = pivot on screen, ang = world angle, len = barrel length in px.
-function drawBarrelArt(g, d, px, py, ang, lenPx) {
+function drawBarrelArt(g, d, px, py, ang, lenPx, side = 0) {
+  const S = svgArt(d.id, side);
+  const geo = barrelGeometry(d);
+  if (S && S.barrel && geo) {
+    // SVG barrels are never stretched: pixels per cell come from the pivot-to-muzzle distance.
+    const cs = lenPx / geo.len;
+    g.save();
+    g.translate(px, py);
+    g.rotate(-ang);
+    if (Math.cos(ang) < 0) g.scale(1, -1);     // keep the top of the barrel up when it points left
+    g.drawImage(S.barrel, -(S.l + geo.pivot[0]) * cs, -(S.t + geo.pivot[1]) * cs, S.W * cs, S.H * cs);
+    g.restore();
+    return true;
+  }
   const A = art.byPart[d.id];
   if (!A || !A.barrelImg) return false;
   const b = A.meta.barrel;
@@ -1667,6 +1761,174 @@ function drawArtMarker(g, kind, x, y) {
     g.beginPath(); g.arc(x, y, kind === 'pivot' ? 5 : 7, 0, Math.PI * 2); g.stroke();
   }
   g.restore();
+}
+
+/* ---------- 05c_partrender.js ---------- */
+/* ==== 05c PART RENDER ==== */
+// Structure cells (materials.json) are auto-tiled from their "look" rules (design/07 §4):
+// painted or bare fills, a material texture, one light-to-dark overlay over the whole
+// shape, bevels and outlines on outside edges, seams between cells, and rivets.
+// A port of tools/part-render.js. Drawn only when a sprite is rebuilt, never per frame.
+// Paint schemes come from PART_LIBRARY.paints: the player uses league, the enemy directorate.
+
+const TILE_UNITS = 32;             // look sizes are authored at 32 units per cell
+const SIDE_SCHEMES = ['league', 'directorate'];
+const TILE_OUTLINE = '#14171B', TILE_STEEL_DARK = '#2E3339';
+// Slope corners: o 0 = bottom-left filled, 1 = bottom-right, 2 = top-left, 3 = top-right.
+const SLOPE_PTS = [
+  [[0, 0], [0, 1], [1, 1]],
+  [[1, 0], [1, 1], [0, 1]],
+  [[0, 0], [1, 0], [0, 1]],
+  [[0, 0], [1, 0], [1, 1]],
+];
+const SLOPE_SOLID = [['bottom', 'left'], ['bottom', 'right'], ['top', 'left'], ['top', 'right']];
+const SLOPE_HYP = [[0, 2], [0, 2], [2, 1], [0, 2]];
+
+function sideScheme(side) {
+  return PART_LIBRARY.paints.schemes[SIDE_SCHEMES[side] || SIDE_SCHEMES[0]];
+}
+
+function isTiled(id) {
+  const m = PART_LIBRARY.materials[id];
+  return !!(m && m.look);
+}
+
+function tileCellPath(g, c, mat, u) {
+  if (mat.shape === 'slope') {
+    const p = SLOPE_PTS[c.o || 0];
+    g.moveTo((c.x + p[0][0]) * u, (c.y + p[0][1]) * u);
+    g.lineTo((c.x + p[1][0]) * u, (c.y + p[1][1]) * u);
+    g.lineTo((c.x + p[2][0]) * u, (c.y + p[2][1]) * u);
+    g.closePath();
+  } else {
+    g.rect(c.x * u, c.y * u, u, u);
+  }
+}
+
+function tileLine(g, x1, y1, x2, y2, col, w) {
+  g.strokeStyle = col; g.lineWidth = w;
+  g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+}
+
+function tileRivet(g, x, y, s) {
+  g.fillStyle = TILE_STEEL_DARK; g.beginPath(); g.arc(x, y, 1.15 * s, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(196,202,208,0.8)'; g.beginPath(); g.arc(x - 0.35 * s, y - 0.35 * s, 0.45 * s, 0, Math.PI * 2); g.fill();
+}
+
+function tileTexture(g, c, mat, u, s) {
+  const L = mat.look, x = c.x * u, y = c.y * u;
+  g.save(); g.beginPath(); tileCellPath(g, c, mat, u); g.clip();
+  if (L.kind === 'wood') {
+    for (let i = 1; i < 4; i++) tileLine(g, x, y + i * 8 * s, x + u, y + i * 8 * s, 'rgba(110,74,38,0.55)', 0.8 * s);
+    tileLine(g, x, y + 2 * s, x + u, y + 2 * s, 'rgba(207,157,99,0.35)', 0.7 * s);
+    if ((c.x + c.y) % 2 === 0) tileLine(g, x + 16 * s, y + 8 * s, x + 16 * s, y + 16 * s, 'rgba(110,74,38,0.5)', 0.7 * s);
+    g.fillStyle = 'rgba(40,30,20,0.55)';
+    g.fillRect(x + 3 * s, y + 4 * s, 1.2 * s, 1.2 * s); g.fillRect(x + 27 * s, y + 20 * s, 1.2 * s, 1.2 * s);
+  } else if (L.kind === 'heavy') {
+    g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = s; g.strokeRect(x + 4 * s, y + 4 * s, u - 8 * s, u - 8 * s);
+    tileLine(g, x + 4 * s, y + 4.8 * s, x + u - 4 * s, y + 4.8 * s, 'rgba(255,255,255,0.18)', 0.8 * s);
+  } else if (L.kind === 'composite') {
+    for (let k = -1; k < 3; k++) tileLine(g, x + k * 12 * s, y + u, x + k * 12 * s + u, y, 'rgba(0,0,0,0.14)', 0.8 * s);
+  } else if (L.kind === 'envelope') {
+    for (let r = 8; r < 32; r += 8) tileLine(g, x + r * s, y, x + r * s, y + u, 'rgba(0,0,0,0.12)', 0.7 * s);
+    tileLine(g, x, y + 3 * s, x + u, y + 3 * s, 'rgba(255,255,255,0.22)', s);
+  } else if (L.kind === 'frame') {
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 7 * s, y + 7 * s, u - 14 * s, u - 14 * s);
+    tileLine(g, x + 7 * s, y + 7 * s, x + u - 7 * s, y + u - 7 * s, 'rgba(138,145,153,0.9)', 2.2 * s);
+  } else if (L.kind === 'precursor') {
+    tileLine(g, x + 6 * s, y + 16 * s, x + u - 6 * s, y + 16 * s, 'rgba(79,209,197,0.55)', s);
+    tileLine(g, x + 16 * s, y + 6 * s, x + 16 * s, y + 12 * s, 'rgba(79,209,197,0.35)', 0.8 * s);
+  }
+  g.restore();
+}
+
+// Draw structure cells as one auto-tiled shape. cells: [{ m: materialId, x, y, o }] in grid
+// cells; (ox, oy) = screen position of grid cell (0, 0); u = pixels per cell.
+function drawStructureCells(g, cells, side, ox, oy, u) {
+  if (!cells.length) return;
+  const scheme = sideScheme(side);
+  const mats = PART_LIBRARY.materials;
+  const s = u / TILE_UNITS;
+  const at = new Map();
+  let minY = Infinity, maxY = -Infinity;
+  for (const c of cells) { at.set(c.x + ',' + c.y, c); minY = Math.min(minY, c.y); maxY = Math.max(maxY, c.y + 1); }
+  g.save();
+  g.translate(ox, oy);
+  g.lineCap = 'butt';
+  // 1. base fills and material texture
+  for (const c of cells) {
+    const mat = mats[c.m], L = mat.look;
+    g.fillStyle = L.paintable ? scheme[L.paint || 'p1'] : L.color;
+    g.beginPath(); tileCellPath(g, c, mat, u); g.fill();
+    tileTexture(g, c, mat, u, s);
+  }
+  // 2. shared top-left key light: one vertical gradient over the whole structure
+  g.save();
+  g.beginPath();
+  for (const c of cells) tileCellPath(g, c, mats[c.m], u);
+  g.clip();
+  const gr = g.createLinearGradient(0, minY * u, 0, maxY * u);
+  gr.addColorStop(0, 'rgba(255,255,255,0.20)'); gr.addColorStop(0.45, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.36)');
+  g.fillStyle = gr;
+  g.fillRect(-100000, minY * u, 200000, (maxY - minY) * u);
+  g.restore();
+  // 3. edges, seams and rivets
+  for (const c of cells) {
+    const mat = mats[c.m], L = mat.look, o = c.o || 0;
+    const x = c.x * u, y = c.y * u;
+    const bw = (L.kind === 'heavy' ? 2.4 : 1.6) * s;
+    if (mat.shape === 'slope') {
+      const p = SLOPE_PTS[o], h = SLOPE_HYP[o];
+      const x1 = (c.x + p[h[0]][0]) * u, y1 = (c.y + p[h[0]][1]) * u, x2 = (c.x + p[h[1]][0]) * u, y2 = (c.y + p[h[1]][1]) * u;
+      tileLine(g, x1, y1, x2, y2, o < 2 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)', bw * 1.6);
+      tileLine(g, x1, y1, x2, y2, TILE_OUTLINE, s);
+    }
+    for (const [name, nb, x1, y1, x2, y2] of [
+      ['top', at.get(c.x + ',' + (c.y - 1)), x, y, x + u, y],
+      ['bottom', at.get(c.x + ',' + (c.y + 1)), x, y + u, x + u, y + u],
+      ['left', at.get((c.x - 1) + ',' + c.y), x, y, x, y + u],
+      ['right', at.get((c.x + 1) + ',' + c.y), x + u, y, x + u, y + u],
+    ]) {
+      if (mat.shape === 'slope' && !SLOPE_SOLID[o].includes(name)) continue;
+      if (!nb) {
+        const inset = bw / 2;
+        const dx = name === 'left' ? inset : name === 'right' ? -inset : 0;
+        const dy = name === 'top' ? inset : name === 'bottom' ? -inset : 0;
+        tileLine(g, x1 + dx, y1 + dy, x2 + dx, y2 + dy, name === 'top' || name === 'left' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)', bw);
+        tileLine(g, x1, y1, x2, y2, TILE_OUTLINE, s);
+        if (L.rivets) {
+          const horiz = name === 'top' || name === 'bottom';
+          for (let t = 4; t < 32; t += 8) {
+            const rx = horiz ? x1 + t * s : x1 + (name === 'left' ? 3.2 : -3.2) * s;
+            const ry = horiz ? y1 + (name === 'top' ? 3.2 : -3.2) * s : y1 + t * s;
+            tileRivet(g, rx, ry, s);
+          }
+        }
+      } else if (nb.m !== c.m) {
+        if (name === 'bottom' || name === 'right') tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.38)', 0.9 * s);
+      } else {
+        const seam = L.seam || 2;
+        if (name === 'right' && (c.x + 1) % seam === 0) tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.24)', 0.7 * s);
+        if (name === 'bottom' && (c.y + 1) % seam === 0) tileLine(g, x1, y1, x2, y2, 'rgba(0,0,0,0.24)', 0.7 * s);
+      }
+    }
+  }
+  g.restore();
+}
+
+// Draw a list of placed parts: auto-tiled structure first (as one shape, so seams and edges
+// join up), then every other part on top. items: [{ p: { def, scorch }, x, y, seed }] with
+// x, y in grid cells. Structure cells still get their own damage marks.
+function drawPlacedParts(g, items, side, ox, oy, cs) {
+  const cells = [];
+  for (const it of items) if (isTiled(it.p.def.id)) cells.push({ m: it.p.def.id, x: it.x, y: it.y, o: 0 });
+  drawStructureCells(g, cells, side, ox, oy, cs);
+  for (const it of items) {
+    if (isTiled(it.p.def.id)) drawPartDamage(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, it.seed);
+  }
+  for (const it of items) {
+    if (!isTiled(it.p.def.id)) drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, side, it.seed);
+  }
 }
 
 /* ---------- 06_ui.js ---------- */
@@ -3283,7 +3545,7 @@ function rebuildVehicle(V, first) {
       const old = V.weapons.find((w) => w.part === i);
       weapons.push(old || {
         part: i, def: d, reload: 0, angle: V.dir > 0 ? 0 : Math.PI, face: V.dir, swing: 0, burst: 0, gap: 0,
-        pivotGx: p.x * CELL + CELL * 0.5, pivotGy: cy, turret: false, rounds: d.rounds || 0,
+        pivotGx: (p.x + barrelPivotX(d)) * CELL, pivotGy: (D.h - p.y - barrelPivotY(d)) * CELL, turret: false, rounds: d.rounds || 0,
       });
     }
   });
@@ -4025,7 +4287,26 @@ function weaponPivot(V, w, out) {
   gridToLocal(V, w.pivotGx, w.pivotGy, out);
   return localToWorld(V, out.x, out.y, out);
 }
-function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+// Barrel geometry from the part's JSON (design/07 §6.4): the pivot (moving.barrel.pivot) and
+// the muzzle (anchors.muzzle), in cells from the footprint's top-left. { pivot, len } or null.
+const _barrelGeo = {};
+function barrelGeometry(d) {
+  if (_barrelGeo[d.id] === undefined) {
+    const L = PART_LIBRARY.parts[d.id];
+    const piv = L && L.moving && L.moving.barrel && L.moving.barrel.pivot;
+    const mz = L && L.anchors && L.anchors.muzzle;
+    _barrelGeo[d.id] = piv && mz && mz[0] > piv[0] ? { pivot: piv, len: mz[0] - piv[0] } : null;
+  }
+  return _barrelGeo[d.id];
+}
+// Pivot in cells from the part's top-left. v1 rule: the centre of the rearmost cell.
+function barrelPivotX(d) { const b = barrelGeometry(d); return b ? b.pivot[0] : 0.5; }
+function barrelPivotY(d) { const b = barrelGeometry(d); return b ? b.pivot[1] : d.h / 2; }
+// Metres from pivot to muzzle. v1 rule: from the part's width.
+function barrelLength(d) {
+  const b = barrelGeometry(d);
+  return b ? b.len * CELL : d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6);
+}
 const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.
@@ -5683,9 +5964,15 @@ function drawPart(g, p, x, y, cs, side, seed) {
   const w = d.w * cs, h = d.h * cs;
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
+  if (isTiled(d.id)) {
+    // Structure cell on its own (palette icons, a cell being moved): auto-tiled as a shape of one.
+    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], side, x, y, cs);
+    drawPartDamage(g, p, x, y, cs, seed);
+    return;
+  }
   g.save();
-  if (drawPartArt(g, p, x, y, cs)) {
-    // Imported art: only the procedural damage overlay is added below.
+  if (drawPartArt(g, p, x, y, cs, side)) {
+    // Part art: only the procedural damage overlay is added below.
   } else switch (d.id) {
     case 'frame':
       g.strokeStyle = shade(steel, 0.75); g.lineWidth = Math.max(1, cs * 0.12);
@@ -5985,8 +6272,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
-  // Damage: scorch and holes.
+  drawPartDamage(g, p, x, y, cs, seed);
+  g.strokeStyle = 'rgba(8,10,14,0.55)';
+  g.lineWidth = 1;
+  if (!hasPartArt(d.id, side) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.restore();
+}
+
+// Damage marks on a part's footprint: scorch, then holes.
+function drawPartDamage(g, p, x, y, cs, seed) {
   if (p.scorch > 0.05) {
+    const w = p.def.w * cs, h = p.def.h * cs;
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = `rgba(12,10,8,${Math.min(0.65, p.scorch * 0.7)})`;
     g.fillRect(x, y, w, h);
@@ -5998,10 +6294,6 @@ function drawPart(g, p, x, y, cs, side, seed) {
       for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x + rng.range(0.2, 0.8) * w, y + rng.range(0.2, 0.8) * h, cs * rng.range(0.06, 0.12), 0, Math.PI * 2); g.fill(); }
     }
   }
-  g.strokeStyle = 'rgba(8,10,14,0.55)';
-  g.lineWidth = 1;
-  if (!art.get(d.id) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  g.restore();
 }
 
 // Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
@@ -6013,20 +6305,9 @@ function paintParts(V, idxs, ppm, pad) {
   c.height = Math.ceil((D.h * CELL + pad * 2) * ppm);
   const g = c.getContext('2d');
   const o = pad * ppm;
-  // Structure first, then everything else, so fittings sit on top of plates.
-  const order = idxs.slice().sort((a, b) => (V.parts[a].def.cat === 'structure' ? 0 : 1) - (V.parts[b].def.cat === 'structure' ? 0 : 1));
-  for (const i of order) {
-    const p = V.parts[i];
-    drawPart(g, p, o + p.x * cs, o + p.y * cs, cs, V.side, V.id * 97 + i);
-  }
-  // Directorate vehicles get a light red wash, so imported art (painted in League colours)
-  // still reads as enemy until faction paint masks arrive (design/07 §4).
-  if (V.side === 1) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = 'rgba(170,45,30,0.16)';
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'source-over';
-  }
+  // Auto-tiled structure first, then everything else, so fittings sit on top of plates.
+  // Each side is painted in its own scheme (design/07 §3, §6).
+  drawPlacedParts(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs);
   return c;
 }
 
@@ -6055,10 +6336,10 @@ function renderPartsSprite(V, idxs) {
   c.width = Math.max(1, Math.ceil((x1 - x0) * cs));
   c.height = Math.max(1, Math.ceil((y1 - y0) * cs));
   const g = c.getContext('2d');
-  for (const i of idxs) {
+  drawPlacedParts(g, idxs.map((i) => {
     const p = V.parts[i];
-    drawPart(g, Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), (p.x - x0) * cs, (p.y - y0) * cs, cs, V.side, i);
-  }
+    return { p: Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), x: p.x - x0, y: p.y - y0, seed: i };
+  }), V.side, 0, 0, cs);
   return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
 }
 
@@ -6075,6 +6356,7 @@ function drawVehicle(g, V) {
   if (V.gone) return;
   const S = view.S;
   const spr = vehicleSprite(V, S);
+  drawBarrels(g, V, true);              // barrels whose art sits behind the body
   const b = V.body;
   const k = S / spr.ppm;
   g.save();
@@ -6087,7 +6369,7 @@ function drawVehicle(g, V) {
   g.drawImage(spr.canvas, ox, oy, spr.canvas.width * k, spr.canvas.height * k);
   g.filter = 'none';
   g.restore();
-  const tmp = { x: 0, y: 0 };
+  const tmp = _bp;
   if (art.debug) {
     for (const p of V.parts) {
       if (!p.alive || !art.get(p.def.id)) continue;
@@ -6096,9 +6378,17 @@ function drawVehicle(g, V) {
       drawArtMarker(g, 'origin', view.sx(tmp.x), view.sy(tmp.y));
     }
   }
-  // Barrels, drawn live.
+  drawBarrels(g, V, false);
+}
+
+// Barrels, drawn live, with SVG art or as lines. behind: only those drawn before the vehicle.
+const _bp = { x: 0, y: 0 };
+function drawBarrels(g, V, behind) {
+  const S = view.S;
+  const tmp = _bp;
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive || w.def.secondary) continue;
+    if (barrelBehind(w.def, V.side) !== behind) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -6106,7 +6396,10 @@ function drawVehicle(g, V) {
     const L = barrelLength(d);
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
-    if (drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S)) {
+    if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
+    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, V.side);
+    g.filter = 'none';
+    if (drawn) {
       if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }
       continue;
     }
@@ -7795,6 +8088,17 @@ SCREENS.designer = {
     }
   },
 
+  // Barrel at zero elevation, from the part's pivot (SVG art, or a line).
+  drawBarrelPreview(g, P, ox, oy, x, y, cs) {
+    const px = ox + (x + barrelPivotX(P)) * cs, py = oy + (y + barrelPivotY(P)) * cs;
+    const len = (barrelLength(P) / CELL) * cs;
+    if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+    if (drawBarrelArt(g, P, px, py, 0, len, 0)) return;
+    g.strokeStyle = '#30343b';
+    g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + len, py); g.stroke();
+  },
+
   paletteDown(e, id, btn) {
     audio.unlock();
     const startX = e.clientX, startY = e.clientY;
@@ -8087,26 +8391,17 @@ SCREENS.designer = {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
-    // Parts: structure first.
-    const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
-    for (const i of order) {
-      if (this.move && this.move.idx === i) continue;
-      const c = d.cells[i];
-      drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
-        // Barrel preview at zero elevation.
-        const P = PARTS[c.p];
-        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
-        const len = barrelLength(P) * cs * 2;
-        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
-        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
-        g.strokeStyle = '#30343b';
-        g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
-        g.beginPath();
-        g.moveTo(ox + (c.x + 0.5) * cs, oy + (c.y + P.h / 2) * cs);
-        g.lineTo(ox + (c.x + 0.5) * cs + barrelLength(P) * cs * 2, oy + (c.y + P.h / 2) * cs);
-        g.stroke();
-      }
+    // Parts: auto-tiled structure first, then the rest with their barrels at zero elevation.
+    const items = [];
+    d.cells.forEach((c, i) => { if (!(this.move && this.move.idx === i)) items.push({ p: { def: PARTS[c.p], scorch: 0 }, x: c.x, y: c.y, seed: i }); });
+    drawPlacedParts(g, items.filter((it) => isTiled(it.p.def.id)), 0, ox, oy, cs);
+    for (const it of items) {
+      const P = it.p.def;
+      if (isTiled(P.id)) continue;
+      const gun = P.cat === 'weapon' && P.id !== 'smoke' && !P.secondary;
+      if (gun && barrelBehind(P, 0)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
+      drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, 0, it.seed);
+      if (gun && !barrelBehind(P, 0)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
     }
     if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.

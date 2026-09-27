@@ -2,7 +2,7 @@
 
 - **Releases:** each step is a playable release on the GitHub Pages link. Sessions end with a Progress log row.
 - **What v2.1 does:** it fits design v2 onto the game that already exists. v1 reached v0.2.2 (land, sea, submarine, aircraft and helicopter battles), and none of that is thrown away.
-- **Order:** first bridge the existing game to v2 (steps 2.5–2.8), then build the campaign (0.3 onwards).
+- **Order:** first bridge the existing game to v2 (steps 2.5–2.8, with 2.5d bringing Part 2d across), then build the campaign (0.3 onwards).
 
 ## Where the build stands (v0.2.3)
 
@@ -51,10 +51,23 @@
 ### Acceptance (2.5)
 
 - [x] The game plays exactly as before (all v1 tests pass). Parts and templates now come from `src/parts` and `src/vehicles`. (v0.2.4, step 2.5a)
-- [ ] A new foundry zip (SVG plus the JSON art fields) shows up in the game after integration, with no code changes.
-- [ ] The c75 SVG art renders in both League and Directorate colours, at phone scale, with the barrel moving correctly.
+- [x] A new foundry zip (SVG plus the JSON art fields) shows up in the game after integration, with no code changes. (v0.2.5: every part with a `.svg` is drawn from it)
+- [x] The c75 SVG art renders in both League and Directorate colours, at phone scale, with the barrel moving correctly. (v0.2.5; smoke test `svg-1`, `svg-2` screenshots and the muzzle check)
 
-## Step 2.6: three on the field and the Battle Simulator (v0.2.5)
+## Step 2.5d: bring Part 2d across (v0.2.6)
+
+The producer chose to keep Part 2d, which was built on the v1 game in another session and never merged (branch `claude/design-06-part-2-vehicles-f07cv0`, one commit): radar, ECM and guided missiles, heat, breakdowns and crew roles, a test range picker and design lineage. It is brought across now, before the code moves further away from it.
+
+- **Rebuild it on the current game,** not by merging the branch: its new parts go into `src/parts` as JSON (no art yet), and its code changes are re-applied file by file (`10e_systems.js` is new).
+- **Design docs:** its v1 doc changes go into the v2.1 docs. Radar, ECM, missiles and heat arrive earlier than Part 5 planned; Part 5 keeps the rest (missile designer, warheads, drones, energy weapons).
+- **Test:** its own smoke checks come across with it; everything else still passes.
+
+### Acceptance (2.5d)
+
+- [ ] Every Part 2d feature works as it did on its branch, with its parts read from the library.
+- [ ] All existing tests pass, and the Part 2d branch can be deleted.
+
+## Step 2.6: three on the field and the Battle Simulator (v0.2.7)
 
 - **Reserves and line-up for both sides:**
   - at most 3 ships on the field each
@@ -79,7 +92,7 @@
 - [ ] The command wheel works on phone (long-press) and desktop (right-click).
 - [ ] The Battle Simulator runs land, coast and sea battles. The Gauntlet is unchanged.
 
-## Step 2.7: airships (v0.2.6)
+## Step 2.7: airships (v0.2.8)
 
 - **New parts:** envelope materials `canvas_bag` and `rigid_env` (remove `planned`), and the `lifteng` part (05 §3.2).
 - **Physics:** lift from envelopes and lift engines against mass, using the helicopter controller for movement and height. Burst or burning envelopes lose lift; below a lift margin of 1.0 the airship sinks, and it crashes the way a helicopter does.
@@ -92,7 +105,7 @@
 - [ ] An airship designed from scratch flies, climbs, descends, fights and falls when its envelopes are shot up.
 - [ ] A gunship can fight alongside tanks inland and alongside ships at sea.
 
-## Step 2.8: classes, tiers and paint (v0.2.7)
+## Step 2.8: classes, tiers and paint (v0.2.9)
 
 - **Designer class selector:** domain and class set the grid and part limit (`classes.json`). The v1 grid sizes are replaced by the classes.
 - **Existing designs that no longer fit a class** keep working. They're marked "outside class limits: refit needed" (campaign only).
@@ -217,6 +230,7 @@ This is v2 "Part 2" (the world map): the open world, the five factions, settleme
 | 2026-09-27 | Design v2.1 | 0.2.3 | Design v2.1 applied: the part library now uses the game's own ids, categories and stat names, and holds all 52 v1 parts, 15 structure cells and the 15 v1 templates, copied exactly from the game's data (bridge check: 0 differences). The golden sample 75 mm gun is now `c75`. v1 design docs archived in `design/v1/`. Roadmap now continues from v0.2.3 with steps 2.5 to 2.8. Docs, tools and data only; no game code changed. | Two art zips on `main` (`foundry-batch-a`, `foundry-bridge`) use the pre-v2.1 part names (`wpn_c37_std` etc.) and are not integrated yet; waiting on the producer: rename to the game's ids, or have the Foundry resend. | Step 2.5a: parts from the library |
 | 2026-09-27 | Art | 0.2.3 | Art: Foundry batch A and the bridge. The zips used the old v2 names, so they were renamed to the game's ids. Art added to 9 existing parts (c37, mg, optics, smoke, ammo, cargo, fuel_s, prop, aprop): only the SVG and art fields; stats unchanged (bridge check still 0 differences). 5 new tier 0 parts added with art: steam, wheel_w, swivel (stats from 05 §3.1), and bridge and cabin (new; stats from the Foundry sheet in the game's stat names, added to 05 §3.1 and roster D7–D8). Library now 57 parts. | The game doesn't draw from the library yet, so the art isn't visible in play until step 2.5. The new parts aren't used by any design yet. The embedded SVG art adds about 115 KB to game.js. | Step 2.5a: parts from the library |
 | 2026-09-27 | 2.5a | 0.2.4 | Art batch A1 integrated first (track, eng_m, crew2, turret, radio; new art for c37, mg, optics, fuel_s, ammo): the Light and Medium tanks are now fully covered in the previews. Step 2.5a: the game now builds its parts and templates from the part library (`PART_LIBRARY`) instead of the tables in `07_data.js`, which are removed. A smoke test compares every v1 part and template with a snapshot taken before the switch (`tests/v1-parts-snapshot.json`): no differences. The Drafting Office shows each part's tier as a small T0–T4 tag. The palette lists parts by tier, then mass. The v2 library entries not marked planned now appear in the palette: plank, iron-banded plank, composite and light alloy cells, the steam engine, spoked wheel, swivel gun, command bridge and crew cabin. Deleted the one-off import and bridge-check tools. | The new parts and cells still use the plain code drawing (their SVG art arrives with 2.5b) and haven't been balance-tested in battle. The palette's details line (size, mass, cost) is cut off at the right edge on phones (existing layout, unchanged). The autoplay time in the smoke test varies with machine speed (12–18 s); it isn't a balance measure. | Step 2.5b: SVG part art in the game |
+| 2026-09-27 | 2.5b | 0.2.5 | SVG part art in the game. Every part with a `.svg` in the library is painted in its side's colours (player League, enemy Directorate), split into body and barrel, and turned into images at 64 px per cell when the game starts. SVG art is used first, then the old PNG route, then the v1 code drawing. Barrels rotate about the pivot in the part's JSON, and shells and muzzle flashes start at its muzzle; a barrel written behind its body in the SVG is drawn behind the vehicle. Structure cells (plate, armour, frames, timber and the new plank cells) are auto-tiled from `materials.json`: painted in the side's colours, with joined-up edges, seams and rivets. The red wash on enemy vehicles is gone, since enemies now have their own paint. New smoke check: the art is ready for both sides, a 75 mm shell leaves exactly from the art's muzzle facing either way, and the barrel recoils; close-ups at every screen size. Headless performance unchanged (about 0.5 ms of game work per frame). Roadmap: step 2.5d added to bring Part 2d across; later steps' versions moved up by two. | 2.5c housekeeping (updating old `design/0N` comments to `design/v1/`) is only partly done: new comments point at the right docs, old ones are unchanged. Moving parts other than barrels (wheels, tracks, propellers, the steam engine's flywheel) are drawn still for now. The Drafting Office parts list shows the art only if it had loaded before the list was opened (it loads within a second of starting the game). | Step 2.5d: bring Part 2d across |
 
 ### v1 progress log (before design v2)
 

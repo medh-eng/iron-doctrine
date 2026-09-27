@@ -28,7 +28,26 @@ function weaponPivot(V, w, out) {
   gridToLocal(V, w.pivotGx, w.pivotGy, out);
   return localToWorld(V, out.x, out.y, out);
 }
-function barrelLength(d) { return d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6); }
+// Barrel geometry from the part's JSON (design/07 §6.4): the pivot (moving.barrel.pivot) and
+// the muzzle (anchors.muzzle), in cells from the footprint's top-left. { pivot, len } or null.
+const _barrelGeo = {};
+function barrelGeometry(d) {
+  if (_barrelGeo[d.id] === undefined) {
+    const L = PART_LIBRARY.parts[d.id];
+    const piv = L && L.moving && L.moving.barrel && L.moving.barrel.pivot;
+    const mz = L && L.anchors && L.anchors.muzzle;
+    _barrelGeo[d.id] = piv && mz && mz[0] > piv[0] ? { pivot: piv, len: mz[0] - piv[0] } : null;
+  }
+  return _barrelGeo[d.id];
+}
+// Pivot in cells from the part's top-left. v1 rule: the centre of the rearmost cell.
+function barrelPivotX(d) { const b = barrelGeometry(d); return b ? b.pivot[0] : 0.5; }
+function barrelPivotY(d) { const b = barrelGeometry(d); return b ? b.pivot[1] : d.h / 2; }
+// Metres from pivot to muzzle. v1 rule: from the part's width.
+function barrelLength(d) {
+  const b = barrelGeometry(d);
+  return b ? b.len * CELL : d.w * CELL * 1.25 + (d.auto ? 0.3 : 0.6);
+}
 const TWIN_GAP = 0.2;             // metres between the barrels of a twin mount and its centre line
 
 // World-angle limits of a weapon. Turrets aim to either side; hull guns only forward.

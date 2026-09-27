@@ -400,6 +400,33 @@ function physicsCheck() {
 }
 
 // Howitzer aim: a battery can reach targets from close range out to its full range.
+// Step 2.5b: SVG art is ready for both sides, and a shell leaves exactly from the art's muzzle
+// (anchors.muzzle in the part's JSON), facing right and mirrored; firing kicks the barrel back.
+function svgArtCheck() {
+  const out = { missing: [], failed: art.failed.slice(), muzzle: [] };
+  for (const id of Object.keys(PART_LIBRARY.svg)) {
+    const hasBarrel = PART_LIBRARY.svg[id].includes('data-role="barrel"');
+    for (let s = 0; s < 2; s++) {
+      const e = art.svg[s][id];
+      if (!e || !e.body || (hasBarrel && !e.barrel)) out.missing.push(`${id}/${s}`);
+    }
+  }
+  const B = createBattle(1);
+  for (const dir of [1, -1]) {
+    const V = makeVehicle(designFromTemplate('medium'), dir > 0 ? 0 : 1, 60, dir, B.T);
+    const w = V.weapons.find((x) => x.def.id === 'c75');
+    const p = V.parts[w.part], mz = PART_LIBRARY.parts.c75.anchors.muzzle;
+    const want = { x: 0, y: 0 };
+    gridToLocal(V, (p.x + mz[0]) * CELL, (V.design.h - p.y - mz[1]) * CELL, want);
+    localToWorld(V, want.x, want.y, want);
+    fireWeapon(B, V, w, angleFromElevation(V, 0, dir), 0);
+    let shell = null;
+    shells.forEachAlive((sh) => { if (sh.shooter === V) { shell = { x: sh.x, y: sh.y }; sh.alive = false; } });
+    out.muzzle.push({ dir, off: shell ? Math.hypot(shell.x - want.x, shell.y - want.y) : 99, kick: w.kick || 0 });
+  }
+  return out;
+}
+
 function howitzerCheck() {
   const B = createBattle(7);
   const H = B.units.find((u) => u.template === 'howitzer');

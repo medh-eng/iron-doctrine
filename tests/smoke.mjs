@@ -493,6 +493,39 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       steps.push('art contract placeholders');
     }
 
+    // ---------- 9f. SVG part art (step 2.5b): both sides' colours, barrel pivot and muzzle, phone scale
+    {
+      await wait(300);
+      const sv = await G(() => window.__GAME__.svgArtCheck());
+      check(!sv.missing.length && !sv.failed.length, `SVG art not ready: missing ${sv.missing.join(', ')}; failed ${sv.failed.join(', ')}`);
+      for (const m of sv.muzzle) check(m.off < 0.01 && m.kick > 0, `c75 shell did not leave from the art's muzzle (facing ${m.dir}): ${m.off.toFixed(3)} m off, kick ${m.kick}`);
+      const closeUp = async (level, side, elev, name) => {
+        await G(([level, side, elev]) => {
+          const g = window.__GAME__;
+          g.go('battle', level ? { level } : { test: g.designFromTemplate('medium') });
+          for (const p of g.SCREENS.battle.B.pending) p.at = 0;      // later waves arrive now
+        }, [level, side, elev]);
+        await wait(300);
+        await G(([level, side, elev]) => {
+          const g = window.__GAME__;
+          const S = g.SCREENS.battle;
+          S.B.cfg.light = 'day'; S.B.cfg.weather = 'clear'; S.B.revealAll = true;
+          const V = S.B.units.find((u) => u.side === side && u.weapons.some((w) => w.def.id === 'c75'));
+          const w = V.weapons.find((x) => x.def.id === 'c75');
+          if (!S.frozen) g.toggleTime();
+          w.angle = V.dir > 0 ? V.body.a + elev * Math.PI / 180 : V.body.a + Math.PI - elev * Math.PI / 180;
+          S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 3; S.cam.x = V.body.x + V.dir * 1.5; S.cam.y = V.body.y + 1.5;
+          g.input.lastWorldTouch = performance.now() + 1e5;
+        }, [level, side, elev]);
+        await wait(400);
+        await shot(name);
+        await G(() => { const g = window.__GAME__; if (g.SCREENS.battle.frozen) g.toggleTime(); });
+      };
+      await closeUp(0, 0, 15, 'svg-1-league-c75');
+      await closeUp(11, 1, 8, 'svg-2-directorate-c75');
+      steps.push('SVG art');
+    }
+
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery
     if (!vp.mobile) {
       await G(() => window.__GAME__.ladder.start(10, true));

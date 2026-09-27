@@ -313,6 +313,17 @@ SCREENS.designer = {
     }
   },
 
+  // Barrel at zero elevation, from the part's pivot (SVG art, or a line).
+  drawBarrelPreview(g, P, ox, oy, x, y, cs) {
+    const px = ox + (x + barrelPivotX(P)) * cs, py = oy + (y + barrelPivotY(P)) * cs;
+    const len = (barrelLength(P) / CELL) * cs;
+    if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
+    if (drawBarrelArt(g, P, px, py, 0, len, 0)) return;
+    g.strokeStyle = '#30343b';
+    g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + len, py); g.stroke();
+  },
+
   paletteDown(e, id, btn) {
     audio.unlock();
     const startX = e.clientX, startY = e.clientY;
@@ -605,26 +616,17 @@ SCREENS.designer = {
       g.fillStyle = 'rgba(214,238,255,0.25)';
       g.fillRect(ox, oy + d.h * cs, d.w * cs, 3);
     }
-    // Parts: structure first.
-    const order = d.cells.map((_, i) => i).sort((a, b) => (PARTS[d.cells[a].p].cat === 'structure' ? 0 : 1) - (PARTS[d.cells[b].p].cat === 'structure' ? 0 : 1));
-    for (const i of order) {
-      if (this.move && this.move.idx === i) continue;
-      const c = d.cells[i];
-      drawPart(g, { def: PARTS[c.p], scorch: 0 }, ox + c.x * cs, oy + c.y * cs, cs, 0, i);
-      if (PARTS[c.p].cat === 'weapon' && PARTS[c.p].id !== 'smoke' && !PARTS[c.p].secondary) {
-        // Barrel preview at zero elevation.
-        const P = PARTS[c.p];
-        const px = ox + (c.x + 0.5) * cs, py = oy + (c.y + P.h / 2) * cs;
-        const len = barrelLength(P) * cs * 2;
-        if (art.debug) { drawArtMarker(g, 'pivot', px, py); drawArtMarker(g, 'muzzle', px + len, py); }
-        if (drawBarrelArt(g, P, px, py, 0, len)) continue;
-        g.strokeStyle = '#30343b';
-        g.lineWidth = Math.max(2, (P.auto ? 0.07 : 0.06 + P.cal / 900) * cs * 2);
-        g.beginPath();
-        g.moveTo(ox + (c.x + 0.5) * cs, oy + (c.y + P.h / 2) * cs);
-        g.lineTo(ox + (c.x + 0.5) * cs + barrelLength(P) * cs * 2, oy + (c.y + P.h / 2) * cs);
-        g.stroke();
-      }
+    // Parts: auto-tiled structure first, then the rest with their barrels at zero elevation.
+    const items = [];
+    d.cells.forEach((c, i) => { if (!(this.move && this.move.idx === i)) items.push({ p: { def: PARTS[c.p], scorch: 0 }, x: c.x, y: c.y, seed: i }); });
+    drawPlacedParts(g, items.filter((it) => isTiled(it.p.def.id)), 0, ox, oy, cs);
+    for (const it of items) {
+      const P = it.p.def;
+      if (isTiled(P.id)) continue;
+      const gun = P.cat === 'weapon' && P.id !== 'smoke' && !P.secondary;
+      if (gun && barrelBehind(P, 0)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
+      drawPart(g, it.p, ox + it.x * cs, oy + it.y * cs, cs, 0, it.seed);
+      if (gun && !barrelBehind(P, 0)) this.drawBarrelPreview(g, P, ox, oy, it.x, it.y, cs);
     }
     if (art.debug) for (const c of d.cells) if (art.get(c.p)) drawArtMarker(g, 'origin', ox + c.x * cs, oy + c.y * cs);
     // Selected part outline.

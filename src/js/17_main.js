@@ -159,6 +159,8 @@ window.__GAME__ = {
   damageCheck: () => damageCheck(),
   destroyPart: (B, V, i, src) => destroyPart(B, V, i, src),
   howitzerCheck: () => howitzerCheck(),
+  svgArtCheck: () => svgArtCheck(),
+  designFromTemplate,
   // Forced events for scripted play.
   winBattle: () => { const B = SCREENS.battle.B; for (const V of B.units) if (V.side === 1) knockOut(B, V, null, 'Knocked out'); },
   loseSquad: () => { const B = SCREENS.battle.B; for (const V of B.squad) knockOut(B, V, null, 'Knocked out'); },
