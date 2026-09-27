@@ -1,0 +1,73 @@
+{
+  "id": "steam",
+  "name": "Steam engine",
+  "family": "steam",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0.75,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1.5,
+      1.9
+    ],
+    "exhaust": [
+      2.6,
+      -0.66
+    ],
+    "smoke": [
+      [
+        1.6,
+        0.9
+      ],
+      [
+        0.5,
+        1.2
+      ]
+    ]
+  },
+  "moving": {
+    "flywheel": {
+      "pivot": [
+        0.69,
+        0.19
+      ]
+    }
+  },
+  "stats": {
+    "mass": 1400,
+    "hp": 90,
+    "armor": 5,
+    "power": 120,
+    "rel": 0.985,
+    "heat": 30,
+    "fuelUse": 60
+  },
+  "cost": {
+    "wood": 2,
+    "metal": 6
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_steam_std)."
+}

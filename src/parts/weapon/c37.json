@@ -16,6 +16,42 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 1,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2.97,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.6,
+        0.3
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.75,
+        0.5
+      ],
+      "elevation": [
+        -8,
+        25
+      ]
+    }
+  },
   "stats": {
     "mass": 250,
     "hp": 40,
@@ -42,5 +78,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as wpn_c37_std)."
 }

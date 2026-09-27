@@ -18,20 +18,20 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | A2 | eng_m | Diesel engine M | mobility | 3×2 | todo |
 | A3 | crew2 | Crew compartment | structure | 2×2 | todo |
 | A4 | turret | Turret ring | structure | 3×1 | todo |
-| A5 | c37 | Cannon 37 mm | weapon | 2×1 | todo |
-| A6 | mg | Machine gun | weapon | 1×1 | todo |
+| A5 | c37 | Cannon 37 mm | weapon | 2×1 | integrated (batch A) |
+| A6 | mg | Machine gun | weapon | 1×1 | integrated (batch A) |
 | A7 | c75 | Cannon 75 mm | weapon | 3×1 | **integrated (golden sample)** |
 | A8 | radio | Radio | system | 1×1 | todo |
-| A9 | optics | Optics | system | 1×1 | todo |
-| A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | todo |
-| A11 | ammo | Ammo rack | logistics | 1×1 | todo |
+| A9 | optics | Optics | system | 1×1 | integrated (batch A) |
+| A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A) |
+| A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A) |
 | A12 | wheel_s | Road wheel | mobility | 1×1 | todo |
 | A13 | eng_s | Petrol engine S | mobility | 2×2 | todo |
 | A14 | hmg | Heavy machine gun | weapon | 1×1 | todo |
 | A15 | c105 | Cannon 105 mm | weapon | 4×1 | todo |
-| A16 | smoke | Smoke launcher | weapon | 1×1 | todo |
+| A16 | smoke | Smoke launcher | weapon | 1×1 | integrated (batch A) |
 | A17 | wheel_l | Off-road wheel | mobility | 2×2 | todo |
-| A18 | cargo | Cargo bay | logistics | 2×2 | todo |
+| A18 | cargo | Cargo bay | logistics | 2×2 | integrated (batch A) |
 | A19 | how | Howitzer 150 mm | weapon | 4×2 | todo |
 | A20 | eng_h | Diesel engine H | mobility | 4×2 | todo |
 | A21 | fc | Fire-control computer | system | 1×1 | todo |
@@ -50,7 +50,7 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | B3 | keel | Keel | structure | 2×1 | todo |
 | B4 | bulk | Watertight bulkhead | structure | 1×2 | todo |
 | B5 | marine | Marine diesel | mobility | 4×3 | todo |
-| B6 | prop | Ship propeller | mobility | 1×2 | todo |
+| B6 | prop | Ship propeller | mobility | 1×2 | integrated (batch A) |
 | B7 | thrust | Manoeuvre thruster | mobility | 1×1 | todo |
 | B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | todo |
 | B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | todo |
@@ -70,7 +70,7 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | C3 | aero | Aero piston engine | mobility | 2×1 | todo |
 | C4 | jet | Jet engine | mobility | 3×1 | todo |
 | C5 | turb | Gas turbine | mobility | 3×2 | todo |
-| C6 | aprop | Air propeller | mobility | 1×2 | todo |
+| C6 | aprop | Air propeller | mobility | 1×2 | integrated (batch A) |
 | C7 | rotor | Rotor | mobility | 4×1 | todo |
 | C8 | trotor | Tail rotor | mobility | 1×1 | todo |
 | C9 | ac20 | Autocannon 20 mm | weapon | 2×1 | todo |
@@ -81,12 +81,14 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| D1 | steam | Steam engine | mobility | 3×2 | todo |
-| D2 | wheel_w | Spoked wheel | mobility | 2×2 | todo |
-| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | todo |
+| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
+| D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
+| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
 | D4 | whull | Wooden hull section | structure | 2×2 | todo |
 | D5 | wbow | Wooden bow section | structure | 2×2 | todo |
 | D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
+| D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
+| D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
 
 ## Batch E: airships (roadmap step 2.7)
 

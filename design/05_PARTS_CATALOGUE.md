@@ -130,6 +130,8 @@ The ✔ in the last column means SVG art exists. The rest use the code drawing u
 | swivel | Swivel gun 20 mm | weapon | 1×1 | 60 | 20 | 3 | pen 12, dmg 18, reload 1.2, range 700, vel 200, spread 1.0, cal 20, shells 40 | W1 M1 | — |
 | whull | Wooden hull section | structure | 2×2 | 400 | 110 | 6 | sealed 1 | W4 | floods, burns |
 | wbow | Wooden bow section | structure | 2×2 | 300 | 95 | 6 | sealed 0.5 | W3 | floods, bowShape, burns |
+| bridge | Command bridge | structure | 2×2 | 350 | 90 | 10 | crew 3, rel 0.998 | W3 M1 | — |
+| cabin | Crew cabin | structure | 2×1 | 180 | 50 | 6 | crew 2, rel 0.998 | W2 | — |
 
 ### 3.2 Airships (step 2.7)
 
