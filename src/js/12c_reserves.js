@@ -12,6 +12,9 @@ const EDGE_EXIT = 6;              // metres from the rear edge at which a pullin
 const AIR_EXIT_SECS = 3;          // aircraft pulling back fly off after this long
 const ENEMY_PULL_HEALTH = 0.35;   // enemy captains pull back below this share of hit points
 
+// Quick rotation perk: your side's entry delay × B.rotationMul.
+const entryDelay = (B, side) => ENTRY_DELAY * (side === 0 ? B.rotationMul || 1 : 1);
+
 function vehicleHealth(V) {
   let hp = 0;
   for (const p of V.parts) if (p.alive) hp += p.hp;
@@ -94,6 +97,7 @@ function enterFromReserve(B, side, slot) {
   }
   restoreDamage(V, e);
   if (!e.hp) applyShipState(V);        // a campaign ship's damage, fuel and ammo
+  if (campaign && V.design._shipId) crewBonus(V);           // captains' levels and perks
   if (!B.demo) floatText(side === 0 ? `${V.name} enters` : 'Enemy reinforcement', V.body.x, V.body.y + V.height + 1.5, side === 1);
   return V;
 }
@@ -127,7 +131,7 @@ function withdraw(B, V) {
   if (B.target === V) B.target = null;
   const slots = side === 0 ? B.squad : B.enemySlots;
   const slot = slots.indexOf(V);
-  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+  if (slot >= 0) B.entering.push({ side, slot, at: B.time + entryDelay(B, side) });
   if (V === B.me) {
     const next = B.squad.find((U) => !U.destroyed);
     if (next) takeVehicle(B, next);
@@ -145,7 +149,7 @@ function stepReserves(B, dt) {
       if (!V) continue;
       if (V.destroyed && !V.withdrawn && !V.replaced) {
         V.replaced = true;
-        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+        B.entering.push({ side, slot, at: B.time + entryDelay(B, side) });
         continue;
       }
       if (V.destroyed) continue;
@@ -154,7 +158,7 @@ function stepReserves(B, dt) {
       if (!V.pulling) continue;
       V.pullT += dt;
       if (V !== B.me) V.throttle = side === 0 ? -1 : 1;
-      const out = V.flier ? V.pullT > AIR_EXIT_SECS : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
+      const out = V.flier ? V.pullT > AIR_EXIT_SECS * (side === 0 ? B.rotationMul || 1 : 1) : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
       if (out) withdraw(B, V);
     }
   }

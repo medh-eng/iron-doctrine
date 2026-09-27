@@ -21,7 +21,10 @@ function makeOffers(s) {
   });
   // Citadels with no large designs to offer fall back to the medium ones.
   const designs = pool.length ? pool : Object.keys(TEMPLATES).filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
-  for (let k = 0; k < 3 && designs.length; k++) s.offers.push({ kind: 'captain', level: rng.int(R.cap[0], R.cap[1]), design: rng.pick(designs), name: officerName(rng) });
+  for (let k = 0; k < 3 && designs.length; k++) {
+    const design = rng.pick(designs), need = classFor(designFromTemplate(design)).captain;   // able to command it
+    s.offers.push({ kind: 'captain', level: Math.max(need, rng.int(R.cap[0], R.cap[1])), design, name: officerName(rng) });
+  }
   s.offers.push({ kind: 'admiral', level: rng.int(R.adm[0], R.adm[1]), name: officerName(rng) });
   s.offersDay = campaign.day;
 }
@@ -80,6 +83,7 @@ function formFleet(s, admiral, domain) {
 function assignCaptain(fl, ship, o) {
   if (ship.captainId && byId('officers', ship.captainId)) return 'The ship has a captain.';
   if (o.fleetId !== fl.id || o.shipId) return 'That captain is not free here.';
+  if (!canCommand(o, ship)) return `${shipStats(ship).clsName} needs a captain of level ${shipStats(ship).captain}.`;
   ship.captainId = o.id; o.shipId = ship.id;
   return '';
 }
@@ -101,7 +105,8 @@ function salvageRates(ships) {
   for (const sh of ships) for (const c of shipDesign(sh).cells) if (PARTS[c.p].salvage || c.p === 'crane') cranes++;
   cranes = Math.min(SALVAGE.maxCranes, cranes);
   const clan = campaign.faction === 'clans' ? SALVAGE.clans : 1;
-  return { part: (SALVAGE.part + cranes * SALVAGE.crane) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan };
+  const sc = hasPerk('scavengers');
+  return { part: (SALVAGE.part + cranes * SALVAGE.crane + (sc ? 0.04 : 0)) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan * (sc ? 1.2 : 1) };
 }
 // wrecks: [{ design, own }] of ships destroyed. Returns { scrap, items }.
 function salvageFrom(wrecks, winners, rng) {

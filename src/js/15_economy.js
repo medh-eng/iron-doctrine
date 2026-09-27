@@ -27,8 +27,9 @@ function marketPrice(s, good, faction) {
   if (faction === 'league' && rel === 'own') p *= 0.85;
   return p;
 }
-const buyPrice = (s, good, faction) => (SELL_ONLY[good] ? null : marketPrice(s, good, faction));
-const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : SELL_ONLY[good] ? b : b * SELL_SHARE; };
+const charter = (faction) => (faction === campaign.faction && hasPerk('charter') ? 0.08 : 0);   // Merchant charter perk
+const buyPrice = (s, good, faction) => { const b = SELL_ONLY[good] ? null : marketPrice(s, good, faction); return b === null ? null : b * (1 - charter(faction)); };
+const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : (SELL_ONLY[good] ? b : b * SELL_SHARE) * (1 + charter(faction)); };
 
 // Forts and citadels cost upkeep; unpaid, their services stop (01 §8.5).
 const servicesStopped = (s) => campaign.unpaid > 0 && SETTLEMENT_TYPES[s.type].money < 0;
@@ -52,7 +53,7 @@ function shipAmmoFull(ship) {
 function holdCap(fl) {
   let kg = 0;
   for (const s of fleetShips(fl)) for (const c of shipDesign(s).cells) kg += PARTS[c.p].cargo || 0;
-  return kg / 100;
+  return (kg / 100) * (fl.faction === campaign.faction ? (hasPerk('holds') ? 1.1 : 1) * (fl.convoy && hasPerk('qmcorps') ? 1.1 : 1) : 1);
 }
 const holdUsed = (fl) => cargoUsed(fl.hold);
 const storeCap = (s) => SETTLEMENT_TYPES[s.type].store;
@@ -149,7 +150,7 @@ function production(s) {
   if (B.scrap) out.scrap = B.scrap;
   return out;
 }
-const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1); };
+const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1) * (m > 0 && s.faction === campaign.faction && hasPerk('tax') ? 1.15 : 1); };
 
 // ---------- upgrades (08 §7)
 const upgradesFor = (s) => UPGRADES.filter((u) => u.from === s.type);

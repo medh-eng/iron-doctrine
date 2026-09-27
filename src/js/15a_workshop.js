@@ -5,13 +5,7 @@
 // (ships, repairs, refits); only the first job in each queue advances.
 
 // ---------- what can be made where
-// Until the tech tree (Part 5), tier 0–1 parts count as researched; reverse-engineered
-// families (campaign.unlocked) also count.
-const partUnlocked = (id) => {
-  if (PARTS[id].tier <= 1) return true;
-  const lib = PART_LIBRARY.parts[id], known = campaign.unlocked || [];
-  return known.includes(id) || (!!lib && known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family));
-};
+// What's researched: partUnlocked in 15b_research.
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
 // City: tier 0–2 parts marked for cities; metropolis: everything.
 function craftableAt(s, id) {
@@ -40,7 +34,7 @@ function withFee(cost) {
   cost.money = (cost.money || 0) + value * CRAFT_FEE;
   return cost;
 }
-const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1); };
+const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1) * (hasPerk('crafters') ? 0.75 : 1); };
 function costText(c) {
   const parts = GOODS.filter((g) => c[g] > 0.005).map((g) => `${GOOD_NAMES[g].toLowerCase()} ${+c[g].toFixed(1)}`);
   if (c.money > 0.5) parts.push(`money ${Math.ceil(c.money)}`);
@@ -116,7 +110,7 @@ function craft(s, id) {
   (s.queue = s.queue || []).push({ kind: 'part', p: id, hours: q.hours, left: q.hours });
   return '';
 }
-const refineRate = (s) => REFINE[s.type] || null;
+const refineRate = (s) => (REFINE[s.type] ? { scrap: REFINE[s.type].scrap - (hasPerk('refinery') ? 1 : 0), hours: REFINE[s.type].hours } : null);
 function refine(s, n) {
   const R = refineRate(s);
   const why = servicesBlock(s) || (!R ? 'No refinery here.' : '');
@@ -145,7 +139,8 @@ function buildQuote(s, design) {
     addCost(cost, P.cost);
   }
   withFee(cost);
-  cost.money += RECRUIT.captain;                 // a level-1 captain takes command
+  const need = (classFor(design) || { captain: 1 }).captain;
+  cost.money += RECRUIT.captain * need * need;     // a captain of the level the class needs takes command
   hours += mass / 400;
   return { cost, hours, items: Object.values(used).reduce((a, n) => a + n, 0) };
 }
@@ -244,6 +239,7 @@ function jobName(j) {
   if (j.kind === 'part') return PARTS[j.p].name;
   if (j.kind === 'refine') return `${j.n} electronics`;
   if (j.kind === 'study') return `Study: ${PARTS[j.p].name}`;
+  if (j.kind === 'research') return `Research: ${TECH[j.node].name}`;
   if (j.kind === 'ship') return shipDesign({ design: j.design }).name;
   if (j.kind === 'repair') { const fl = byId('fleets', j.fleet); return `Repairs: ${fl ? fl.name : 'a fleet'}`; }
   const sh = byId('ships', j.ship); return `Refit: ${sh ? shipStats(sh).name : 'a ship'}`;
@@ -251,11 +247,15 @@ function jobName(j) {
 function finishJob(s, j, rng) {
   if (j.kind === 'part') { itemsAt(s.store).push({ p: j.p, cond: 1 }); return `${s.name}: ${PARTS[j.p].name} made.`; }
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
-  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
+  if (j.kind === 'research') return finishResearch(s, j.node);
+  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXp(GA_XP.study); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
     sh.garrison = s.id;
-    byId('officers', sh.captainId).garrisonedAt = s.id;
+    const cap = byId('officers', sh.captainId);
+    cap.garrisonedAt = s.id;
+    cap.level = Math.max(1, shipStats(sh).captain);
+    cap.xp = CAPTAIN_XP[cap.level - 1] || 0;
     return `${s.name}: ${shipStats(sh).name} launched; she waits in the garrison.`;
   }
   const fl = byId('fleets', j.fleet);
@@ -292,7 +292,7 @@ function repairBays(fl) {
 function fieldRepair(fl, dt) {
   const bays = repairBays(fl);
   if (!bays) return;
-  let hp = FIELD_REPAIR_HP * dt * bays;
+  let hp = FIELD_REPAIR_HP * dt * bays * (hasPerk('engineers') ? 1.3 : 1);
   for (const sh of fleetShips(fl)) {
     if (!sh.hp) continue;
     const cells = shipDesign(sh).cells;

@@ -546,3 +546,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .map-panel { position: absolute; }
 .map-close { position: absolute; right: 6px; top: 4px; min-width: 44px; padding: 0; }
 .map-title { padding-right: 52px; min-height: 44px; line-height: 44px; }
+
+/* Research (Part 5a): tech nodes and perks as cards in rows by branch */
+.research-row { align-items: stretch; padding-bottom: 2px; }
+.research-node { flex: 0 0 190px; display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: 8px; background: rgba(10, 30, 48, 0.7); box-shadow: inset 0 0 0 1px rgba(214, 238, 255, 0.18); }
+.research-node b { font-size: 13px; }
+.research-node small { font-size: 12px; color: rgba(214, 238, 255, 0.85); }
+.research-node.known { box-shadow: inset 0 0 0 1px var(--amber); }
+.research-node.locked { opacity: 0.55; }
+.research-node .btn { margin-top: auto; }
+.research-state { font-style: italic; }
+.dz-hidden { font-size: 12px; color: rgba(214, 238, 255, 0.8); padding: 4px 6px; }

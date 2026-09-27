@@ -118,9 +118,10 @@ Object.assign(SCREENS.map, {
       }
     }
     if (!docked.length) body.appendChild(el('p', 'card-text map-note', 'Dock a fleet here to repair or refit it.'));
-    // Build ships: they join this settlement's garrison with a new level-1 captain.
+    // Build ships: they join this settlement's garrison with a new captain.
     body.appendChild(el('div', 'ws-label', 'Build a ship'));
-    body.appendChild(el('p', 'card-text map-note', `New ships wait in the garrison with a new captain (${RECRUIT.captain} included). Parts in stock are used first.`));
+    body.appendChild(button('Drafting Office (researched parts)', () => { SCREENS.designer.returnTo = 'map'; screens.go('designer', { campaign: true }); }, 'btn btn-small'));
+    body.appendChild(el('p', 'card-text map-note', 'New ships wait in the garrison with a new captain of the level their class needs (included). Parts in stock are used first.'));
     for (const id of yardDesigns(s)) {
       const d = shipDesign({ design: id });
       const q = buildQuote(s, d);

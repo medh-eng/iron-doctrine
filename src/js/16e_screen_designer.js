@@ -36,6 +36,8 @@ SCREENS.designer = {
   enter(arg = {}) {
     if (arg.restore) this.st = arg.restore;
     else this.load(arg.design || this.scratch(), arg.base || null, arg.owned !== false && !!arg.design);
+    // Opened from the campaign: only researched parts (design/08 §11; the tree is campaign-only).
+    if (!arg.restore) this.st.campaign = !!arg.campaign && !!campaign;
     this.build();
     audio.playTheme(null);
     // Desktop: show the ghost under the mouse while a part is picked up.
@@ -85,6 +87,7 @@ SCREENS.designer = {
   // Why a part can't go at (x, y), or '' if it can. ignore = index of a part being moved.
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
+    if (this.st.campaign && campaign && !partUnlocked(id)) return `${P.name}: not researched in your campaign.`;
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
     // The class part limit (structure cells don't count).
     const cls = classById(this.st.cls);
@@ -295,8 +298,10 @@ SCREENS.designer = {
     const list = this.partList;
     list.textContent = '';
     for (const t of this.palette.querySelectorAll('.dz-tab')) t.setAttribute('aria-selected', String(t.dataset.cat === this.st.cat));
+    let hidden = 0;
     for (const P of Object.values(PARTS)) {
       if (P.cat !== this.st.cat) continue;
+      if (this.st.campaign && campaign && !partUnlocked(P.id)) { hidden++; continue; }
       const b = el('button', 'dz-part');
       b.type = 'button';
       b.dataset.part = P.id;
@@ -319,6 +324,7 @@ SCREENS.designer = {
       b.addEventListener('pointerdown', (e) => this.paletteDown(e, P.id, b));
       list.appendChild(b);
     }
+    if (hidden) list.appendChild(el('small', 'dz-hidden', `${hidden} more part${hidden > 1 ? 's' : ''} need research in your campaign.`));
   },
 
   // Barrel at zero elevation, from the part's pivot (SVG art, or a line).

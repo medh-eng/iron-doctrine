@@ -74,6 +74,7 @@ function economyCheck() {
 // garrison, dock repair, refits returning parts, field repair from the hold.
 function workshopCheck() {
   newCampaign('league', 5151);
+  campaign.tech = TECH_NODES.filter((n) => n[2] === 1).map((n) => n[0]);   // the tier 1 nodes, as researched
   const out = {};
   const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
   const run = (h) => { for (let t = 0; t < h; t += 0.5) stepWorks(0.5); };
@@ -347,6 +348,60 @@ function siegeCheck() {
   let ev = null;
   for (let h = 0; h < 48 && !ev; h++) { campaign.running = true; ev = campaignTick(1).find((e) => e.contact && e.contact.siege); }
   out.aiSiege = !!(ev && ev.contact.siege === vil.id && ev.contact.defend);
+  return out;
+}
+
+// Part 5a (08 §10–§12): research needs Command Points, prerequisites, the right settlement and
+// goods; it unlocks parts for crafting, the yard and the campaign designer; perks work.
+function researchCheck() {
+  newCampaign('league', 9494);
+  const out = {};
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  campaign.treasury = 1e5;
+  out.startLocked = !partUnlocked('c75') && partUnlocked('c37') && !partUnlocked('arm40') && partUnlocked('timber');
+  out.noCp = researchBlock('guns_medium', home);
+  const ga = gaOfficer();
+  gainXp(ga, 2000);                         // level 6 → 10 CP
+  out.cp = { level: ga.level, free: cpFree() };
+  out.prereq = researchBlock('guns_heavy', home);
+  out.cityT3 = researchBlock('missiles', home);
+  const c0 = craft(home, 'c75');
+  out.craftLocked = c0 !== '';
+  out.research = research('guns_medium', home);
+  out.spent = cpSpent();
+  out.twice = researchBlock('guns_medium', home);
+  for (let h = 0; h < TECH_COST[1].days * 24 + 1; h++) stepWorks(1);
+  out.known = knows('guns_medium') && partUnlocked('c75') && partUnlocked('hmg');
+  addCost(home.store, { metal: 50 });
+  out.craftOpen = craft(home, 'c75');
+  // Perks: CP limit, effects.
+  const before = holdCap(playerFleets()[0]);
+  out.perk = takePerk('tax');
+  out.perkTwice = perkBlock('tax') !== '';
+  out.money = +(settlementMoney(home) / (SETTLEMENT_TYPES[home.type].money * (home.coastal ? COASTAL_MONEY : 1))).toFixed(3);
+  out.wider = takePerk('wider');
+  out.cpLeft = cpFree();
+  out.tooDear = perkBlock('second') !== '';
+  // Grand Admiral fleet size: level 6 → as an admiral of level 2 → 4 ships.
+  const flag = playerFleets().find((fl) => fleetAdmiral(fl) === ga);
+  out.gaCap = fleetCap(flag);
+  // Captain levels in battle: a level-5 captain aims better than the base.
+  const sh = fleetShips(flag).find((q) => q.captainId && byId('officers', q.captainId).rank === 'captain');
+  byId('officers', sh.captainId).level = 5;
+  const V = { design: { _shipId: sh.id }, ai: { accuracy: 1, reaction: 1 } };
+  crewBonus(V);
+  out.crew = { acc: +V.ai.accuracy.toFixed(3), react: +V.ai.reaction.toFixed(3) };
+  // Captains command only classes their level allows.
+  const beh = makeShip('behemoth', 'league', makeRng(1));
+  const low = { id: 'o_t', rank: 'captain', level: 1, fleetId: flag.id, alive: true };
+  campaign.officers.push(low);
+  beh.captainId = null; beh.fleetId = flag.id;
+  out.classLimit = assignCaptain(flag, beh, low) !== '';
+  // GA XP from a capture.
+  const xp0 = ga.xp;
+  const vil = world.settlements.find((s) => !s.faction);
+  captureSettlement(vil, 'league');
+  out.captureXp = Math.round(ga.xp - xp0);
   return out;
 }
 /*TEST:END*/

@@ -132,6 +132,7 @@ function stepConvoys(dt) {
       if (!T.shipIds) fl.docked = T.id;
       convoyDeliver(fl, T);
       r.trips++;
+      gaXp(GA_XP.convoy);
       r.step = 'toA';
     }
   }

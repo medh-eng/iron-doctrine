@@ -378,6 +378,61 @@ const RAID_PULL = 0.6;                       // AI fleets treat convoys as this 
 const SIEGE = { sections: 2, keepMul: 2, emplaceAcc: 1.2, wallRepair: 0.15, restartDays: 2, plunder: 0.25, plunderDays: 10, aiFrom: 4, aiEdge: 1.3, aiRest: 72 };
 const MILITIA = ['mgcar', 'scout', 'light'];  // militia designs, smallest first
 const AI_EMPLACE = ['mg', 'c37', 'c75'];      // what AI settlements mount in their slots
+// Tech tree (08 §11): [id, name, tier, prerequisites]. A node unlocks every part whose JSON
+// says unlock.tech = id, plus the structure materials listed in MATERIAL_TECH.
+const TECH_NODES = [
+  ['hull_iron', 'Iron hulls', 1, []], ['lift_rigid', 'Rigid envelopes', 1, []], ['prop_petrol', 'Petrol engines', 1, []],
+  ['prop_diesel', 'Diesel engines', 1, []], ['guns_medium', 'Medium guns', 1, []], ['radio', 'Radio', 1, []],
+  ['fire_control', 'Fire control', 1, []], ['flares', 'Flares', 1, []], ['cargo_2', 'Better cargo', 1, []],
+  ['repair_bay', 'Repair bays', 1, []], ['salvage', 'Salvage', 1, []],
+  ['hull_heavy', 'Heavy armour', 2, ['hull_iron']], ['lift_engines', 'Lift engines', 2, ['lift_rigid']],
+  ['prop_heavy', 'Heavy engines', 2, ['prop_diesel']], ['prop_turbine', 'Gas turbines', 2, ['prop_diesel']],
+  ['guns_heavy', 'Heavy guns', 2, ['guns_medium']], ['flame', 'Flamethrowers', 2, ['guns_medium']], ['rockets', 'Rockets', 2, ['guns_medium']],
+  ['submarines', 'Submarines', 2, ['hull_iron']], ['sonar', 'Sonar', 2, ['radio']], ['aviation', 'Aviation', 2, ['prop_petrol']],
+  ['rotorcraft', 'Rotorcraft', 2, ['aviation']], ['radar', 'Radar', 2, ['radio']], ['stabiliser', 'Stabilisers', 2, ['fire_control']],
+  ['workshop', 'Mobile workshops', 2, ['repair_bay']],
+  ['hull_advanced', 'Advanced hulls', 3, ['hull_heavy']], ['lift_armoured', 'Armoured envelopes', 3, ['lift_engines']],
+  ['guns_super', 'Super-heavy guns', 3, ['guns_heavy']], ['carriers', 'Carriers', 3, ['aviation', 'hull_heavy']],
+  ['jets', 'Jets', 3, ['aviation', 'prop_turbine']], ['missiles', 'Missiles', 3, ['rockets']],
+  ['warheads_special', 'Special warheads', 3, ['missiles']], ['drones', 'Drones', 3, ['radio']], ['drones_2', 'Drones II', 3, ['drones']],
+  ['fabricators', 'Fabricators', 3, ['workshop']], ['detachment', 'Detachable sections', 3, ['hull_advanced']], ['ecm', 'ECM', 3, ['radar']],
+  ['hull_precursor', 'Precursor plating', 4, ['hull_advanced']], ['lift_levitator', 'Levitators', 4, ['lift_armoured']],
+  ['prop_reactor', 'Precursor reactor', 4, ['prop_turbine', 'hull_advanced']], ['warheads_emp', 'EMP and cluster', 4, ['warheads_special']],
+  ['drones_3', 'Drones III', 4, ['drones_2']], ['lasers', 'Lasers', 4, ['fire_control', 'hull_advanced']],
+  ['plasma', 'Plasma', 4, ['lasers']], ['energy_heavy', 'Heavy energy weapons', 4, ['plasma']],
+];
+const TECH_BRANCH = {
+  Hulls: ['hull_iron', 'hull_heavy', 'hull_advanced', 'hull_precursor', 'detachment'], Lift: ['lift_rigid', 'lift_engines', 'lift_armoured', 'lift_levitator'],
+  Propulsion: ['prop_petrol', 'prop_diesel', 'prop_heavy', 'prop_turbine', 'prop_reactor'], Guns: ['guns_medium', 'guns_heavy', 'flame', 'rockets', 'guns_super'],
+  Sea: ['submarines', 'sonar', 'carriers'], Air: ['aviation', 'rotorcraft', 'jets'],
+  'Missiles and drones': ['missiles', 'warheads_special', 'warheads_emp', 'drones', 'drones_2', 'drones_3', 'fabricators'],
+  Energy: ['lasers', 'plasma', 'energy_heavy'], Systems: ['radio', 'fire_control', 'flares', 'radar', 'stabiliser', 'ecm', 'workshop'],
+  Logistics: ['cargo_2', 'repair_bay', 'salvage'],
+};
+const TECH_COST = { 1: { cp: 2, money: 400, elec: 0, scrap: 0, days: 2, at: 'city' }, 2: { cp: 3, money: 1200, elec: 10, scrap: 0, days: 4, at: 'city' },
+  3: { cp: 4, money: 3000, elec: 40, scrap: 0, days: 6, at: 'metropolis' }, 4: { cp: 6, money: 6000, elec: 100, scrap: 50, days: 10, at: 'metropolis' } };
+const MATERIAL_TECH = { plate: 'hull_iron', arm20: 'hull_iron', arm40: 'hull_heavy', arm80: 'hull_heavy', slope40: 'hull_heavy', composite: 'hull_advanced', alloy: 'hull_advanced', precursor: 'hull_precursor', rigid_env: 'lift_rigid', armored_env: 'lift_armoured' };
+const CP_PER_LEVEL = 2;                      // Command Points per Grand Admiral level above 1
+// Perks (08 §12): [id, group, name, CP, effect].
+const PERKS = [
+  ['veteran', 'Command', 'Veteran eye', 1, '+5% accuracy for all your captains'],
+  ['rotation', 'Command', 'Quick rotation', 2, 'Pull-back and reserve entry times −40%'],
+  ['discipline', 'Command', 'Iron discipline', 2, 'AI captains react 20% faster'],
+  ['wider', 'Command', 'Wider command', 3, 'Grand Admiral fleet size +2'],
+  ['second', 'Command', 'Second in command', 3, 'Admirals’ fleet size +1'],
+  ['holds', 'Logistics', 'Deep holds', 1, 'Cargo capacity +10%'],
+  ['frugal', 'Logistics', 'Frugal engines', 2, 'Map fuel use −10%'],
+  ['scavengers', 'Logistics', 'Scavengers', 2, 'Salvage chance +4%, scrap +20%'],
+  ['qmcorps', 'Logistics', 'Quartermaster corps', 2, 'Convoys +20% speed, +10% cargo'],
+  ['engineers', 'Engineering', 'Field engineers', 1, 'Field repair +30%'],
+  ['crafters', 'Engineering', 'Master crafters', 2, 'Crafting time −25%'],
+  ['refinery', 'Engineering', 'Refinery know-how', 2, 'Refining needs 1 less scrap'],
+  ['charter', 'Trade', 'Merchant charter', 2, 'Buy prices −8%, sell prices +8%'],
+  ['tax', 'Trade', 'Tax reform', 3, 'Settlement money +15%'],
+];
+// Grand Admiral XP (08 §10) beyond battles.
+const GA_XP = { capture: { village: 100, fort: 250, city: 300, citadel: 700, metropolis: 800 }, convoy: 20, study: 50 };
+const CAPTAIN_LEVEL = { accuracy: 0.02, reaction: 0.03 };   // per level above 1 (08 §10)
 const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
 const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;

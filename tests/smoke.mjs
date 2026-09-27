@@ -686,7 +686,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         Q(sg.install === '' && sg.installed && sg.defend.side === 0 && sg.defend.empl && sg.defend.squad > 0, 'emplacements or defending wrong');
         Q(sg.held.owner === 'league' && sg.held.walls < 0.9 && sg.held.mended && sg.auto, 'a failed siege should leave mending walls');
         Q(sg.aiTarget && sg.aiSiege, 'the AI did not besiege a weak settlement');
-        E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
+        const rs = await G(() => window.__GAME__.researchCheck());
+        const RS = (c, what) => check(c, `${what} ${JSON.stringify(rs)}`);
+        RS(rs.startLocked && rs.noCp !== '' && rs.cp.free === 2 * (rs.cp.level - 1) && rs.prereq !== '' && rs.cityT3 !== '', 'research gating wrong');
+        RS(rs.craftLocked && rs.research === '' && rs.spent === 2 && rs.twice !== '' && rs.known && rs.craftOpen === '', 'researching a node did not unlock its parts');
+        RS(rs.perk === '' && rs.perkTwice && rs.money === 1.15 && rs.wider === '' && rs.cpLeft === 0 && rs.tooDear && rs.gaCap === 6, 'perks or Command Points wrong');
+        RS(rs.crew.acc === 1.08 && rs.crew.react === 0.88 && rs.classLimit && rs.captureXp === 100, 'officer levels or Grand Admiral XP wrong');
+        E(ec.migrate.ok && ec.migrate.v === 3 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
       await wait(200);
@@ -769,6 +775,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       });
       await wait(200);
       await shot('29-barracks');
+      await G(() => window.__GAME__.go('research'));
+      await wait(250);
+      check(await page.locator('.research-node').count() > 40, 'the tech tree is missing nodes');
+      await shot('32-research');
+      await G(() => { window.__GAME__.SCREENS.research.tab = 'perks'; window.__GAME__.SCREENS.research.build(); });
+      await wait(150);
+      await shot('33-perks');
+      await G(() => window.__GAME__.go('map'));
+      await wait(200);
       // A convoy with a route, and the Supply layer.
       await G(() => {
         const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;

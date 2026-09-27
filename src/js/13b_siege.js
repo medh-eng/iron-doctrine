@@ -115,7 +115,8 @@ function createSiegeBattle(contact, headless) {
   cfg.name = `Siege of ${s.name} · ${cfg.name}`;
   cfg.how = playerDefends ? 'Hold the walls: the enemy wins by destroying your keep or every defender.' : 'Destroy the keep, or every defender, to take the settlement.';
   const B = createBattle(0, { cfg, reserves: true, demo: !!headless, squad: playerDefends ? def : atk, enemyForce: playerDefends ? atk : def });
-  for (const V of B.units) applyShipState(V);
+  for (const V of B.units) if (!V.structure) { applyShipState(V); crewBonus(V); }
+  B.rotationMul = hasPerk('rotation') ? 0.6 : 1;
   buildDefences(B, s, playerDefends ? 0 : 1);
   B.contact = contact;
   // applyBattleOutcome's fleet bookkeeping: your fleets and theirs.
@@ -163,6 +164,7 @@ function captureSettlement(s, faction) {
   for (const fl of campaign.fleets) if (fl.docked === s.id && relation(fl.faction, faction) === 'war') fl.docked = null;
   computeTerritory(world);
   if (SCREENS.map) SCREENS.map.territoryDirty = true;
+  if (faction === campaign.faction) gaXp(GA_XP.capture[s.type] || 0);
   const who = factionOf(faction);
   const msg = `${s.name} was taken by ${faction === campaign.faction ? 'your forces' : who.name}${was ? '' : ' (it was neutral)'}.`;
   campaign.journal.push(`Day ${campaign.day}: ${msg}`);
