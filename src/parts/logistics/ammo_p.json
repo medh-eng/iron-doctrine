@@ -15,6 +15,20 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        0.5,
+        0.5
+      ]
+    ]
+  },
   "stats": {
     "mass": 320,
     "hp": 50,
@@ -33,5 +47,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: armoured bin (P2) with a hazard-striped blow-out lid (P3) and a slot showing shell bases."
 }

@@ -12,6 +12,20 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "moving": {
+    "impeller": {
+      "pivot": [
+        0.5,
+        0.45625
+      ]
+    }
+  },
   "stats": {
     "mass": 150,
     "hp": 30,
@@ -33,5 +47,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: tunnel thruster seen face-on; the impeller (role rotor) spins when the thruster runs. Hazard band in P3."
 }

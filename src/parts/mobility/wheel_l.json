@@ -12,6 +12,26 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "contact": [
+      1.0,
+      2.0
+    ]
+  },
+  "moving": {
+    "wheel": {
+      "pivot": [
+        1.0,
+        1.0
+      ]
+    }
+  },
   "stats": {
     "mass": 200,
     "hp": 50,
@@ -35,5 +55,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: lugged off-road tyre, split rim, disc painted P1; wheel group spins about the hub."
 }

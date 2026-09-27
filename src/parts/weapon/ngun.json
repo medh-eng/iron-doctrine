@@ -13,6 +13,40 @@
     "w": 4,
     "h": 3
   },
+  "overhang": {
+    "left": 0,
+    "right": 3.3,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      2.0,
+      2.9
+    ],
+    "muzzle": [
+      7.3,
+      1.5
+    ],
+    "smoke": [
+      [
+        1.5,
+        0.6
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.1,
+        1.5
+      ],
+      "elevation": [
+        -5,
+        30
+      ]
+    }
+  },
   "stats": {
     "mass": 9000,
     "hp": 200,
@@ -42,5 +76,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: welded gunhouse (P1, P2 roof, P3 band) with rangefinder hood and rear door. The barrel group holds both barrels (the far one darker, offset up) and the canvas blast bags. Pivot 1.1 cells (07 maximum); barrel length 6.2 cells = 4 x 1.25 + 1.2."
 }

@@ -15,6 +15,22 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0.25,
+    "bottom": 0
+  },
+  "anchors": {
+    "eye": [
+      0.39,
+      -0.08
+    ],
+    "lamp": [
+      0.725,
+      0.29
+    ]
+  },
   "stats": {
     "mass": 20,
     "hp": 10,
@@ -33,5 +49,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art (T2): welded sight box with an infra-red lamp (dark lens, faint red core) and a sight head. Anchor 'lamp' = IR lamp centre for a night glow."
 }

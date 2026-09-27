@@ -15,6 +15,20 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "moving": {
+    "gyro": {
+      "pivot": [
+        0.5,
+        0.45625
+      ]
+    }
+  },
   "stats": {
     "mass": 90,
     "hp": 15,
@@ -32,5 +46,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art (T2): gyro rotor (role rotor, spins while powered) in a gimbal ring on a hazard-striped base, hydraulic lines."
 }

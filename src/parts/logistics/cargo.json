@@ -24,10 +24,6 @@
   "mount": "hull",
   "layer": "front",
   "anchors": {
-    "mount": [
-      1,
-      1.95
-    ],
     "smoke": [
       [
         1,
@@ -53,5 +49,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_cargo_std)."
+  "notes": "Imported from v1 07_data.js. Art: canvas tilt over hoop bows (P2) above plank drop-sides (P1, P3 rail). Square ends so bays tile side by side along a truck bed."
 }

@@ -16,6 +16,40 @@
     "w": 4,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 3.2,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      7.2,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.7,
+        0.3
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.0,
+        0.5
+      ],
+      "elevation": [
+        -8,
+        20
+      ]
+    }
+  },
   "stats": {
     "mass": 1300,
     "hp": 80,
@@ -44,5 +78,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art (T2): welded slab mantlet, recoil cylinders, fume extractor, double-baffle muzzle brake. Barrel length 6.2 cells = 4 x 1.25 + 1.2."
 }

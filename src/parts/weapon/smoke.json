@@ -29,18 +29,18 @@
       0.5,
       0.95
     ],
-    "smoke": [
+    "launch": [
       [
-        0.19,
-        0.22
+        0.43,
+        0.39
       ],
       [
-        0.5,
-        0.22
+        0.66,
+        0.39
       ],
       [
-        0.81,
-        0.22
+        0.88,
+        0.39
       ]
     ]
   },
@@ -62,5 +62,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as sys_smoke_std)."
+  "notes": "Imported from v1 07_data.js. Art: three discharger tubes (one per salvo) on a P1 bracket, P3 bands, brass mouths. Anchor 'launch' = tube mouths."
 }

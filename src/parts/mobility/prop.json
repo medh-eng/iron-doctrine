@@ -21,20 +21,16 @@
   "mount": "hull_bottom",
   "layer": "front",
   "anchors": {
-    "mount": [
-      0.35,
-      0.05
-    ],
     "wash": [
-      1,
-      1.125
+      0.2,
+      1
     ]
   },
   "moving": {
     "screw": {
       "pivot": [
-        0.71875,
-        1.125
+        0.40625,
+        1
       ]
     }
   },
@@ -57,5 +53,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_prop_std)."
+  "notes": "Imported from v1 07_data.js. Art: cast bronze screw drawn edge-on (side view) on a P1 A-bracket; the shaft runs right into the hull. Animate the screw group by oscillating its vertical scale (foreshortening), not by rotation."
 }

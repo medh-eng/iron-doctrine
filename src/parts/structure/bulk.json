@@ -12,6 +12,12 @@
     "w": 1,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
   "stats": {
     "mass": 200,
     "hp": 100,
@@ -32,5 +38,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: watertight bulkhead: oval door (P2) with dogs, hinges and a handwheel, P3 marking band."
 }

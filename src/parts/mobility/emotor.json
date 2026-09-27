@@ -12,6 +12,20 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        1.0,
+        0.6
+      ]
+    ]
+  },
   "stats": {
     "mass": 1200,
     "hp": 70,
@@ -35,5 +49,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay: ribbed electric motor (P2, P3 band) with copper commutator end over a four-cell battery bank with copper busbars and a pilot lamp."
 }

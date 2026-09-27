@@ -15,6 +15,12 @@
     "w": 1,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
   "stats": {
     "mass": 60,
     "hp": 15,
@@ -33,5 +39,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay with a fire-control cabinet (P2): two dials, graduated range drum with crank, cable loom."
 }

@@ -12,6 +12,28 @@
     "w": 4,
     "h": 3
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "exhaust": [
+      3.47,
+      0.14
+    ],
+    "smoke": [
+      [
+        1.8,
+        1.0
+      ],
+      [
+        3.0,
+        2.2
+      ]
+    ]
+  },
   "stats": {
     "mass": 5000,
     "hp": 200,
@@ -34,5 +56,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: engine-room bay (T2): six-cylinder marine diesel with crankcase doors, lagged exhaust to a turbocharger and stack, catwalk and handrail, gauge board, hazard-striped flywheel guard; output coupling on the stern (left) side."
 }

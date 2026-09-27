@@ -12,6 +12,12 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
   "stats": {
     "mass": 450,
     "hp": 130,
@@ -34,5 +40,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: raked stem with a stem bar, hawse pipe and anchor, P3 draft marks along the stem."
 }
