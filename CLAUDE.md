@@ -39,7 +39,7 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
 ## Every session
 
 1. **Art inbox first.** If any `foundry-*.zip` files are in the repo root, integrate them before anything else (see "Integrating art" below).
-   - **Paused by the producer (2026-09-27):** art integration waits until Part 3 is done. Leave any foundry zips where they are and carry on with the roadmap.
+   - The producer paused art integration until Part 3 was done (2026-09-27). Part 3 is done (v0.3.0), so integrate any waiting foundry zips again.
 2. **Pick the step.** Read `design/06_ROADMAP_AND_CHECKLIST.md` and take the next unfinished step, unless the producer asked for something else.
 3. **Plan.** Write a 3–6 line plan based on that step's acceptance criteria.
 4. **Read only what you need.** Open just the design sections the step requires, and search the code instead of reading whole files.
