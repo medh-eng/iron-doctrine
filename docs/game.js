@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.2.9';
+const GAME_VERSION = '0.3.0';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -1806,7 +1806,7 @@ const SLOPE_HYP = [[0, 2], [0, 2], [2, 1], [0, 2]];
 function playerScheme() { return (save.profile.sim && save.profile.sim.scheme) || SIDE_SCHEMES[0]; }
 function resolvePaint(design, side) {
   const S = PART_LIBRARY.paints.schemes;
-  const p = side === 0 ? (design && design.paint) || { scheme: playerScheme() } : { scheme: SIDE_SCHEMES[1] };
+  const p = (design && design.paint) || { scheme: side === 0 ? playerScheme() : SIDE_SCHEMES[1] };
   const base = S[p.scheme] || S[SIDE_SCHEMES[side] || SIDE_SCHEMES[0]];
   const out = { p1: p.p1 || base.p1, p2: p.p2 || base.p2, p3: p.p3 || base.p3, camo: p.camo || 'none' };
   out.key = out.p1 + out.p2 + out.p3;
@@ -2634,6 +2634,81 @@ function testDriveConfig(range = 'land') {
   if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
   return c;
 }
+
+// ---------- Campaign (design/01 §2–§10, design/08, design/09). Tuning data for the world map.
+const WORLD_W = 192, WORLD_H = 144;   // map cells
+const WORLD_KM = 10;                  // km per map cell
+// Terrain types on the map. speed: × the fleet's march speed on land; road: × on roads.
+const MAP_TERRAIN = {
+  sea: { name: 'Sea', color: '#23507A' },
+  plains: { name: 'Plains', color: '#7E9A5A', speed: 1 },
+  forest: { name: 'Forest', color: '#4E6E3E', speed: 0.6 },
+  hills: { name: 'Hills', color: '#9A8F62', speed: 0.6 },
+  mountains: { name: 'Mountains', color: '#8C8A86', speed: 0 },   // impassable except at passes
+  pass: { name: 'Mountain pass', color: '#A09A8C', speed: 0.4 },
+  desert: { name: 'Desert', color: '#CDB27A', speed: 0.7 },
+  marsh: { name: 'Marsh', color: '#5F7A5E', speed: 0.4 },
+  tundra: { name: 'Tundra', color: '#A9B3A4', speed: 0.7 },
+  ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
+  ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
+};
+const ROAD_SPEED = 1.5;               // × on a road
+const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
+const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
+const STRANDED_SPEED = 0.1;           // an empty fleet crawls (land, sea); air can't move
+const DETECT_CELLS = { fleet: 8, settlement: 6 };
+const CONTACT_CELLS = 1.6;            // hostile fleets this close meet in battle
+const REINFORCE_CELLS = 4;            // fleets this close join a battle
+const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
+const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
+
+// Factions (09): where their territory sits (share of the map), capital type and name, looks.
+const FACTIONS = [
+  { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
+    identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },
+  { id: 'directorate', name: 'Directorate', at: [0.5, 0.5], capital: 'Forge Primus', capType: 'metropolis', coastal: false, color: '#C43C2C',
+    identity: 'Industrial state of foundry cities.', pros: ['Armour and tracks −15% cost', 'Metal production +20%'], cons: ['Fuel +15% price everywhere'] },
+  { id: 'skyreach', name: 'Skyreach Concord', at: [0.8, 0.22], capital: 'Aerie Crown', capType: 'citadel', coastal: false, color: '#E4DFD2',
+    identity: 'Mountain sky-clans sworn to a shared code.', pros: ['Lift +15%', 'Air fleets’ map fuel −15%'], cons: ['Metal production −20%'] },
+  { id: 'clans', name: 'Salvage Clans', at: [0.8, 0.8], capital: 'Rustmoor', capType: 'citadel', coastal: false, color: '#D9772E',
+    identity: 'Desert scavengers of the Precursor ruins.', pros: ['Salvage × 1.5'], cons: ['Few settlements produce wood'] },
+  { id: 'lumen', name: 'Lumen Collective', at: [0.5, 0.14], capital: 'Glasshold', capType: 'metropolis', coastal: false, color: '#4FD1C5',
+    identity: 'Relic technocrats of the frozen north.', pros: ['Research at their cities'], cons: ['Cold, slow land'] },
+];
+// Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
+const SETTLEMENT_TYPES = {
+  village: { name: 'Village', money: 15, stock: { fuel: 60, ammo: 30 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', money: 50, stock: { fuel: 200, ammo: 100 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', money: 150, stock: { fuel: 500, ammo: 250 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', money: -20, stock: { fuel: 250, ammo: 200 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', money: -60, stock: { fuel: 600, ammo: 500 }, price: 1.0, garrison: 12 },
+};
+const PRICES = { fuel: 6, ammo: 12 };        // money per unit (fuel 100 L, ammo 100 kg)
+const OWN_PRICE = 0.85, TRUCE_PRICE = 1.2, SELL_SHARE = 0.6, COASTAL_MONEY = 1.2;
+const STOCK_REFILL = 0.1;                    // share of normal market stock refilled per day
+const START_MONEY = 1500;
+const WAGES = { captain: 4, admiral: 15 };   // money per day × level
+// Ammo per shot in map units, by calibre (08 §8).
+const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0.06], [105, 0.14], [150, 0.35], [203, 0.8]];
+// XP (08 §10).
+const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
+const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
+const START_FLEETS = [
+  { domain: 'land', ships: ['medium', 'light', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
+];
+const AI_FLEETS = [
+  { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0'] },
+];
+// Name parts for officers and settlements (fictional).
+const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
+const NAME_LAST = ['Aldren', 'Brask', 'Corvel', 'Dunmore', 'Eskar', 'Falk', 'Garrow', 'Holt', 'Ivers', 'Jansk', 'Kestrel', 'Larkin', 'Morrow', 'Nettle', 'Orrin', 'Pell', 'Quarry', 'Rook', 'Sallow', 'Thorne', 'Vesk', 'Wick'];
+const PLACE_A = ['Ash', 'Brine', 'Cinder', 'Dun', 'Elder', 'Fell', 'Gull', 'Hollow', 'Iron', 'Kiln', 'Lark', 'Mire', 'North', 'Oak', 'Pike', 'Rust', 'Salt', 'Tarn', 'Vale', 'Wind'];
+const PLACE_B = ['by', 'ford', 'haven', 'mouth', 'reach', 'stead', 'wick', 'moor', 'cross', 'gate', 'hold', 'watch'];
 
 /* ---------- 08_design.js ---------- */
 /* ==== 08 DESIGN ==== */
@@ -7367,6 +7442,11 @@ function vehicleHealth(V) {
 // A reserve entry: the design, plus the state of a ship that has pulled back.
 function reserveEntry(design, V) {
   const e = { design, name: markName(design), health: 1, hp: null, fuel: null, shells: null };
+  if (!V && design._state && design._state.hp) {
+    let a = 0, b = 0;
+    design.cells.forEach((c, i) => { a += design._state.hp[i]; b += PARTS[c.p].hp; });
+    e.health = b ? a / b : 1;
+  }
   if (V) {
     e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
     e.health = vehicleHealth(V);
@@ -7434,6 +7514,7 @@ function enterFromReserve(B, side, slot) {
     B.enemySlots[slot] = V;
   }
   restoreDamage(V, e);
+  if (!e.hp) applyShipState(V);        // a campaign ship's damage, fuel and ammo
   if (!B.demo) floatText(side === 0 ? `${V.name} enters` : 'Enemy reinforcement', V.body.x, V.body.y + V.height + 1.5, side === 1);
   return V;
 }
@@ -7514,6 +7595,1000 @@ function sideBeaten(B, side) {
   return !B.reserve[side].length;
 }
 
+/* ---------- 13_autoresolve.js ---------- */
+/* ==== 13 AUTO-RESOLVE ==== */
+// Campaign battles (design/01 §10): the battlefield from the map location and weather, who can
+// deploy, the line-ups, and writing the results back to the map (damage, losses, captain
+// survival, XP, bounties). Auto-resolve runs the same battle rules headless and silent.
+
+const AUTO_SECS = 240;            // an auto-resolved battle runs at most this long
+const CAPTAIN_SURVIVES = 0.5;     // chance a captain survives the loss of their ship
+const BOUNTY = 0.05;              // money per destroyed enemy ship: 5% of its cost index (08 §6)
+
+// Where a battle at a map point is fought: open sea, coast or inland; the weather; the light.
+function battlePlace(x, y) {
+  let sea = 0, land = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) (isSeaCell(world, x + dx, y + dy) ? sea++ : land++);
+  const field = !land ? 'sea' : !sea ? 'inland' : 'coast';
+  const w = weatherAt(x, y);
+  const h = campaign.hour;
+  const light = h >= 20 || h < 5 ? 'night' : h >= 18 || h < 7 ? 'dusk' : 'day';
+  return { field, weather: w === 'clear' ? 'clear' : 'rain', weatherName: w, light, biome: terrainId(world, x, y) };
+}
+
+const DEPLOY = { inland: ['land', 'air'], sea: ['sea', 'air'], coast: ['land', 'sea', 'air'] };
+
+// Both sides' ships: every fleet within reinforcement range joins (01 §10.2); ships of domains
+// that can't fight here stay out.
+function battleSides(mine, theirs) {
+  const place = battlePlace(mine.x, mine.y);
+  const ok = DEPLOY[place.field];
+  const near = (fl, at) => fl.shipIds.length && Math.hypot(fl.x - at.x, fl.y - at.y) <= REINFORCE_CELLS;
+  const myFleets = [mine, ...playerFleets().filter((fl) => fl !== mine && near(fl, mine))];
+  const theirFleets = [theirs, ...campaign.fleets.filter((fl) => fl !== theirs && fl.faction !== campaign.faction && relation(fl.faction, campaign.faction) === 'war' && near(fl, theirs))];
+  const ships = (fleets) => fleets.filter((fl) => ok.includes(fl.domain)).flatMap((fl) => fleetShips(fl));
+  return { place, myFleets, theirFleets, mine: ships(myFleets), theirs: ships(theirFleets) };
+}
+
+function campaignBattleConfig(place) {
+  const c = simulatorConfig({ field: place.field, weather: place.weather, light: place.light, seed: (campaign.seed + campaign.day * 97 + Math.floor(campaign.hour) * 13) >>> 0 });
+  c.name = `${SIM_FIELDS[place.field]} · ${MAP_TERRAIN[place.biome] ? MAP_TERRAIN[place.biome].name : ''} · ${place.weatherName}`;
+  if (place.biome === 'forest') c.forest = 4;
+  if (place.biome === 'hills' || place.biome === 'pass') c.hills = 0.8;
+  if (place.biome === 'marsh') c.mud = 4;
+  c.how = 'Three ships a side on the field; the rest wait in reserve. Long-press a ship or its card for orders.';
+  return c;
+}
+
+// A ship's design for battle, carrying its damage, fuel and ammo.
+function battleDesign(ship) {
+  const d = shipDesign(ship);
+  d._shipId = ship.id;
+  d.paint = d.paint || { scheme: ship.faction };            // each faction's own colours (09)
+  d._state = {
+    hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
+    fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
+    ammo: ship.ammo,
+  };
+  return d;
+}
+
+// Apply a design's carried state to a vehicle made from it (the campaign's persistent damage).
+function applyShipState(V) {
+  const s = V.design._state;
+  if (!s) return;
+  if (s.hp) {
+    let lost = false;
+    V.parts.forEach((p, i) => { if (s.hp[i] <= 0) { p.alive = false; V.alive[i] = 0; lost = true; } else p.hp = Math.min(p.def.hp, s.hp[i]); });
+    if (lost) rebuildVehicle(V);
+  }
+  if (V.fuelMax) V.fuel = V.fuelMax * clamp(s.fuel, 0, 1);
+  if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
+}
+
+function createCampaignBattle(contact, headless) {
+  const mine = byId('fleets', contact.mine), theirs = byId('fleets', contact.theirs);
+  const sides = battleSides(mine, theirs);
+  const B = createBattle(0, {
+    cfg: campaignBattleConfig(sides.place), reserves: true, demo: !!headless,
+    squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
+  });
+  for (const V of B.units) applyShipState(V);
+  B.contact = contact;
+  B.sides = sides;
+  return B;
+}
+
+// Run a battle headless and silent (01 §10.1 Auto-resolve), then write the results back.
+function autoResolve(mine, theirs) {
+  const quiet = audio.quiet;
+  audio.quiet = true;
+  const B = createCampaignBattle({ mine: mine.id, theirs: theirs.id }, true);
+  for (let t = 0; t < AUTO_SECS && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  audio.quiet = quiet;
+  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
+  if (!B.result) {
+    // Undecided when time runs out: the side with more of its strength left holds the field.
+    const left = (side) => B.units.filter((V) => V.side === side && !V.destroyed).reduce((a, V) => a + vehicleHealth(V), 0) + B.reserve[side].length;
+    B.result = left(0) >= left(1) ? 'win' : 'lost';
+  }
+  return applyBattleOutcome(B);
+}
+
+// Write a battle back to the campaign.
+function applyBattleOutcome(B) {
+  const win = B.result === 'win';
+  const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
+  const rec = new Map();
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null });
+  for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
+    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null });
+  }
+  let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
+  for (const [id, r] of rec) {
+    const ship = byId('ships', id);
+    if (!ship) continue;
+    const d = shipDesign(ship);
+    const cap = byId('officers', ship.captainId);
+    const st = shipStats(ship);
+    ship.battles++;
+    if (r.lost) {
+      if (ship.faction === campaign.faction) lostMine++;
+      else { lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
+      removeShip(ship, rng);
+      continue;
+    }
+    ship.hp = r.hp.map((hp, i) => hp / PARTS[d.cells[i].p].hp);
+    if (r.fuel !== null) ship.fuel = st.fuelCap * r.fuel;
+    if (r.ammo !== null) ship.ammo = r.ammo;
+    if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
+  }
+  if (!win) gaXp /= 2;
+  const ga = byId('officers', campaign.ga);
+  if (ga) gainXp(ga, gaXp);
+  campaign.treasury += win ? bounty : 0;
+  // Fleets that fought: emptied ones are gone; the losing side falls back; nobody meets again at once.
+  const sides = B.sides;
+  for (const fl of [...sides.myFleets, ...sides.theirFleets]) {
+    fl.cooldown = CONTACT_COOLDOWN;
+    if (!fl.shipIds.length) { fleetLost(fl); continue; }
+    const losing = (fl.faction === campaign.faction) !== win;
+    if (losing) fallBack(fl, fl.faction === campaign.faction ? sides.theirFleets[0] : sides.myFleets[0]);
+  }
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.`;
+  campaign.journal.push(`Day ${campaign.day}: ${summary}`);
+  campaignStore.save();
+  return { win, lostMine, lostTheirs, bounty, summary };
+}
+
+function gainXp(o, xp) {
+  o.xp += xp;
+  const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
+  if (o.rank !== 'grand') o.level = levelFromXp(o.xp, table);
+  else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
+}
+
+// A ship is gone; its captain survives half the time (01 §4.1) and stays with the fleet.
+function removeShip(ship, rng) {
+  const fl = byId('fleets', ship.fleetId);
+  if (fl) fl.shipIds = fl.shipIds.filter((id) => id !== ship.id);
+  campaign.ships = campaign.ships.filter((s) => s !== ship);
+  const cap = byId('officers', ship.captainId);
+  if (cap && cap.rank === 'captain') {
+    if (rng.next() < CAPTAIN_SURVIVES) { cap.shipId = null; cap.fleetId = fl ? fl.id : null; }
+    else cap.alive = false;
+  }
+}
+
+// An emptied fleet: its commander goes to the nearest own settlement (the Grand Admiral escapes
+// there, losing 20% of the treasury, 01 §14).
+function fleetLost(fl) {
+  campaign.fleets = campaign.fleets.filter((f) => f !== fl);
+  const own = world.settlements.filter((s) => s.faction === fl.faction).sort((a, b) => Math.hypot(a.x - fl.x, a.y - fl.y) - Math.hypot(b.x - fl.x, b.y - fl.y))[0];
+  for (const o of campaign.officers) {
+    if (o.fleetId !== fl.id) continue;
+    o.fleetId = null;
+    if (own) o.garrisonedAt = own.id; else o.alive = false;
+  }
+  if (fl.faction === campaign.faction && fl.admiralId === campaign.ga) {
+    campaign.treasury *= 0.8;
+    campaign.journal.push(`Day ${campaign.day}: the flag fleet was lost; the Grand Admiral escaped to ${own ? own.name : 'the wilds'}.`);
+  }
+}
+
+// Move a fleet a few cells away from an enemy along a passable line.
+function fallBack(fl, from) {
+  if (!from) return;
+  const dx = fl.x - from.x, dy = fl.y - from.y, d = Math.hypot(dx, dy) || 1;
+  for (let k = 4; k >= 1; k--) {
+    const x = fl.x + (dx / d) * k, y = fl.y + (dy / d) * k;
+    if (cellSpeed(world, cellAt(world, x, y), fl.domain) > 0) { fl.x = x; fl.y = y; break; }
+  }
+  fl.path = []; fl.dest = null;
+}
+
+// Retreat (01 §10.1): free if your slowest ship outpaces their fastest; otherwise the rearmost ship is lost.
+function retreatCheck(mineShips, theirShips) {
+  const slow = Math.min(...mineShips.map((s) => shipStats(s).speed), Infinity);
+  const fast = Math.max(...theirShips.map((s) => shipStats(s).speed), 0);
+  return { free: !mineShips.length || slow > fast, lose: mineShips[mineShips.length - 1] || null };
+}
+function retreat(mine, theirs, esc) {
+  if (!esc.free && esc.lose) {
+    const rng = makeRng(campaign.seed + campaign.day);
+    ui.toast(`${shipStats(esc.lose).name} was caught covering the retreat.`, 4000);
+    removeShip(esc.lose, rng);
+  }
+  mine.cooldown = theirs.cooldown = CONTACT_COOLDOWN;
+  if (!mine.shipIds.length) fleetLost(mine); else fallBack(mine, theirs);
+  campaignStore.save();
+}
+
+// ---------- garrisons and field outposts (01 §4.1): captains never move alone
+function detachShip(fl, ship) {
+  const s = fl.docked ? byId('settlements', fl.docked) : null;
+  if (s && s.faction === fl.faction) {
+    const gar = campaign.ships.filter((sh) => sh.garrison === s.id).length;
+    if (gar >= SETTLEMENT_TYPES[s.type].garrison) return `${s.name}'s garrison is full (${gar}).`;
+    ship.garrison = s.id;
+  } else {
+    let o = (campaign.outposts || []).find((q) => q.faction === fl.faction && Math.hypot(q.x - fl.x, q.y - fl.y) < 1);
+    if (!o) { o = { id: newId('p'), x: fl.x, y: fl.y, faction: fl.faction, domain: fl.domain }; campaign.outposts.push(o); }
+    ship.outpost = o.id;
+  }
+  fl.shipIds = fl.shipIds.filter((id) => id !== ship.id);
+  ship.fleetId = null;
+  const cap = byId('officers', ship.captainId);
+  if (cap) { cap.fleetId = null; cap.garrisonedAt = ship.garrison || ship.outpost; }
+  return '';
+}
+
+function pickUp(fl, ship) {
+  if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
+  const cap = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)];
+  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships at admiral level ${(fleetAdmiral(fl) || { level: 1 }).level}).`;
+  delete ship.garrison;
+  if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
+  ship.fleetId = fl.id;
+  fl.shipIds.push(ship.id);
+  const o = byId('officers', ship.captainId);
+  if (o) { o.fleetId = fl.id; delete o.garrisonedAt; }
+  return '';
+}
+
+/* ---------- 14_world.js ---------- */
+/* ==== 14 WORLD ==== */
+// The campaign world (design/01 §2, §7; design/09 layout). One seeded, generated map of
+// WORLD_W × WORLD_H cells (WORLD_KM each). The terrain is regenerated from the seed when a
+// campaign loads, so saves hold only what changes: settlements, fleets, ships, officers, time.
+// Also: path finding by domain, the map clock and weather.
+
+const T_IDS = Object.keys(MAP_TERRAIN);          // terrain index ↔ id
+const T_SEA = T_IDS.indexOf('sea'), T_MOUNT = T_IDS.indexOf('mountains'), T_PASS = T_IDS.indexOf('pass');
+
+// Smooth value noise in [0, 1], seeded.
+function makeNoise(seed) {
+  const rng = makeRng(seed);
+  const N = 256, perm = new Uint8Array(N * 2), val = new Float32Array(N);
+  for (let i = 0; i < N; i++) { perm[i] = i; val[i] = rng.next(); }
+  for (let i = N - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+  for (let i = 0; i < N; i++) perm[N + i] = perm[i];
+  const at = (x, y) => val[perm[(perm[x & 255] + y) & 511]];
+  const s = (t) => t * t * (3 - 2 * t);
+  const one = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), fx = s(x - xi), fy = s(y - yi);
+    return lerp(lerp(at(xi, yi), at(xi + 1, yi), fx), lerp(at(xi, yi + 1), at(xi + 1, yi + 1), fx), fy);
+  };
+  return (x, y, oct = 4) => {
+    let a = 0, amp = 1, f = 1, tot = 0;
+    for (let o = 0; o < oct; o++) { a += one(x * f, y * f) * amp; tot += amp; amp *= 0.5; f *= 2; }
+    return a / tot;
+  };
+}
+
+// ---------- generation
+function generateWorld(seed, playerFaction) {
+  const W = WORLD_W, H = WORLD_H;
+  const hN = makeNoise(seed), mN = makeNoise(seed + 11), rN = makeNoise(seed + 23);
+  const height = new Float32Array(W * H), ter = new Uint8Array(W * H);
+  const f = (id) => FACTIONS.find((x) => x.id === id);
+  const near = (x, y, fx, fy, r) => Math.exp(-(((x / W - fx) ** 2) + ((y / H - fy) ** 2)) / (2 * r * r));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let h = hN(x / 26, y / 26, 5);
+    const edge = Math.min(x, W - 1 - x, y, H - 1 - y) / 14;
+    h -= (1 - clamp(edge, 0, 1)) * 0.45;                                 // ocean around the edge
+    h -= near(x, y, 0.1, 0.9, 0.12) * 0.32;                              // the south-western gulf and archipelago
+    h += near(x, y, 0.8, 0.22, 0.12) * (0.22 + rN(x / 7, y / 7) * 0.25); // Skyreach highlands
+    h += near(x, y, 0.5, 0.5, 0.18) * 0.1;                               // the central plains rise a little
+    height[y * W + x] = h;
+  }
+  // Sea level: about 38% of the map is water.
+  const sorted = Array.from(height).sort((a, b) => a - b);
+  const seaLevel = sorted[Math.floor(sorted.length * 0.38)];
+  const mountLevel = sorted[Math.floor(sorted.length * 0.95)], hillLevel = sorted[Math.floor(sorted.length * 0.86)];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, h = height[i], m = mN(x / 18, y / 18, 3);
+    const lat = y / H;
+    let t;
+    if (h < seaLevel) t = 'sea';
+    else if (h > mountLevel) t = 'mountains';
+    else if (h > hillLevel) t = 'hills';
+    else if (lat < 0.16 + (m - 0.5) * 0.1) t = 'ice';
+    else if (lat < 0.3 + (m - 0.5) * 0.1) t = 'tundra';
+    else if (near(x, y, 0.8, 0.8, 0.14) > 0.45 && m < 0.62) t = rN(x / 5, y / 5) > 0.68 ? 'ruins' : 'desert';
+    else if (m > 0.66 && h < seaLevel + 0.05) t = 'marsh';
+    else if (m > 0.56) t = 'forest';
+    else t = rN(x / 6, y / 6) > 0.86 ? 'ruins' : 'plains';
+    ter[i] = T_IDS.indexOf(t);
+  }
+  // Small enclosed waters become marsh, so every sea fleet can reach the open sea.
+  const seen = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    if (seen[i] || ter[i] !== T_SEA) continue;
+    const comp = [i];
+    seen[i] = 1;
+    for (let k = 0; k < comp.length; k++) {
+      const j = comp[k], x = j % W, y = (j / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (!seen[n] && ter[n] === T_SEA) { seen[n] = 1; comp.push(n); }
+      }
+    }
+    if (comp.length < 400) for (const j of comp) ter[j] = T_IDS.indexOf('marsh');
+  }
+  const world = { seed, W, H, height, ter, seaLevel, road: new Uint8Array(W * H), owner: new Int8Array(W * H).fill(-1) };
+  world.settlements = placeSettlements(world, seed, playerFaction);
+  buildRoads(world);
+  computeTerritory(world);
+  return world;
+}
+
+const cellAt = (w, x, y) => clamp(Math.floor(y), 0, w.H - 1) * w.W + clamp(Math.floor(x), 0, w.W - 1);
+const isSeaCell = (w, x, y) => w.ter[cellAt(w, x, y)] === T_SEA;
+function isCoastal(w, x, y) {
+  if (isSeaCell(w, x, y)) return false;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isSeaCell(w, x + dx, y + dy)) return true;
+  return false;
+}
+const terrainId = (w, x, y) => T_IDS[w.ter[cellAt(w, x, y)]];
+
+function placeName(rng, used) {
+  for (let k = 0; k < 50; k++) {
+    const n = rng.pick(PLACE_A) + rng.pick(PLACE_B);
+    if (!used.has(n)) { used.add(n); return n; }
+  }
+  return 'Outpost ' + used.size;
+}
+
+// Every faction: a capital (the player's is a coastal home city, 01 §4.3), another coastal
+// settlement, 2 villages and a fort. Neutral villages fill the gaps (09).
+function placeSettlements(w, seed, playerFaction) {
+  const rng = makeRng(seed + 101);
+  const out = [], used = new Set();
+  const free = (x, y, gap) => !isSeaCell(w, x, y) && terrainId(w, x, y) !== 'mountains' && out.every((s) => Math.hypot(s.x - x, s.y - y) >= gap);
+  const find = (cx, cy, rMin, rMax, gap, want) => {
+    for (let k = 0; k < 600; k++) {
+      const a = rng.range(0, Math.PI * 2), r = rng.range(rMin, rMax + k / 40);
+      const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r);
+      if (x < 3 || y < 3 || x > w.W - 4 || y > w.H - 4) continue;
+      if (free(x, y, gap) && (!want || want(x, y))) return [x, y];
+    }
+    return null;
+  };
+  const add = (x, y, type, faction, name) => {
+    const s = { id: 's' + out.length, name: name || placeName(rng, used), type, faction, x, y, coastal: isCoastal(w, x, y), biome: terrainId(w, x, y), market: {} };
+    for (const k of Object.keys(SETTLEMENT_TYPES[type].stock)) s.market[k] = SETTLEMENT_TYPES[type].stock[k];
+    out.push(s);
+    return s;
+  };
+  for (const F of FACTIONS) {
+    const cx = F.at[0] * w.W, cy = F.at[1] * w.H;
+    const player = F.id === playerFaction;
+    used.add(F.capital);
+    const capType = player ? 'city' : F.capType;
+    // The player's home city must be coastal (01 §4.3): search outwards until a coast turns up.
+    let capAt = null;
+    if (player || F.coastal) for (let r = 6; r <= 60 && !capAt; r += 6) capAt = find(cx, cy, 0, r, 10, (x, y) => isCoastal(w, x, y));
+    if (!capAt) capAt = find(cx, cy, 0, 30, 8, null);
+    const cap = add(capAt[0], capAt[1], capType, F.id, F.capital);
+    cap.capital = true;
+    // AI factions get a coastal city too; the player's home city is already on the coast (01 §4.3).
+    const coast = player ? null : find(cx, cy, 6, 24, 7, (x, y) => isCoastal(w, x, y));
+    if (coast) add(coast[0], coast[1], 'city', F.id);
+    for (let k = 0; k < 2; k++) { const p = find(cap.x, cap.y, 6, 16, 7, null); if (p) add(p[0], p[1], 'village', F.id); }
+    // The fort faces the middle of the map.
+    const mx = w.W / 2 - cap.x, my = w.H / 2 - cap.y, ml = Math.hypot(mx, my) || 1;
+    const fp = find(cap.x + (mx / ml) * 12, cap.y + (my / ml) * 12, 0, 8, 7, null);
+    if (fp) add(fp[0], fp[1], 'fort', F.id);
+  }
+  for (let k = 0; k < 14; k++) {
+    const p = find(rng.range(20, w.W - 20), rng.range(16, w.H - 16), 0, 30, 11, null);
+    if (p) add(p[0], p[1], 'village', null);
+  }
+  return out;
+}
+
+// Roads join each settlement to its two nearest land neighbours; a road through mountains is a pass.
+function buildRoads(w) {
+  const S = w.settlements;
+  const cost = (i) => {
+    const t = T_IDS[w.ter[i]];
+    return t === 'sea' ? Infinity : t === 'mountains' ? 9 : t === 'plains' || t === 'desert' ? 1 : t === 'tundra' ? 1.4 : 2.2;
+  };
+  const done = new Set();
+  for (const a of S) {
+    const others = S.filter((b) => b !== a).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y)).slice(0, 2);
+    for (const b of others) {
+      const key = [a.id, b.id].sort().join('-');
+      if (done.has(key) || Math.hypot(a.x - b.x, a.y - b.y) > 40) continue;
+      done.add(key);
+      const path = gridPath(w, a.x, a.y, b.x, b.y, cost, 30000);
+      if (!path) continue;
+      for (const i of path) { w.road[i] = 1; if (w.ter[i] === T_MOUNT) w.ter[i] = T_PASS; }
+    }
+  }
+}
+
+// Territory: each land cell belongs to the nearest settlement's faction within 14 cells.
+function computeTerritory(w) {
+  const ids = FACTIONS.map((F) => F.id);
+  w.owner.fill(-1);
+  for (let y = 0; y < w.H; y++) for (let x = 0; x < w.W; x++) {
+    let best = 14 * 14, who = -1;
+    for (const s of w.settlements) {
+      if (!s.faction) continue;
+      const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      if (d < best) { best = d; who = ids.indexOf(s.faction); }
+    }
+    w.owner[y * w.W + x] = who;
+  }
+}
+
+// ---------- path finding (A* on the cell grid, 8 neighbours). cost(i): per-cell cost, Infinity = blocked.
+function gridPath(w, x0, y0, x1, y1, cost, maxNodes = 60000) {
+  const W = w.W, N = W * w.H;
+  const start = cellAt(w, x0, y0), goal = cellAt(w, x1, y1);
+  if (cost(goal) === Infinity) return null;
+  const g = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), shut = new Uint8Array(N);
+  const heap = [];   // [f, i] binary heap
+  const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  const hx = x1 | 0, hy = y1 | 0;
+  g[start] = 0; push(0, start);
+  let n = 0;
+  while (heap.length && n++ < maxNodes) {
+    const [, i] = pop();
+    if (i === goal) break;
+    if (shut[i]) continue;
+    shut[i] = 1;
+    const x = i % W, y = (i / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= w.H) continue;
+      const j = ny * W + nx;
+      if (shut[j]) continue;
+      const c = cost(j);
+      if (c === Infinity) continue;
+      const step = (dx && dy ? 1.414 : 1) * c;
+      if (g[i] + step < g[j]) { g[j] = g[i] + step; from[j] = i; push(g[j] + Math.hypot(hx - nx, hy - ny) * 0.9, j); }
+    }
+  }
+  if (from[goal] < 0 && goal !== start) return null;
+  const path = [];
+  for (let i = goal; i !== -1; i = from[i]) path.push(i);
+  return path.reverse();
+}
+
+// How slow a cell is for a domain (1 = the fleet's full march speed), 0 = can't enter.
+function cellSpeed(w, i, domain) {
+  const t = T_IDS[w.ter[i]];
+  if (domain === 'air') return 1;
+  if (domain === 'sea') return t === 'sea' ? 1 : 0;
+  if (t === 'sea') return 0;
+  return (MAP_TERRAIN[t].speed || 0) * (w.road[i] ? ROAD_SPEED : 1);
+}
+
+// Path for a fleet: cells to cross, as [[x, y], ...] cell centres (start excluded).
+function fleetPath(w, domain, x0, y0, x1, y1) {
+  const path = gridPath(w, x0, y0, x1, y1, (i) => { const s = cellSpeed(w, i, domain); return s > 0 ? 1 / s : Infinity; });
+  if (!path) return null;
+  return path.slice(1).map((i) => [(i % w.W) + 0.5, ((i / w.W) | 0) + 0.5]);
+}
+
+/* ---------- 14b_command.js ---------- */
+/* ==== 14b COMMAND ==== */
+// Officers, ships and fleets on the campaign map (design/01 §4, §6; design/08 §10, §13).
+// `campaign` is the whole running campaign as plain JSON-safe data (design/04 §7); the terrain
+// comes from its seed (`world`). Saved to irondoctrine.campaign.slot1.
+
+const CAMPAIGN_VERSION = 1;
+const CAMPAIGN_KEY = 'irondoctrine.campaign.slot1';
+let campaign = null;
+let world = null;
+
+// ---------- save and load (design/04 §8): the blob format and try/catch rules of 02_save
+const campaignStore = {
+  exists() { try { return !!localStorage.getItem(CAMPAIGN_KEY); } catch (_e) { return false; } },
+  save() {
+    if (!campaign) return false;
+    try {
+      localStorage.setItem(CAMPAIGN_KEY, JSON.stringify({ v: CAMPAIGN_VERSION, t: Date.now(), data: campaign }));
+      return true;
+    } catch (_e) { ui.toast('The campaign could not be saved (storage full or blocked).'); return false; }
+  },
+  load() {
+    let blob = null;
+    try { blob = JSON.parse(localStorage.getItem(CAMPAIGN_KEY) || 'null'); } catch (_e) { blob = null; }
+    if (!blob || !blob.data || blob.v !== CAMPAIGN_VERSION) {
+      if (blob) { try { localStorage.setItem('irondoctrine.backup.campaign', JSON.stringify(blob)); } catch (_e) { /* ignore */ } ui.toast('This campaign save is from another version; it was kept as a backup.'); }
+      return false;
+    }
+    campaign = blob.data;
+    world = generateWorld(campaign.seed, campaign.faction);
+    world.settlements = campaign.settlements;       // the saved state replaces the generated one
+    computeTerritory(world);
+    return true;
+  },
+};
+
+const newId = (p) => p + (campaign.nextId++).toString(36);
+const byId = (list, id) => campaign[list].find((o) => o.id === id) || null;
+const factionOf = (id) => FACTIONS.find((F) => F.id === id) || null;
+
+function officerName(rng) { return `${rng.pick(NAME_FIRST)} ${rng.pick(NAME_LAST)}`; }
+
+// ---------- ships: derived numbers from the design, cached by design id
+const _shipStats = {};
+function shipDesign(ship) {
+  if (TEMPLATES[ship.design]) return Object.assign(designFromTemplate(ship.design), { family: TEMPLATES[ship.design].name });
+  const d = save.designs.list.find((x) => x.id === ship.design);
+  return d ? JSON.parse(JSON.stringify(d)) : designFromTemplate('light');
+}
+function shipStats(ship) {
+  if (!_shipStats[ship.design]) {
+    const d = shipDesign(ship);
+    const rep = designReport(d);
+    let burn = 0;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.fuelUse && (P.power > 0 || P.liftForce)) burn += P.fuelUse; }
+    const cls = classFor(d);
+    _shipStats[ship.design] = {
+      name: markName(d), domain: mapDomain(rep.domain), speed: Math.max(5, rep.topSpeed || 0),
+      fuelCap: Math.max(0.5, rep.st.fuel / 100), burn: (burn * 0.25) / 100, cost: rep.cost,
+      cls: cls ? cls.id : null, clsName: cls ? cls.name : 'Outside class limits', captain: cls ? cls.captain : 99,
+    };
+  }
+  return _shipStats[ship.design];
+}
+// Map domains: land, sea, air (airships and aircraft fly).
+function mapDomain(dom) { return seaDomain(dom) ? 'sea' : airDomain(dom) ? 'air' : 'land'; }
+
+function makeShip(designId, faction, rng) {
+  const ship = { id: newId('h'), design: designId, faction, captainId: null, fleetId: null, hp: null, fuel: 0, ammo: 1, xp: 0, kills: 0, battles: 0 };
+  ship.fuel = shipStats(ship).fuelCap;
+  campaign.ships.push(ship);
+  const cap = { id: newId('o'), name: officerName(rng), rank: 'captain', faction, level: 1, xp: 0, alive: true, shipId: ship.id, fleetId: null };
+  campaign.officers.push(cap);
+  ship.captainId = cap.id;
+  return ship;
+}
+
+function makeFleet(faction, domain, x, y, designs, rng, admiral) {
+  const fleet = { id: newId('f'), faction, domain, x, y, path: [], dest: null, hold: { fuel: 0, ammo: 0 }, shipIds: [], admiralId: null, stranded: false, docked: null, ai: faction === campaign.faction ? null : { t: 0 } };
+  if (admiral) fleet.admiralId = admiral.id;
+  else {
+    const a = { id: newId('o'), name: officerName(rng), rank: 'admiral', faction, level: 1, xp: 0, alive: true, fleetId: fleet.id };
+    campaign.officers.push(a);
+    fleet.admiralId = a.id;
+  }
+  for (const id of designs) {
+    const s = makeShip(id, faction, rng);
+    s.fleetId = fleet.id;
+    byId('officers', s.captainId).fleetId = fleet.id;
+    fleet.shipIds.push(s.id);
+  }
+  fleet.name = `${factionOf(faction).name} ${domain} fleet`;
+  campaign.fleets.push(fleet);
+  return fleet;
+}
+
+// Where a fleet of a domain can sit next to a settlement: land on it, sea in the water beside it.
+function portCell(s, domain) {
+  if (domain !== 'sea') return [s.x + 0.5, s.y + 0.5];
+  let best = null, bd = Infinity;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (isSeaCell(world, s.x + dx, s.y + dy) && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = [s.x + dx + 0.5, s.y + dy + 0.5]; }
+  }
+  return best;
+}
+
+// ---------- a new campaign (01 §4.3; 08 §13; 09 relations)
+function newCampaign(factionId, seed) {
+  world = generateWorld(seed, factionId);
+  campaign = {
+    v: CAMPAIGN_VERSION, seed, faction: factionId, day: 1, hour: 6, speed: 1, running: false,
+    treasury: START_MONEY, nextId: 1, ships: [], fleets: [], officers: [], outposts: [], journal: [],
+    settlements: world.settlements, relations: {}, ga: null, gaXp: 0,
+  };
+  const rng = makeRng(seed + 7);
+  // Relations: the player is at war with the two nearest factions and in truce with the others;
+  // AI factions are at war with each other except one seeded pair.
+  const me = FACTIONS.find((F) => F.id === factionId);
+  const others = FACTIONS.filter((F) => F !== me).sort((a, b) => Math.hypot(a.at[0] - me.at[0], a.at[1] - me.at[1]) - Math.hypot(b.at[0] - me.at[0], b.at[1] - me.at[1]));
+  const rel = (a, b, r) => { campaign.relations[[a, b].sort().join('|')] = r; };
+  others.forEach((F, i) => rel(me.id, F.id, i < 2 ? 'war' : 'truce'));
+  for (const a of others) for (const b of others) if (a !== b) rel(a.id, b.id, 'war');
+  const pair = [rng.pick(others), rng.pick(others)];
+  if (pair[0] !== pair[1]) rel(pair[0].id, pair[1].id, 'truce');
+  initWeather(rng);
+  // The Grand Admiral commands the land fleet from the flagship.
+  const ga = { id: newId('o'), name: officerName(rng), rank: 'grand', faction: factionId, level: 1, xp: 0, alive: true };
+  campaign.officers.push(ga);
+  campaign.ga = ga.id;
+  for (const F of FACTIONS) {
+    const home = world.settlements.find((s) => s.faction === F.id && s.capital);
+    const player = F.id === factionId;
+    for (const spec of player ? START_FLEETS : AI_FLEETS) {
+      // Sea fleets start at the capital if it's coastal, otherwise at the faction's coastal settlement.
+      const base = spec.domain === 'sea' && !portCell(home, 'sea') ? world.settlements.find((s) => s.faction === F.id && portCell(s, 'sea')) : home;
+      if (!base) continue;
+      const at = portCell(base, spec.domain) || [base.x + 0.5, base.y + 0.5];
+      const fl = makeFleet(F.id, spec.domain, at[0], at[1], spec.ships, rng, player && spec.domain === 'land' ? ga : null);
+      if (player && spec.domain === 'land') { ga.fleetId = fl.id; fl.name = 'Flag fleet'; }
+      else if (player) fl.name = spec.domain === 'sea' ? 'Sea fleet' : 'Air fleet';
+      fl.docked = base.id;
+    }
+  }
+  campaignStore.save();
+  return campaign;
+}
+
+const relation = (a, b) => (a === b ? 'own' : !a || !b ? 'neutral' : campaign.relations[[a, b].sort().join('|')] || 'war');
+const fleetShips = (fl) => fl.shipIds.map((id) => byId('ships', id)).filter(Boolean);
+const playerFleets = () => campaign.fleets.filter((fl) => fl.faction === campaign.faction);
+const fleetAdmiral = (fl) => byId('officers', fl.admiralId);
+const levelFromXp = (xp, table) => { let l = 1; for (let i = 0; i < table.length; i++) if (xp >= table[i]) l = i + 1; return l; };
+
+// March speed (km/h): the slowest ship, × MARCH; League sea ships +10% (09).
+function fleetSpeed(fl) {
+  let v = Infinity;
+  for (const s of fleetShips(fl)) v = Math.min(v, shipStats(s).speed);
+  if (!Number.isFinite(v)) return 0;
+  v *= MARCH;
+  if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
+  return v;
+}
+// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
+function fleetBurn(fl) {
+  let b = 0;
+  for (const s of fleetShips(fl)) b += shipStats(s).burn;
+  if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
+  return b;
+}
+function fleetFuel(fl) {
+  let f = fl.hold.fuel || 0, cap = 0;
+  for (const s of fleetShips(fl)) { f += s.fuel; cap += shipStats(s).fuelCap; }
+  return { fuel: f, cap };
+}
+
+// ---------- movement (01 §6)
+// Travel hours and fuel for a path, from the fleet's speed and burn over each cell.
+function pathCost(fl, path) {
+  const v = fleetSpeed(fl), burn = fleetBurn(fl);
+  let hours = 0, fuel = 0, x = fl.x, y = fl.y;
+  for (const [px, py] of path) {
+    const i = cellAt(world, px, py);
+    const s = cellSpeed(world, i, fl.domain);
+    const h = (Math.hypot(px - x, py - y) * WORLD_KM) / Math.max(0.1, v * s);
+    hours += h;
+    fuel += h * burn * (world.road[i] && fl.domain === 'land' ? 0.85 : 1);
+    x = px; y = py;
+  }
+  return { hours, fuel };
+}
+
+// Order a fleet to a cell. Returns the preview { path, hours, fuel, held, strands } or a reason.
+function planMove(fl, tx, ty) {
+  if (!fleetShips(fl).length) return { why: 'This fleet has no ships.' };
+  const path = fleetPath(world, fl.domain, fl.x, fl.y, tx, ty);
+  if (!path || !path.length) return { why: fl.domain === 'sea' ? 'Sea fleets stay on water.' : fl.domain === 'land' ? 'No land route there (sea or mountains).' : 'Out of reach.' };
+  const c = pathCost(fl, path);
+  const held = fleetFuel(fl).fuel;
+  return { path, hours: c.hours, fuel: c.fuel, held, strands: c.fuel > held };
+}
+function orderMove(fl, plan) {
+  fl.path = plan.path.slice();
+  fl.dest = plan.path[plan.path.length - 1];
+  fl.docked = null;
+}
+
+// Burn fuel shared across the fleet's tanks (and its hold), keeping every tank at the same share.
+function burnFuel(fl, units) {
+  const ships = fleetShips(fl);
+  let tot = fl.hold.fuel || 0, cap = 0;
+  for (const s of ships) { tot += s.fuel; cap += shipStats(s).fuelCap; }
+  tot = Math.max(0, tot - units);
+  const inTanks = Math.min(tot, cap);
+  fl.hold.fuel = tot - inTanks;
+  for (const s of ships) s.fuel = cap ? (inTanks * shipStats(s).fuelCap) / cap : 0;
+  return tot;
+}
+
+// Move a fleet along its path for dt hours. Returns 'arrived' when it reaches the end.
+function stepFleet(fl, dt) {
+  if (!fl.path.length || !fl.shipIds.length) return '';
+  const { fuel } = fleetFuel(fl);
+  fl.stranded = fuel <= 0;
+  if (fl.stranded && fl.domain === 'air') return '';
+  let v = fleetSpeed(fl) * (fl.stranded ? STRANDED_SPEED : 1) * weatherSpeed(fl);
+  let left = dt;
+  while (left > 0 && fl.path.length) {
+    const [px, py] = fl.path[0];
+    const i = cellAt(world, px, py);
+    const cs = Math.max(0.1, cellSpeed(world, i, fl.domain)) * v / WORLD_KM;   // cells per hour
+    const d = Math.hypot(px - fl.x, py - fl.y);
+    const t = d / cs;
+    const used = Math.min(left, t);
+    if (!fl.stranded) burnFuel(fl, used * fleetBurn(fl) * (world.road[i] && fl.domain === 'land' ? 0.85 : 1));
+    if (t <= left) { fl.x = px; fl.y = py; fl.path.shift(); } else { fl.x += ((px - fl.x) * left) / t; fl.y += ((py - fl.y) * left) / t; }
+    left -= used;
+  }
+  if (!fl.path.length) {
+    fl.dest = null;
+    const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - fl.x, q.y + 0.5 - fl.y) < 2.2 && relation(q.faction, fl.faction) !== 'war');
+    fl.docked = s ? s.id : null;
+    return 'arrived';
+  }
+  return '';
+}
+
+// ---------- weather (01 §2.2): a few fronts drift across the map
+const WEATHER_KINDS = ['rain', 'fog', 'storm', 'snow', 'sandstorm'];
+function initWeather(rng) {
+  campaign.weather = [];
+  for (let k = 0; k < 5; k++) campaign.weather.push({ kind: rng.pick(WEATHER_KINDS), x: rng.range(0, WORLD_W), y: rng.range(0, WORLD_H), r: rng.range(8, 16), vx: rng.range(-1.2, 1.2), vy: rng.range(-0.6, 0.6) });
+}
+function stepWeather(dt) {
+  for (const f of campaign.weather) {
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    if (f.x < -20) f.x = WORLD_W + 19; if (f.x > WORLD_W + 20) f.x = -19;
+    if (f.y < -20) f.y = WORLD_H + 19; if (f.y > WORLD_H + 20) f.y = -19;
+  }
+}
+function weatherAt(x, y) {
+  for (const f of campaign.weather || []) if (Math.hypot(f.x - x, f.y - y) < f.r) {
+    const t = terrainId(world, x, y);
+    if (f.kind === 'snow' && !['ice', 'tundra', 'mountains', 'pass'].includes(t)) return 'rain';
+    if (f.kind === 'sandstorm' && !['desert', 'ruins'].includes(t)) return 'storm';
+    return f.kind;
+  }
+  return 'clear';
+}
+// Storms slow and push air fleets; any bad weather slows everyone a little.
+function weatherSpeed(fl) {
+  const w = weatherAt(fl.x, fl.y);
+  if (w === 'clear') return 1;
+  if (fl.domain === 'air' && (w === 'storm' || w === 'sandstorm')) return 0.6;
+  return 0.85;
+}
+
+/* ---------- 15_economy.js ---------- */
+/* ==== 15 ECONOMY ==== */
+// The basic economy of Part 3 (design/01 §7–§8; design/08 §6–§8, §13): the universal treasury,
+// fuel and ammo markets at every settlement, refuelling and rearming a docked fleet, the fleet
+// hold, and the daily income, wages and upkeep. Warehouses, crafting and convoys are Part 4.
+
+// Buy price per unit at a settlement for a faction; null when there's no trade (war).
+function buyPrice(s, good, faction) {
+  const rel = relation(s.faction, faction);
+  if (rel === 'war') return null;
+  let p = PRICES[good] * SETTLEMENT_TYPES[s.type].price * (rel === 'own' ? OWN_PRICE : rel === 'truce' ? TRUCE_PRICE : 1);
+  const normal = SETTLEMENT_TYPES[s.type].stock[good];
+  if (s.market[good] < normal * 0.2) p *= 1.5;
+  if (good === 'fuel' && faction === 'directorate') p *= 1.15;
+  if (faction === 'league' && rel === 'own') p *= 0.85;
+  return p;
+}
+const sellPrice = (s, good, faction) => { const b = buyPrice(s, good, faction); return b === null ? null : b * SELL_SHARE; };
+
+// Ammo units to refill a ship's magazine from its current share (08 §8 per-shot table).
+function ammoPerShot(cal) { let u = AMMO_PER_SHOT[0][1]; for (const [c, v] of AMMO_PER_SHOT) if (cal >= c) u = v; return u; }
+const _ammoFull = {};
+function shipAmmoFull(ship) {
+  if (_ammoFull[ship.design] === undefined) {
+    const d = shipDesign(ship);
+    const st = statsOf(d);
+    let cal = 0;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.cat === 'weapon' && P.cal && !P.auto) cal = Math.max(cal, P.cal); }
+    _ammoFull[ship.design] = (st.shells || 0) * ammoPerShot(cal || 8) + 0.05;
+  }
+  return _ammoFull[ship.design];
+}
+
+// Fleet hold capacity in units (cargo parts, kg ÷ 100).
+function holdCap(fl) {
+  let kg = 0;
+  for (const s of fleetShips(fl)) for (const c of shipDesign(s).cells) kg += PARTS[c.p].cargo || 0;
+  return kg / 100;
+}
+const holdUsed = (fl) => (fl.hold.fuel || 0) + (fl.hold.ammo || 0);
+
+function spend(amount) {
+  if (amount > campaign.treasury + 1e-6) return false;
+  campaign.treasury -= amount;
+  return true;
+}
+
+// What refuelling or rearming the whole fleet needs here: { units, cost } or { why }.
+function refuelQuote(fl, s) {
+  let need = 0;
+  for (const sh of fleetShips(fl)) need += shipStats(sh).fuelCap - sh.fuel;
+  const price = buyPrice(s, 'fuel', fl.faction);
+  if (price === null) return { why: 'No trade: at war.' };
+  const units = Math.min(need, s.market.fuel);
+  return { units, cost: units * price };
+}
+function rearmQuote(fl, s) {
+  let need = 0;
+  for (const sh of fleetShips(fl)) need += (1 - sh.ammo) * shipAmmoFull(sh);
+  const price = buyPrice(s, 'ammo', fl.faction);
+  if (price === null) return { why: 'No trade: at war.' };
+  const units = Math.min(need, s.market.ammo);
+  return { units, cost: units * price };
+}
+function refuel(fl, s) {
+  const q = refuelQuote(fl, s);
+  if (q.why || q.units <= 0) return q.why || 'Tanks are full.';
+  if (!spend(q.cost)) return `Needs ${Math.ceil(q.cost)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+  s.market.fuel -= q.units;
+  let left = q.units;
+  for (const sh of fleetShips(fl)) { const add = Math.min(left, shipStats(sh).fuelCap - sh.fuel); sh.fuel += add; left -= add; }
+  fl.stranded = false;
+  return '';
+}
+function rearm(fl, s) {
+  const q = rearmQuote(fl, s);
+  if (q.why || q.units <= 0) return q.why || 'Magazines are full.';
+  if (!spend(q.cost)) return `Needs ${Math.ceil(q.cost)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+  s.market.ammo -= q.units;
+  let left = q.units;
+  for (const sh of fleetShips(fl)) { const full = shipAmmoFull(sh); const add = Math.min(left, (1 - sh.ammo) * full); sh.ammo += add / full; left -= add; }
+  return '';
+}
+// Buy or sell goods for the fleet hold, n units at a time.
+function trade(fl, s, good, n) {
+  if (n > 0) {
+    const price = buyPrice(s, good, fl.faction);
+    if (price === null) return 'No trade: at war.';
+    n = Math.min(n, s.market[good], holdCap(fl) - holdUsed(fl));
+    if (n <= 0) return holdCap(fl) - holdUsed(fl) <= 0 ? 'The hold is full.' : 'The market has none left.';
+    if (!spend(n * price)) return `Needs ${Math.ceil(n * price)}; the treasury has ${Math.floor(campaign.treasury)}.`;
+    s.market[good] -= n; fl.hold[good] = (fl.hold[good] || 0) + n;
+  } else {
+    const price = sellPrice(s, good, fl.faction);
+    if (price === null) return 'No trade: at war.';
+    n = Math.min(-n, fl.hold[good] || 0);
+    if (n <= 0) return 'Nothing to sell.';
+    fl.hold[good] -= n; s.market[good] += n; campaign.treasury += n * price;
+  }
+  return '';
+}
+
+// Once per in-game day: settlement income and upkeep, wages, markets refill.
+function dailyEconomy() {
+  let income = 0, wages = 0;
+  for (const s of world.settlements) {
+    const T = SETTLEMENT_TYPES[s.type];
+    for (const [k, v] of Object.entries(T.stock)) s.market[k] = Math.min(v, s.market[k] + v * STOCK_REFILL);
+    if (s.faction !== campaign.faction) continue;
+    income += T.money * (T.money > 0 && s.coastal ? COASTAL_MONEY : 1);
+  }
+  for (const o of campaign.officers) {
+    if (!o.alive || o.faction !== campaign.faction) continue;
+    if (o.rank === 'captain') wages += WAGES.captain * o.level;
+    else if (o.rank === 'admiral') wages += WAGES.admiral * o.level;
+  }
+  campaign.treasury += income - wages;
+  return { income, wages };
+}
+
+/* ---------- 15c_factions.js ---------- */
+/* ==== 15c FACTIONS ==== */
+// The campaign clock, fog of war, contacts and the factions' strategic AI (design/01 §2.2,
+// §6, §13; design/09). One in-game hour per second at 1×. The clock stops itself on contact,
+// arrival and low fuel. Part 3 AI: each AI fleet patrols its faction's settlements and, from
+// day 2, intercepts a player fleet it can see and thinks it can beat. AI fleets don't burn
+// map fuel yet (their logistics come with the economy in Part 4), and AI factions don't fight
+// each other on the map yet.
+
+const TICK_HOURS = 0.25;          // campaign sub-step
+const AI_THINK_HOURS = 3;
+const CONTACT_COOLDOWN = 4;       // hours after a battle before the same fleets meet again
+
+// A fleet's fighting strength: Σ ship cost × condition.
+function fleetStrength(fl) {
+  let s = 0;
+  for (const sh of fleetShips(fl)) s += shipStats(sh).cost * shipHealth(sh);
+  return s;
+}
+function shipHealth(sh) {
+  if (!sh.hp) return 1;
+  let a = 0;
+  for (const v of sh.hp) a += v;
+  return sh.hp.length ? a / sh.hp.length : 1;
+}
+
+// Fog of war (01 §2.2): enemy fleets are seen within reach of your fleets and settlements.
+function updateVisibility() {
+  const eyes = [];
+  for (const fl of playerFleets()) if (fl.shipIds.length) eyes.push([fl.x, fl.y, DETECT_CELLS.fleet * (fl.domain === 'air' ? 1.3 : 1)]);
+  for (const s of world.settlements) if (s.faction === campaign.faction) eyes.push([s.x + 0.5, s.y + 0.5, DETECT_CELLS.settlement]);
+  campaign.eyes = eyes;
+  for (const fl of campaign.fleets) {
+    if (fl.faction === campaign.faction) { fl.seen = true; continue; }
+    fl.seen = eyes.some(([x, y, r]) => Math.hypot(fl.x - x, fl.y - y) <= r);
+  }
+}
+
+function aiThink(fl) {
+  if (!fl.shipIds.length) return;
+  const rng = makeRng(campaign.seed + campaign.day * 131 + Math.floor(campaign.hour) * 7 + fl.id.length * 31 + fl.shipIds.length);
+  // AI fleets top up at their own settlements (abstracted until Part 4).
+  for (const s of fleetShips(fl)) { s.fuel = shipStats(s).fuelCap; s.ammo = 1; }
+  // Intercept a visible player fleet it can beat, from day 2.
+  if (campaign.day >= 2) {
+    let best = null, bd = 26;
+    for (const P of playerFleets()) {
+      if (!P.shipIds.length || relation(fl.faction, P.faction) !== 'war') continue;
+      const d = Math.hypot(P.x - fl.x, P.y - fl.y);
+      if (d < bd && fleetStrength(fl) >= fleetStrength(P) * 0.7) {
+        const plan = fleetPath(world, fl.domain, fl.x, fl.y, P.x, P.y);
+        if (plan) { best = { P, plan }; bd = d; }
+      }
+    }
+    if (best) { fl.path = best.plan; fl.ai.target = best.P.id; return; }
+  }
+  fl.ai.target = null;
+  if (fl.path.length) return;
+  // Patrol: another settlement of its own faction.
+  const own = world.settlements.filter((s) => s.faction === fl.faction);
+  const s = rng.pick(own);
+  if (!s) return;
+  const at = portCell(s, fl.domain);
+  if (!at) return;
+  const plan = fleetPath(world, fl.domain, fl.x, fl.y, at[0], at[1]);
+  if (plan) fl.path = plan;
+}
+
+// Advance the campaign by real seconds × speed. Returns events: { stop, msg, contact? }.
+function campaignTick(dtReal) {
+  const events = [];
+  if (!campaign.running) return events;
+  let hours = dtReal * (campaign.speed || 1);             // 1 in-game hour per second × 1, 3 or 10
+  while (hours > 1e-6 && campaign.running) {
+    const dt = Math.min(TICK_HOURS, hours);
+    hours -= dt;
+    campaign.hour += dt;
+    stepWeather(dt);
+    for (const fl of campaign.fleets) {
+      if (fl.cooldown > 0) fl.cooldown -= dt;
+      const mine = fl.faction === campaign.faction;
+      const f0 = mine ? fleetFuel(fl) : null;
+      if (mine) { if (stepFleet(fl, dt) === 'arrived') events.push({ stop: true, msg: `${fl.name} arrived${fl.docked ? ` at ${byId('settlements', fl.docked).name}` : ''}.` }); }
+      else {
+        const keep = fl.shipIds.map((id) => byId('ships', id).fuel);
+        stepFleet(fl, dt);
+        fleetShips(fl).forEach((s, i) => { s.fuel = keep[i]; });
+        fl.ai.t = (fl.ai.t || 0) - dt;
+        if (fl.ai.t <= 0) { fl.ai.t = AI_THINK_HOURS; aiThink(fl); }
+      }
+      if (mine && f0 && f0.cap) {
+        const f1 = fleetFuel(fl);
+        if (f0.fuel / f0.cap >= LOW_FUEL && f1.fuel / f1.cap < LOW_FUEL) events.push({ stop: true, msg: `${fl.name}: fuel below ${Math.round(LOW_FUEL * 100)}%.` });
+        if (f1.fuel <= 0 && f0.fuel > 0) events.push({ stop: true, msg: `${fl.name} is stranded: no fuel.` });
+      }
+    }
+    updateVisibility();
+    // Contact (01 §6, §10.1): a player fleet meets a hostile fleet.
+    for (const P of playerFleets()) {
+      if (!P.shipIds.length || P.cooldown > 0) continue;
+      const E = campaign.fleets.find((fl) => fl.faction !== campaign.faction && fl.shipIds.length && !(fl.cooldown > 0) && relation(fl.faction, P.faction) === 'war' && Math.hypot(fl.x - P.x, fl.y - P.y) <= CONTACT_CELLS);
+      if (E) { events.push({ stop: true, msg: `Contact: ${factionOf(E.faction).name} ${E.domain} fleet.`, contact: { mine: P.id, theirs: E.id } }); break; }
+    }
+    if (campaign.hour >= 24) {
+      while (campaign.hour >= 24) { campaign.hour -= 24; campaign.day++; }
+      const { income, wages } = dailyEconomy();
+      campaign.journal.push(`Day ${campaign.day}: income ${Math.round(income)}, wages ${Math.round(wages)}.`);
+      if (campaign.journal.length > 60) campaign.journal.shift();
+      campaignStore.save();
+    }
+    if (events.some((e) => e.stop)) campaign.running = false;
+  }
+  return events;
+}
+
 /* ---------- 16a_screens.js ---------- */
 /* ==== 16 SCREENS ==== */
 // Screen manager, the title screen, and pause/settings/fullscreen helpers.
@@ -7570,6 +8645,14 @@ SCREENS.title = {
     r.appendChild(el('p', 'tagline', "No manual tells you how to win this war. You'll write your own."));
 
     const menu = el('div', 'menu');
+    // Campaign (design/06 Part 3).
+    const cg = el('div', 'menu-group');
+    cg.appendChild(el('div', 'menu-label', 'Campaign'));
+    const cRow = el('div', 'menu-row');
+    if (campaignStore.exists()) cRow.appendChild(button('Continue campaign', () => { if (campaignStore.load()) screens.go('map'); else this.build(); }, 'btn btn-primary'));
+    cRow.appendChild(button('New campaign', () => pickFaction(), campaignStore.exists() ? 'btn' : 'btn btn-primary'));
+    cg.appendChild(cRow);
+    menu.appendChild(cg);
     const pg = el('div', 'menu-group');
     pg.appendChild(el('div', 'menu-label', 'Gauntlet'));
     const pgRow = el('div', 'menu-row');
@@ -7687,6 +8770,40 @@ function enterFullscreen() {
     .catch(() => {});
 }
 
+// New campaign: choose a faction (design/01 §3, design/09). Facts only.
+function pickFaction() {
+  const c = ui.card('New campaign: choose your faction', 'card-faction');
+  const col = el('div', 'card-col faction-list');
+  let close = null;
+  for (const F of FACTIONS) {
+    const start = () => { newCampaign(F.id, ((Date.now() & 0xffffff) ^ 0x5eed) >>> 0); screens.go('map'); };
+    const b = button('', () => {
+      close();
+      if (!campaignStore.exists()) { start(); return; }
+      // Never wipe a save silently: ask first.
+      const q = ui.card('Replace your campaign?');
+      q.appendChild(el('p', 'card-text', 'Starting a new campaign replaces the saved one.'));
+      const row = el('div', 'card-row');
+      let shut = null;
+      row.appendChild(button('Keep it', () => shut(), 'btn', 'back'));
+      row.appendChild(button(`Start as ${F.name}`, () => { shut(); start(); }, 'btn btn-primary'));
+      q.appendChild(row);
+      shut = ui.open(q);
+    }, 'btn faction-btn');
+    b.textContent = '';
+    const dot = el('i', 'paint-dot'); dot.style.background = F.color;
+    const t = el('span', 'faction-txt');
+    const head = el('b', ''); head.appendChild(dot); head.appendChild(document.createTextNode(F.name));
+    t.appendChild(head);
+    t.appendChild(el('small', '', `${F.identity} ${F.pros.join('. ')}. ${F.cons.join('. ')}.`));
+    b.appendChild(t);
+    col.appendChild(b);
+  }
+  col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+  c.appendChild(col);
+  close = ui.open(c);
+}
+
 /* ---------- 16b_screen_battle.js ---------- */
 /* ==== 16b SCREEN: BATTLE ==== */
 // The battle screen (design/02 §3): world full screen, top bar, drive pad,
@@ -7723,7 +8840,9 @@ SCREENS.battle = {
     for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
-      : opts.sim
+      : opts.campaign
+        ? createCampaignBattle(opts.campaign, false)
+        : opts.sim
         ? createBattle(0, { squad: opts.sim.squad(), cfg: simulatorConfig(opts.sim), reserves: true, enemyForce: opts.sim.enemy() })
         : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
@@ -7757,7 +8876,7 @@ SCREENS.battle = {
     const B = this.B;
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
-    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.campaign ? `Battle · ${B.cfg.name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
     const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
@@ -7776,6 +8895,7 @@ SCREENS.battle = {
   },
 
   pauseOpts() {
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
@@ -8278,7 +9398,18 @@ SCREENS.battle = {
     let close = null;
     const secs = Math.round(B.time);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    if (this.opts.sim) {
+    if (this.opts.campaign) {
+      // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
+      const res = applyBattleOutcome(B);
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', res.lostTheirs);
+      row('Your ships lost', res.lostMine);
+      if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.sim) {
       // Battle Simulator (design/01 §15): facts only, no campaign effects.
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
       c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
@@ -8457,7 +9588,7 @@ SCREENS.battle = {
       g.fillText(text, left, safe.t + 9, right - left);
       g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
       g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
-      if (!B.test && !this.opts.sim) {
+      if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
         g.font = `700 12px ${FONT_UI}`;
@@ -9883,6 +11014,501 @@ SCREENS.simulator = {
     uiLayer.insertBefore(r, ui.toastBox);
   },
 };
+
+/* ---------- 16h_screen_map.js ---------- */
+/* ==== 16h SCREEN: WORLD MAP ==== */
+// The campaign map (design/02 §4, design/03 §4): a painted topographic map, faction territory,
+// roads, settlements and fleet counters; the top bar (date, treasury, the selected fleet's
+// cargo); thumb buttons to cycle fleets, clock speeds and Start/Stop; fleet and settlement
+// panels; tap a destination for a path preview with time and fuel; the pre-battle card on contact.
+
+const MAP_PX = 6;                 // pre-rendered pixels per cell
+
+SCREENS.map = {
+  pausable: true,
+  cam: { x: 0, y: 0, z: 6 },
+  sel: null,                      // { kind: 'fleet'|'settlement', id }
+  plan: null,                     // move preview for the selected fleet
+  base: null, terr: null, fog: null,
+  root: null,
+
+  enter() {
+    if (!campaign) { screens.go('title'); return; }
+    this.base = renderBaseMap();
+    this.terr = renderTerritory();
+    const flag = playerFleets().find((fl) => fl.shipIds.length) || campaign.fleets[0];
+    this.cam.x = flag.x; this.cam.y = flag.y;
+    this.cam.z = clamp(layout.h / 46, 5, 14);
+    this.sel = { kind: 'fleet', id: flag.id };
+    this.tab = 'ships';
+    this.plan = null;
+    campaign.running = false;
+    updateVisibility();
+    this.build();
+    audio.playTheme('title');
+  },
+  exit() { if (this.root) this.root.remove(); this.root = null; campaignStore.save(); },
+  pauseOpts() {
+    return { restartLabel: 'Save now', restart: () => { campaignStore.save(); ui.toast('Campaign saved.'); }, quitLabel: 'Save and quit to title', quit: () => { campaignStore.save(); screens.go('title'); } };
+  },
+
+  // ---------- DOM: top bar, thumbs, panel, move bar
+  build() {
+    if (this.root) this.root.remove();
+    const r = el('div', 'mapui');
+    this.root = r;
+    const top = el('div', 'map-top');
+    this.dateEl = el('span', 'map-fact map-date');
+    this.moneyEl = el('span', 'map-fact');
+    this.cargoEl = el('span', 'map-fact map-cargo');
+    top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
+    const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
+    top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
+    r.appendChild(top);
+    const bot = el('div', 'map-bottom');
+    bot.appendChild(button('◀ Fleet', () => this.cycle(-1), 'btn btn-small'));
+    bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
+    const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
+    this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
+    this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
+    bot.appendChild(this.goBtn);
+    r.appendChild(bot);
+    this.panel = el('div', 'map-panel');
+    r.appendChild(this.panel);
+    this.moveBar = el('div', 'map-move');
+    r.appendChild(this.moveBar);
+    uiLayer.insertBefore(r, ui.toastBox);
+    this.refresh();
+  },
+
+  toggleClock() {
+    campaign.running = !campaign.running;
+    if (campaign.running) { this.plan = null; }
+    audio.sfx(campaign.running ? 'toggleOn' : 'toggleOff');
+    this.refresh();
+  },
+
+  cycle(k) {
+    const list = playerFleets().filter((fl) => fl.shipIds.length);
+    if (!list.length) return;
+    const i = this.sel && this.sel.kind === 'fleet' ? list.findIndex((fl) => fl.id === this.sel.id) : -1;
+    const fl = list[(i + k + list.length) % list.length];
+    this.select('fleet', fl.id);
+    this.cam.x = fl.x; this.cam.y = fl.y;
+  },
+
+  select(kind, id) {
+    this.sel = { kind, id };
+    this.plan = null;
+    this.tab = kind === 'fleet' ? 'ships' : 'overview';
+    audio.sfx('tap');
+    this.refresh();
+  },
+
+  selFleet() { return this.sel && this.sel.kind === 'fleet' ? byId('fleets', this.sel.id) : null; },
+
+  refresh() {
+    if (!this.root) return;
+    const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
+    this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;
+    const fl = this.selFleet();
+    if (fl) {
+      const f = fleetFuel(fl);
+      this.cargoEl.textContent = `${fl.name} · fuel ${f.fuel.toFixed(1)}/${f.cap.toFixed(1)} · hold ${holdUsed(fl).toFixed(1)}/${holdCap(fl).toFixed(0)}`;
+    } else this.cargoEl.textContent = '';
+    this.cargoEl.hidden = !this.cargoEl.textContent;
+    this.speedBtns.forEach((b, i) => b.classList.toggle('on', campaign.speed === CLOCK_SPEEDS[i]));
+    this.goBtn.textContent = campaign.running ? 'Stop ❚❚' : 'Start ▶';
+    this.buildPanel();
+    this.buildMoveBar();
+  },
+
+  buildMoveBar() {
+    const m = this.moveBar;
+    m.textContent = '';
+    const p = this.plan, fl = this.selFleet();
+    if (!p || !fl) { m.hidden = true; return; }
+    m.hidden = false;
+    if (p.why) { m.appendChild(el('span', 'map-fact', p.why)); m.appendChild(button('OK', () => { this.plan = null; this.refresh(); }, 'btn btn-small')); return; }
+    const txt = `${Math.round(p.hours)} h · fuel ${p.fuel.toFixed(1)} needed, ${p.held.toFixed(1)} held${p.strands ? ' · strands on the way' : ''}`;
+    m.appendChild(el('span', 'map-fact' + (p.strands ? ' map-warn' : ''), txt));
+    m.appendChild(button('Cancel', () => { this.plan = null; this.refresh(); }, 'btn btn-small', 'back'));
+    m.appendChild(button('Move', () => { orderMove(fl, p); this.plan = null; audio.sfx('order'); this.refresh(); }, 'btn btn-small btn-primary'));
+  },
+
+  // ---------- panels (02 §4.3, §4.4)
+  buildPanel() {
+    const P = this.panel;
+    P.textContent = '';
+    if (!this.sel) { P.hidden = true; return; }
+    P.hidden = false;
+    const tabs = el('div', 'map-tabs');
+    const tab = (id, label) => { const b = button(label, () => { this.tab = id; this.refresh(); }, 'btn btn-small map-tab' + (this.tab === id ? ' on' : '')); tabs.appendChild(b); };
+    const body = el('div', 'map-body');
+    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); body.appendChild(r); };
+    if (this.sel.kind === 'fleet') {
+      const fl = byId('fleets', this.sel.id);
+      if (!fl) { this.sel = null; P.hidden = true; return; }
+      const mine = fl.faction === campaign.faction;
+      P.appendChild(el('h3', 'map-title', mine ? fl.name : `${factionOf(fl.faction).name} ${fl.domain} fleet`));
+      if (!mine) {
+        const rel = relation(fl.faction, campaign.faction);
+        row('Relation', rel === 'war' ? 'At war' : 'Truce');
+        row('Ships', fl.shipIds.length);
+        row('Domain', fl.domain);
+        P.appendChild(body);
+        return;
+      }
+      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab('admiral', 'Admiral');
+      P.appendChild(tabs);
+      const adm = fleetAdmiral(fl);
+      if (this.tab === 'ships') {
+        for (const sh of fleetShips(fl)) {
+          const st = shipStats(sh), cap = byId('officers', sh.captainId);
+          const r = el('div', 'map-ship');
+          r.appendChild(el('b', '', st.name));
+          r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
+          r.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          body.appendChild(r);
+        }
+        if (!fl.shipIds.length) body.appendChild(el('p', 'card-text', 'No ships.'));
+        // Ships left at a field outpost here can rejoin (same domain).
+        for (const o of (campaign.outposts || []).filter((q) => q.faction === fl.faction && q.domain === fl.domain && Math.hypot(q.x - fl.x, q.y - fl.y) < 1.5)) {
+          for (const sh of campaign.ships.filter((s) => s.outpost === o.id)) body.appendChild(button(`Take ${shipStats(sh).name} from the outpost`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
+        }
+        const spare = campaign.officers.filter((o) => o.alive && o.fleetId === fl.id && o.rank === 'captain' && !o.shipId);
+        if (spare.length) row('Captains without a ship', spare.map((o) => o.name).join(', '));
+      } else if (this.tab === 'cargo') {
+        const f = fleetFuel(fl);
+        row('Fuel in tanks and hold', `${f.fuel.toFixed(1)} of ${f.cap.toFixed(1)} units`);
+        row('Burn on the move', `${fleetBurn(fl).toFixed(2)} units/h`);
+        row('March speed', `${Math.round(fleetSpeed(fl))} km/h`);
+        row('Hold', `${holdUsed(fl).toFixed(1)} of ${holdCap(fl).toFixed(0)} units (fuel ${(fl.hold.fuel || 0).toFixed(1)}, ammo ${(fl.hold.ammo || 0).toFixed(1)})`);
+        row('State', fl.stranded ? 'Stranded: no fuel' : fl.path.length ? 'Moving' : fl.docked ? `Docked at ${byId('settlements', fl.docked).name}` : 'Holding');
+        if (fl.path.length) body.appendChild(button('Stop here', () => { fl.path = []; fl.dest = null; this.refresh(); }, 'btn btn-small'));
+      } else {
+        const lvl = adm ? adm.level : 1;
+        row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
+        row('Level', lvl);
+        row('XP', adm ? Math.round(adm.xp) : 0);
+        row('Fleet size', `${fl.shipIds.length} of ${FLEET_SIZE[Math.min(9, lvl - 1)]}`);
+      }
+      P.appendChild(body);
+      return;
+    }
+    const s = byId('settlements', this.sel.id);
+    const T = SETTLEMENT_TYPES[s.type];
+    P.appendChild(el('h3', 'map-title', `${s.name}${s.capital ? ' (capital)' : ''}`));
+    tab('overview', 'Overview'); tab('market', 'Market');
+    P.appendChild(tabs);
+    const rel = relation(s.faction, campaign.faction);
+    if (this.tab === 'overview') {
+      row('Type', T.name + (s.coastal ? ', coastal' : ''));
+      row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
+      row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
+      row('Terrain', MAP_TERRAIN[s.biome].name);
+      if (s.faction === campaign.faction) row('Money per day', Math.round(T.money * (T.money > 0 && s.coastal ? COASTAL_MONEY : 1)));
+      const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
+      row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
+      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
+      for (const fl of docked) {
+        const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
+        for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
+          if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
+        }
+      }
+    } else {
+      for (const good of ['fuel', 'ammo']) {
+        const b = buyPrice(s, good, campaign.faction);
+        row(good === 'fuel' ? 'Fuel (100 L)' : 'Ammo (100 kg)', b === null ? 'No trade (at war)' : `buy ${b.toFixed(1)} · sell ${(b * SELL_SHARE).toFixed(1)} · stock ${Math.floor(s.market[good])}`);
+      }
+      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
+      if (!docked.length) body.appendChild(el('p', 'card-text', 'Dock a fleet here to trade: move it onto the settlement (ships to the water beside it).'));
+      for (const fl of docked) {
+        body.appendChild(el('div', 'ws-label', fl.name));
+        const rf = refuelQuote(fl, s), ra = rearmQuote(fl, s);
+        const act = el('div', 'map-row');
+        act.appendChild(button(rf.why ? 'Refuel' : rf.units < 0.05 ? 'Tanks full' : `Refuel ${rf.units.toFixed(1)} units for ${Math.ceil(rf.cost)}`, () => { const why = refuel(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        act.appendChild(button(ra.why ? 'Rearm' : ra.units < 0.005 ? 'Magazines full' : `Rearm ${ra.units.toFixed(2)} units for ${Math.ceil(ra.cost)}`, () => { const why = rearm(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        if (holdCap(fl) > 0) for (const good of ['fuel', 'ammo']) {
+          act.appendChild(button(`Buy 5 ${good}`, () => { const why = trade(fl, s, good, 5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+          act.appendChild(button(`Sell 5 ${good}`, () => { const why = trade(fl, s, good, -5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+        }
+        body.appendChild(act);
+      }
+    }
+    P.appendChild(body);
+  },
+
+  // ---------- clock and events
+  update(dt, simRunning) {
+    if (!campaign || !simRunning) return;
+    const was = campaign.running;
+    const events = campaignTick(dt);
+    for (const e of events) if (e.msg) ui.toast(e.msg, 3500);
+    const contact = events.find((e) => e.contact);
+    if (contact) this.preBattle(contact.contact);
+    this.t = (this.t || 0) + dt;
+    if (was !== campaign.running || this.t > 0.25) { this.t = 0; this.refresh(); }
+  },
+
+  // ---------- gestures
+  world: {
+    tap(x, y) {
+      const S = SCREENS.map;
+      const cx = S.toCellX(x), cy = S.toCellY(y);
+      const r = 1.2 * Math.max(1, 12 / S.cam.z);
+      const fl = campaign.fleets.find((f) => f.shipIds.length && (f.faction === campaign.faction || f.seen) && Math.abs(S.sx(f.x) + (f.drawDx || 0) - x) < 16 && Math.abs(S.sy(f.y) - y) < 14);
+      const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < r);
+      const mine = S.selFleet();
+      // With one of your fleets selected, a tap elsewhere plans a move there (a settlement: dock at it).
+      if (mine && mine.faction === campaign.faction && !(fl && fl.faction === campaign.faction)) {
+        if (s && (!fl || fl.faction !== campaign.faction) && S.plan && S.plan.target === s.id) { S.select('settlement', s.id); return; }
+        const to = s ? portCell(s, mine.domain) || [cx, cy] : [cx, cy];
+        S.plan = planMove(mine, to[0], to[1]);
+        if (s) S.plan.target = s.id;
+        audio.sfx('tap');
+        S.refresh();
+        return;
+      }
+      if (fl) { S.select('fleet', fl.id); return; }
+      if (s) { S.select('settlement', s.id); return; }
+      S.sel = null; S.plan = null; S.refresh();
+    },
+    doubleTap() { const S = SCREENS.map; S.cam.z = clamp(layout.h / 46, 5, 14); },
+    pan(dx, dy) { const S = SCREENS.map; S.cam.x -= dx / S.cam.z; S.cam.y -= dy / S.cam.z; S.clampCam(); },
+    pinch(f, cx, cy) {
+      const S = SCREENS.map;
+      const bx = S.toCellX(cx), by = S.toCellY(cy);
+      S.cam.z = clamp(S.cam.z * f, 2.5, 40);
+      S.cam.x += bx - S.toCellX(cx); S.cam.y += by - S.toCellY(cy);
+      S.clampCam();
+    },
+  },
+  clampCam() { this.cam.x = clamp(this.cam.x, 0, WORLD_W); this.cam.y = clamp(this.cam.y, 0, WORLD_H); },
+  toCellX(sx) { return (sx - layout.w / 2) / this.cam.z + this.cam.x; },
+  toCellY(sy) { return (sy - layout.h / 2) / this.cam.z + this.cam.y; },
+  sx(cx) { return (cx - this.cam.x) * this.cam.z + layout.w / 2; },
+  sy(cy) { return (cy - this.cam.y) * this.cam.z + layout.h / 2; },
+
+  key(code, down) {
+    if (!down) return;
+    if (code === 'Space' || code === 'KeyT') this.toggleClock();
+    else if (code === 'KeyE' || code === 'Tab') this.cycle(1);
+    else if (code === 'KeyQ') this.cycle(-1);
+    else if (/^Digit[123]$/.test(code)) { campaign.speed = CLOCK_SPEEDS[+code[5] - 1]; this.refresh(); }
+  },
+
+  // ---------- drawing
+  render(g) {
+    const { w, h } = layout;
+    const z = this.cam.z;
+    g.fillStyle = MAP_TERRAIN.sea.color;
+    g.fillRect(0, 0, w, h);
+    const ox = this.sx(0), oy = this.sy(0);
+    g.drawImage(this.base, ox, oy, WORLD_W * z, WORLD_H * z);
+    g.drawImage(this.terr, ox, oy, WORLD_W * z, WORLD_H * z);
+    // Weather fronts.
+    for (const f of campaign.weather || []) {
+      g.fillStyle = f.kind === 'storm' || f.kind === 'sandstorm' ? 'rgba(60,64,80,0.2)' : f.kind === 'snow' || f.kind === 'fog' ? 'rgba(235,240,245,0.12)' : 'rgba(120,140,170,0.14)';
+      g.beginPath(); g.arc(this.sx(f.x), this.sy(f.y), f.r * z, 0, Math.PI * 2); g.fill();
+    }
+    // Paths of your fleets and the move preview.
+    g.lineWidth = 2;
+    for (const fl of playerFleets()) if (fl.path.length) this.drawPath(g, fl.x, fl.y, fl.path, 'rgba(123,196,127,0.8)');
+    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, true);
+    // Settlements.
+    for (const s of world.settlements) this.drawSettlement(g, s);
+    // Fog of war over what your fleets and settlements can't see.
+    this.drawFog(g);
+    // Fleets: yours, and the enemy fleets you can see.
+    // Counters at the same spot stand side by side.
+    const shown = campaign.fleets.filter((fl) => fl.shipIds.length && (fl.faction === campaign.faction || fl.seen));
+    const placed = [];
+    for (const fl of shown) {
+      const k = placed.filter((p) => Math.hypot(p.x - fl.x, p.y - fl.y) * this.cam.z < 24).length;
+      placed.push(fl);
+      fl.drawDx = k * 30;
+      this.drawFleet(g, fl);
+    }
+    for (const o of campaign.outposts || []) { g.fillStyle = PAL.amber; g.fillRect(this.sx(o.x) - 4, this.sy(o.y) - 4, 8, 8); }
+  },
+
+  drawPath(g, x, y, path, col, dashed) {
+    g.strokeStyle = col;
+    g.setLineDash(dashed ? [6, 4] : []);
+    g.beginPath(); g.moveTo(this.sx(x), this.sy(y));
+    for (const [px, py] of path) g.lineTo(this.sx(px), this.sy(py));
+    g.stroke();
+    g.setLineDash([]);
+  },
+
+  drawSettlement(g, s) {
+    const x = this.sx(s.x + 0.5), y = this.sy(s.y + 0.5);
+    if (x < -40 || y < -40 || x > layout.w + 40 || y > layout.h + 40) return;
+    const F = s.faction ? factionOf(s.faction) : null;
+    const k = { village: 5, city: 7, metropolis: 9, fort: 7, citadel: 9 }[s.type];
+    g.fillStyle = '#2A2622';
+    g.strokeStyle = PAL.linen; g.lineWidth = 1.5;
+    if (s.type === 'fort' || s.type === 'citadel') {
+      g.beginPath();
+      for (let i = 0; i < 10; i++) { const a = (i * Math.PI) / 5 - Math.PI / 2, r = i % 2 ? k * 0.55 : k; g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+      g.closePath(); g.fill(); g.stroke();
+    } else {
+      g.fillRect(x - k, y - k * 0.7, k * 2, k * 1.4); g.strokeRect(x - k, y - k * 0.7, k * 2, k * 1.4);
+      if (s.type !== 'village') { g.fillStyle = PAL.linen; g.fillRect(x - k * 0.6, y - k * 1.2, k * 0.4, k * 0.6); g.fillRect(x + k * 0.2, y - k * 1.5, k * 0.4, k * 0.9); }
+    }
+    // Pennant in the owner's colour.
+    g.fillStyle = F ? F.color : '#9A9DA1';
+    g.beginPath(); g.moveTo(x - k, y - k * 0.7); g.lineTo(x - k, y - k * 2); g.lineTo(x - k + 8, y - k * 1.7); g.lineTo(x - k, y - k * 1.4); g.fill();
+    if (this.cam.z >= 5 || s.capital) {
+      g.font = `${s.capital ? 700 : 400} 12px ${FONT_UI}`;
+      g.textAlign = 'center'; g.textBaseline = 'top';
+      g.fillStyle = 'rgba(10,14,20,0.7)';
+      const tw = g.measureText(s.name).width;
+      g.fillRect(x - tw / 2 - 3, y + k + 1, tw + 6, 15);
+      g.fillStyle = PAL.linen;
+      g.fillText(s.name, x, y + k + 2);
+    }
+    if (this.sel && this.sel.kind === 'settlement' && this.sel.id === s.id) { g.strokeStyle = PAL.amber; g.lineWidth = 2; g.strokeRect(x - k - 4, y - k * 2 - 2, k * 2 + 8, k * 3); }
+  },
+
+  drawFleet(g, fl) {
+    const x = this.sx(fl.x) + (fl.drawDx || 0), y = this.sy(fl.y);
+    const F = factionOf(fl.faction);
+    const W = 26, H = 18;
+    g.fillStyle = 'rgba(12,14,20,0.85)';
+    roundRect(g, x - W / 2, y - H / 2, W, H, 4); g.fill();
+    g.strokeStyle = F.color; g.lineWidth = 2;
+    roundRect(g, x - W / 2, y - H / 2, W, H, 4); g.stroke();
+    // Domain glyph: tank, hull or envelope.
+    g.fillStyle = F.color;
+    if (fl.domain === 'land') { g.fillRect(x - 9, y - 1, 12, 5); g.fillRect(x - 6, y - 4, 6, 3); g.fillRect(x, y - 3, 6, 1.5); }
+    else if (fl.domain === 'sea') { g.beginPath(); g.moveTo(x - 10, y); g.lineTo(x + 4, y); g.lineTo(x + 1, y + 4); g.lineTo(x - 8, y + 4); g.fill(); g.fillRect(x - 5, y - 4, 4, 4); }
+    else { g.beginPath(); g.ellipse(x - 3, y - 1, 7, 3.5, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x - 5, y + 3, 4, 2); }
+    g.font = `700 12px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.fillStyle = PAL.linen;
+    g.fillText(String(fl.shipIds.length), x + W / 2 - 2, y);
+    if (fl.faction === campaign.faction) {
+      const f = fleetFuel(fl);
+      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - W / 2, y + H / 2 + 1, W, 3);
+      g.fillStyle = f.fuel <= 0 ? PAL.danger : f.fuel / f.cap < LOW_FUEL ? PAL.warning : PAL.good;
+      g.fillRect(x - W / 2, y + H / 2 + 1, W * clamp(f.fuel / Math.max(0.01, f.cap), 0, 1), 3);
+    }
+    if (this.sel && this.sel.kind === 'fleet' && this.sel.id === fl.id) { g.strokeStyle = PAL.amber; g.lineWidth = 2; g.strokeRect(x - W / 2 - 4, y - H / 2 - 4, W + 8, H + 12); }
+  },
+
+  drawFog(g) {
+    const { w, h } = layout;
+    if (!this.fog || this.fog.width !== Math.ceil(w) || this.fog.height !== Math.ceil(h)) { this.fog = document.createElement('canvas'); this.fog.width = Math.ceil(w); this.fog.height = Math.ceil(h); }
+    const f = this.fog.getContext('2d');
+    f.globalCompositeOperation = 'source-over';
+    f.clearRect(0, 0, this.fog.width, this.fog.height);
+    f.fillStyle = 'rgba(8,12,22,0.42)';
+    f.fillRect(0, 0, this.fog.width, this.fog.height);
+    f.globalCompositeOperation = 'destination-out';
+    f.fillStyle = '#000';
+    for (const [x, y, r] of campaign.eyes || []) { f.beginPath(); f.arc(this.sx(x), this.sy(y), r * this.cam.z, 0, Math.PI * 2); f.fill(); }
+    g.drawImage(this.fog, 0, 0);
+  },
+
+  // ---------- contact and the pre-battle card (01 §10.1)
+  preBattle(contact) {
+    const mine = byId('fleets', contact.mine), theirs = byId('fleets', contact.theirs);
+    if (!mine || !theirs) return;
+    const place = battlePlace(mine.x, mine.y);
+    const c = ui.card('Contact', 'card-prebattle');
+    const facts = el('div', 'result-facts');
+    const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+    const sides = battleSides(mine, theirs);
+    row('Battlefield', `${SIM_FIELDS[place.field]} · ${place.weather}`);
+    row('Your ships', sides.mine.map((sh) => shipStats(sh).name).join(', ') || 'none that can fight here');
+    row('Enemy (spotted)', sides.theirs.map((sh) => shipStats(sh).clsName).join(', '));
+    const esc = retreatCheck(sides.mine, sides.theirs);
+    row('Retreat', esc.free ? 'Your slowest ship outpaces them' : `Costs your rearmost ship (${esc.lose ? shipStats(esc.lose).name : '—'})`);
+    c.appendChild(facts);
+    const btns = el('div', 'card-row');
+    let close = null;
+    btns.appendChild(button('Retreat', () => { close(); retreat(mine, theirs, esc); this.refresh(); }, 'btn', 'back'));
+    btns.appendChild(button('Auto-resolve', () => { close(); const res = autoResolve(mine, theirs); this.afterBattle(res); }));
+    const fight = button('Fight', () => { close(); screens.go('battle', { campaign: { mine: mine.id, theirs: theirs.id } }); }, 'btn btn-primary');
+    if (!sides.mine.length) fight.classList.add('btn-disabled'), fight.disabled = true;
+    btns.appendChild(fight);
+    c.appendChild(btns);
+    close = ui.open(c);
+  },
+
+  afterBattle(res) {
+    if (!res) return;
+    ui.toast(res.summary, 5000);
+    this.refresh();
+  },
+};
+
+// ---------- pre-rendered layers
+function renderBaseMap() {
+  const c = document.createElement('canvas');
+  c.width = WORLD_W * MAP_PX; c.height = WORLD_H * MAP_PX;
+  const g = c.getContext('2d');
+  const P = MAP_PX;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const i = y * WORLD_W + x;
+    const t = T_IDS[world.ter[i]];
+    const h = world.height[i];
+    let col = MAP_TERRAIN[t].color;
+    // Hill shading from the height difference to the north-west neighbour; deeper sea is darker.
+    const nw = world.height[Math.max(0, y - 1) * WORLD_W + Math.max(0, x - 1)];
+    const k = t === 'sea' ? clamp(0.75 + (h - world.seaLevel) * 2.2, 0.55, 1.05) : clamp(1 + (h - nw) * 4, 0.8, 1.2);
+    g.fillStyle = shade(col, k);
+    g.fillRect(x * P, y * P, P, P);
+    if (t === 'mountains') { g.strokeStyle = 'rgba(40,36,32,0.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x * P + 1, y * P + P - 1); g.lineTo(x * P + P / 2, y * P + 1); g.lineTo(x * P + P - 1, y * P + P - 1); g.stroke(); }
+    if (t === 'forest' && (x + y) % 2 === 0) { g.fillStyle = 'rgba(20,40,20,0.35)'; g.beginPath(); g.arc(x * P + P / 2, y * P + P / 2, P * 0.3, 0, Math.PI * 2); g.fill(); }
+    if (t === 'ruins' && (x * 7 + y) % 3 === 0) { g.fillStyle = 'rgba(40,30,24,0.5)'; g.fillRect(x * P + 1, y * P + 2, P - 3, 2); }
+  }
+  // Coastline and roads in ink.
+  g.strokeStyle = 'rgba(20,24,30,0.55)'; g.lineWidth = 1;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const sea = world.ter[y * WORLD_W + x] === T_SEA;
+    if (x + 1 < WORLD_W && sea !== (world.ter[y * WORLD_W + x + 1] === T_SEA)) { g.beginPath(); g.moveTo((x + 1) * P, y * P); g.lineTo((x + 1) * P, (y + 1) * P); g.stroke(); }
+    if (y + 1 < WORLD_H && sea !== (world.ter[(y + 1) * WORLD_W + x] === T_SEA)) { g.beginPath(); g.moveTo(x * P, (y + 1) * P); g.lineTo((x + 1) * P, (y + 1) * P); g.stroke(); }
+  }
+  g.strokeStyle = 'rgba(60,40,24,0.8)'; g.lineWidth = 1.5;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    if (!world.road[y * WORLD_W + x]) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < WORLD_W && ny >= 0 && ny < WORLD_H && world.road[ny * WORLD_W + nx]) { g.beginPath(); g.moveTo((x + 0.5) * P, (y + 0.5) * P); g.lineTo((nx + 0.5) * P, (ny + 0.5) * P); g.stroke(); }
+    }
+  }
+  return c;
+}
+
+// Territory: a faint tint and a grease-pencil border in each faction's colour.
+function renderTerritory() {
+  const c = document.createElement('canvas');
+  c.width = WORLD_W * MAP_PX; c.height = WORLD_H * MAP_PX;
+  const g = c.getContext('2d');
+  const P = MAP_PX;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+    const o = world.owner[y * WORLD_W + x];
+    if (o < 0 || world.ter[y * WORLD_W + x] === T_SEA) continue;
+    const col = FACTIONS[o].color;
+    g.globalAlpha = 0.14; g.fillStyle = col; g.fillRect(x * P, y * P, P, P);
+    g.globalAlpha = 0.85; g.strokeStyle = col; g.lineWidth = 2;
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= WORLD_W || ny >= WORLD_H) continue;
+      if (world.owner[ny * WORLD_W + nx] === o) continue;
+      g.beginPath();
+      if (dx) { const X = (dx > 0 ? x + 1 : x) * P; g.moveTo(X, y * P); g.lineTo(X, (y + 1) * P); } else { const Y = (dy > 0 ? y + 1 : y) * P; g.moveTo(x * P, Y); g.lineTo((x + 1) * P, Y); }
+      g.stroke();
+    }
+  }
+  g.globalAlpha = 1;
+  return c;
+}
 
 /* ---------- 17_main.js ---------- */
 /* ==== 17 MAIN ==== */

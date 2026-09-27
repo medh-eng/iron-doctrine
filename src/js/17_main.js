@@ -165,6 +165,12 @@ window.__GAME__ = {
   reserveCheck: () => reserveCheck(),
   airshipCheck: () => airshipCheck(),
   classCheck: () => classCheck(),
+  campaignCheck: () => campaignCheck(),
+  camp: {
+    get campaign() { return campaign; }, get world() { return world; },
+    newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,
+    autoResolve, battleSides, detachShip, pickUp, relation, byId, shipStats, fleetStrength, updateVisibility, retreatCheck, retreat, store: campaignStore,
+  },
   paintCheck: () => paintCheck(),
   view,
   designFromTemplate,

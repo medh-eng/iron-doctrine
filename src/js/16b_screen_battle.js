@@ -33,7 +33,9 @@ SCREENS.battle = {
     for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti]) pool.forEachAlive((p) => { p.alive = false; });
     const B = opts.test
       ? createBattle(1, { squad: [opts.test], test: true, cfg: testDriveConfig(opts.range || rangeFor(domainOf(opts.test))) })
-      : opts.sim
+      : opts.campaign
+        ? createCampaignBattle(opts.campaign, false)
+        : opts.sim
         ? createBattle(0, { squad: opts.sim.squad(), cfg: simulatorConfig(opts.sim), reserves: true, enemyForce: opts.sim.enemy() })
         : createBattle(this.level, { squad: ladder.squadDesigns() });
     this.B = B;
@@ -67,7 +69,7 @@ SCREENS.battle = {
     const B = this.B;
     if (this.howEl) this.howEl.remove();
     const box = el('div', 'howto');
-    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
+    box.appendChild(el('div', 'howto-1', B.test ? `Test drive · ${B.squad[0].name}` : this.opts.campaign ? `Battle · ${B.cfg.name}` : this.opts.sim ? `Battle Simulator · ${B.cfg.name}` : `Level ${this.level} · ${B.cfg.name} · ${B.cfg.goal.text}`));
     const how = B.test ? `${TEST_RANGE_HOW[B.cfg.range] || TEST_RANGE_HOW.land} ${FLIGHT_HOW[B.me.domain] || ''} Pause to go back to the Workshop.`.replace('  ', ' ') : B.cfg.how;
     if (how) box.appendChild(el('div', 'howto-2', how));
     uiLayer.insertBefore(box, ui.toastBox);
@@ -86,6 +88,7 @@ SCREENS.battle = {
   },
 
   pauseOpts() {
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
@@ -588,7 +591,18 @@ SCREENS.battle = {
     let close = null;
     const secs = Math.round(B.time);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    if (this.opts.sim) {
+    if (this.opts.campaign) {
+      // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
+      const res = applyBattleOutcome(B);
+      if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
+      row('Enemy ships destroyed', res.lostTheirs);
+      row('Your ships lost', res.lostMine);
+      if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+      row('Time', time);
+      c.appendChild(facts);
+      btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.sim) {
       // Battle Simulator (design/01 §15): facts only, no campaign effects.
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
       c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
@@ -767,7 +781,7 @@ SCREENS.battle = {
       g.fillText(text, left, safe.t + 9, right - left);
       g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(left, safe.t + 17, right - left, 3);
       g.fillStyle = PAL.amber; g.fillRect(left, safe.t + 17, (right - left) * clamp(f, 0, 1), 3);
-      if (!B.test && !this.opts.sim) {
+      if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
         g.font = `700 12px ${FONT_UI}`;

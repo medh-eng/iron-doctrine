@@ -568,6 +568,92 @@ function classCheck() {
   return out;
 }
 
+// Part 3: a campaign in every faction starts right; fleets move by domain rules, burn fuel and
+// strand; refuelling uses the treasury; contact starts a battle whose results persist.
+function campaignCheck() {
+  const out = { starts: {} };
+  for (const F of FACTIONS) {
+    newCampaign(F.id, 4242);
+    const home = world.settlements.filter((s) => s.faction === F.id);
+    const cap = home.find((s) => s.capital);
+    out.starts[F.id] = {
+      home: home.map((s) => s.type).sort().join(','), capCoastal: cap.coastal, capType: cap.type,
+      fleets: playerFleets().map((fl) => `${fl.domain}:${fl.shipIds.length}`).join(','),
+      ga: byId('officers', campaign.ga).fleetId === playerFleets().find((fl) => fl.domain === 'land').id,
+    };
+  }
+  newCampaign('league', 5151);
+  const land = playerFleets().find((fl) => fl.domain === 'land'), sea = playerFleets().find((fl) => fl.domain === 'sea'), air = playerFleets().find((fl) => fl.domain === 'air');
+  // Domain rules: a land fleet can't go to sea; a sea fleet can't go ashore.
+  let seaCell = null, farLand = null;
+  for (let r = 2; r < 30 && !seaCell; r++) for (let a = 0; a < 16 && !seaCell; a++) { const x = land.x + Math.cos(a) * r, y = land.y + Math.sin(a) * r; if (isSeaCell(world, x, y)) seaCell = [x, y]; }
+  const inland = world.settlements.filter((s) => !s.coastal && s.faction !== 'league').sort((a, b) => Math.hypot(a.x - land.x, a.y - land.y) - Math.hypot(b.x - land.x, b.y - land.y));
+  farLand = [inland[0].x + 0.5, inland[0].y + 0.5];
+  out.rules = { landToSea: !!planMove(land, seaCell[0], seaCell[1]).why, seaToLand: !!planMove(sea, farLand[0], farLand[1]).why, airAnywhere: !planMove(air, seaCell[0], seaCell[1]).why };
+  // Moving burns fuel; the preview warns before stranding; an empty land fleet crawls, air can't move.
+  const plan = planMove(land, farLand[0], farLand[1]);
+  out.plan = { hours: Math.round(plan.hours), fuel: +plan.fuel.toFixed(2), held: +plan.held.toFixed(2), strands: plan.strands };
+  orderMove(land, plan);
+  campaign.running = true;
+  const f0 = fleetFuel(land).fuel;
+  let ev = [];
+  for (let k = 0; k < 8 && campaign.running; k++) ev = ev.concat(campaignTick(1));
+  out.burn = { before: +f0.toFixed(2), after: +fleetFuel(land).fuel.toFixed(2), moved: land.path.length < plan.path.length };
+  for (const s of fleetShips(air)) s.fuel = 0;
+  const far = planMove(air, air.x + 20, air.y);
+  out.strandWarn = far.strands;
+  orderMove(air, far);
+  const ax = air.x;
+  campaign.running = true;
+  campaignTick(2);
+  out.airStranded = { stranded: air.stranded, moved: Math.abs(air.x - ax) > 0.01 };
+  // Refuel at the home city from the treasury.
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  air.x = home.x + 0.5; air.y = home.y + 0.5; air.path = []; air.docked = home.id;
+  const t0 = campaign.treasury;
+  const q = refuelQuote(air, home);
+  const why = refuel(air, home);
+  out.refuel = { why, spent: Math.round(t0 - campaign.treasury), quote: Math.round(q.cost), full: fleetFuel(air).fuel > 0 };
+  // Contact: an enemy fleet at war next to the land fleet → auto-resolve; results persist.
+  const enemy = campaign.fleets.find((fl) => fl.faction !== 'league' && relation(fl.faction, 'league') === 'war' && fl.domain === 'land');
+  enemy.x = land.x + 1; enemy.y = land.y; enemy.path = []; enemy.cooldown = 0; land.cooldown = 0; land.path = [];
+  campaign.running = true;
+  const evs = campaignTick(0.5);
+  out.contact = !!evs.find((e) => e.contact);
+  const shipsBefore = campaign.ships.length;
+  const t1 = performance.now();
+  const res = autoResolve(land, enemy);
+  out.auto = { ms: Math.round(performance.now() - t1), win: res.win, lostMine: res.lostMine, lostTheirs: res.lostTheirs, shipsAfter: campaign.ships.length, shipsBefore };
+  const hurt = campaign.ships.filter((s) => s.hp && s.hp.some((v) => v < 1)).length;
+  out.persist = { damaged: hurt, saved: campaignStore.save() };
+  // Detaching: at an own settlement the ship and captain join its garrison; in the open they
+  // become a field outpost; either can be picked up again. Captains never travel alone.
+  const sea2 = playerFleets().find((fl) => fl.domain === 'sea');
+  const homeS = world.settlements.find((q) => q.faction === 'league' && q.capital);
+  sea2.docked = homeS.id;
+  const g1 = fleetShips(sea2)[0];
+  const w1 = detachShip(sea2, g1);
+  const inGarrison = g1.garrison === homeS.id && byId('officers', g1.captainId).garrisonedAt === homeS.id && !g1.fleetId;
+  sea2.docked = null; sea2.x += 0; 
+  const g2 = fleetShips(sea2)[0];
+  detachShip(sea2, g2);
+  const outpost = !!g2.outpost && campaign.outposts.some((o) => o.id === g2.outpost);
+  const back = pickUp(sea2, g2) === '' && sea2.shipIds.includes(g2.id) && !campaign.outposts.length;
+  const alone = campaign.officers.filter((o) => o.alive && o.rank === 'captain' && !o.shipId && !o.fleetId && !o.garrisonedAt).length;
+  out.detach = { why: w1, inGarrison, outpost, back, alone };
+  // Only allowed domains deploy: inland keeps ships out, open sea keeps tanks out.
+  const inl = world.settlements.find((q) => !q.coastal && !isSeaCell(world, q.x, q.y) && battlePlace(q.x, q.y).field === 'inland');
+  const lf = playerFleets().find((fl) => fl.domain === 'land');
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.shipIds.length && relation(fl.faction, 'league') === 'war');
+  lf.x = inl.x + 0.5; lf.y = inl.y + 0.5; sea2.x = lf.x + 1; sea2.y = lf.y; en.x = lf.x + 0.5; en.y = lf.y;
+  const sd = battleSides(lf, en);
+  out.deploy = { field: sd.place.field, domains: [...new Set(sd.mine.map((sh) => mapDomain(designReport(shipDesign(sh)).domain)))].join(',') };
+  const snap = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh']));
+  campaignStore.load();
+  out.reload = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh'])) === snap;
+  return out;
+}
+
 function howitzerCheck() {
   const B = createBattle(7);
   const H = B.units.find((u) => u.template === 'howitzer');

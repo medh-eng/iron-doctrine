@@ -53,6 +53,14 @@ SCREENS.title = {
     r.appendChild(el('p', 'tagline', "No manual tells you how to win this war. You'll write your own."));
 
     const menu = el('div', 'menu');
+    // Campaign (design/06 Part 3).
+    const cg = el('div', 'menu-group');
+    cg.appendChild(el('div', 'menu-label', 'Campaign'));
+    const cRow = el('div', 'menu-row');
+    if (campaignStore.exists()) cRow.appendChild(button('Continue campaign', () => { if (campaignStore.load()) screens.go('map'); else this.build(); }, 'btn btn-primary'));
+    cRow.appendChild(button('New campaign', () => pickFaction(), campaignStore.exists() ? 'btn' : 'btn btn-primary'));
+    cg.appendChild(cRow);
+    menu.appendChild(cg);
     const pg = el('div', 'menu-group');
     pg.appendChild(el('div', 'menu-label', 'Gauntlet'));
     const pgRow = el('div', 'menu-row');
@@ -168,4 +176,38 @@ function enterFullscreen() {
       return null;
     })
     .catch(() => {});
+}
+
+// New campaign: choose a faction (design/01 §3, design/09). Facts only.
+function pickFaction() {
+  const c = ui.card('New campaign: choose your faction', 'card-faction');
+  const col = el('div', 'card-col faction-list');
+  let close = null;
+  for (const F of FACTIONS) {
+    const start = () => { newCampaign(F.id, ((Date.now() & 0xffffff) ^ 0x5eed) >>> 0); screens.go('map'); };
+    const b = button('', () => {
+      close();
+      if (!campaignStore.exists()) { start(); return; }
+      // Never wipe a save silently: ask first.
+      const q = ui.card('Replace your campaign?');
+      q.appendChild(el('p', 'card-text', 'Starting a new campaign replaces the saved one.'));
+      const row = el('div', 'card-row');
+      let shut = null;
+      row.appendChild(button('Keep it', () => shut(), 'btn', 'back'));
+      row.appendChild(button(`Start as ${F.name}`, () => { shut(); start(); }, 'btn btn-primary'));
+      q.appendChild(row);
+      shut = ui.open(q);
+    }, 'btn faction-btn');
+    b.textContent = '';
+    const dot = el('i', 'paint-dot'); dot.style.background = F.color;
+    const t = el('span', 'faction-txt');
+    const head = el('b', ''); head.appendChild(dot); head.appendChild(document.createTextNode(F.name));
+    t.appendChild(head);
+    t.appendChild(el('small', '', `${F.identity} ${F.pros.join('. ')}. ${F.cons.join('. ')}.`));
+    b.appendChild(t);
+    col.appendChild(b);
+  }
+  col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
+  c.appendChild(col);
+  close = ui.open(c);
 }

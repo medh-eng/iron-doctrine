@@ -40,6 +40,12 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 10a–10e_*.js           combat, effects, naval weapons, air weapons, systems (missiles, rockets, heat, breakdowns, repair)
 12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
 16g_screen_simulator.js the Battle Simulator screen (01 §15)
+13_autoresolve.js      campaign battles: battlefield, sides, headless auto-resolve, results, retreat, garrisons
+14_world.js            world generation (terrain, settlements, roads, territory), path finding
+14b_command.js         campaign state and saves, officers, ships, fleets, movement, fuel, weather
+15_economy.js          treasury, fuel and ammo markets, refuel and rearm, fleet holds, daily income and wages
+15c_factions.js        the clock, fog of war, contacts, the factions' strategic AI
+16h_screen_map.js      the world map screen, panels and the pre-battle card
 11_ai.js, 11b_ai_air.js  captain and enemy AI, air AI
 12_battle.js           battle setup, squads, results
 12b_battle_render.js   battle drawing; drawPart() is where part art is used

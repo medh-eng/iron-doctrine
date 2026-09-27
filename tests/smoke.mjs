@@ -629,9 +629,46 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       });
       await wait(300);
       await shot('19-airship');
+      // ---------- 9j. Part 3: the campaign (world map, fleets, fuel, markets, contact, results)
+      if (!vp.mobile) {
+        const cc = await G(() => window.__GAME__.campaignCheck());
+        for (const [f, st] of Object.entries(cc.starts)) check(st.home === 'city,fort,village,village' && st.capCoastal && st.fleets === 'land:3,sea:3,air:3' && st.ga, `campaign start wrong for ${f}: ${JSON.stringify(st)}`);
+        check(cc.rules.landToSea && cc.rules.seaToLand && cc.rules.airAnywhere, `domain movement rules wrong ${JSON.stringify(cc.rules)}`);
+        check(cc.burn.after < cc.burn.before && cc.burn.moved, `moving did not burn fuel ${JSON.stringify(cc.burn)}`);
+        check(cc.strandWarn && cc.airStranded.stranded && !cc.airStranded.moved, `stranding wrong ${JSON.stringify([cc.strandWarn, cc.airStranded])}`);
+        check(!cc.refuel.why && cc.refuel.spent === cc.refuel.quote && cc.refuel.spent > 0 && cc.refuel.full, `refuel from the treasury wrong ${JSON.stringify(cc.refuel)}`);
+        check(cc.contact && cc.auto.shipsAfter === cc.auto.shipsBefore - cc.auto.lostMine - cc.auto.lostTheirs, `contact or auto-resolve wrong ${JSON.stringify([cc.contact, cc.auto])}`);
+        check(cc.persist.saved && cc.reload, `campaign results did not persist through save and load ${JSON.stringify([cc.persist, cc.reload])}`);
+        check(cc.detach.inGarrison && cc.detach.outpost && cc.detach.back && cc.detach.alone === 0, `detach, garrison or outpost wrong ${JSON.stringify(cc.detach)}`);
+        check(cc.deploy.field === 'inland' && cc.deploy.domains === 'land', `a ship deployed inland ${JSON.stringify(cc.deploy)}`);
+      }
+      await G(() => window.__GAME__.go('title'));
+      await wait(200);
+      await tapButton('New campaign');
+      await wait(200);
+      if (await page.getByRole('button', { name: 'Keep it', exact: true }).count()) await tapButton('Keep it');
+      await shot('22-factions');
+      await page.locator('.faction-btn').first().click();
+      await wait(300);
+      if (await page.getByRole('button', { name: /^Start as / }).count()) { await page.getByRole('button', { name: /^Start as / }).click(); await wait(300); }
+      check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
+      await wait(500);
+      await shot('23-world-map');
+      await G(() => {
+        const g = window.__GAME__, C = g.camp;
+        const land = C.playerFleets().find((f) => f.domain === 'land');
+        const e = C.campaign.fleets.find((f) => f.faction !== C.campaign.faction && C.relation(f.faction, C.campaign.faction) === 'war' && f.domain === 'land');
+        e.x = land.x + 1; e.y = land.y; e.path = []; e.cooldown = 0; land.cooldown = 0;
+        g.SCREENS.map.toggleClock();
+      });
+      await page.locator('.card-prebattle').waitFor({ timeout: 4000 });
+      await shot('24-contact');
+      await tapButton('Auto-resolve');
+      await wait(300);
+      check((await G(() => window.__GAME__.camp.campaign.journal.slice(-1)[0] || '')).includes('enemy ships destroyed'), 'auto-resolve did not record the battle');
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

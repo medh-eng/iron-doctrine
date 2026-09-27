@@ -280,3 +280,78 @@ function testDriveConfig(range = 'land') {
   if (range === 'air' || range === 'heli') Object.assign(c, { length: 900, hills: 0.5, mud: 0, forest: 2, gaps: 0 });
   return c;
 }
+
+// ---------- Campaign (design/01 §2–§10, design/08, design/09). Tuning data for the world map.
+const WORLD_W = 192, WORLD_H = 144;   // map cells
+const WORLD_KM = 10;                  // km per map cell
+// Terrain types on the map. speed: × the fleet's march speed on land; road: × on roads.
+const MAP_TERRAIN = {
+  sea: { name: 'Sea', color: '#23507A' },
+  plains: { name: 'Plains', color: '#7E9A5A', speed: 1 },
+  forest: { name: 'Forest', color: '#4E6E3E', speed: 0.6 },
+  hills: { name: 'Hills', color: '#9A8F62', speed: 0.6 },
+  mountains: { name: 'Mountains', color: '#8C8A86', speed: 0 },   // impassable except at passes
+  pass: { name: 'Mountain pass', color: '#A09A8C', speed: 0.4 },
+  desert: { name: 'Desert', color: '#CDB27A', speed: 0.7 },
+  marsh: { name: 'Marsh', color: '#5F7A5E', speed: 0.4 },
+  tundra: { name: 'Tundra', color: '#A9B3A4', speed: 0.7 },
+  ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
+  ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
+};
+const ROAD_SPEED = 1.5;               // × on a road
+const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
+const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
+const STRANDED_SPEED = 0.1;           // an empty fleet crawls (land, sea); air can't move
+const DETECT_CELLS = { fleet: 8, settlement: 6 };
+const CONTACT_CELLS = 1.6;            // hostile fleets this close meet in battle
+const REINFORCE_CELLS = 4;            // fleets this close join a battle
+const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
+const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
+
+// Factions (09): where their territory sits (share of the map), capital type and name, looks.
+const FACTIONS = [
+  { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
+    identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },
+  { id: 'directorate', name: 'Directorate', at: [0.5, 0.5], capital: 'Forge Primus', capType: 'metropolis', coastal: false, color: '#C43C2C',
+    identity: 'Industrial state of foundry cities.', pros: ['Armour and tracks −15% cost', 'Metal production +20%'], cons: ['Fuel +15% price everywhere'] },
+  { id: 'skyreach', name: 'Skyreach Concord', at: [0.8, 0.22], capital: 'Aerie Crown', capType: 'citadel', coastal: false, color: '#E4DFD2',
+    identity: 'Mountain sky-clans sworn to a shared code.', pros: ['Lift +15%', 'Air fleets’ map fuel −15%'], cons: ['Metal production −20%'] },
+  { id: 'clans', name: 'Salvage Clans', at: [0.8, 0.8], capital: 'Rustmoor', capType: 'citadel', coastal: false, color: '#D9772E',
+    identity: 'Desert scavengers of the Precursor ruins.', pros: ['Salvage × 1.5'], cons: ['Few settlements produce wood'] },
+  { id: 'lumen', name: 'Lumen Collective', at: [0.5, 0.14], capital: 'Glasshold', capType: 'metropolis', coastal: false, color: '#4FD1C5',
+    identity: 'Relic technocrats of the frozen north.', pros: ['Research at their cities'], cons: ['Cold, slow land'] },
+];
+// Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
+const SETTLEMENT_TYPES = {
+  village: { name: 'Village', money: 15, stock: { fuel: 60, ammo: 30 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', money: 50, stock: { fuel: 200, ammo: 100 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', money: 150, stock: { fuel: 500, ammo: 250 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', money: -20, stock: { fuel: 250, ammo: 200 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', money: -60, stock: { fuel: 600, ammo: 500 }, price: 1.0, garrison: 12 },
+};
+const PRICES = { fuel: 6, ammo: 12 };        // money per unit (fuel 100 L, ammo 100 kg)
+const OWN_PRICE = 0.85, TRUCE_PRICE = 1.2, SELL_SHARE = 0.6, COASTAL_MONEY = 1.2;
+const STOCK_REFILL = 0.1;                    // share of normal market stock refilled per day
+const START_MONEY = 1500;
+const WAGES = { captain: 4, admiral: 15 };   // money per day × level
+// Ammo per shot in map units, by calibre (08 §8).
+const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0.06], [105, 0.14], [150, 0.35], [203, 0.8]];
+// XP (08 §10).
+const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
+const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
+const START_FLEETS = [
+  { domain: 'land', ships: ['medium', 'light', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
+];
+const AI_FLEETS = [
+  { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
+  { domain: 'sea', ships: ['gunboat', 'gunboat'] },
+  { domain: 'air', ships: ['gunship_t0', 'gunship_t0'] },
+];
+// Name parts for officers and settlements (fictional).
+const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
+const NAME_LAST = ['Aldren', 'Brask', 'Corvel', 'Dunmore', 'Eskar', 'Falk', 'Garrow', 'Holt', 'Ivers', 'Jansk', 'Kestrel', 'Larkin', 'Morrow', 'Nettle', 'Orrin', 'Pell', 'Quarry', 'Rook', 'Sallow', 'Thorne', 'Vesk', 'Wick'];
+const PLACE_A = ['Ash', 'Brine', 'Cinder', 'Dun', 'Elder', 'Fell', 'Gull', 'Hollow', 'Iron', 'Kiln', 'Lark', 'Mire', 'North', 'Oak', 'Pike', 'Rust', 'Salt', 'Tarn', 'Vale', 'Wind'];
+const PLACE_B = ['by', 'ford', 'haven', 'mouth', 'reach', 'stead', 'wick', 'moor', 'cross', 'gate', 'hold', 'watch'];

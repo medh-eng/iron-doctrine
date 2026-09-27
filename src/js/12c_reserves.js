@@ -21,6 +21,11 @@ function vehicleHealth(V) {
 // A reserve entry: the design, plus the state of a ship that has pulled back.
 function reserveEntry(design, V) {
   const e = { design, name: markName(design), health: 1, hp: null, fuel: null, shells: null };
+  if (!V && design._state && design._state.hp) {
+    let a = 0, b = 0;
+    design.cells.forEach((c, i) => { a += design._state.hp[i]; b += PARTS[c.p].hp; });
+    e.health = b ? a / b : 1;
+  }
   if (V) {
     e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
     e.health = vehicleHealth(V);
@@ -88,6 +93,7 @@ function enterFromReserve(B, side, slot) {
     B.enemySlots[slot] = V;
   }
   restoreDamage(V, e);
+  if (!e.hp) applyShipState(V);        // a campaign ship's damage, fuel and ammo
   if (!B.demo) floatText(side === 0 ? `${V.name} enters` : 'Enemy reinforcement', V.body.x, V.body.y + V.height + 1.5, side === 1);
   return V;
 }

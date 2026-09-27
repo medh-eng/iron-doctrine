@@ -23,7 +23,7 @@ const SLOPE_HYP = [[0, 2], [0, 2], [2, 1], [0, 2]];
 function playerScheme() { return (save.profile.sim && save.profile.sim.scheme) || SIDE_SCHEMES[0]; }
 function resolvePaint(design, side) {
   const S = PART_LIBRARY.paints.schemes;
-  const p = side === 0 ? (design && design.paint) || { scheme: playerScheme() } : { scheme: SIDE_SCHEMES[1] };
+  const p = (design && design.paint) || { scheme: side === 0 ? playerScheme() : SIDE_SCHEMES[1] };
   const base = S[p.scheme] || S[SIDE_SCHEMES[side] || SIDE_SCHEMES[0]];
   const out = { p1: p.p1 || base.p1, p2: p.p2 || base.p2, p3: p.p3 || base.p3, camo: p.camo || 'none' };
   out.key = out.p1 + out.p2 + out.p3;
