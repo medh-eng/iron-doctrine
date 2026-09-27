@@ -663,6 +663,16 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         W(wc.repair === '' && wc.repaired, 'dock repair wrong');
         W(wc.refit === '' && wc.refitted.design === 'scout' && wc.refitted.returned > 0, 'refit wrong');
         W(wc.noBay && wc.dryHold && wc.fieldRepaired, 'field repair wrong');
+        const rc = await G(() => window.__GAME__.recruitCheck());
+        const R = (c, what) => check(c, `${what} ${JSON.stringify(rc)}`);
+        R(rc.hireCap === '' && rc.captain.ok && rc.captain.level === rc.captain.want && rc.captain.paid === rc.captain.price, 'hiring a captain with a ship wrong');
+        R(rc.hireAdm === '' && rc.hireQm === '' && !rc.qmAtFort, 'hiring an admiral or quartermaster wrong');
+        R(rc.form === '' && rc.formed.fleets === 1 && rc.formed.ships === 1 && rc.formed.admiral && rc.formed.docked, 'forming a fleet wrong');
+        R(rc.promoteLow && rc.promote === '' && rc.promoted.rank === 'admiral' && rc.promoted.ship && rc.promoted.idle, 'promotion wrong');
+        R(Math.abs(rc.salvage.partRate - 0.12) < 0.03 && Math.abs(rc.salvage.scrap - 0.3) < 0.001 && rc.salvage.cond, 'salvage rates wrong');
+        R(rc.wreck.left === 12 && rc.wreck.sites === 1 && rc.collect === '' && rc.collected.scrap === 12 && rc.collected.items === 1 && rc.collected.sites === 0 && rc.expired, 'wreck sites wrong');
+        R(rc.fields >= 6 && rc.noCrane && rc.gather.got === 8 && rc.gather.field === 8, 'scrap fields wrong');
+        R(rc.studyCity && !rc.lockedBefore && rc.study === '' && rc.consumed && rc.unlocked, 'reverse-engineering wrong');
         E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -738,9 +748,17 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'yard'; S.refresh(); });
       await wait(200);
       await shot('28-yard');
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const fort = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.type === 'fort');
+        S.cam.x = fort.x + 10; S.cam.y = fort.y;
+        S.select('settlement', fort.id); S.tab = 'barracks'; S.refresh();
+      });
+      await wait(200);
+      await shot('29-barracks');
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

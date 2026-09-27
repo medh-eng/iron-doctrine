@@ -174,7 +174,16 @@ SCREENS.map = {
           const r = el('div', 'map-ship');
           r.appendChild(el('b', '', st.name));
           r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
-          r.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          const btns = el('div', 'map-row');
+          btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          if (!cap) for (const o of campaign.officers.filter((q) => q.alive && q.fleetId === fl.id && q.rank === 'captain' && !q.shipId)) {
+            btns.appendChild(button(`Give command to ${o.name}`, () => { const why = assignCaptain(fl, sh, o); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+          }
+          if (cap && cap.rank === 'captain' && cap.level >= PROMOTE_LEVEL && fl.docked) {
+            const s = byId('settlements', fl.docked);
+            if (s && s.faction === campaign.faction) btns.appendChild(button(`Promote to admiral (${RECRUIT.promote * cap.level})`, () => { const why = promote(s, fl, sh); ui.toast(why || `${cap.name} is now an admiral at ${s.name}.`); this.refresh(); }, 'btn btn-small'));
+          }
+          r.appendChild(btns);
           body.appendChild(r);
         }
         if (!fl.shipIds.length) body.appendChild(el('p', 'card-text', 'No ships.'));
@@ -196,6 +205,13 @@ SCREENS.map = {
         if (ra.fromHold > 0.005) body.appendChild(button(`Rearm ${ra.fromHold.toFixed(2)} from the hold`, () => { const why = rearm(fl, null); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
         row('State', fl.stranded ? 'Stranded: no fuel' : fl.path.length ? 'Moving' : fl.docked ? `Docked at ${byId('settlements', fl.docked).name}` : 'Holding');
         if (fl.path.length) body.appendChild(button('Stop here', () => { fl.path = []; fl.dest = null; this.refresh(); }, 'btn btn-small'));
+        const w = wreckNear(fl);
+        if (w) body.appendChild(button(`Collect salvage (scrap ${w.scrap.toFixed(1)}, parts ${w.items.length})`, () => { const why = collectWreck(fl, w); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        const sf = fieldNear(fl);
+        if (sf) row('Scrap field', `${Math.floor(sf.left)} left · ${hasCrane(fl) ? (fl.path.length ? 'gathers when the fleet holds still' : `gathering ${SCRAP_FIELD_RATE}/h`) : 'needs a salvage crane'}`);
+        const items = {};
+        for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
+        if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
       } else {
         const lvl = adm ? adm.level : 1;
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
@@ -213,6 +229,7 @@ SCREENS.map = {
     const tabsHere = [['overview', 'Info'], ['market', 'Market']];
     if (own) tabsHere.push(['warehouse', 'Stores']);
     if (own && hasWorkshop(s)) tabsHere.push(['workshop', 'Workshop'], ['yard', 'Yard']);
+    if (own && OFFER_RANK[s.type]) tabsHere.push(['barracks', 'Barracks']);
     if (!tabsHere.some(([id]) => id === this.tab)) this.tab = 'overview';
     for (const [id, label] of tabsHere) tab(id, label);
     P.appendChild(tabs);
@@ -235,6 +252,7 @@ SCREENS.map = {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
       }
+      if (own && !OFFER_RANK[s.type]) this.barracks(s, body, row, act, done);
       // Upgrades (08 §7): resources from this warehouse, money, days.
       if (own) {
         if (s.upgrade) row('Upgrading', `to ${SETTLEMENT_TYPES[s.upgrade.to].name}, ready on day ${s.upgrade.day}`);
@@ -280,6 +298,8 @@ SCREENS.map = {
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
       }
+    } else if (this.tab === 'barracks') {
+      this.barracks(s, body, row, act, done);
     } else if (this.tab === 'workshop') {
       this.workshopTab(s, body, row, act, done);
     } else if (this.tab === 'yard') {
@@ -402,6 +422,17 @@ SCREENS.map = {
     // Settlements.
     for (const s of world.settlements) this.drawSettlement(g, s);
     // Fog of war over what your fleets and settlements can't see.
+    // Scrap fields (grey heaps) and battle wreckage (an amber cross, gone after a day).
+    for (const f of campaign.scrapFields || []) {
+      if (f.left <= 0) continue;
+      const x = this.sx(f.x), y = this.sy(f.y);
+      g.fillStyle = '#6B6660'; g.fillRect(x - 6, y - 1, 5, 4); g.fillRect(x + 1, y - 2, 5, 5); g.fillStyle = '#9A948A'; g.fillRect(x - 2, y - 5, 5, 5);
+    }
+    g.strokeStyle = PAL.amber; g.lineWidth = 2;
+    for (const w of campaign.wrecks || []) {
+      const x = this.sx(w.x), y = this.sy(w.y);
+      g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.moveTo(x + 5, y - 5); g.lineTo(x - 5, y + 5); g.stroke();
+    }
     this.drawFog(g);
     // Fleets: yours, and the enemy fleets you can see.
     // Counters at the same spot stand side by side.

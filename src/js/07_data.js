@@ -353,10 +353,19 @@ const UPGRADES = [
 const HOME_STORE = { wood: 80, metal: 60, elec: 5, fuel: 40, ammo: 30, scrap: 20 };   // home city warehouse (08 §13)
 // Workshop and yard (08 §4–§5).
 const CRAFT_FEE = 0.1;                       // money fee: this share of the goods' base value
-const RECRUIT_CAPTAIN = 120;                 // a level-1 captain for a newly built ship (08 §13: 120 × level²)
 const REFINE = { city: { scrap: 4, hours: 1 }, metropolis: { scrap: 3, hours: 0.75 } };   // scrap and hours per electronics unit
 const FIELD_REPAIR_HP = 200;                 // HP per hour per repair bay on the map
 const FIELD_REPAIR_COST = 0.6;               // × the dock repair goods
+// Recruitment (08 §13): captains 120 × level² plus the ship at 1.2 × its cost index; admirals
+// 600 × level; quartermasters 250; promotion 400 × level from captain level 6.
+const RECRUIT = { captain: 120, admiral: 600, quartermaster: 250, promote: 400, listPrice: 1.2 };
+const PROMOTE_LEVEL = 6;
+const OFFER_DAYS = 7;                        // forts and citadels renew their offers weekly
+// Salvage (08 §9).
+const SALVAGE = { part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
+const WRECK_HOURS = 24;                      // salvage left on the field is lost after a day
+const SCRAP_FIELDS = 10, SCRAP_FIELD_SIZE = [200, 600], SCRAP_FIELD_RATE = 4;   // fields, scrap each, scrap per hour
+const STUDY_DAYS = 3;                        // reverse-engineering at a metropolis
 const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
 const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;

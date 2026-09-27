@@ -33,6 +33,7 @@ const campaignStore = {
     campaign = blob.data;
     world = generateWorld(campaign.seed, campaign.faction);
     world.settlements = campaign.settlements;       // the saved state replaces the generated one
+    if (!campaign.scrapFields) makeScrapFields(makeRng(campaign.seed + 11));
     computeTerritory(world);
     return true;
   },
@@ -133,6 +134,8 @@ function newCampaign(factionId, seed) {
   };
   const home = world.settlements.find((s) => s.faction === factionId && s.capital);
   if (home) Object.assign(home.store, HOME_STORE);
+  campaign.wrecks = []; campaign.unlocked = [];
+  makeScrapFields(makeRng(seed + 11));
   const rng = makeRng(seed + 7);
   // Relations: the player is at war with the two nearest factions and in truce with the others;
   // AI factions are at war with each other except one seeded pair.

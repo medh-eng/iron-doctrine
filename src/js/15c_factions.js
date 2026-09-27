@@ -94,6 +94,7 @@ function campaignTick(dtReal) {
       }
     }
     for (const fl of playerFleets()) if (!fl.path.length) fieldRepair(fl, dt);
+    stepSalvage(dt);
     for (const n of stepWorks(dt)) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
     updateVisibility();
     // Contact (01 §6, §10.1): a player fleet meets a hostile fleet.

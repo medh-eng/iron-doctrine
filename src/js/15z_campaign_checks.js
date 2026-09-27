@@ -153,4 +153,82 @@ function workshopCheck() {
   save.designs.list.pop();
   return out;
 }
+
+// Part 4c (08 §9, §13): hiring at forts, forming a fleet, promotion, salvage rates, wreck
+// sites, scrap fields, reverse-engineering.
+function recruitCheck() {
+  newCampaign('league', 6161);
+  const out = {};
+  campaign.treasury = 1e6;
+  const fort = world.settlements.find((s) => s.faction === 'league' && s.type === 'fort');
+  const city = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  const offers = offersAt(fort);
+  const capOffer = offers.find((o) => o.kind === 'captain');
+  const t0 = campaign.treasury;
+  out.hireCap = hire(fort, capOffer);
+  const hired = campaign.ships.find((sh) => sh.garrison === fort.id);
+  const cap = hired && byId('officers', hired.captainId);
+  out.captain = { ok: !!hired, level: cap && cap.level, want: capOffer.level, paid: Math.round(t0 - campaign.treasury), price: Math.round(offerPrice(capOffer)) };
+  out.hireAdm = hire(fort, offers.find((o) => o.kind === 'admiral'));
+  out.qmAtFort = offersAt(fort).some((o) => o.kind === 'quartermaster');
+  out.hireQm = hire(city, offersAt(city).find((o) => o.kind === 'quartermaster'));
+  const adm = idleAt(fort, 'admiral')[0];
+  const fleets0 = campaign.fleets.length;
+  out.form = formFleet(fort, adm, shipStats(hired).domain);
+  const nf = campaign.fleets[campaign.fleets.length - 1];
+  out.formed = { fleets: campaign.fleets.length - fleets0, ships: nf.shipIds.length, admiral: nf.admiralId === adm.id, docked: nf.docked === fort.id };
+  // Promotion: level 6 captain in a docked fleet.
+  const sh = fleetShips(nf)[0], c = byId('officers', sh.captainId);
+  c.level = 5;
+  out.promoteLow = promote(fort, nf, sh) !== '';
+  c.level = 6;
+  out.promote = promote(fort, nf, sh);
+  out.promoted = { rank: c.rank, ship: sh.captainId === null, idle: idleAt(fort, 'admiral').includes(c) };
+  // Salvage: rates over many wrecks are near 12% of parts and 30% of mass.
+  const rng = makeRng(9);
+  const d = designFromTemplate('medium');
+  const wrecks = [];
+  for (let k = 0; k < 200; k++) wrecks.push({ design: d, own: false });
+  const loot = salvageFrom(wrecks, [], rng);
+  const parts = d.cells.filter((q) => PARTS[q.p].cat !== 'structure' && PART_LIBRARY.parts[q.p]).length * 200;
+  const kg = d.cells.reduce((a, q) => a + PARTS[q.p].mass, 0) * 200;
+  out.salvage = { partRate: +(loot.items.length / parts).toFixed(3), scrap: +(loot.scrap / (kg / 100)).toFixed(3), cond: loot.items.every((it) => it.cond >= 0.25 && it.cond <= 0.6) };
+  // Wreck sites: what doesn't fit stays for a day, and can be collected.
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const got = takeSalvage({ scrap: 12, items: [{ p: 'mg', cond: 0.4, salvaged: true }] }, [land], land.x, land.y);
+  out.wreck = { left: got.leftScrap, sites: campaign.wrecks.length };
+  const trucks = makeFleet('league', 'land', land.x, land.y, ['truck'], makeRng(1));
+  out.collect = collectWreck(trucks, wreckNear(trucks));
+  out.collected = { scrap: trucks.hold.scrap, items: itemsAt(trucks.hold).length, sites: campaign.wrecks.length };
+  takeSalvage({ scrap: 5, items: [] }, [land], land.x + 3, land.y);
+  campaign.hour += WRECK_HOURS + 1;
+  stepSalvage(0.1);
+  out.expired = campaign.wrecks.length === 0;
+  // Scrap fields: a fleet with a crane gathers; without one, nothing.
+  const f = campaign.scrapFields[0];
+  out.fields = campaign.scrapFields.length;
+  trucks.x = f.x; trucks.y = f.y; trucks.path = [];
+  const s0 = trucks.hold.scrap;
+  stepSalvage(2);
+  out.noCrane = trucks.hold.scrap === s0;
+  const craneD = Object.assign(designFromTemplate('truck'), { id: 'test_crane' });
+  craneD.cells.push({ p: 'crane', x: 0, y: 0 });
+  save.designs.list.push(craneD);
+  fleetShips(trucks)[0].design = 'test_crane';
+  const left0 = f.left;
+  stepSalvage(2);
+  out.gather = { got: +(trucks.hold.scrap - s0).toFixed(2), field: +(left0 - f.left).toFixed(2) };
+  save.designs.list.pop();
+  // Reverse-engineering at a metropolis: consumes the item, takes 3 days, unlocks the family.
+  const it = { p: 'c105', cond: 0.4, salvaged: true };
+  itemsAt(city.store).push(it);
+  out.studyCity = study(city, it) !== '';
+  city.type = 'metropolis';
+  out.lockedBefore = partUnlocked('c105');
+  out.study = study(city, it);
+  out.consumed = !itemsAt(city.store).includes(it);
+  for (let h = 0; h < STUDY_DAYS * 24 + 1; h++) stepWorks(1);
+  out.unlocked = partUnlocked('c105');
+  return out;
+}
 /*TEST:END*/
