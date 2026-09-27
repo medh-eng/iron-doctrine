@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.3.0';
+const GAME_VERSION = '0.3.1';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -11069,6 +11069,8 @@ SCREENS.map = {
     const bot = el('div', 'map-bottom');
     bot.appendChild(button('◀ Fleet', () => this.cycle(-1), 'btn btn-small'));
     bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
+    this.detailsBtn = button('Details', () => { this.panelOpen = true; this.refresh(); }, 'btn btn-small');
+    bot.appendChild(this.detailsBtn);
     const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
     this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
     this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
@@ -11102,6 +11104,7 @@ SCREENS.map = {
     this.sel = { kind, id };
     this.plan = null;
     this.tab = kind === 'fleet' ? 'ships' : 'overview';
+    this.panelOpen = true;
     audio.sfx('tap');
     this.refresh();
   },
@@ -11142,8 +11145,14 @@ SCREENS.map = {
   buildPanel() {
     const P = this.panel;
     P.textContent = '';
-    if (!this.sel) { P.hidden = true; return; }
+    // The panel can be closed so the whole map can be tapped; it also steps aside while a move is planned.
+    const open = this.sel && this.panelOpen !== false && !this.plan;
+    this.detailsBtn.hidden = !this.sel || open;
+    if (!open) { P.hidden = true; return; }
     P.hidden = false;
+    const close = button('✕', () => { this.panelOpen = false; this.refresh(); }, 'btn btn-small map-close', 'back');
+    close.setAttribute('aria-label', 'Close the panel');
+    P.appendChild(close);
     const tabs = el('div', 'map-tabs');
     const tab = (id, label) => { const b = button(label, () => { this.tab = id; this.refresh(); }, 'btn btn-small map-tab' + (this.tab === id ? ' on' : '')); tabs.appendChild(b); };
     const body = el('div', 'map-body');
@@ -11273,6 +11282,7 @@ SCREENS.map = {
         S.refresh();
         return;
       }
+      if (fl && S.sel && S.sel.kind === 'fleet' && S.sel.id === fl.id) { S.sel = null; S.plan = null; audio.sfx('back'); S.refresh(); return; }   // tap the selected fleet again to deselect
       if (fl) { S.select('fleet', fl.id); return; }
       if (s) { S.select('settlement', s.id); return; }
       S.sel = null; S.plan = null; S.refresh();

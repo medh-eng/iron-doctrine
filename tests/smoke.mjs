@@ -654,12 +654,43 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
       await wait(500);
       await shot('23-world-map');
+      // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.
+      const spot = await G(() => {
+        const S = window.__GAME__.SCREENS.map, C = window.__GAME__.camp, fl = S.selFleet();
+        S.panelOpen = false; S.refresh();
+        for (let r = 4; r < 14; r++) for (let a = 0; a < 24; a++) {
+          const cx = fl.x + Math.cos((a * Math.PI) / 12) * r, cy = fl.y + Math.sin((a * Math.PI) / 12) * r;
+          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(f.x - cx, f.y - cy) < 3)) continue;
+          if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < 2.5)) continue;
+          if (C.planMove(fl, cx, cy).why) continue;
+          // Put that cell in the clear left part of the screen.
+          const x = Math.round(innerWidth * 0.3), y = Math.round(innerHeight * 0.55);
+          S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
+          // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
+          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
+          return { x, y, x0: fl.x, y0: fl.y };
+        }
+        return null;
+      });
+      check(!!spot, 'no reachable spot on screen for the map tap test');
+      if (spot) {
+        if (vp.mobile) { await touch('touchStart', [{ x: spot.x, y: spot.y, id: 5 }]); await wait(50); await touch('touchEnd', [{ x: spot.x, y: spot.y, id: 5 }]); }
+        else await page.mouse.click(spot.x, spot.y);
+        await wait(200);
+        check(await page.getByRole('button', { name: 'Move', exact: true }).count() === 1, 'tapping the map with a fleet selected did not show the move preview');
+        await shot('23b-move-preview');
+        await tapButton('Move');
+        await tapButton('Start ▶');
+        await wait(2500);
+        check(await G((sp) => { const f = window.__GAME__.SCREENS.map.selFleet(); return Math.hypot(f.x - sp.x0, f.y - sp.y0) > 0.2; }, spot), 'the fleet did not move after Move and Start');
+      }
       await G(() => {
         const g = window.__GAME__, C = g.camp;
         const land = C.playerFleets().find((f) => f.domain === 'land');
         const e = C.campaign.fleets.find((f) => f.faction !== C.campaign.faction && C.relation(f.faction, C.campaign.faction) === 'war' && f.domain === 'land');
         e.x = land.x + 1; e.y = land.y; e.path = []; e.cooldown = 0; land.cooldown = 0;
-        g.SCREENS.map.toggleClock();
+        e.x = land.x + 1; e.y = land.y; land.path = [];
+        C.campaign.running = true;
       });
       await page.locator('.card-prebattle').waitFor({ timeout: 4000 });
       await shot('24-contact');
