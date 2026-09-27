@@ -666,6 +666,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
           // Put that cell in the clear left part of the screen.
           const x = Math.round(innerWidth * 0.3), y = Math.round(innerHeight * 0.55);
           S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
+          // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
+          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
           return { x, y, x0: fl.x, y0: fl.y };
         }
         return null;
