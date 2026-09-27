@@ -164,6 +164,8 @@ window.__GAME__ = {
   svgArtCheck: () => svgArtCheck(),
   reserveCheck: () => reserveCheck(),
   airshipCheck: () => airshipCheck(),
+  classCheck: () => classCheck(),
+  paintCheck: () => paintCheck(),
   view,
   designFromTemplate,
   // Forced events for scripted play.

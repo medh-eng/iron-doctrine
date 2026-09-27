@@ -371,6 +371,30 @@ const CLASSES = {
   airship: { name: 'Airship', w: 24, h: 10, domain: 'airship' },
 };
 
+// ---------- Ship classes (design/01 §5; src/parts/classes.json): each domain's classes set the
+// build grid and the part limit. Structure cells (materials) don't count towards the limit.
+const CLASS_CAT = { ground: 'land', naval: 'sea', sub: 'sea', airship: 'airship', air: 'aircraft', heli: 'aircraft' };
+const SHIP_CLASSES = [];
+for (const cat of ['land', 'sea', 'airship', 'aircraft']) for (const c of PART_LIBRARY.classes[cat] || []) SHIP_CLASSES.push(Object.assign({ cat }, c));
+const classById = (id) => SHIP_CLASSES.find((c) => c.id === id) || null;
+const classesOf = (domain) => SHIP_CLASSES.filter((c) => c.cat === CLASS_CAT[domain]);
+function partCount(design) { return design.cells.filter((c) => !PART_LIBRARY.materials[c.p]).length; }
+
+// Why a design doesn't fit a class (empty when it does). Facts only.
+function classMisfit(design, cls) {
+  const d = cropDesign(design);
+  const out = [];
+  if (d.w > cls.grid[0] || d.h > cls.grid[1]) out.push(`Needs a ${d.w} × ${d.h} grid; the ${cls.name} grid is ${cls.grid[0]} × ${cls.grid[1]}.`);
+  const n = partCount(d);
+  if (n > cls.parts) out.push(`${n} parts; the ${cls.name} class allows ${cls.parts}.`);
+  return out;
+}
+
+// The smallest class of the design's domain that it fits, or null (outside class limits).
+function classFor(design) {
+  return classesOf(domainOf(design)).find((c) => !classMisfit(design, c).length) || null;
+}
+
 function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
 function costOf(design) { return design.cells.reduce((s, c) => s + partCost(PARTS[c.p]), 0); }
 

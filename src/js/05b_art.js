@@ -19,7 +19,7 @@ const art = {
   debug: false,        // draw origin, pivot and muzzle markers
   failed: [],
 
-  svg: [{}, {}],        // side → partId → { body, barrel, l, t, W, H, barrelBehind }
+  painted: {},         // paint key → partId → { body, barrel, l, t, W, H, barrelBehind }
 
   init() {
     this.initSvg();
@@ -45,19 +45,26 @@ const art = {
     }
   },
 
-  // SVG art for every part that has it, painted for both sides. Images load in the
-  // background; `version` bumps as each one is ready, so cached sprites redraw.
+  // SVG art for every part that has it, painted for both sides' schemes; other paints (a
+  // design's own colours, camouflage) are prepared the first time they're asked for. Images
+  // load in the background; `version` bumps as each one is ready, so cached sprites redraw.
   initSvg() {
-    this.svg = [{}, {}];
-    if (typeof DOMParser === 'undefined') return;
-    for (const id of Object.keys(PART_LIBRARY.svg)) {
-      const def = PART_LIBRARY.parts[id];
-      if (!def || !PARTS[id]) continue;
-      for (let side = 0; side < 2; side++) this.loadSvg(id, def, paintSvg(PART_LIBRARY.svg[id], sideScheme(side)), side);
-    }
+    this.painted = {};
+    for (let side = 0; side < 2; side++) this.prepare(sideScheme(side));
   },
 
-  loadSvg(id, def, text, side) {
+  prepare(paint) {
+    const set = {};
+    this.painted[paint.key] = set;
+    if (typeof DOMParser === 'undefined') return set;
+    for (const id of Object.keys(PART_LIBRARY.svg)) {
+      const def = PART_LIBRARY.parts[id];
+      if (def && PARTS[id]) this.loadSvg(id, def, paintSvg(PART_LIBRARY.svg[id], paint), set);
+    }
+    return set;
+  },
+
+  loadSvg(id, def, text, set) {
     const o = def.overhang || {};
     const l = o.left || 0, t = o.top || 0;
     const W = def.footprint.w + l + (o.right || 0), H = def.footprint.h + t + (o.bottom || 0);
@@ -71,7 +78,7 @@ const art = {
     const body = groups.find((n) => n.getAttribute('id') === 'body');
     // A barrel group written before the body sits behind it (document order, design/07 §5.2).
     const entry = { body: null, barrel: null, l, t, W, H, barrelBehind: !!barrel && groups.indexOf(barrel) < groups.indexOf(body) };
-    this.svg[side][id] = entry;
+    set[id] = entry;
     const raster = (keep, done) => {
       const svg = root.cloneNode(true);
       for (const n of [...svg.children]) if (n.nodeName === 'g' && !keep(n)) svg.removeChild(n);
@@ -105,23 +112,25 @@ function paintSvg(text, scheme) {
   return text;
 }
 
-function svgArt(id, side) {
-  const e = art.svg[side] && art.svg[side][id];
+// A part's SVG art in a paint ({ p1, p2, p3, key }), or null until it has loaded.
+function svgArt(id, paint) {
+  const set = art.painted[paint.key] || art.prepare(paint);
+  const e = set[id];
   return e && e.body ? e : null;
 }
 
 // Whether a part is drawn from art (SVG or PNG) rather than code.
-function hasPartArt(id, side) { return !!(svgArt(id, side) || art.get(id)); }
+function hasPartArt(id, paint) { return !!(svgArt(id, paint) || art.get(id)); }
 
 // Whether a weapon's SVG barrel sits behind its body, so it's drawn before the vehicle sprite.
-function barrelBehind(d, side) {
-  const e = svgArt(d.id, side);
+function barrelBehind(d, paint) {
+  const e = svgArt(d.id, paint);
   return !!(e && e.barrel && e.barrelBehind);
 }
 
 // Draw a part's art into a footprint rectangle at (x, y), cell size cs. Returns false if none.
-function drawPartArt(g, p, x, y, cs, side = 0) {
-  const S = svgArt(p.def.id, side);
+function drawPartArt(g, p, x, y, cs, paint) {
+  const S = svgArt(p.def.id, paint);
   if (S) {
     g.drawImage(S.body, x - S.l * cs, y - S.t * cs, S.W * cs, S.H * cs);
     return true;
@@ -136,8 +145,8 @@ function drawPartArt(g, p, x, y, cs, side = 0) {
 }
 
 // Barrel image rotated about its pivot. (px, py) = pivot on screen, ang = world angle, len = barrel length in px.
-function drawBarrelArt(g, d, px, py, ang, lenPx, side = 0) {
-  const S = svgArt(d.id, side);
+function drawBarrelArt(g, d, px, py, ang, lenPx, paint) {
+  const S = svgArt(d.id, paint);
   const geo = barrelGeometry(d);
   if (S && S.barrel && geo) {
     // SVG barrels are never stretched: pixels per cell come from the pivot-to-muzzle distance.

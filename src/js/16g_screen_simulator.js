@@ -72,6 +72,11 @@ SCREENS.simulator = {
     r.appendChild(chips('Battlefield', 'field', SIM_FIELDS));
     r.appendChild(chips('Weather', 'weather', SIM_WEATHER));
     r.appendChild(chips('Time', 'light', SIM_LIGHT));
+    // Your colours (design/06 step 2.8): the scheme for designs without their own paint.
+    const schemes = {};
+    for (const [id, sc] of Object.entries(PART_LIBRARY.paints.schemes)) schemes[id] = sc.name;
+    if (!o.scheme) o.scheme = 'league';
+    r.appendChild(chips('Colours', 'scheme', schemes));
 
     // Your line-up, in order.
     const fits = (d) => {

@@ -33,22 +33,22 @@ function bevel(g, x, y, w, h, base, k) {
 }
 
 // Parts whose drawn shape isn't their full box get no outline.
-const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge_l', 'ramp']);
+const NO_OUTLINE = new Set(['wheel_s', 'wheel_l', 'slope40', 'frame', 'optics', 'bow', 'prop', 'sonar', 'wing', 'tail', 'aero', 'jet', 'aprop', 'rotor', 'trotor', 'skirt', 'atgm', 'sam', 'radar_s', 'radar_n', 'crane', 'blade', 'bridge_l', 'ramp', 'wbow']);
 
 // Draw one part with its top-left at (x, y), cell size cs px.
-function drawPart(g, p, x, y, cs, side, seed) {
+function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
   const d = p.def;
   const w = d.w * cs, h = d.h * cs;
   const steel = FACTION_STEEL[side];
   const r = Math.max(0.8, cs * 0.05);
   if (isTiled(d.id)) {
     // Structure cell on its own (palette icons, a cell being moved): auto-tiled as a shape of one.
-    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], side, x, y, cs);
+    drawStructureCells(g, [{ m: d.id, x: 0, y: 0, o: 0 }], paint, x, y, cs);
     drawPartDamage(g, p, x, y, cs, seed);
     return;
   }
   g.save();
-  if (drawPartArt(g, p, x, y, cs, side)) {
+  if (drawPartArt(g, p, x, y, cs, paint)) {
     // Part art: only the procedural damage overlay is added below.
   } else switch (d.id) {
     case 'frame':
@@ -123,6 +123,17 @@ function drawPart(g, p, x, y, cs, side, seed) {
       g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.stroke();
       g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = Math.max(1, cs * 0.05);
       g.beginPath(); g.moveTo(x, y + h * 0.5); g.lineTo(x + w * 0.65, y + h * 0.5); g.stroke();
+      break;
+    case 'wbow':
+      g.fillStyle = '#8E6035';
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w * 0.3, y + h); g.lineTo(x, y + h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w - (w * 0.7 * k) / 4, y + (h * k) / 4); g.stroke(); }
+      break;
+    case 'whull':
+      bevel(g, x, y, w, h, '#8E6035', 1);
+      g.strokeStyle = 'rgba(40,26,14,0.55)'; g.lineWidth = Math.max(1, cs * 0.05);
+      for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x, y + (h * k) / 4); g.lineTo(x + w, y + (h * k) / 4); g.stroke(); }
       break;
     case 'keel':
       bevel(g, x, y, w, h, '#5c3129', 1.4);
@@ -436,7 +447,7 @@ function drawPart(g, p, x, y, cs, side, seed) {
   drawPartDamage(g, p, x, y, cs, seed);
   g.strokeStyle = 'rgba(8,10,14,0.55)';
   g.lineWidth = 1;
-  if (!hasPartArt(d.id, side) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (!hasPartArt(d.id, paint) && !NO_OUTLINE.has(d.id) && d.cat !== 'weapon') g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   g.restore();
 }
 
@@ -457,6 +468,9 @@ function drawPartDamage(g, p, x, y, cs, seed) {
   }
 }
 
+// A vehicle's paint: its design's own, or its side's scheme (design/07 §3).
+function vehiclePaint(V) { return V.paint || (V.paint = resolvePaint(V.design, V.side)); }
+
 // Draw the chosen parts of V into a new canvas (grid space, facing right). ppm = device px per metre.
 function paintParts(V, idxs, ppm, pad) {
   const D = V.design;
@@ -468,7 +482,7 @@ function paintParts(V, idxs, ppm, pad) {
   const o = pad * ppm;
   // Auto-tiled structure first, then everything else, so fittings sit on top of plates.
   // Each side is painted in its own scheme (design/07 §3, §6).
-  drawPlacedParts(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs);
+  drawPainted(g, idxs.map((i) => ({ p: V.parts[i], x: V.parts[i].x, y: V.parts[i].y, seed: V.id * 97 + i })), V.side, o, o, cs, vehiclePaint(V), D.w, D.h, 7);
   return c;
 }
 
@@ -500,7 +514,7 @@ function renderPartsSprite(V, idxs) {
   drawPlacedParts(g, idxs.map((i) => {
     const p = V.parts[i];
     return { p: Object.assign({}, p, { scorch: Math.max(0.5, p.scorch) }), x: p.x - x0, y: p.y - y0, seed: i };
-  }), V.side, 0, 0, cs);
+  }), V.side, 0, 0, cs, vehiclePaint(V));
   return { canvas: c, w: (x1 - x0) * CELL, h: (y1 - y0) * CELL };
 }
 
@@ -549,7 +563,7 @@ function drawBarrels(g, V, behind) {
   const tmp = _bp;
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive || w.def.secondary) continue;
-    if (barrelBehind(w.def, V.side) !== behind) continue;
+    if (barrelBehind(w.def, vehiclePaint(V)) !== behind) continue;
     const d = w.def;
     weaponPivot(V, w, tmp);
     const ang = w.angle !== undefined ? w.angle : angleFromElevation(V, 0, V.dir);
@@ -558,7 +572,7 @@ function drawBarrels(g, V, behind) {
     const x0 = tmp.x - Math.cos(ang) * kick, y0 = tmp.y - Math.sin(ang) * kick;
     const x1 = x0 + Math.cos(ang) * L, y1 = y0 + Math.sin(ang) * L;
     if (V.destroyed) g.filter = 'brightness(0.55) saturate(0.5)';
-    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, V.side);
+    const drawn = drawBarrelArt(g, d, view.sx(x0), view.sy(y0), ang, L * view.S, vehiclePaint(V));
     g.filter = 'none';
     if (drawn) {
       if (art.debug) { drawArtMarker(g, 'pivot', view.sx(x0), view.sy(y0)); drawArtMarker(g, 'muzzle', view.sx(x1), view.sy(y1)); }

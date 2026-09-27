@@ -598,6 +598,23 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         check(as.holed.alt <= 2, `airship with its envelope shot away did not come down ${JSON.stringify(as.holed)}`);
         for (const k of ['inland', 'sea']) check(as[k].deployed && as[k].shots > 0 && as[k].alt > 10, `gunship did not fight ${k} ${JSON.stringify(as[k])}`);
       }
+      // ---------- 9i. Step 2.8: classes and paint
+      if (!vp.mobile) {
+        const cc = await G(() => window.__GAME__.classCheck());
+        check(!cc.none.length, `templates without a class: ${cc.none.join(', ')}`);
+        check(cc.misfit.length === 2, `class limits not explained: ${JSON.stringify(cc.misfit)}`);
+        const pc = await G(() => window.__GAME__.paintCheck());
+        check(pc.ready && pc.svg.directorate > 8 && pc.structure.directorate > 50 && pc.leagueInDirectorate.svg < 2 && pc.leagueInDirectorate.structure < 2, `Directorate paint not shown on SVG parts and structure ${JSON.stringify(pc)}`);
+        await G(() => { const g = window.__GAME__; g.go('designer', { design: g.designFromTemplate('medium'), base: null, owned: true }); const D = g.SCREENS.designer; D.st.d.paint = { scheme: 'clans', camo: 'splinter' }; D.refresh(); });
+        await tapButton('Paint');
+        await wait(900);
+        await shot('20-paint');
+        await tapButton('Done');
+        await tapButton('Tank ▾');
+        await wait(200);
+        await shot('21-classes');
+        await tapButton('Cancel');
+      }
       await G(() => {
         const g = window.__GAME__;
         Object.assign(g.save.profile.sim, { field: 'coast', lineup: ['light', 'gunship_t2', 'gunboat'], enemy: [] });

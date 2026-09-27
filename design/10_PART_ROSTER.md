@@ -84,8 +84,8 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
 | D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
 | D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
-| D4 | whull | Wooden hull section | structure | 2×2 | todo |
-| D5 | wbow | Wooden bow section | structure | 2×2 | todo |
+| D4 | whull | Wooden hull section | structure | 2×2 | JSON added in step 2.8 (art todo) |
+| D5 | wbow | Wooden bow section | structure | 2×2 | JSON added in step 2.8 (art todo) |
 | D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
 | D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
 | D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |

@@ -427,7 +427,7 @@ function svgArtCheck() {
   for (const id of Object.keys(PART_LIBRARY.svg)) {
     const hasBarrel = PART_LIBRARY.svg[id].includes('data-role="barrel"');
     for (let s = 0; s < 2; s++) {
-      const e = art.svg[s][id];
+      const e = (art.painted[sideScheme(s).key] || {})[id];
       if (!e || !e.body || (hasBarrel && !e.barrel)) out.missing.push(`${id}/${s}`);
     }
   }
@@ -527,6 +527,44 @@ function airshipCheck() {
   };
   out.inland = fight(simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 21 }), ['light', 'gunship_t2']);
   out.sea = fight(simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 22 }), ['gunboat', 'gunship_t2']);
+  return out;
+}
+
+// Step 2.8: a design painted in a scheme shows it on SVG parts and on paintable structure cells.
+// Counts pixels close to the scheme's primary colour inside a part's footprint.
+function paintCheck() {
+  const count = (scheme, partId, measure = scheme) => {
+    const d = designFromTemplate('medium');
+    d.paint = { scheme, camo: 'none' };
+    const V = { design: d, parts: d.cells.map((cl) => ({ def: PARTS[cl.p], x: cl.x, y: cl.y, hp: 1, alive: true, scorch: 0 })), side: 0, id: 3 };
+    const ppm = 32, cs = CELL * ppm;
+    const c = paintParts(V, V.parts.map((_, i) => i), ppm, 0);
+    const P = V.parts.find((p) => p.def.id === partId);
+    const px = c.getContext('2d').getImageData(Math.round(P.x * cs), Math.round(P.y * cs), Math.round(P.def.w * cs), Math.round(P.def.h * cs)).data;
+    const want = PART_LIBRARY.paints.schemes[measure].p1;
+    const [R, G, B] = [1, 3, 5].map((k) => parseInt(want.slice(k, k + 2), 16));
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 200 && Math.abs(px[i] - R) + Math.abs(px[i + 1] - G) + Math.abs(px[i + 2] - B) < 90) n++;
+    return Math.round((n * 100) / (px.length / 4));
+  };
+  return {
+    svg: { directorate: count('directorate', 'c75'), league: count('league', 'c75') },
+    structure: { directorate: count('directorate', 'arm20'), league: count('league', 'arm20') },
+    leagueInDirectorate: { svg: count('directorate', 'c75', 'league'), structure: count('directorate', 'arm20', 'league') },
+    ready: !!svgArt('c75', resolvePaint({ paint: { scheme: 'directorate' } }, 0)),
+  };
+}
+
+// Step 2.8: every template loads with a class; class limits give factual reasons.
+function classCheck() {
+  const out = { none: [], classes: {} };
+  for (const id of Object.keys(TEMPLATES)) {
+    if (TEMPLATES[id].fixed) continue;
+    const c = classFor(designFromTemplate(id));
+    if (!c) out.none.push(id); else out.classes[id] = c.id;
+  }
+  const big = designFromTemplate('destroyer');
+  out.misfit = classMisfit(big, classById('corvette'));
   return out;
 }
 

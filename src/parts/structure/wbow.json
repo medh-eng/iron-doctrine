@@ -1,0 +1,38 @@
+{
+  "id": "wbow",
+  "name": "Wooden bow section",
+  "family": "wbow",
+  "variant": "std",
+  "category": "structure",
+  "tier": 0,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 95,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "sealed": 0.5
+  },
+  "behaviour": {
+    "floods": true,
+    "bowShape": true,
+    "burns": true
+  },
+  "cost": {
+    "wood": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Roster D4/D5, starting values from 05 \u00a73.1 (step 2.8)."
+}
