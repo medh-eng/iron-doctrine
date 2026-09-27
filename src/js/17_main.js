@@ -166,6 +166,7 @@ window.__GAME__ = {
   airshipCheck: () => airshipCheck(),
   classCheck: () => classCheck(),
   campaignCheck: () => campaignCheck(),
+  economyCheck: () => economyCheck(),
   camp: {
     get campaign() { return campaign; }, get world() { return world; },
     newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,

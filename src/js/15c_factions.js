@@ -102,8 +102,9 @@ function campaignTick(dtReal) {
     }
     if (campaign.hour >= 24) {
       while (campaign.hour >= 24) { campaign.hour -= 24; campaign.day++; }
-      const { income, wages } = dailyEconomy();
+      const { income, wages, news } = dailyEconomy();
       campaign.journal.push(`Day ${campaign.day}: income ${Math.round(income)}, wages ${Math.round(wages)}.`);
+      for (const n of news) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
       if (campaign.journal.length > 60) campaign.journal.shift();
       campaignStore.save();
     }

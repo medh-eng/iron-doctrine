@@ -641,6 +641,20 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         check(cc.persist.saved && cc.reload, `campaign results did not persist through save and load ${JSON.stringify([cc.persist, cc.reload])}`);
         check(cc.detach.inGarrison && cc.detach.outpost && cc.detach.back && cc.detach.alone === 0, `detach, garrison or outpost wrong ${JSON.stringify(cc.detach)}`);
         check(cc.deploy.field === 'inland' && cc.deploy.domains === 'land', `a ship deployed inland ${JSON.stringify(cc.deploy)}`);
+        // Part 4a: warehouses, production, markets, loading, stores, upgrades, running dry, old saves.
+        const ec = await G(() => window.__GAME__.economyCheck());
+        const E = (c, what) => check(c, `${what} ${JSON.stringify(ec)}`);
+        E(ec.kit.wood === 80 && ec.kit.metal === 60 && ec.kit.elec === 5, 'home warehouse starting kit wrong');
+        E(ec.production.made > 0 && Math.abs(ec.production.made - ec.production.expect) < 0.01 && ec.production.neutral === 0, 'daily production wrong');
+        E(ec.capped, 'a warehouse overfilled');
+        E(!ec.buy.why && Math.abs(ec.buy.paid - ec.buy.price) < 0.01, 'buying metal into the warehouse wrong');
+        E(ec.scrap.buy !== '' && ec.scrap.sell === '' && ec.scrap.left === 15, 'scrap should be sell-only');
+        E(!ec.load.why && ec.load.cap > 0 && ec.load.hold === 10 && ec.load.store === 10 && ec.undocked, 'loading a docked hold wrong');
+        E(ec.stores.fromStore > 0 && Math.abs(ec.stores.used - ec.stores.fromStore) < 0.01 && Math.abs(ec.stores.paid - ec.stores.cost) < 0.01, 'refuelling from the warehouse wrong');
+        E(ec.fieldRearm.why === '', 'rearming from the hold failed');
+        E(ec.upBlocked && !ec.upgrade.why && ec.upgrade.type === 'city', 'settlement upgrade wrong');
+        E(ec.dry.unpaid >= 8 && ec.dry.deserted > 0 && ec.dry.closed, 'running out of money had no effect');
+        E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
       await wait(200);
@@ -697,9 +711,21 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await tapButton('Auto-resolve');
       await wait(300);
       check((await G(() => window.__GAME__.camp.campaign.journal.slice(-1)[0] || '')).includes('enemy ships destroyed'), 'auto-resolve did not record the battle');
+      // Settlement panels: the home warehouse (with a truck fleet docked) and the market.
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const home = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.capital);
+        S.cam.x = home.x + 10; S.cam.y = home.y;
+        S.select('settlement', home.id); S.panelOpen = true; S.tab = 'warehouse'; S.refresh();
+      });
+      await wait(200);
+      await shot('25-warehouse');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'market'; S.refresh(); });
+      await wait(200);
+      await shot('26-market');
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

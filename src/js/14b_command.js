@@ -3,7 +3,7 @@
 // `campaign` is the whole running campaign as plain JSON-safe data (design/04 §7); the terrain
 // comes from its seed (`world`). Saved to irondoctrine.campaign.slot1.
 
-const CAMPAIGN_VERSION = 1;
+const CAMPAIGN_VERSION = 2;
 const CAMPAIGN_KEY = 'irondoctrine.campaign.slot1';
 let campaign = null;
 let world = null;
@@ -21,6 +21,11 @@ const campaignStore = {
   load() {
     let blob = null;
     try { blob = JSON.parse(localStorage.getItem(CAMPAIGN_KEY) || 'null'); } catch (_e) { blob = null; }
+    if (blob && blob.data && blob.v < CAMPAIGN_VERSION) {
+      try { localStorage.setItem('irondoctrine.backup.campaign', JSON.stringify(blob)); } catch (_e) { /* ignore */ }
+      migrateCampaign(blob.data, blob.v);
+      blob.v = CAMPAIGN_VERSION;
+    }
     if (!blob || !blob.data || blob.v !== CAMPAIGN_VERSION) {
       if (blob) { try { localStorage.setItem('irondoctrine.backup.campaign', JSON.stringify(blob)); } catch (_e) { /* ignore */ } ui.toast('This campaign save is from another version; it was kept as a backup.'); }
       return false;
@@ -32,6 +37,21 @@ const campaignStore = {
     return true;
   },
 };
+
+// Older saves are brought forward, never wiped (a copy is kept as irondoctrine.backup.campaign).
+function migrateCampaign(c, v) {
+  if (v < 2) {
+    // v2 (Part 4a): warehouses, all goods in markets and holds, unpaid-days counter.
+    for (const s of c.settlements) {
+      s.store = Object.assign(emptyCargo(), s.store || {});
+      for (const k of GOODS) if (s.market[k] === undefined) s.market[k] = SELL_ONLY[k] ? 0 : SETTLEMENT_TYPES[s.type].stock[k];
+      if (s.faction === c.faction && s.capital) Object.assign(s.store, HOME_STORE);
+    }
+    for (const fl of c.fleets) fl.hold = Object.assign(emptyCargo(), fl.hold || {});
+    c.unpaid = 0;
+  }
+  c.v = CAMPAIGN_VERSION;
+}
 
 const newId = (p) => p + (campaign.nextId++).toString(36);
 const byId = (list, id) => campaign[list].find((o) => o.id === id) || null;
@@ -75,7 +95,7 @@ function makeShip(designId, faction, rng) {
 }
 
 function makeFleet(faction, domain, x, y, designs, rng, admiral) {
-  const fleet = { id: newId('f'), faction, domain, x, y, path: [], dest: null, hold: { fuel: 0, ammo: 0 }, shipIds: [], admiralId: null, stranded: false, docked: null, ai: faction === campaign.faction ? null : { t: 0 } };
+  const fleet = { id: newId('f'), faction, domain, x, y, path: [], dest: null, hold: emptyCargo(), shipIds: [], admiralId: null, stranded: false, docked: null, ai: faction === campaign.faction ? null : { t: 0 } };
   if (admiral) fleet.admiralId = admiral.id;
   else {
     const a = { id: newId('o'), name: officerName(rng), rank: 'admiral', faction, level: 1, xp: 0, alive: true, fleetId: fleet.id };
@@ -109,8 +129,10 @@ function newCampaign(factionId, seed) {
   campaign = {
     v: CAMPAIGN_VERSION, seed, faction: factionId, day: 1, hour: 6, speed: 1, running: false,
     treasury: START_MONEY, nextId: 1, ships: [], fleets: [], officers: [], outposts: [], journal: [],
-    settlements: world.settlements, relations: {}, ga: null, gaXp: 0,
+    settlements: world.settlements, relations: {}, ga: null, gaXp: 0, unpaid: 0,
   };
+  const home = world.settlements.find((s) => s.faction === factionId && s.capital);
+  if (home) Object.assign(home.store, HOME_STORE);
   const rng = makeRng(seed + 7);
   // Relations: the player is at war with the two nearest factions and in truce with the others;
   // AI factions are at war with each other except one seeded pair.

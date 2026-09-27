@@ -119,8 +119,8 @@ function placeSettlements(w, seed, playerFaction) {
     return null;
   };
   const add = (x, y, type, faction, name) => {
-    const s = { id: 's' + out.length, name: name || placeName(rng, used), type, faction, x, y, coastal: isCoastal(w, x, y), biome: terrainId(w, x, y), market: {} };
-    for (const k of Object.keys(SETTLEMENT_TYPES[type].stock)) s.market[k] = SETTLEMENT_TYPES[type].stock[k];
+    const s = { id: 's' + out.length, name: name || placeName(rng, used), type, faction, x, y, coastal: isCoastal(w, x, y), biome: terrainId(w, x, y), market: {}, store: emptyCargo() };
+    for (const k of GOODS) s.market[k] = SELL_ONLY[k] ? 0 : SETTLEMENT_TYPES[type].stock[k];
     out.push(s);
     return s;
   };
