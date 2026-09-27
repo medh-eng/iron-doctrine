@@ -1,0 +1,66 @@
+{
+  "id": "wheel_w",
+  "name": "Spoked wheel",
+  "family": "wheel_w",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 0,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull_bottom",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1,
+      0.1
+    ],
+    "contact": [
+      1,
+      2
+    ]
+  },
+  "moving": {
+    "wheel": {
+      "pivot": [
+        1,
+        1
+      ]
+    }
+  },
+  "stats": {
+    "mass": 160,
+    "hp": 40,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.993,
+    "contact": 0.1,
+    "maxLoad": 3000,
+    "cap": 35,
+    "radius": 0.5
+  },
+  "behaviour": {
+    "loco": "wheel"
+  },
+  "cost": {
+    "wood": 2,
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as mob_wheel_wood_std)."
+}

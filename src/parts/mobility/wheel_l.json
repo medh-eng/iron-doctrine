@@ -1,0 +1,39 @@
+{
+  "id": "wheel_l",
+  "name": "Off-road wheel",
+  "family": "wheel_l",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 200,
+    "hp": 50,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "contact": 0.12,
+    "maxLoad": 5000,
+    "cap": 75,
+    "radius": 0.5
+  },
+  "behaviour": {
+    "loco": "wheel"
+  },
+  "cost": {
+    "metal": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_petrol"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -1,0 +1,48 @@
+{
+  "id": "hmg",
+  "name": "Heavy machine gun",
+  "family": "hmg",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 80,
+    "hp": 25,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 20,
+    "rpm": 450,
+    "range": 1000,
+    "vel": 250,
+    "dmg": 11,
+    "spread": 1.2,
+    "cal": 13,
+    "burst": 5
+  },
+  "behaviour": {
+    "auto": true,
+    "aa": true
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_medium"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

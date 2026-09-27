@@ -1,0 +1,33 @@
+{
+  "id": "fighter",
+  "name": "Fighter",
+  "domain": "aircraft",
+  "class": "aircraft",
+  "w": 18,
+  "h": 6,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["tail",0,2],
+    ["frame",2,3],
+    ["frame",3,3],
+    ["frame",4,3],
+    ["frame",5,3],
+    ["fuel_ss",6,3],
+    ["frame",7,3],
+    ["frame",8,3],
+    ["frame",9,3],
+    ["frame",10,3],
+    ["frame",11,3],
+    ["frame",12,3],
+    ["frame",13,3],
+    ["aero",14,3],
+    ["aprop",16,2],
+    ["crew2",9,1],
+    ["radio",8,2],
+    ["hmg",12,2],
+    ["hmg",13,2],
+    ["wing",6,4],
+    ["wing",8,4],
+    ["wing",10,4]
+  ]
+}

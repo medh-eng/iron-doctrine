@@ -50,7 +50,10 @@ T = Start/Stop time (tactical freeze)   P = Pause   S = Settings
 | Ship type | ◀ ▶ | ▲ ▼ |
 |---|---|---|
 | Land, sea | Drive back / forward | Hidden |
-| Airship | Move | Climb / descend |
+| Submarine (built in v1) | Drive back / forward | Depth order, with a depth readout |
+| Airship | Move | Climb / descend (the v1 helicopter controls) |
+| Aircraft (built in v1) | Throttle | Pitch (level flight on release, hold ▲ to loop) |
+| Helicopter (built in v1) | Move | Height |
 
 Pressing ◀ and ▶ together is the **halt/brake**. When stopped, a small crosshair tightens to show the stationary accuracy bonus.
 
@@ -60,7 +63,7 @@ Pressing ◀ and ▶ together is the **halt/brake**. When stopped, a small cross
   - Tap: fire the selected weapon group at the current target, using the fire-control solution.
   - Press and drag: manual aim with a trajectory preview; release to fire.
   - A ring around the button shows the reload.
-- **Group:** cycle weapon groups (guns, missiles, flamethrowers, energy). The icon shows the group; a small bar shows ammo or heat.
+- **Group:** cycle weapon groups (guns, missiles, flamethrowers, energy). This is the v1 Alt button, which already fires torpedoes, depth charges and bombs. The icon shows the group; a small bar shows ammo or heat.
 - **Swap:** drive the next on-field ship.
 - **Utility:** quick flares or smoke for the ship you're driving. Long-press for the full utility list: flares, smoke, launch drones, release clamp.
 

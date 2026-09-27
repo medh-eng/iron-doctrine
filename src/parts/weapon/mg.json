@@ -1,0 +1,83 @@
+{
+  "id": "mg",
+  "name": "Machine gun",
+  "family": "mg",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0.5,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.45,
+      0.95
+    ],
+    "muzzle": [
+      1.41,
+      0.52
+    ],
+    "smoke": [
+      [
+        0.4,
+        0.4
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.4375,
+        0.5625
+      ],
+      "elevation": [
+        -10,
+        25
+      ]
+    }
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 20,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 8,
+    "rpm": 600,
+    "range": 600,
+    "vel": 260,
+    "dmg": 6,
+    "spread": 1.4,
+    "cal": 8,
+    "burst": 6
+  },
+  "behaviour": {
+    "auto": true
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as wpn_mg_std)."
+}

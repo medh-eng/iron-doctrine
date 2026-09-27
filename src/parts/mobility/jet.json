@@ -1,0 +1,39 @@
+{
+  "id": "jet",
+  "name": "Jet engine",
+  "family": "jet",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 3,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 1
+  },
+  "stats": {
+    "mass": 900,
+    "hp": 70,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.97,
+    "jet": 25000,
+    "heat": 60,
+    "fuelUse": 900
+  },
+  "behaviour": {
+    "air": true
+  },
+  "cost": {
+    "metal": 10,
+    "elec": 4
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "jets"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

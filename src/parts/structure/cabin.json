@@ -1,0 +1,55 @@
+{
+  "id": "cabin",
+  "name": "Crew cabin",
+  "family": "cabin",
+  "variant": "std",
+  "category": "structure",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0.5,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1,
+      0.95
+    ],
+    "smoke": [
+      [
+        1.66,
+        -0.46
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 180,
+    "hp": 50,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "crew": 2
+  },
+  "cost": {
+    "wood": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as crw_cabin_std)."
+}

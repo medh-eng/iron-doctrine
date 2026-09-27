@@ -1,0 +1,61 @@
+{
+  "id": "prop",
+  "name": "Ship propeller",
+  "family": "prop",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 0,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull_bottom",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.35,
+      0.05
+    ],
+    "wash": [
+      1,
+      1.125
+    ]
+  },
+  "moving": {
+    "screw": {
+      "pivot": [
+        0.71875,
+        1.125
+      ]
+    }
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 50,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "propeller": true
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_prop_std)."
+}

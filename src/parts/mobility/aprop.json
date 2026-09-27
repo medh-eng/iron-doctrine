@@ -1,0 +1,63 @@
+{
+  "id": "aprop",
+  "name": "Air propeller",
+  "family": "aprop",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 0,
+  "domains": [
+    "aircraft",
+    "airship"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull_side",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.1,
+      1
+    ],
+    "wash": [
+      1,
+      1
+    ]
+  },
+  "moving": {
+    "prop": {
+      "pivot": [
+        0.71875,
+        1
+      ]
+    }
+  },
+  "stats": {
+    "mass": 80,
+    "hp": 20,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "airprop": true
+  },
+  "cost": {
+    "metal": 1,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as mob_airprop_std)."
+}

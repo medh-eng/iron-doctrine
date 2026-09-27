@@ -1,0 +1,57 @@
+{
+  "id": "cargo",
+  "name": "Cargo bay",
+  "family": "cargo",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1,
+      1.95
+    ],
+    "smoke": [
+      [
+        1,
+        0.8
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 200,
+    "hp": 40,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.998,
+    "cargo": 2000
+  },
+  "cost": {
+    "metal": 2,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_cargo_std)."
+}

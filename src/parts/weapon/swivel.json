@@ -1,0 +1,80 @@
+{
+  "id": "swivel",
+  "name": "Swivel gun 20 mm",
+  "family": "swivel",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0.75,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "rail_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.95
+    ],
+    "muzzle": [
+      1.72,
+      0.375
+    ],
+    "smoke": [
+      [
+        0.5,
+        0.6
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.5,
+        0.375
+      ],
+      "elevation": [
+        -10,
+        30
+      ]
+    }
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 20,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 12,
+    "dmg": 18,
+    "reload": 1.2,
+    "range": 700,
+    "vel": 200,
+    "spread": 1,
+    "cal": 20,
+    "shells": 40
+  },
+  "cost": {
+    "wood": 1,
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as wpn_swivel20_std)."
+}

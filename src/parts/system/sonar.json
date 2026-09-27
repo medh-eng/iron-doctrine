@@ -1,0 +1,37 @@
+{
+  "id": "sonar",
+  "name": "Sonar",
+  "family": "sonar",
+  "variant": "std",
+  "category": "system",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 30,
+    "armor": 5,
+    "power": -10,
+    "rel": 0.998,
+    "sonar": 2000
+  },
+  "behaviour": {
+    "wet": true
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "sonar"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -1,0 +1,28 @@
+{
+  "id": "howitzer",
+  "name": "Howitzer battery",
+  "domain": "land",
+  "class": "tank",
+  "w": 10,
+  "h": 5,
+  "fixed": true,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["wheel_l",1,3],
+    ["wheel_l",6,3],
+    ["frame",0,2],
+    ["frame",1,2],
+    ["frame",2,2],
+    ["frame",3,2],
+    ["frame",4,2],
+    ["frame",5,2],
+    ["frame",6,2],
+    ["frame",7,2],
+    ["frame",8,2],
+    ["frame",9,2],
+    ["crew2",1,0],
+    ["ammo",3,1],
+    ["how",4,0],
+    ["frame",8,1]
+  ]
+}

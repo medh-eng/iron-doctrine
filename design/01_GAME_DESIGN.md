@@ -2,6 +2,14 @@
 
 v2 replaces the region map, the six-resource supply chain and the Proving Ground ladder of v1.
 
+**Built on v1.** The battle systems built in v1 (up to v0.2.2) are kept and form the base of v2. These are:
+- land, ship, submarine, aircraft and helicopter physics
+- per-part damage, flooding and spotting
+- the Drafting Office and the Workshop
+- the ladder, now called the Gauntlet
+
+Their detailed rules are in `design/v1/`. They stand unless this document changes them.
+
 - Numbers live in **08_BALANCE_AND_ECONOMY**.
 - Factions live in **09_FACTIONS**.
 - Parts and art live in **05_PARTS_CATALOGUE** and **07_ART_AND_PARTS**.
@@ -120,7 +128,7 @@ Five factions share Kessra:
 
 "Ship" means any large vehicle in its domain: landship, water ship or airship. The class sets the build grid and the part limit. The source of truth is `src/parts/classes.json`.
 
-| Captain level | Land | Sea | Air |
+| Captain level | Land | Sea (ships and submarines) | Air (airships) |
 |---|---|---|---|
 | 1 | Tank (16×8) | Corvette (32×10) | Gunship (24×10) |
 | 3 | Behemoth (28×12) | Destroyer (48×14) | Air frigate (36×14) |
@@ -128,6 +136,19 @@ Five factions share Kessra:
 | 8 | Land dreadnought (64×20) | Battleship (88×24) | Sky fortress (72×24) |
 
 Grid sizes are in 0.5 m cells.
+
+**Submarines**
+- Any sea design that can dive is a submarine: it needs ballast tanks, an electric motor and a pressure hull (v1).
+- A submarine uses the sea class of its size. Submarines were built in v1 (design/v1).
+
+**Aircraft and helicopters (air wings)**
+- These are the planes and helicopters built in v1. They have their own class, `aircraft` (32×12 grid, 60 parts), and **no captain**.
+- In v2 they are **air wings**:
+  - launched from carriers with an aircraft hangar, or from airfields at cities, metropolises, forts and citadels near the battle
+  - they fly under orders, like drones (§10.5)
+  - they **don't count** towards the 3-on-field limit
+  - an air wing whose carrier leaves or dies must reach a friendly airfield, or it is lost
+- **Until carriers exist (Part 4)**, aircraft and helicopters fight as ordinary units in the Gauntlet and the Battle Simulator.
 
 **Drones**
 - Drones are smaller than every class and have no captain.
@@ -315,7 +336,7 @@ Side view, landscape, generated from the location.
 ### 10.5 Carriers, drones, missiles, fabricators
 
 **Drones**
-- **Launching:** drones launch from **hangar** parts. The **drone computer** (tier I–III) sets how many drones can fly at once and how big each drone design can be.
+- **Launching:** drones launch from **hangar** parts. Air wings (aircraft and helicopters) use the larger aircraft hangar, and the same orders. The **drone computer** (tier I–III) sets how many drones can fly at once and how big each drone design can be.
 - **Drone orders:** attack a target, defend the carrier, scout.
 - **Losing drones:** drones are lost if their carrier is destroyed or leaves the field. They can be rebuilt in battle by fabricators, or crafted at cities.
 - **Field limit:** drones don't count towards the 3-ship limit.
@@ -374,8 +395,8 @@ Side view, landscape, generated from the location.
   |---|---|---|
   | T0 | Timber and iron | Start |
   | T1 | Iron and steel | Steel hulls, diesel engines, tracks, rubber wheels |
-  | T2 | Heavy industry | Heavy guns, lift engines, rockets, flamethrowers, radar |
-  | T3 | Advanced | Missiles, drones, fabricators, composites, ECM |
+  | T2 | Heavy industry | Heavy guns, lift engines, rockets, flamethrowers, radar, submarines, sonar, aircraft and helicopters |
+  | T3 | Advanced | Missiles, drones, jets, fabricators, composites, ECM |
   | T4 | Precursor | Lasers, plasma, EMP, levitators, Precursor plating |
 
 Full tree and perks: 08 §11–12.

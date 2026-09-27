@@ -1,0 +1,82 @@
+{
+  "id": "c37",
+  "name": "Cannon 37 mm",
+  "family": "c37",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 1,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "turret_or_hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2.97,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.6,
+        0.3
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.75,
+        0.5
+      ],
+      "elevation": [
+        -8,
+        25
+      ]
+    }
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 40,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 50,
+    "reload": 2.5,
+    "range": 1500,
+    "vel": 180,
+    "dmg": 45,
+    "spread": 0.55,
+    "cal": 37,
+    "shells": 40,
+    "burst": 25,
+    "burstR": 1
+  },
+  "cost": {
+    "metal": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as wpn_c37_std)."
+}

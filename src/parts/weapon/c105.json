@@ -1,0 +1,48 @@
+{
+  "id": "c105",
+  "name": "Cannon 105 mm",
+  "family": "c105",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 1
+  },
+  "stats": {
+    "mass": 1300,
+    "hp": 80,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 150,
+    "reload": 8,
+    "range": 2500,
+    "vel": 155,
+    "dmg": 150,
+    "spread": 0.45,
+    "cal": 105,
+    "shells": 20,
+    "burst": 80,
+    "burstR": 2,
+    "heDmg": 110,
+    "heRadius": 4
+  },
+  "cost": {
+    "metal": 12
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

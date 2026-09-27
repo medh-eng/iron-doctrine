@@ -1,0 +1,43 @@
+{
+  "id": "bomb",
+  "name": "Bomb rack",
+  "family": "bomb",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 1100,
+    "hp": 30,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.998,
+    "range": 0,
+    "reload": 0.5,
+    "rounds": 4,
+    "bombMass": 250,
+    "pen": 60,
+    "heDmg": 200,
+    "heRadius": 5
+  },
+  "behaviour": {
+    "secondary": "bomb",
+    "air": true
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "aviation"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -1,0 +1,37 @@
+{
+  "id": "fc",
+  "name": "Fire-control computer",
+  "family": "fc",
+  "variant": "std",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 15,
+    "armor": 2,
+    "power": -5,
+    "rel": 0.998,
+    "accuracy": 1.35
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 5
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "fire_control"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

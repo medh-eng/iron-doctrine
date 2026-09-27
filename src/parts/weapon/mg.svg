@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 32" data-part="mg" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.3"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.65" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.42"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="cyl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.25"/><stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0.5"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<radialGradient id="bbolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#D8F0F7"/><stop offset="0.45" stop-color="#C9A04A"/><stop offset="1" stop-color="#8A6A2A"/></radialGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M4.6 28.6H25.4Q26.4 28.6 26.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z" fill="#00FFFF"/>
+</g>
+<g class="detail">
+<path d="M11 28.8L12 21H16L17 28.8Z" fill="#3A3F45" stroke="#14171B" stroke-width="0.7"/>
+<path d="M11 28.8L12 21H16L17 28.8Z" fill="url(#cyl)"/>
+<path d="M9.6 21.4H18.4L17.4 18.2H10.6Z" fill="#4F565E" stroke="#14171B" stroke-width="0.6"/>
+<path d="M3.6 28.6H26.4V31.6H3.6Z" fill="url(#shade)"/>
+<path d="M4.6 29.3H25.4" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.7" fill="none"/>
+<g fill="url(#bolt)"><circle cx="6.2" cy="30.1" r="0.95"/><circle cx="23.8" cy="30.1" r="0.95"/></g>
+<path d="M4.6 28.6H25.4Q26.4 28.6 26.4 29.6V31.6H3.6V29.6Q3.6 28.6 4.6 28.6Z" stroke="#14171B" stroke-width="0.9" fill="none"/>
+</g>
+</g>
+<g id="barrel" data-role="barrel" data-pivot="14 18">
+<g class="paint">
+<path d="M4.6 10.6H19.6Q21.2 10.6 21.2 12.2V20.6Q21.2 22.2 19.6 22.2H4.6Q3 22.2 3 20.6V12.2Q3 10.6 4.6 10.6Z" fill="#FF00FF"/>
+<path d="M16.2 10.6H18.4V22.2H16.2Z" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<rect x="21" y="12.9" width="23.6" height="2" rx="0.4" fill="#8A9199" stroke="#14171B" stroke-width="0.5"/>
+<path d="M22 13.45H43.6" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.7" fill="none"/>
+<rect x="43.6" y="13.2" width="1.4" height="1.4" fill="#14171B"/>
+<rect x="21" y="15.5" width="23.6" height="2" rx="0.4" fill="#8A9199" stroke="#14171B" stroke-width="0.5"/>
+<path d="M22 16.05H43.6" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.7" fill="none"/>
+<rect x="43.6" y="15.8" width="1.4" height="1.4" fill="#14171B"/>
+<rect x="21" y="18.1" width="23.6" height="2" rx="0.4" fill="#8A9199" stroke="#14171B" stroke-width="0.5"/>
+<path d="M22 18.65H43.6" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.7" fill="none"/>
+<rect x="43.6" y="18.4" width="1.4" height="1.4" fill="#14171B"/>
+<rect x="36.4" y="11.8" width="2.6" height="9.8" rx="0.4" fill="#4F565E" stroke="#14171B" stroke-width="0.5"/>
+<rect x="21" y="11.6" width="3" height="10.2" rx="0.4" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<g fill="url(#bolt)"><circle cx="37.7" cy="13.4" r="0.9"/><circle cx="37.7" cy="20" r="0.9"/></g>
+<path d="M4.6 10.6H19.6Q21.2 10.6 21.2 12.2V20.6Q21.2 22.2 19.6 22.2H4.6Q3 22.2 3 20.6V12.2Q3 10.6 4.6 10.6Z" fill="url(#shade)"/>
+<path d="M3.8 12V21" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.8" fill="none"/>
+<g fill="url(#bolt)"><circle cx="5.2" cy="12.6" r="0.9"/><circle cx="5.2" cy="20.2" r="0.9"/><circle cx="14.6" cy="12.6" r="0.9"/><circle cx="14.6" cy="20.2" r="0.9"/><circle cx="19.8" cy="20.2" r="0.9"/></g>
+<path d="M7.6 10.8L6.2 3.6H17.8L16.4 10.8Z" fill="#C9A04A" stroke="#14171B" stroke-width="0.7"/>
+<path d="M7.6 10.8L6.2 3.6H17.8L16.4 10.8Z" fill="url(#cyl)"/>
+<path d="M7.1 6.4H16.9M7.6 8.8H16.4" stroke="#8A6A2A" stroke-width="0.8" fill="none"/>
+<rect x="5.6" y="2.4" width="12.8" height="1.8" rx="0.5" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<circle cx="12" cy="1.9" r="0.9" fill="#4F565E" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="8.2" cy="16.4" r="3" fill="#4F565E" stroke="#14171B" stroke-width="0.6"/>
+<path d="M8.2 16.4L3.4 20.4" stroke="#14171B" stroke-width="2.2" fill="none"/>
+<path d="M8.2 16.4L3.4 20.4" stroke="#8A9199" stroke-width="1.2" fill="none"/>
+<circle cx="3.2" cy="20.6" r="1.4" fill="#A8743F" stroke="#14171B" stroke-width="0.5"/>
+<circle cx="8.2" cy="16.4" r="1" fill="url(#bolt)"/>
+<path d="M4.6 10.6H19.6Q21.2 10.6 21.2 12.2V20.6Q21.2 22.2 19.6 22.2H4.6Q3 22.2 3 20.6V12.2Q3 10.6 4.6 10.6Z" stroke="#14171B" stroke-width="0.9" fill="none"/>
+</g>
+</g>
+</svg>

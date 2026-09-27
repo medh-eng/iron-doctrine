@@ -1,0 +1,38 @@
+{
+  "id": "turret",
+  "name": "Turret ring",
+  "family": "turret",
+  "variant": "std",
+  "category": "structure",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 1
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 90,
+    "armor": 20,
+    "power": -5,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "ring": true
+  },
+  "cost": {
+    "metal": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

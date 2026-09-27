@@ -1,0 +1,66 @@
+{
+  "id": "smoke",
+  "name": "Smoke launcher",
+  "family": "smoke",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.95
+    ],
+    "smoke": [
+      [
+        0.19,
+        0.22
+      ],
+      [
+        0.5,
+        0.22
+      ],
+      [
+        0.81,
+        0.22
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 15,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "salvos": 3
+  },
+  "cost": {
+    "metal": 1,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as sys_smoke_std)."
+}

@@ -1,5 +1,5 @@
 {
- "_about": "Ship classes (design/01 \u00a75). grid = max width x height in cells, parts = max component parts (structure cells not counted), captain = captain level needed.",
+ "_about": "Design classes per domain (design/01 \u00a75). grid = max width x height in cells; parts = max component parts (structure cells not counted); captain = captain level needed. sea includes submarines; aircraft = planes and helicopters (carrier- or airfield-based, no captain).",
  "land": [
   {
    "id": "tank",
@@ -84,7 +84,7 @@
    "captain": 8
   }
  ],
- "air": [
+ "airship": [
   {
    "id": "gunship",
    "name": "Gunship",
@@ -124,6 +124,18 @@
    ],
    "parts": 160,
    "captain": 8
+  }
+ ],
+ "aircraft": [
+  {
+   "id": "aircraft",
+   "name": "Aircraft or helicopter",
+   "grid": [
+    32,
+    12
+   ],
+   "parts": 60,
+   "captain": 0
   }
  ],
  "drone": [

@@ -1,0 +1,38 @@
+{
+  "id": "aero",
+  "name": "Aero piston engine",
+  "family": "aero",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 600,
+    "hp": 50,
+    "armor": 5,
+    "power": 900,
+    "rel": 0.985,
+    "heat": 40,
+    "fuelUse": 250
+  },
+  "behaviour": {
+    "air": true
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "aviation"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "radiator",
+  "name": "Radiator",
+  "family": "radiator",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 70,
+    "hp": 20,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "heat": -12
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_petrol"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

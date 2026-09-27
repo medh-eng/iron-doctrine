@@ -1,129 +1,134 @@
-# Iron Doctrine: part roster (production order)
+# Iron Doctrine: part roster (production order, v2.1)
 
-- **Order:** the Art Foundry makes parts in this order, one per chat or a few per chat.
-- **Stats:** base values come from 05. Variants follow 08 §3.
-- **Tracking:** the repo updates the status column when a foundry zip is integrated (CLAUDE.md).
+**How this list is used**
+- **Order:** the Art Foundry works down this list.
+- **Existing parts:** the game already has these, with stats. The Foundry adds **art only**: the `.svg`, plus the art fields in the part's `.json` (`overhang`, `anchors`, `moving`). It never changes their stats, footprint or behaviour.
+- **New parts:** the Foundry makes both the JSON (starting values in 05 §3) and the art.
+- **Tracking:** the repo updates the status when a foundry zip is integrated (CLAUDE.md).
 - **Status values:** `todo`, `in progress`, `delivered` (zip made), `integrated` (in the repo), `done` (verified in game).
+- **Previews:** to see a part in context, run `--vehicle light`, `medium`, `scout`, `truck`, `gunboat`, `destroyer`, `sub`, `fighter`, `bomber`, `heli` or `behemoth`.
 
-**Code needs the parts in this order:**
-1. Part 1b (land and air battles) needs **batch A** plus the batch F starting designs.
-2. Part 1c (sea, designer) needs the rest of A and F.
-3. Later parts need B–E.
+## Batch A: land parts (art for existing parts, in the most-seen templates)
 
-## Batch A: tier 0 starting kit
+Parts in the Light and Medium tanks come first: they appear in almost every battle.
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| A1 | crw_bridge_std | Command bridge | crew | 2×2 | todo |
-| A2 | mob_wheel_wood_std | Spoked wheel | mobility | 2×2 | todo |
-| A3 | mob_steam_std | Steam engine | mobility | 3×2 | todo |
-| A4 | wpn_c37_std | Light cannon 37 mm | weapon | 2×1 | todo |
-| A5 | wpn_swivel20_std | Swivel gun 20 mm | weapon | 1×1 | todo |
-| A6 | wpn_mg_std | Machine gun | weapon | 1×1 | todo |
-| A7 | mob_airprop_std | Air propeller | mobility | 1×2 | todo |
-| A8 | mob_prop_std | Ship screw | mobility | 1×2 | todo |
-| A9 | log_fuel_std | Fuel barrels | logistics | 1×1 | todo |
-| A10 | log_ammo_std | Ammo crates | logistics | 1×1 | todo |
-| A11 | log_cargo_std | Cargo bed | logistics | 2×2 | todo |
-| A12 | crw_cabin_std | Crew cabin | crew | 2×1 | todo |
-| A13 | sys_optics_std | Spyglass and periscope | system | 1×1 | todo |
-| A14 | sys_smoke_std | Smoke pots | system | 1×1 | todo |
+| A1 | track | Track segment | mobility | 2×1 | todo |
+| A2 | eng_m | Diesel engine M | mobility | 3×2 | todo |
+| A3 | crew2 | Crew compartment | structure | 2×2 | todo |
+| A4 | turret | Turret ring | structure | 3×1 | todo |
+| A5 | c37 | Cannon 37 mm | weapon | 2×1 | integrated (batch A) |
+| A6 | mg | Machine gun | weapon | 1×1 | integrated (batch A) |
+| A7 | c75 | Cannon 75 mm | weapon | 3×1 | **integrated (golden sample)** |
+| A8 | radio | Radio | system | 1×1 | todo |
+| A9 | optics | Optics | system | 1×1 | integrated (batch A) |
+| A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A) |
+| A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A) |
+| A12 | wheel_s | Road wheel | mobility | 1×1 | todo |
+| A13 | eng_s | Petrol engine S | mobility | 2×2 | todo |
+| A14 | hmg | Heavy machine gun | weapon | 1×1 | todo |
+| A15 | c105 | Cannon 105 mm | weapon | 4×1 | todo |
+| A16 | smoke | Smoke launcher | weapon | 1×1 | integrated (batch A) |
+| A17 | wheel_l | Off-road wheel | mobility | 2×2 | todo |
+| A18 | cargo | Cargo bay | logistics | 2×2 | integrated (batch A) |
+| A19 | how | Howitzer 150 mm | weapon | 4×2 | todo |
+| A20 | eng_h | Diesel engine H | mobility | 4×2 | todo |
+| A21 | fc | Fire-control computer | system | 1×1 | todo |
+| A22 | stab | Gun stabiliser | system | 1×1 | todo |
+| A23 | nsight | Night sight | system | 1×1 | todo |
+| A24 | radiator | Radiator | mobility | 1×1 | todo |
+| A25 | fuel_ss | Self-sealing tank 150 L | logistics | 1×1 | todo |
+| A26 | ammo_p | Protected ammo storage | logistics | 1×1 | todo |
 
-## Batch F: starting designs (`src/vehicles/`, tier 0 parts only)
+## Batch B: ships and submarines (art for existing parts)
 
-Make these as soon as the batch A parts they use exist. Every faction needs 3 tanks, 3 corvettes and 3 gunships. Start with the League and the Directorate, which are the two test factions, then the rest.
+| # | id | Name | Folder | Cells | Status |
+|---|---|---|---|---|---|
+| B1 | hull | Ship hull section | structure | 2×2 | todo |
+| B2 | bow | Bow section | structure | 2×2 | todo |
+| B3 | keel | Keel | structure | 2×1 | todo |
+| B4 | bulk | Watertight bulkhead | structure | 1×2 | todo |
+| B5 | marine | Marine diesel | mobility | 4×3 | todo |
+| B6 | prop | Ship propeller | mobility | 1×2 | integrated (batch A) |
+| B7 | thrust | Manoeuvre thruster | mobility | 1×1 | todo |
+| B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | todo |
+| B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | todo |
+| B10 | sonar | Sonar | system | 2×1 | todo |
+| B11 | dc | Depth-charge rack | weapon | 2×1 | todo |
+| B12 | torp | Torpedo tube | weapon | 3×1 | todo |
+| B13 | phull | Pressure hull section | structure | 2×2 | todo |
+| B14 | ballast | Ballast tank | mobility | 2×2 | todo |
+| B15 | emotor | Electric motor + batteries | mobility | 2×2 | todo |
 
-| # | id pattern | What | Status |
+## Batch C: aircraft and helicopters (art for existing parts)
+
+| # | id | Name | Folder | Cells | Status |
+|---|---|---|---|---|---|
+| C1 | wing | Wing section | structure | 2×1 | todo |
+| C2 | tail | Tail unit | structure | 2×2 | todo |
+| C3 | aero | Aero piston engine | mobility | 2×1 | todo |
+| C4 | jet | Jet engine | mobility | 3×1 | todo |
+| C5 | turb | Gas turbine | mobility | 3×2 | todo |
+| C6 | aprop | Air propeller | mobility | 1×2 | integrated (batch A) |
+| C7 | rotor | Rotor | mobility | 4×1 | todo |
+| C8 | trotor | Tail rotor | mobility | 1×1 | todo |
+| C9 | ac20 | Autocannon 20 mm | weapon | 2×1 | todo |
+| C10 | aa40 | AA gun 40 mm | weapon | 3×2 | todo |
+| C11 | bomb | Bomb rack | weapon | 2×1 | todo |
+
+## Batch D: new tier 0 parts (JSON + art; roadmap step 2.8)
+
+| # | id | Name | Folder | Cells | Status |
+|---|---|---|---|---|---|
+| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
+| D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
+| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
+| D4 | whull | Wooden hull section | structure | 2×2 | todo |
+| D5 | wbow | Wooden bow section | structure | 2×2 | todo |
+| D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
+| D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
+| D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
+
+## Batch E: airships (roadmap step 2.7)
+
+| # | id | What | Status |
 |---|---|---|---|
-| F1 | league_tank_t0_a / _b / _c | Flagship tank + 2 captains' tanks (can share one design) | todo |
-| F2 | league_corvette_t0 | Corvette | todo |
-| F3 | league_gunship_t0 | Gunship | todo |
-| F4 | directorate_tank_t0, _corvette_t0, _gunship_t0 | The same set for the Directorate | todo |
-| F5 | skyreach_…, clans_…, lumen_… | The same set for the other factions | todo |
+| E1 | lifteng | Lift engine (JSON + art) | todo |
+| E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | todo |
+| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | todo |
 
-**Rules for starting designs**
-- They must be good-looking, but ordinary. They are starting points the player will improve.
-- They must pass the checker.
-- They must have lift margin 1.15–1.3 (air), float with 30% freeboard (sea), and not bog down on plains (land).
+## Batch F: faction starting designs (`src/vehicles/`, tier 0 parts only)
 
-## Batch B: tier 1 (iron and steel)
+Make these once batch D exists. Every faction needs:
+- 3 tanks (the flagship and 2 captains' tanks; they may share one design)
+- 3 corvettes
+- 3 gunships (airships)
 
-| # | id | Name | Folder | Status |
-|---|---|---|---|---|
-| B1 | wpn_c75_std | Cannon 75 mm | weapon | **integrated (golden sample)** |
-| B2 | wpn_c57_std | Cannon 57 mm | weapon | todo |
-| B3 | wpn_hmg_std | Heavy machine gun | weapon | todo |
-| B4 | wpn_mortar_std | Mortar | weapon | todo |
-| B5 | mob_petrol_std | Petrol engine | mobility | todo |
-| B6 | mob_diesel_std | Diesel engine | mobility | todo |
-| B7 | mob_wheel_std | Rubber wheel | mobility | todo |
-| B8 | mob_track_std | Track segment (road wheels; belt drawn by code) | mobility | todo |
-| B9 | sys_radio_std | Radio | system | todo |
-| B10 | sys_firectl_std | Fire control | system | todo |
-| B11 | sys_flare_std | Flare launcher | system | todo |
-| B12 | log_tank_std | Fuel cargo tank | logistics | todo |
-| B13 | log_hold_std | Steel cargo hold | logistics | todo |
-| B14 | spc_repair_std | Repair bay | special | todo |
-| B15 | spc_salvage_std | Salvage crane | special | todo |
-| B16 | variants | c75_long, c37_rapid, steam_hp, diesel_rugged (2 or more pros and cons each) | — | todo |
+Start with the League and the Directorate, then the others.
 
-## Batch C: tier 2 (heavy industry)
-
-| # | id | Status |
+| # | id pattern | Status |
 |---|---|---|
-| C1 | wpn_c105_std | todo |
-| C2 | wpn_how150_std | todo |
-| C3 | wpn_ac20_std | todo |
-| C4 | wpn_flak40_std | todo |
-| C5 | wpn_flame_std | todo |
-| C6 | wpn_rocket_std | todo |
-| C7 | mob_turbine_std | todo |
-| C8 | mob_marine_std | todo |
-| C9 | mob_htrack_std | todo |
-| C10 | lift_engine_std | todo |
-| C11 | sys_radar_std | todo |
-| C12 | sys_stab_std | todo |
-| C13 | spc_workshop_std | todo |
+| F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | todo |
+| F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | todo |
+| F3 | skyreach_…, clans_…, lumen_… | todo |
 
-## Batch D: tier 3 (missiles, drones, advanced)
+**Rules:** ordinary but handsome; they pass the checker; air designs have a lift margin of 1.15–1.3, ships float with about 30% freeboard, and tanks don't bog down on plains.
 
-| # | id | Status |
-|---|---|---|
-| D1 | wpn_rack_std | todo |
-| D2 | wpn_vls_std | todo |
-| D3 | log_magazine_std | todo |
-| D4 | mis_warhead_he, mis_motor_std, mis_fuel_std, mis_fins_std | todo |
-| D5 | mis_guide_radar, mis_guide_heat | todo |
-| D6 | mis_warhead_napalm, mis_warhead_acid | todo |
-| D7 | spc_hangar_std | todo |
-| D8 | sys_dronecpu_std, sys_dronecpu2_std | todo |
-| D9 | crw_dcore_std, mob_drotor_std, wpn_dgun_std, wpn_dcharge_std, sys_dcam_std | todo |
-| D10 | spc_fab_std | todo |
-| D11 | spc_clamp_std | todo |
-| D12 | sys_ecm_std | todo |
-| D13 | wpn_c203_std | todo |
-| D14 | Example designs: missile_s HE, missile_m radar, drone_1 gun drone, drone_1 charge drone | todo |
+## Batch G: new tier 1–2 parts (JSON + art; 05 §3.3)
 
-## Batch E: tier 4 (Precursor and energy)
+c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop.
 
-| # | id | Status |
-|---|---|---|
-| E1 | wpn_laser_std | todo |
-| E2 | sys_capacitor_std | todo |
-| E3 | wpn_plasma_std | todo |
-| E4 | wpn_hlaser_std | todo |
-| E5 | wpn_plance_std | todo |
-| E6 | mob_reactor_std | todo |
-| E7 | lift_levitator_std | todo |
-| E8 | mis_warhead_emp, mis_warhead_cluster, mis_guide_laser | todo |
-| E9 | sys_dronecpu3_std | todo |
-| E10 | wpn_dlaser_std | todo |
+## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
-## Batch G: later
+- **Missiles:** rack, vls, mag, and the missile parts.
+- **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts.
+- **Other:** fab, clamp, ecm, c203.
+- **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.
 
-| # | What | Status |
-|---|---|---|
-| G1 | Faction signature parts (09), 2 per faction | todo |
-| G2 | Wall and keep pieces for sieges (as materials and parts: wall_stone, wall_steel, gatehouse, keep) | todo |
-| G3 | Tier 1–4 faction standard designs for recruitment (each faction: small, medium, large, extra-large, per domain) | todo |
-| G4 | More variants: 2 per family, where they make sense | todo |
+## Batch I: later
+
+- Faction signature parts (09), 2 per faction.
+- Wall and keep pieces for sieges.
+- Faction standard designs for recruitment (small, medium, large and extra-large, per domain).
+- Variants: 2 per family, where they make sense.

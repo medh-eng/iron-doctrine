@@ -1,0 +1,57 @@
+{
+  "id": "ammo",
+  "name": "Ammo rack",
+  "family": "ammo",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      0.5,
+      0.95
+    ],
+    "smoke": [
+      [
+        0.4,
+        0.35
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 30,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.998,
+    "shells": 20,
+    "detonate": 0.4
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_ammo_std)."
+}
