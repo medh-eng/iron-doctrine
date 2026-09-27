@@ -62,11 +62,11 @@ SCREENS.designer = {
     const ox = Math.min(1, W - d0.w), oy = H - d0.h;
     this.st = {
       cls: cls.id,
-      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined },
+      d: { w: W, h: H, cells: d0.cells.map((c) => ({ p: c.p, x: c.x + ox, y: c.y + oy })), name: design.name, family: design.family || design.name, mark: design.mark || 1, id: design.id, paint: design.paint ? Object.assign({}, design.paint) : undefined, kind: design.kind, load: design.load },
       base: base || design,
       baseOwned: owned,
       undo: [], redo: [],
-      brush: null, sel: -1, cat: 'structure', zoom: 1, panX: 0, panY: 0,
+      brush: null, sel: -1, cat: design.kind || 'structure', zoom: 1, panX: 0, panY: 0,
     };
     this.msg = '';
   },
@@ -258,7 +258,7 @@ SCREENS.designer = {
     const pal = el('div', 'dz-palette');
     this.palette = pal;
     const tabs = el('div', 'dz-tabs');
-    for (const [cat, label] of PART_CATS) {
+    for (const [cat, label] of this.st.d.kind ? [[this.st.d.kind, DOMAIN_NAMES[this.st.d.kind]]] : PART_CATS) {
       const t = el('button', 'dz-tab', label);
       t.type = 'button';
       t.dataset.cat = cat;
@@ -282,8 +282,11 @@ SCREENS.designer = {
     const br = el('div', 'dz-br');
     this.testBtn = button('Test drive', () => this.testDrive(), 'btn btn-small');
     this.saveBtn = button('Save', () => this.saveDesign(), 'btn btn-small btn-primary');
-    br.appendChild(button('Paint', () => this.paintMenu(), 'btn btn-small'));
-    br.appendChild(this.testBtn);
+    if (!this.st.d.kind) br.appendChild(button('Paint', () => this.paintMenu(), 'btn btn-small'));
+    this.loadBtn = button('Missiles', () => this.loadMenu(), 'btn btn-small');
+    this.loadBtn.hidden = true;
+    br.appendChild(this.loadBtn);
+    if (!this.st.d.kind) br.appendChild(this.testBtn);
     br.appendChild(this.saveBtn);
     r.appendChild(br);
     this.msgEl = el('div', 'dz-msg');
@@ -386,7 +389,9 @@ SCREENS.designer = {
     const d = s.d;
     this.nameBtn.textContent = markName(d) + (this.changed() ? ' *' : '');
     this.delBtn.hidden = s.sel < 0;
+    if (d.kind) { this.rep = null; this.refreshKind(); return; }   // Missile and Drone tabs (16m)
     const rep = designReport(d);
+    this.loadBtn.hidden = !d.cells.some((c) => PARTS[c.p].secondary === 'missile');
     this.rep = rep;
     const st = rep.st;
     // The class follows the domain (adding wings makes an aircraft); the grid stays as it is.
@@ -623,6 +628,8 @@ SCREENS.designer = {
     col.appendChild(button('Scratch build (ship)', () => { close(); this.load(this.scratch('ship'), null, false); this.build(); }));
     col.appendChild(button('Scratch build (aircraft)', () => { close(); this.load(this.scratch('air'), null, false); this.build(); }));
     col.appendChild(button('Scratch build (airship)', () => { close(); this.load(this.scratch('airship'), null, false); this.build(); }));
+    // Missile tab (Part 5): the standard missiles as starting points.
+    for (const k of [1, 2, 3]) col.appendChild(button(`Missile: ${DEFAULT_MISSILES[k].name}`, () => { close(); this.load(Object.assign(JSON.parse(JSON.stringify(DEFAULT_MISSILES[k])), { id: 'scratch', family: DEFAULT_MISSILES[k].name }), null, false); this.build(); }));
     col.appendChild(button('Cancel', () => close(), 'btn', 'back'));
     c.appendChild(col);
     c.classList.add('card-scroll');
@@ -661,7 +668,8 @@ SCREENS.designer = {
 
   saveDesign() {
     const s = this.st;
-    const rep = designReport(s.d);
+    const kindErr = s.d.kind ? this.kindErrors() : null;
+    const rep = s.d.kind ? { valid: { ok: !kindErr.length, errors: kindErr }, cost: this.kindCost() } : designReport(s.d);
     if (!rep.valid.ok) { this.say(rep.valid.errors[0], true); return; }
     const need = this.buildCost();
     if (need > save.profile.requisition) { this.say(`Saving needs ${need} Requisition; you have ${save.profile.requisition}.`, true); return; }
@@ -678,6 +686,8 @@ SCREENS.designer = {
       cells: out.cells,
       changelog: s.baseOwned ? changeLog(s.base, out).concat(JSON.stringify(s.d.paint || null) !== JSON.stringify(s.base.paint || null) ? ['Repainted'] : []) : ['New design'],
       cls: s.cls,
+      kind: s.d.kind,
+      load: s.d.load,
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,

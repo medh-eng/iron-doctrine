@@ -168,6 +168,6 @@ Object.assign(SCREENS.map, {
 
 // Designs this yard can build: the templates and your saved designs.
 function yardDesigns(s) {
-  const ids = Object.keys(TEMPLATES).concat(save.designs.list.map((d) => d.id));
+  const ids = Object.keys(TEMPLATES).concat(save.designs.list.filter((d) => !d.kind).map((d) => d.id));
   return ids.filter((id) => !yardBlock(s, shipDesign({ design: id })));
 }

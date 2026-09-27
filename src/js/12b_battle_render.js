@@ -468,6 +468,34 @@ function drawPart(g, p, x, y, cs, side, seed, paint = sideScheme(side)) {
       g.fillStyle = 'rgba(127,243,255,0.35)'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.34, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#BFFBFF'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.14, 0, Math.PI * 2); g.fill();
       break;
+    // Missile parts (Part 5c): simple shapes until their art arrives.
+    case 'mseek_radar': case 'mseek_heat': case 'mseek_laser':
+      g.fillStyle = '#C9CED6'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.6, y); g.quadraticCurveTo(x + w, y + h / 2, x + w * 0.6, y + h); g.lineTo(x, y + h); g.fill();
+      g.fillStyle = d.id === 'mseek_heat' ? '#FF7A3A' : d.id === 'mseek_laser' ? '#FF4B4B' : '#7FD3FF';
+      g.beginPath(); g.arc(x + w * 0.62, y + h / 2, h * 0.16, 0, Math.PI * 2); g.fill();
+      break;
+    case 'mw_he': case 'mw_napalm': case 'mw_acid': case 'mw_emp': case 'mw_cluster':
+      g.fillStyle = '#5A606B'; g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      g.fillStyle = { mw_he: '#E8C547', mw_napalm: '#FF8A2E', mw_acid: '#9CFF6B', mw_emp: '#8FD8FF', mw_cluster: '#D9D9D9' }[d.id];
+      g.fillRect(x + w * 0.3, y + h * 0.1, w * 0.25, h * 0.8);
+      break;
+    case 'mmotor': case 'mfuel':
+      g.fillStyle = d.id === 'mmotor' ? '#474C55' : '#6E747E'; g.fillRect(x, y + h * 0.1, w, h * 0.8);
+      if (d.id === 'mmotor') { g.fillStyle = '#2A2D33'; g.fillRect(x, y + h * 0.25, w * 0.2, h * 0.5); }
+      break;
+    case 'mfins':
+      g.fillStyle = '#6E747E'; g.fillRect(x, y + h * 0.25, w, h * 0.5);
+      g.fillStyle = '#3A3F47'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + w * 0.7, y + h * 0.3); g.lineTo(x, y + h * 0.3); g.moveTo(x, y + h); g.lineTo(x + w * 0.7, y + h * 0.7); g.lineTo(x, y + h * 0.7); g.fill();
+      break;
+    case 'rack': case 'vls': case 'mag':
+      bevel(g, x, y, w, h, shade(steel, 0.75), 1);
+      g.fillStyle = '#2A2D33';
+      for (let k = 0; k < (d.id === 'vls' ? 4 : 2); k++) g.fillRect(x + w * (0.1 + k * (d.id === 'vls' ? 0.22 : 0.45)), y + h * 0.2, w * (d.id === 'vls' ? 0.14 : 0.35), h * 0.6);
+      break;
+    case 'flare':
+      bevel(g, x, y, w, h, shade(steel, 0.8), 1);
+      g.fillStyle = '#FFF6D0'; g.beginPath(); g.arc(x + w / 2, y + h / 2, w * 0.2, 0, Math.PI * 2); g.fill();
+      break;
     default:
       bevel(g, x, y, w, h, steel, 1);
   }
@@ -886,6 +914,7 @@ function renderBattle(g, B) {
   drawWater(g, B);
   drawShells(g);
   drawEnergy(g);
+  drawMissileFx(g);
   drawMissiles(g);
   drawParticles(g);
   drawWeather(g, B);

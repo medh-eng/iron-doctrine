@@ -58,4 +58,87 @@ function energyCheck() {
   for (const pool of [shells, particles, debris, beams, flames, floaters]) pool.forEachAlive((p) => { p.alive = false; });
   return out;
 }
+
+// Missiles (design/06 Part 5): launchers carry designed missiles; flares beat heat seekers more
+// than radar seekers; ECM spoils radar locks only; every warhead has its own effect.
+function designedMissileCheck() {
+  const out = {};
+  const B = createBattle(0, { cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 91 }), reserves: true, demo: true, squad: [designFromTemplate('medium')], enemyForce: [designFromTemplate('medium')] });
+  const V = B.squad[0], T = B.enemySlots[0];
+  T.body.x = V.body.x + 30; T.body.y = B.T.height(T.body.x) + 2; T.seen = true;
+  out.defaults = [1, 2, 3].map((k) => { const ms = missileStats(DEFAULT_MISSILES[k]); return `${ms.size}:${ms.errors.length}`; }).join(',');
+  const md = (warhead, seeker) => ({ id: 'mtest_' + warhead + seeker, kind: 'missile', w: 6, h: 1, cells: [[seeker, 4, 0], [warhead, 3, 0], ['mfuel', 2, 0], ['mmotor', 1, 0]].filter((c) => c[0]).map(([p, x, y]) => ({ p, x, y })) });
+  // Launchers: a rack carries 4 small; a VLS 4 medium.
+  const ship = designFromTemplate('medium');
+  ship.cells.push({ p: 'rack', x: 0, y: 0 }, { p: 'vls', x: 2, y: 0 });
+  ship.load = 'm_std_m';
+  const L = makeVehicle(ship, 0, 40, 1, B.T);
+  const rack = L.weapons.find((w) => w.def.id === 'rack'), vls = L.weapons.find((w) => w.def.id === 'vls');
+  out.launchers = { rack: rack.rounds, rackMissile: rack.missile.id, vls: vls.rounds, vlsMissile: vls.missile.id };
+  // A launched missile flies and hits.
+  const w = rack;
+  const hp0 = T.parts.reduce((a, p) => a + p.hp, 0);
+  w.reload = 0;
+  launchDesigned(B, L, w, T);
+  let n = 0; missiles.forEachAlive((m) => { m.locked = true; n++; });
+  for (let t = 0; t < 4; t += SIM_STEP) { stepMissiles(B, SIM_STEP); stepShells(B, SIM_STEP); }
+  out.hit = { launched: n, dmg: Math.round(hp0 - T.parts.reduce((a, p) => a + p.hp, 0)) };
+  // Flares: many locked missiles of each seeker type at close range against a flare-armed target.
+  const rates = {};
+  for (const seeker of ['heat', 'radar', 'laser']) {
+    let lost = 0;
+    const ms = missileStats(md('mw_he', 'mseek_' + seeker));
+    for (let k = 0; k < 200; k++) {
+      T.flareSalvos = 99; T.flareDecoy = 0.7; T.flareT = 0;
+      const m = missiles.take();
+      Object.assign(m, { x: T.body.x - 20, y: T.body.y + 1, ang: 0, kind: 'designed', def: rack.def, ms, target: T, t: 0.5, trail: 0, shooter: L, side: 0, locked: true, decoyed: false, split: false });
+      stepDesigned(B, m, 0.001);
+      if (!m.locked) lost++;
+      m.alive = false;
+      B.time += FLARE_COOLDOWN + 0.1;
+    }
+    rates[seeker] = +(lost / 200).toFixed(2);
+  }
+  out.flares = rates;
+  // ECM: radar locks drop, heat locks don't.
+  const rs = missileStats(md('mw_he', 'mseek_radar')), hs = missileStats(md('mw_he', 'mseek_heat'));
+  T.ecm = false; const r0 = seekerLock(L, T, rs), h0 = seekerLock(L, T, hs);
+  T.ecm = true; const r1 = seekerLock(L, T, rs), h1 = seekerLock(L, T, hs);
+  T.ecm = false;
+  out.ecm = { radar: +(r1 / r0).toFixed(2), heat: +(h1 / h0).toFixed(2) };
+  // Warheads.
+  const hitWith = (warhead) => {
+    const m = missiles.take();
+    Object.assign(m, { x: T.body.x - 1, y: T.body.y, ang: 0, kind: 'designed', def: rack.def, ms: missileStats(md(warhead, 'mseek_heat')), target: T, t: 1, trail: 0, shooter: L, side: 0, locked: true, decoyed: true, split: false });
+    m.alive = false;
+    return m;
+  };
+  warheadHit(B, hitWith('mw_napalm'), T);
+  let patches = 0; firePatches.forEachAlive(() => patches++);
+  const n0 = T.parts.reduce((a, p) => a + p.hp, 0);
+  T.body.y = B.T.height(T.body.x) + T.height / 2;
+  for (let t = 0; t < 2; t += SIM_STEP) stepMissileFx(B, SIM_STEP);
+  out.napalm = { patches, burn: Math.round(n0 - T.parts.reduce((a, p) => a + p.hp, 0)) };
+  warheadHit(B, hitWith('mw_acid'), T);
+  out.acid = T.parts.filter((p) => p.corroded).length;
+  // EMP on an undamaged tank: electronics off, its gun stays silent.
+  const E = makeVehicle(designFromTemplate('medium'), 1, T.body.x + 12, -1, B.T);
+  E.ai = makeAI('attack', B.cfg); B.units.push(E); E.seen = true;
+  const em = hitWith('mw_emp'); em.x = E.body.x; em.y = E.body.y;
+  warheadHit(B, em, E);
+  out.emp = { t: +(E.empT || 0).toFixed(1) };
+  const tw = E.weapons.find((q) => !q.def.auto);
+  tw.reload = 0; E.ai.target = V; E.ai.react = 0;
+  const s0 = E.shells;
+  for (let t = 0; t < 1; t += SIM_STEP) runWeapons(B, E, SIM_STEP, true);
+  out.emp.silent = E.shells === s0;
+  B.units.splice(B.units.indexOf(E), 1);
+  let before = 0; missiles.forEachAlive(() => before++);
+  const cm = hitWith('mw_cluster'); cm.alive = true; cm.x = T.body.x - 15; cm.decoyed = true;
+  stepDesigned(B, cm, 0.001);
+  let bomblets = 0; missiles.forEachAlive((m) => { if (m.ms && m.ms.warheads[0] === 'bomblet') bomblets++; });
+  out.cluster = bomblets;
+  for (const pool of [shells, missiles, particles, debris, beams, flames, firePatches, decoys, floaters]) pool.forEachAlive((p) => { p.alive = false; });
+  return out;
+}
 /*TEST:END*/

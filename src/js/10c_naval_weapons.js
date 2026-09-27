@@ -81,12 +81,13 @@ function playerSecondary(B) {
   }
   const tgt = autoTarget(B);
   // Rockets and guided missiles (Part 2d) go at the target.
-  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') && w.rounds > 0);
+  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets' || w.def.secondary === 'missile') && w.rounds > 0);
   if (aimed) {
     if (!tgt) return 'No target';
     if (aimed.reload > 0) return 'Reloading';
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(aimed.def)) return 'Out of range';
     if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
+    else if (aimed.def.secondary === 'missile') { if (V.empT > 0) return 'EMP: electronics off'; launchDesigned(B, V, aimed, tgt); }
     else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, aimed, a.x, a.y); }
     return '';
   }
@@ -112,11 +113,12 @@ function playerSecondary(B) {
 function aiSecondary(B, V, w) {
   if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
   const ai = V.ai;
-  if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') {
+  if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets' || w.def.secondary === 'missile') {
     const tgt = ai && ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && w.def.secondary === 'atgm')) return;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(w.def)) return;
     if (w.def.secondary === 'atgm') launchMissile(B, V, w, tgt);
+    else if (w.def.secondary === 'missile') launchDesigned(B, V, w, tgt);
     else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, w, a.x, a.y); }
     return;
   }

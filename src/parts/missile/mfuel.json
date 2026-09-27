@@ -1,0 +1,40 @@
+{
+  "id": "mfuel",
+  "name": "Missile fuel cell",
+  "family": "mfuel",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 10,
+    "hp": 10,
+    "armor": 1,
+    "power": 0,
+    "rel": 0.999,
+    "rangeAdd": 1500
+  },
+  "cost": {
+    "metal": 1,
+    "money": 10
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c: missile part (design/05 \u00a73.4), placed on the missile grids. No art yet (code drawing). "
+}

@@ -30,7 +30,7 @@ function stepEnergy(B, V, dt) {
     rate += got / (demand * dt);
   } else if (V.capMax) V.cap = Math.min(V.capMax, V.cap + (spare - demand * rate) * dt);
   const over = V.overheat || 0;
-  V.energyRate = over >= ENERGY_LOCK ? 0 : rate * (1 - over);
+  V.energyRate = over >= ENERGY_LOCK || V.empT > 0 ? 0 : rate * (1 - over);
   if (V.side === 0 && over >= ENERGY_LOCK && B.time - (V.lockNoteT || -99) > 8) {
     V.lockNoteT = B.time;
     floatText('Energy weapons: too hot', V.body.x, V.body.y + V.height + 1.5, false);

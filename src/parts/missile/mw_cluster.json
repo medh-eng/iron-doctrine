@@ -1,0 +1,44 @@
+{
+  "id": "mw_cluster",
+  "name": "Cluster warhead",
+  "family": "mw_cluster",
+  "variant": "std",
+  "category": "missile",
+  "tier": 4,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 10,
+    "armor": 1,
+    "power": 0,
+    "rel": 0.999,
+    "dmg": 0
+  },
+  "behaviour": {
+    "warhead": "cluster"
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 1,
+    "money": 50
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "warheads_emp"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c: missile part (design/05 \u00a73.4), placed on the missile grids. No art yet (code drawing). Splits into 4 small HE bomblets near the target."
+}

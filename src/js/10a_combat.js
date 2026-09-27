@@ -238,7 +238,7 @@ function shellVsVehicle(B, s, V) {
     let ny = axis === 'y' ? -Math.sign(ddy) : 0;
     if (d.sloped && ddx * 0.7071 + ddy * 0.7071 < 0) { nx = 0.7071; ny = 0.7071; }
     const cos = Math.max(0.05, Math.abs(ddx * nx + ddy * ny));
-    const eff = d.armor / cos;
+    const eff = (part.corroded ? d.armor * 0.5 : d.armor) / cos;   // acid halves armour
     if (first) {
       first = false;
       hx = cx; hy = cy;

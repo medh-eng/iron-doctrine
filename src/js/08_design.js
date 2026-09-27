@@ -69,6 +69,7 @@ function components(design, grid, alive) {
 // The domain comes from the parts used (design/01 §8.1): watertight hull parts make a ship.
 // Rotors make a helicopter, wings an aircraft; ballast tanks make a watertight hull a submarine.
 function domainOf(design) {
+  if (design.kind) return design.kind;      // missile and drone designs (Part 5)
   let sealed = false, wing = false, sub = false, gas = false;
   for (const c of design.cells) {
     const d = PARTS[c.p];
@@ -81,7 +82,7 @@ function domainOf(design) {
   }
   return wing ? 'air' : gas ? 'airship' : sub ? 'sub' : sealed ? 'naval' : 'ground';
 }
-const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter', airship: 'Airship' };
+const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter', airship: 'Airship', missile: 'Missile', drone: 'Drone' };
 const airDomain = (domain) => domain === 'air' || domain === 'heli' || domain === 'airship';
 const seaDomain = (domain) => domain === 'naval' || domain === 'sub';
 
@@ -376,9 +377,9 @@ const CLASSES = {
 
 // ---------- Ship classes (design/01 §5; src/parts/classes.json): each domain's classes set the
 // build grid and the part limit. Structure cells (materials) don't count towards the limit.
-const CLASS_CAT = { ground: 'land', naval: 'sea', sub: 'sea', airship: 'airship', air: 'aircraft', heli: 'aircraft' };
+const CLASS_CAT = { ground: 'land', naval: 'sea', sub: 'sea', airship: 'airship', air: 'aircraft', heli: 'aircraft', missile: 'missile', drone: 'drone' };
 const SHIP_CLASSES = [];
-for (const cat of ['land', 'sea', 'airship', 'aircraft']) for (const c of PART_LIBRARY.classes[cat] || []) SHIP_CLASSES.push(Object.assign({ cat }, c));
+for (const cat of ['land', 'sea', 'airship', 'aircraft', 'missile', 'drone']) for (const c of PART_LIBRARY.classes[cat] || []) SHIP_CLASSES.push(Object.assign({ cat }, c));
 const classById = (id) => SHIP_CLASSES.find((c) => c.id === id) || null;
 const classesOf = (domain) => SHIP_CLASSES.filter((c) => c.cat === CLASS_CAT[domain]);
 function partCount(design) { return design.cells.filter((c) => !PART_LIBRARY.materials[c.p]).length; }

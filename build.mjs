@@ -25,6 +25,17 @@ const fail = (msg) => { console.error('\nBUILD FAILED: ' + msg + '\n'); process.
 const jsDir = join(SRC, 'js');
 const jsFiles = readdirSync(jsDir).filter((f) => f.endsWith('.js')).sort();
 if (!jsFiles.length) fail('no files in src/js');
+// Every file shares one scope: a second top-level function of the same name silently replaces
+// the first, so the build refuses duplicates.
+{
+  const seen = new Map();
+  for (const f of jsFiles) {
+    for (const m of read(join(jsDir, f)).matchAll(/^(?:function|const|let|class) ([A-Za-z_$][\w$]*)/gm)) {
+      if (seen.has(m[1])) fail(`"${m[1]}" is declared twice at top level: ${seen.get(m[1])} and ${f}`);
+      seen.set(m[1], f);
+    }
+  }
+}
 
 // Part library (src/parts, src/vehicles) is validated and bundled as PART_LIBRARY (design/07 format, design/08 balance).
 const { lib, errors: libErrors } = loadLibrary(ROOT);

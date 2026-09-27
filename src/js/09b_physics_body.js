@@ -54,6 +54,7 @@ function makeVehicle(design, side, x, dir, terrain) {
   rebuildVehicle(V, true);
   V.fuel = V.fuelMax;
   V.shells = V.shellsMax;
+  initLaunchers(V);                  // missile launchers and flares (10g)
   // Rest on the ground: lowest contact touching the terrain. Ships float level on their waterline.
   const b = V.body;
   b.x = x;

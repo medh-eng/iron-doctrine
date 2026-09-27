@@ -699,6 +699,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         EN(en.plasma.bolt && en.plasma.straight && en.plasma.dtype === 'plasma', 'plasma bolt wrong');
         EN(en.flame.fuel > 0 && en.flame.dmg > 0 && en.flame.particles > 0, 'the flamethrower did nothing');
         EN(en.resist.compositeFire === 0.5 && en.resist.plateFire === 1 && en.stats.energy === 400 && en.stats.drawnSame, 'resistances or energy stats wrong');
+        const dmc = await G(() => window.__GAME__.designedMissileCheck());
+        const MC = (c, what) => check(c, `${what} ${JSON.stringify(dmc)}`);
+        MC(dmc.defaults === '1:0,2:0,3:0' && dmc.launchers.rack === 4 && dmc.launchers.vls === 4 && dmc.launchers.vlsMissile === 'm_std_m', 'missile launchers or loads wrong');
+        MC(dmc.hit.launched === 1 && dmc.hit.dmg > 0, 'a designed missile did not hit');
+        MC(dmc.flares.heat > 0.55 && dmc.flares.radar < 0.4 && dmc.flares.heat > dmc.flares.radar * 2 && dmc.flares.laser === 0, 'flares should beat heat seekers more than radar seekers');
+        MC(dmc.ecm.radar < 1 && dmc.ecm.heat === 1, 'ECM should spoil radar locks only');
+        MC(dmc.napalm.patches > 0 && dmc.napalm.burn > 0 && dmc.acid > 0 && dmc.emp.t === 5 && dmc.emp.silent && dmc.cluster === 4, 'a warhead effect is missing');
         E(ec.migrate.ok && ec.migrate.v === 3 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -782,6 +789,10 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       });
       await wait(200);
       await shot('29-barracks');
+      await G(() => window.__GAME__.go('designer', { design: Object.assign(JSON.parse(JSON.stringify(window.__GAME__.DEFAULT_MISSILES[2])), { id: 'scratch' }) }));
+      await wait(300);
+      check((await page.locator('.dz-tab').count()) === 1, 'the Missile tab should show missile parts only');
+      await shot('34-missile-designer');
       await G(() => window.__GAME__.go('research'));
       await wait(250);
       check(await page.locator('.research-node').count() > 40, 'the tech tree is missing nodes');

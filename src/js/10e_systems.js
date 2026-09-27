@@ -19,6 +19,7 @@ function launchMissile(B, V, w, U) {
   const kind = w.def.secondary;
   weaponPivot(V, w, _p);
   const m = missiles.take();
+  m.ms = null;
   m.x = _p.x; m.y = _p.y + 0.2;
   m.kind = kind; m.def = w.def; m.target = U; m.t = 0; m.trail = 0;
   m.shooter = V; m.side = V.side;
@@ -71,6 +72,7 @@ function stepSalvos(B, dt) {
 function stepMissiles(B, dt) {
   const T = B.T;
   missiles.forEachAlive((m) => {
+    if (m.ms) { stepDesigned(B, m, dt); return; }      // designed missiles (10g)
     const M = MISSILE[m.kind];
     m.t += dt;
     const U = m.target;
@@ -202,8 +204,9 @@ function drawMissiles(g) {
     g.save();
     g.translate(view.sx(m.x), view.sy(m.y));
     g.rotate(-m.ang);
+    const k = m.ms ? 0.8 + 0.4 * m.ms.size : 1;          // bigger missiles, bigger bodies
     g.fillStyle = '#3a3f47';
-    g.fillRect(-0.5 * S, -0.08 * S, S, 0.16 * S);
+    g.fillRect(-0.5 * S * k, -0.08 * S * k, S * k, 0.16 * S * k);
     g.fillStyle = PAL.amber;
     g.beginPath(); g.arc(-0.55 * S, 0, 0.12 * S, 0, Math.PI * 2); g.fill();
     g.restore();

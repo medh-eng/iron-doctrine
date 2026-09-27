@@ -1,0 +1,67 @@
+{
+  "id": "vls",
+  "name": "VLS block",
+  "family": "vls",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1.0,
+      1.0
+    ],
+    "muzzle": [
+      1.0,
+      0
+    ]
+  },
+  "stats": {
+    "mass": 600,
+    "hp": 60,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 1.5,
+    "range": 5000,
+    "rounds": 8,
+    "size": 3,
+    "cal": 0,
+    "dmg": 0,
+    "pen": 0,
+    "spread": 0
+  },
+  "behaviour": {
+    "secondary": "missile",
+    "vertical": true
+  },
+  "cost": {
+    "metal": 8,
+    "elec": 2,
+    "money": 120
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 \u00a73.3\u20133.4). No art yet (code drawing). 8 small, 4 medium or 2 large missiles; fires straight up."
+}

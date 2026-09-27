@@ -90,7 +90,7 @@ function autoResolve(mine, theirs) {
   const B = createCampaignBattle({ mine: mine.id, theirs: theirs.id }, true);
   for (let t = 0; t < AUTO_SECS && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP);
   audio.quiet = quiet;
-  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti, beams, flames]) pool.forEachAlive((p) => { p.alive = false; });
+  for (const pool of [shells, torpedoes, charges, missiles, salvos, particles, debris, smokeScreens, smokeColumns, floaters, confetti, beams, flames, firePatches, decoys]) pool.forEachAlive((p) => { p.alive = false; });
   if (!B.result) {
     // Undecided when time runs out: the side with more of its strength left holds the field.
     const left = (side) => B.units.filter((V) => V.side === side && !V.destroyed).reduce((a, V) => a + vehicleHealth(V), 0) + B.reserve[side].length;

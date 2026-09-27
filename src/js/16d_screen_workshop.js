@@ -6,7 +6,7 @@
 function designLibrary() {
   const out = [];
   for (const id of STARTING_TEMPLATES) out.push({ id, src: 'Starting template', design: Object.assign(designFromTemplate(id), { family: TEMPLATES[id].name, mark: 1 }) });
-  for (const d of save.designs.list) out.push({ id: d.id, src: 'Your design', design: JSON.parse(JSON.stringify(d)) });
+  for (const d of save.designs.list) if (!d.kind) out.push({ id: d.id, src: 'Your design', design: JSON.parse(JSON.stringify(d)) });
   for (const b of save.profile.blueprints) if (TEMPLATES[b.id] && !out.some((o) => o.id === b.id)) out.push({ id: b.id, src: `Blueprint · level ${b.level}`, design: Object.assign(designFromTemplate(b.id), { family: b.name, mark: 1 }) });
   return out;
 }

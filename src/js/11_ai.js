@@ -25,7 +25,7 @@ function spotRange(B, O, V) {
   if (O.commander) r *= 1.15;
   // Radar (design/05 §4): long range against aircraft, shorter against surface targets and
   // not into forest; ECM on the target cuts it by 30%.
-  if (O.radarAir) {
+  if (O.radarAir && !(O.empT > 0)) {
     const k = V.ecm ? 1 - ECM_RADAR : 1;
     if (V.flier) r = Math.max(r, O.radarAir * k);
     else if (!B.T.inForest(V.body.x) && !V.submerged) r = Math.max(r, O.radarGround * k);
@@ -117,6 +117,7 @@ function runWeapons(B, V, dt, aiControlled) {
   for (const w of V.weapons) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
+    if (V.empT > 0) { if (w.reload > 0 && !d.energy) w.reload -= dt; continue; }   // EMP: electronics off, nothing fires
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyRate === undefined ? 1 : V.energyRate : 1);   // energy weapons recharge from spare power
     if (d.fire) { stepFlame(B, V, w, dt, aiControlled); continue; }

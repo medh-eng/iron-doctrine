@@ -1,0 +1,44 @@
+{
+  "id": "flare",
+  "name": "Flare launcher",
+  "family": "flare",
+  "variant": "std",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 15,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "salvos": 3,
+    "decoy": 0.7
+  },
+  "cost": {
+    "metal": 1,
+    "money": 12
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "flares"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 \u00a73.3\u20133.4). No art yet (code drawing). Fires a salvo when a missile closes in: decoys heat seekers (70%), radar seekers much less."
+}

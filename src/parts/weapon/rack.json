@@ -1,0 +1,66 @@
+{
+  "id": "rack",
+  "name": "Missile rack",
+  "family": "rack",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "mount": "hull",
+  "layer": "front",
+  "anchors": {
+    "mount": [
+      1.0,
+      0.5
+    ],
+    "muzzle": [
+      1.0,
+      0
+    ]
+  },
+  "stats": {
+    "mass": 150,
+    "hp": 30,
+    "armor": 4,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 3,
+    "range": 3000,
+    "rounds": 4,
+    "size": 1,
+    "cal": 0,
+    "dmg": 0,
+    "pen": 0,
+    "spread": 0
+  },
+  "behaviour": {
+    "secondary": "missile"
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 1,
+    "money": 40
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 \u00a73.3\u20133.4). No art yet (code drawing). Holds 4 small missiles."
+}

@@ -245,6 +245,7 @@ function updateBattle(B, dt) {
   }
   stepShells(B, dt);
   stepFlames(B, dt);
+  stepMissileFx(B, dt);
   stepUnderwater(B, dt);
   stepSalvos(B, dt);
   stepMissiles(B, dt);
