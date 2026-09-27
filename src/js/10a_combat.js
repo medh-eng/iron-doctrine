@@ -56,6 +56,8 @@ function weaponArc(V, w) {
   if (d.indirect) return { lo: -5, hi: 80, both: false };
   // Aircraft guns point along the nose; a helicopter's chin gun swings down; AA mounts swing
   // round and up (Part 2c).
+  // Airship gondola guns swing down at the ground and round to either side (step 2.7).
+  if (V.domain === 'airship') return { lo: -45, hi: 25, both: true };
   if (V.flier && !w.turret) return V.domain === 'heli' ? { lo: -50, hi: 12, both: false } : { lo: -4, hi: 4, both: false };
   if (d.aa && !V.flier) return { lo: -5, hi: 85, both: true };
   return w.turret ? { lo: -10, hi: 35, both: true } : d.auto ? { lo: -10, hi: 30, both: false } : { lo: -6, hi: 18, both: false };
@@ -403,6 +405,7 @@ function checkVehicleState(B, V, source) {
 function knockOut(B, V, source, label, quiet) {
   if (V.destroyed) return;
   V.destroyed = true;
+  V.koLabel = label;               // why it went out of action (result facts, tests)
   V.throttle = 0;
   V.canDrive = false;
   B.hitStop = 0.05;

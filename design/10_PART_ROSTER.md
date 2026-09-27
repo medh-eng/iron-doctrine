@@ -96,7 +96,7 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 |---|---|---|---|
 | E1 | lifteng | Lift engine (JSON + art) | todo |
 | E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | todo |
-| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | todo |
+| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | JSON built in step 2.7 (art todo) |
 
 ## Batch F: faction starting designs (`src/vehicles/`, tier 0 parts only)
 

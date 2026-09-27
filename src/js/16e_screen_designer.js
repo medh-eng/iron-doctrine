@@ -5,7 +5,7 @@
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const markName = (d) => `${d.family || d.name} Mk.${ROMAN[d.mark || 1] || d.mark}`;
-const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
+const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['lift', 'Lift'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
 const BLUEPRINT = { bg: '#13466B', grid: '#2A6A92', line: 'rgba(214,238,255,0.85)', valid: '#7FD3FF', invalid: '#FF6B5A' };
 
 // A thumbnail of a design, drawn with the battle part art.
@@ -384,6 +384,7 @@ SCREENS.designer = {
     if (naval) chip(`reserve ${Math.round(st.reserve * 100)}%`);
     else if (rep.domain === 'air') chip(`T/W ${((st.thrustAtStall || 0) / st.weight).toFixed(2)}`);
     else if (rep.domain === 'heli') chip(`lift/W ${((st.rotorLift || 0) / st.weight).toFixed(2)}`);
+    else if (rep.domain === 'airship') chip(`lift/W ${(st.liftMargin || 0).toFixed(2)}`);
     else chip(`${st.powerToWeight.toFixed(1)} kW/t`);
     chip(`${rep.topSpeed} km/h`);
     chip(`cost ${rep.cost}`);
@@ -421,6 +422,11 @@ SCREENS.designer = {
       row('Thrust to weight', ((st.thrustAtStall || 0) / st.weight).toFixed(2));
       if (st.col) row('Centre of lift (L)', `${st.col.x.toFixed(1)}, ${st.col.y.toFixed(1)} m`);
       if (st.col) row('Centre of mass from L', `${Math.abs(st.com.x - st.col.x).toFixed(2)} m ${st.com.x >= st.col.x ? 'forward' : 'aft'}`);
+    } else if (rep.domain === 'airship') {
+      row('Gas lift (envelopes)', `${((st.gasLift || 0) / 1000).toFixed(1)} kN`);
+      row('Lift engines', `${((st.engineLift || 0) / 1000).toFixed(1)} kN`);
+      row('Weight', `${(st.weight / 1000).toFixed(1)} kN`);
+      row('Lift margin', (st.liftMargin || 0).toFixed(2));
     } else if (rep.domain === 'heli') {
       row('Rotors', `${st.rotors} (tail rotors ${st.trotors})`);
       row('Rotor lift', `${((st.rotorLift || 0) / 1000).toFixed(1)} kN`);

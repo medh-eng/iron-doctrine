@@ -69,19 +69,20 @@ function components(design, grid, alive) {
 // The domain comes from the parts used (design/01 §8.1): watertight hull parts make a ship.
 // Rotors make a helicopter, wings an aircraft; ballast tanks make a watertight hull a submarine.
 function domainOf(design) {
-  let sealed = false, wing = false, sub = false;
+  let sealed = false, wing = false, sub = false, gas = false;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) continue;
     if (d.rotor) return 'heli';
     if (d.lift) wing = true;
+    if (d.gasLift || d.liftForce) gas = true;
     if (d.ballast) sub = true;
     if (d.sealed) sealed = true;
   }
-  return wing ? 'air' : sub ? 'sub' : sealed ? 'naval' : 'ground';
+  return wing ? 'air' : gas ? 'airship' : sub ? 'sub' : sealed ? 'naval' : 'ground';
 }
-const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter' };
-const airDomain = (domain) => domain === 'air' || domain === 'heli';
+const DOMAIN_NAMES = { ground: 'Ground', naval: 'Ship', sub: 'Submarine', air: 'Aircraft', heli: 'Helicopter', airship: 'Airship' };
+const airDomain = (domain) => domain === 'air' || domain === 'heli' || domain === 'airship';
 const seaDomain = (domain) => domain === 'naval' || domain === 'sub';
 
 // Placement rules (design/01 §8.1). Messages state facts only.
@@ -121,6 +122,8 @@ function validateDesign(design) {
     if (domain === 'air') {
       if (!tails) errors.push('No tail unit.');
       if (!jets && !airprops) errors.push('No jet or air propeller.');
+    } else if (domain === 'airship') {
+      if (!airprops) errors.push('No air propeller.');
     } else if (!trotors) errors.push('No tail rotor.');
   } else if (airOnly) {
     errors.push('Aero engines and bomb racks only work on aircraft.');
@@ -230,7 +233,7 @@ const dragRise = (v) => (v > DRAG_RISE_SPEED ? 1 + ((v - DRAG_RISE_SPEED) / 30) 
 
 // Aircraft and helicopters (design/05 §7.4), design-sheet units (m/s, N).
 function airNumbers(design, alive, mass, height) {
-  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0;
+  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0;
   design.cells.forEach((c, i) => {
     if (alive && !alive[i]) return;
     const d = PARTS[c.p];
@@ -245,8 +248,10 @@ function airNumbers(design, alive, mass, height) {
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.power > 0) power += d.power;
+    if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
+    if (d.liftForce) eng += d.liftForce;
   });
-  if (!S && !rotors) return { wingArea: 0, rotors: 0 };
+  if (!S && !rotors && !gas && !eng) return { wingArea: 0, rotors: 0 };
   const W = mass * GRAVITY;
   const out = { wingArea: S, tailArea: tailA, rotors, trotors, weight: W, jetThrust: jet };
   if (S) {
@@ -266,6 +271,13 @@ function airNumbers(design, alive, mass, height) {
     out.thrustAtStall = jet + (out.propPower * 1000 * AIRPROP_EFF) / Math.max(out.stallSpeed, 8);
   }
   if (rotors) out.rotorLift = rotors * ROTOR_LIFT * Math.min(1, power / (ROTOR_POWER * rotors));
+  if (gas || eng) {
+    // Airship (step 2.7): gas lift from envelopes plus lift engines; propellers push against drag.
+    out.gasLift = gas; out.engineLift = eng; out.airshipLift = gas + eng;
+    out.liftMargin = W ? (gas + eng) / W : 0;
+    out.propPower = airprops ? power : 0;
+    out.airshipCdA = AIRSHIP_CDA * height;
+  }
   return out;
 }
 
@@ -326,6 +338,12 @@ function subSpeed(st) {
   return Math.cbrt(P / (0.5 * 1000 * SHIP_CD * A)) * 3.6;
 }
 
+// Airship top speed (m/s, sheet): air propeller power against drag.
+function airshipSpeed(st) {
+  if (!st.propPower || (st.liftMargin || 0) < 1) return 0;
+  return Math.cbrt((st.propPower * 1000 * AIRPROP_EFF) / (0.5 * AIR_RHO * st.airshipCdA));
+}
+
 // Helicopter top speed (m/s, sheet): rotor lift tilted 15° forward against drag.
 function heliSpeed(st) {
   if (!st.rotorLift || st.rotorLift <= st.weight) return 0;
@@ -350,6 +368,7 @@ const CLASSES = {
   sub: { name: 'Submarine', w: 44, h: 16, domain: 'sub' },
   air: { name: 'Aircraft', w: 32, h: 12, domain: 'air' },
   heli: { name: 'Helicopter', w: 32, h: 12, domain: 'heli' },
+  airship: { name: 'Airship', w: 24, h: 10, domain: 'airship' },
 };
 
 function partCost(d) { let s = 0; for (const k in d.cost) s += d.cost[k]; return s; }
@@ -414,6 +433,7 @@ function designReport(design) {
   const speeds = {};
   if (domain === 'air') speeds.Air = Math.round((st.topSpeed || 0) * 3.6);
   else if (domain === 'heli') speeds.Air = Math.round(heliSpeed(st) * 3.6);
+  else if (domain === 'airship') speeds.Air = Math.round(airshipSpeed(st) * 3.6);
   else if (seaDomain(domain)) {
     speeds[domain === 'sub' ? 'Surfaced' : 'Sea'] = Math.round(shipSpeed(st));
     if (domain === 'sub') speeds.Submerged = Math.round(subSpeed(st));
@@ -450,6 +470,7 @@ function designReport(design) {
   if (sys.heatBalance > 0) warnings.push(`Heat made exceeds heat removed by ${sys.heatBalance} per second.`);
   if (sys.loaders > sys.loadersFitted) warnings.push(`${sys.loaders - sys.loadersFitted} gun(s) of 75 mm or more without a loader: reload × 1.6.`);
   if (domain === 'heli' && (st.rotorLift || 0) <= st.weight) warnings.push(`Rotor lift ${(st.rotorLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN.`);
+  if (domain === 'airship' && (st.liftMargin || 0) < 1) warnings.push(`Lift ${(st.airshipLift / 1000).toFixed(1)} kN; weight ${(st.weight / 1000).toFixed(1)} kN. Lift margin ${st.liftMargin.toFixed(2)}.`);
   return {
     st, valid: v, speeds, weapons, warnings, domain, sys,
     topSpeed: domain === 'naval' ? speeds.Sea : domain === 'sub' ? speeds.Surfaced : airDomain(domain) ? speeds.Air : speeds.Plains,
@@ -530,7 +551,7 @@ function randomDesign(seed, cls) {
     const d = tryRandomDesign(makeRng(seed + attempt * 7919), cls);
     if (validateDesign(d).ok) return d;
   }
-  return designFromTemplate({ ship: 'gunboat', sub: 'sub', air: 'fighter', heli: 'heli' }[cls] || 'light');
+  return designFromTemplate({ ship: 'gunboat', sub: 'sub', air: 'fighter', heli: 'heli', airship: 'gunship_t0' }[cls] || 'light');
 }
 
 function tryRandomDesign(rng, cls) {
@@ -538,6 +559,7 @@ function tryRandomDesign(rng, cls) {
   if (cls === 'sub') return tryRandomSub(rng);
   if (cls === 'air') return tryRandomPlane(rng);
   if (cls === 'heli') return tryRandomHeli(rng);
+  if (cls === 'airship') return tryRandomAirship(rng);
   const C = CLASSES[cls];
   const heavy = cls === 'heavy';
   const cells = [];
@@ -782,5 +804,27 @@ function tryRandomHeli(rng) {
   put('rotor', ex - 1, row - 3);
   put(rng.pick(['hmg', 'mg', 'ac20']), ex + 4, row);
   if (rng.next() < 0.6) put('optics', ex + 4, row - 1);
+  return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
+}
+
+// Airship (step 2.7): an envelope of gas cells over a timber keel, and a gondola with an
+// engine, an air propeller, a cabin, fuel and a gun.
+function tryRandomAirship(rng) {
+  const C = CLASSES.airship;
+  const cells = [];
+  const put = gridPutter(C.w, C.h, cells);
+  const bag = rng.pick(['canvas_bag', 'canvas_bag', 'rigid_env']);
+  const len = rng.int(10, 16), rows = rng.int(2, 3), x0 = 2;
+  for (let y = 0; y < rows; y++) for (let x = x0; x < x0 + len; x++) put(bag, x, y);
+  for (let x = x0 + 1; x < x0 + len - 2; x++) put('timber', x, rows);
+  const y = rows + 1;
+  put('aprop', x0, y);
+  const eng = rng.pick(['eng_s', 'steam']);
+  put(eng, x0 + 1, y);
+  const ex = x0 + 1 + PARTS[eng].w;
+  put('cabin', ex, y);
+  put('fuel_s', ex + 2, y);
+  put(rng.pick(['mg', 'hmg', 'swivel', 'c37']), ex + 3, y);
+  for (let x = ex; x < ex + 4; x++) put('timber', x, y + 1);
   return cropDesign({ id: 'random', name: `${C.name} (random)`, w: C.w, h: C.h, cells });
 }

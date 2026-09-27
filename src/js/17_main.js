@@ -163,6 +163,7 @@ window.__GAME__ = {
   howitzerCheck: () => howitzerCheck(),
   svgArtCheck: () => svgArtCheck(),
   reserveCheck: () => reserveCheck(),
+  airshipCheck: () => airshipCheck(),
   view,
   designFromTemplate,
   // Forced events for scripted play.

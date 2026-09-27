@@ -589,9 +589,32 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         check(await page.locator('.cmd-wheel').count() === 1, 'right-click on your ship did not open the command wheel');
         await page.mouse.click(640, 150);
       }
+      // ---------- 9h. Step 2.7: airships fly, climb, descend, move, fall when holed, and fight inland and at sea
+      if (!vp.mobile) {
+        const as = await G(() => window.__GAME__.airshipCheck());
+        check(as.hold.domain === 'airship' && Math.abs(as.hold.alt - 30) <= 2, `airship did not hold its height ${JSON.stringify(as.hold)}`);
+        check(as.climb.alt >= 45 && as.descend.alt <= 15, `airship did not climb and descend ${JSON.stringify([as.climb, as.descend])}`);
+        check(as.move.dx > 40 && Math.abs(as.hold.tilt) < 5, `airship did not move or keep level ${JSON.stringify(as.move)}`);
+        check(as.holed.alt <= 2, `airship with its envelope shot away did not come down ${JSON.stringify(as.holed)}`);
+        for (const k of ['inland', 'sea']) check(as[k].deployed && as[k].shots > 0 && as[k].alt > 10, `gunship did not fight ${k} ${JSON.stringify(as[k])}`);
+      }
+      await G(() => {
+        const g = window.__GAME__;
+        Object.assign(g.save.profile.sim, { field: 'coast', lineup: ['light', 'gunship_t2', 'gunboat'], enemy: [] });
+        g.go('battle', g.SCREENS.simulator.battleArg());
+      });
+      await wait(2500);
+      await G(() => {
+        const S = window.__GAME__.SCREENS.battle;
+        const V = S.B.squad.find((U) => U.domain === 'airship');
+        S.cam.follow = false; S.cam.manual = true; S.cam.zoom = 1.6; S.cam.x = V.body.x + 4; S.cam.y = V.body.y + 2;
+        window.__GAME__.input.lastWorldTouch = performance.now() + 1e5;
+      });
+      await wait(300);
+      await shot('19-airship');
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

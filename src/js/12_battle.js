@@ -42,7 +42,7 @@ function createBattle(level, opts = {}) {
   // Sea battles (cfg.fleet) take only ships and submarines; without any, a fleet is lent.
   let squad = opts.squad || ['medium', 'light', 'scout'].map(designFromTemplate);
   B.inPort = squad.filter((d) => seaDomain(domainOf(d)) && T.seaX0 === undefined);
-  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d))) : [];
+  B.ashore = cfg.fleet ? squad.filter((d) => !seaDomain(domainOf(d)) && domainOf(d) !== 'airship') : [];   // airships fly over the sea
   squad = squad.filter((d) => !B.inPort.includes(d) && !B.ashore.includes(d));
   B.loaned = !squad.length && cfg.fleet;
   if (!squad.length) squad = (cfg.fleet ? LOAN_FLEET : ['medium', 'light', 'scout']).map(designFromTemplate);
@@ -63,7 +63,7 @@ function createBattle(level, opts = {}) {
     const x = airDomain(dom) ? airX : naval ? seaX + L / 2 : landX;
     if (airDomain(dom)) airX -= 18; else if (naval) seaX += L + 8; else landX -= 15;
     const V = makeVehicle(d, 0, x, 1, T);
-    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : 45);
+    if (V.flier) launchFlier(V, T, dom === 'heli' ? 18 : dom === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', cfg);
     V.label = String(i + 1);
     B.units.push(V);
@@ -135,7 +135,7 @@ function spawnEnemy(B, t, mode, x) {
     else x = Math.min(x, T.seaX0 - 12);
   }
   const V = makeVehicle(d, 1, x, -1, B.T);
-  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : 50 + (B.rng.next() * 10));
+  if (V.flier) launchFlier(V, T, V.domain === 'heli' ? 22 : V.domain === 'airship' ? AIRSHIP_ALT : 50 + (B.rng.next() * 10));
   V.ai = makeAI(mode, B.cfg);
   V.template = typeof t === 'string' ? t : d.id;
   V.speedMul = B.cfg.speedMul;
@@ -480,6 +480,53 @@ function reserveCheck() {
   out.result = B.result;
   out.kills = B.goalDone;
   out.total = B.goalTotal;
+  return out;
+}
+
+// Step 2.7: airships hold height, climb, descend and move; one with its envelopes shot away
+// falls; a gunship fights alongside tanks inland and alongside ships at sea.
+function airshipCheck() {
+  const T = makeTerrain({ seed: 3, length: 900, hills: 0.1, rough: 0.1, mud: 0, forest: 0, gaps: 0 });
+  const fly = (id, secs, setup, each) => {
+    const V = makeVehicle(designFromTemplate(id), 0, 200, 1, T);
+    launchFlier(V, T, AIRSHIP_ALT);
+    if (setup) setup(V);
+    let minAlt = Infinity;
+    const x0 = V.body.x;
+    for (let t = 0; t < secs; t += SIM_STEP) {
+      if (each) each(V, t);
+      flightControl(V, T, SIM_STEP);
+      stepVehicle(V, T, SIM_STEP);
+      minAlt = Math.min(minAlt, V.body.y - T.height(V.body.x));
+    }
+    return { domain: V.domain, alt: Math.round(V.body.y - T.height(V.body.x)), minAlt: Math.round(minAlt), dx: Math.round(V.body.x - x0), tilt: Math.round((V.body.a * 180) / Math.PI), vy: +V.body.vy.toFixed(1) };
+  };
+  const ground = (V) => T.height(V.body.x);
+  const out = {
+    hold: fly('gunship_t0', 15),
+    climb: fly('gunship_t2', 20, (V) => { V.altCmd = ground(V) + AIRSHIP_ALT + 20; }),
+    descend: fly('gunship_t0', 20, (V) => { V.altCmd = ground(V) + 12; }),
+    move: fly('gunship_t0', 15, null, (V) => { V.moveCmd = 1; }),
+    // Shoot away most of the envelope: it sinks and comes down.
+    holed: fly('gunship_t0', 30, (V) => {
+      V.parts.forEach((p, i) => { if (p.def.gasLift && i % 3) { p.alive = false; V.alive[i] = 0; } });
+      rebuildVehicle(V);
+    }),
+  };
+  // Fights alongside tanks inland and alongside ships at sea: it engages and hits the enemy.
+  const fight = (cfg, squad) => {
+    const B = createBattle(0, { cfg, squad: squad.map(designFromTemplate), reserves: true, enemyForce: cfg.fleet ? ['gunboat'] : ['light'] });
+    B.revealAll = true;
+    const G = B.squad.find((V) => V.domain === 'airship');
+    const seen = new Set();
+    for (let t = 0; t < 60 && !B.result; t += SIM_STEP) {
+      updateBattle(B, SIM_STEP);
+      shells.forEachAlive((sh) => { if (sh.shooter === G) seen.add(sh); });
+    }
+    return { deployed: !!G, alt: G ? Math.round(G.body.y - B.T.height(G.body.x)) : 0, out: G ? G.koLabel || '' : '', shots: seen.size, result: B.result, enemyHp: Math.round(vehicleHealth(B.enemySlots[0]) * 100) };
+  };
+  out.inland = fight(simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 21 }), ['light', 'gunship_t2']);
+  out.sea = fight(simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 22 }), ['gunboat', 'gunship_t2']);
   return out;
 }
 

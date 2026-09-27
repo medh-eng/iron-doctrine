@@ -12,7 +12,7 @@ function airThink(B, V, dt) {
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const ground = Math.max(T.height(b.x), seaAt(T, b.x) ? T.sea : -Infinity);
-  if (V.domain === 'heli') { heliThink(B, V, tgt, ground); return; }
+  if (V.domain === 'heli' || V.domain === 'airship') { heliThink(B, V, tgt, ground); return; }
   const cruise = ground + (bomber ? 55 : 45);
   V.throttle = 0.9;
   V.pitchOrder = null;
@@ -33,7 +33,7 @@ function airThink(B, V, dt) {
 
 function heliThink(B, V, tgt, ground) {
   const b = V.body;
-  V.altCmd = ground + 20;
+  V.altCmd = ground + (V.domain === 'airship' ? AIRSHIP_ALT : 20);
   if (!tgt) { V.moveCmd = V.dir * 0.5; return; }
   const d = tgt.body.x - b.x;
   const want = engageRange(V) * 0.6;

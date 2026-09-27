@@ -47,6 +47,11 @@ const ROTOR_POWER = 400;          // kW each rotor needs for full lift
 const HELI_CDA = 3;               // m² drag area of a helicopter
 const ELEVATOR_DEG = 25;          // elevator travel at full ▲ or ▼
 const BOMB = { dmg: 200, radius: 5 };
+// Airships (design/05 §3.2, step 2.7). An envelope cell's gasLift is in units of 100 kg.
+const GAS_LIFT_KG = 100;
+const AIRSHIP_CDA = 0.6;          // m² of drag area per metre of the airship's height
+const AIRSHIP_MIN_LIFT = 0.85;    // valving gas: an airship can shed lift down to this share of its weight
+const AIRSHIP_ALT = 30;           // metres over the ground an airship deploys at
 
 // Missiles, sensors and constraints (Part 2d). Battle numbers.
 // Lock chance at launch = base + fire control + radar, × (1 − ECM) against a jammed target.
@@ -79,6 +84,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   PARTS[id] = { id, name: m.name, cat: 'structure', w: 1, h: 1, mass: m.mass, hp: m.hp, armor: m.armor, power: 0, rel: 0.998, cost: m.cost, tier: m.tier };
   if (m.burns) PARTS[id].burns = m.burns;
   if (m.shape === 'slope') PARTS[id].sloped = true;
+  if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -101,7 +107,7 @@ const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 const TEMPLATES = PART_LIBRARY.vehicles;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 
@@ -245,9 +251,9 @@ const SIM_WEATHER = { clear: 'Clear', rain: 'Rain' };
 const SIM_LIGHT = { day: 'Day', dusk: 'Dusk', night: 'Night' };
 // Enemy picks when the player leaves the force to the Simulator, by battlefield.
 const SIM_MIXED = {
-  inland: ['medium', 'light', 'assault', 'mgcar', 'scout', 'hunter'],
-  coast: ['medium', 'light', 'gunboat', 'assault', 'destroyer', 'mgcar'],
-  sea: ['gunboat', 'destroyer', 'sub', 'gunboat', 'destroyer'],
+  inland: ['medium', 'light', 'assault', 'gunship_t0', 'mgcar', 'scout', 'hunter'],
+  coast: ['medium', 'light', 'gunboat', 'gunship_t2', 'assault', 'destroyer', 'mgcar'],
+  sea: ['gunboat', 'destroyer', 'gunship_t0', 'sub', 'gunboat', 'destroyer'],
 };
 
 function simulatorConfig(o) {

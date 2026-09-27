@@ -19,7 +19,7 @@ function buildAirParts(V) {
   if (!V.flier) return;
   const st = V.stats;
   const D = V.design;
-  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0;
+  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0;
   V.parts.forEach((p) => {
     if (!p.alive) return;
     const d = p.def;
@@ -29,7 +29,12 @@ function buildAirParts(V) {
     if (d.trotor) trotors++;
     if (d.airprop) airprops++;
     if (d.jet) jet += d.jet;
+    if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
+    if (d.liftForce) eng += d.liftForce;
   });
+  V.gasLift = gas;
+  V.engLift = eng;
+  V.airshipCdA = AIRSHIP_CDA * V.height;
   const tmp = { x: 0, y: 0 };
   V.wingArea = st.wingArea || 0;
   if (st.col) { gridToLocal(V, st.col.x, st.col.y, tmp); V.colL = { x: tmp.x, y: tmp.y }; } else V.colL = null;
@@ -95,6 +100,14 @@ function airForces(V, T, ca, sa, out) {
       const T = V.throttle * (V.heatMul || 1) * (V.jetThrust + (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(v, 8 * AIR_SPEED_SCALE));
       out.fx += V.dir * ca * T; out.fy += V.dir * sa * T;
     }
+  } else if (V.domain === 'airship') {
+    // Airship (step 2.7): lift straight up (set by the height controller within what the
+    // envelopes and lift engines give), propellers push either way, and the envelopes above
+    // the centre of mass keep it level.
+    out.fy += V.liftNow || 0;
+    if (live && V.airPower && V.moveCmd) out.fx += V.moveCmd * (V.heatMul || 1) * (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
+    if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.airshipCdA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
+    out.tq += b.I * (-3 * b.a - 2.5 * b.w);
   } else {
     // Helicopter: rotor lift along the mast; drag on the body; attitude held by the tail rotor.
     const L = live && V.rotors ? clamp(V.collective || 0, 0, 1) * V.rotorLift * (V.heatMul || 1) : 0;
@@ -123,6 +136,19 @@ function flightControl(V, T, dt) {
     } else { V.pitchCmd = V.pitchOrder; V.trim = 0; }
     // Past the vertical in a loop: roll level, now facing the other way (a half loop and roll).
     if (Math.abs(b.a * V.dir) > 1.75 && !V.destroyed) flipFlier(V);
+  } else if (V.domain === 'airship') {
+    // Hold the height order with lift between what venting gas allows and what the envelopes
+    // and lift engines give. Below a lift margin of 1 it sinks; wrecks lose most of their gas.
+    if (V.altCmd === undefined || V.altCmd === null) V.altCmd = b.y;
+    const W = b.m * GRAVITY;
+    // Lift engines need only fuel (V.engLift counts the live ones), not the drive engine.
+    const live = !V.destroyed && (V.fuelMax === 0 || V.fuel > 0);
+    const max = V.gasLift + (live ? V.engLift : 0);
+    const min = Math.min(V.gasLift, W * AIRSHIP_MIN_LIFT);
+    const want = W + b.m * (0.8 * (V.altCmd - b.y) - 1.6 * b.vy);
+    V.liftNow = V.destroyed ? Math.min(V.gasLift, W * 0.5) : clamp(want, min, max);
+    const move = V.destroyed ? 0 : V.moveCmd || 0;
+    if (move && Math.sign(move) !== V.dir && b.vx * move > 0.5) flipFlier(V);
   } else {
     if (V.altCmd === undefined || V.altCmd === null) V.altCmd = b.y;
     const W = b.m * GRAVITY;

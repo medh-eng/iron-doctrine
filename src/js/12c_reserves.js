@@ -77,7 +77,7 @@ function enterFromReserve(B, side, slot) {
   let V;
   if (side === 0) {
     V = makeVehicle(e.design, 0, x, 1, B.T);
-    if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : 45);
+    if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : V.domain === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', B.cfg);
     V.label = String(slot + 1);
     B.units.push(V);

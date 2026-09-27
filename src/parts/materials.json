@@ -1,5 +1,5 @@
 {
- "_about": "Structure cells (1x1), auto-tiled by the renderer (design/07 \u00a74). Ids are the game's part ids. Stats per 0.5 m cell. 'planned' = needs a v2 mechanic the game doesn't have yet; the game skips those until then.",
+ "_about": "Structure cells (1x1), auto-tiled by the renderer (design/07 §4). Ids are the game's part ids. Stats per 0.5 m cell. 'planned' = needs a v2 mechanic the game doesn't have yet; the game skips those until then.",
  "frame": {
   "name": "Light frame",
   "tier": 0,
@@ -252,8 +252,7 @@
    "rivets": false,
    "seam": 4
   },
-  "gasLift": 1.6,
-  "planned": true
+  "gasLift": 1.6
  },
  "rigid_env": {
   "name": "Rigid envelope",
@@ -274,8 +273,7 @@
    "rivets": true,
    "seam": 3
   },
-  "gasLift": 1.8,
-  "planned": true
+  "gasLift": 1.8
  },
  "armored_env": {
   "name": "Armoured envelope",

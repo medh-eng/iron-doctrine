@@ -1,0 +1,37 @@
+{
+  "id": "lifteng",
+  "name": "Lift engine",
+  "family": "lifteng",
+  "variant": "std",
+  "category": "lift",
+  "tier": 2,
+  "domains": [
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 700,
+    "hp": 70,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.985,
+    "liftForce": 44000,
+    "fuelUse": 120,
+    "heat": 30
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 1,
+    "money": 90
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lift_engines"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Step 2.7 (05 \u00a73.2): lift in newtons while it has fuel; adds to the envelopes' gas lift and lets the airship climb."
+}
