@@ -14,17 +14,17 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| A1 | track | Track segment | mobility | 2×1 | todo |
-| A2 | eng_m | Diesel engine M | mobility | 3×2 | todo |
-| A3 | crew2 | Crew compartment | structure | 2×2 | todo |
-| A4 | turret | Turret ring | structure | 3×1 | todo |
-| A5 | c37 | Cannon 37 mm | weapon | 2×1 | integrated (batch A) |
-| A6 | mg | Machine gun | weapon | 1×1 | integrated (batch A) |
+| A1 | track | Track segment | mobility | 2×1 | integrated (batch A1) |
+| A2 | eng_m | Diesel engine M | mobility | 3×2 | integrated (batch A1) |
+| A3 | crew2 | Crew compartment | structure | 2×2 | integrated (batch A1) |
+| A4 | turret | Turret ring | structure | 3×1 | integrated (batch A1) |
+| A5 | c37 | Cannon 37 mm | weapon | 2×1 | integrated (batch A1) |
+| A6 | mg | Machine gun | weapon | 1×1 | integrated (batch A1) |
 | A7 | c75 | Cannon 75 mm | weapon | 3×1 | **integrated (golden sample)** |
-| A8 | radio | Radio | system | 1×1 | todo |
-| A9 | optics | Optics | system | 1×1 | integrated (batch A) |
-| A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A) |
-| A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A) |
+| A8 | radio | Radio | system | 1×1 | integrated (batch A1) |
+| A9 | optics | Optics | system | 1×1 | integrated (batch A1) |
+| A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A1) |
+| A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A1) |
 | A12 | wheel_s | Road wheel | mobility | 1×1 | todo |
 | A13 | eng_s | Petrol engine S | mobility | 2×2 | todo |
 | A14 | hmg | Heavy machine gun | weapon | 1×1 | todo |

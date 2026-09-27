@@ -18,19 +18,17 @@
   },
   "overhang": {
     "left": 0,
-    "right": 1,
+    "right": 2.5,
     "top": 0,
     "bottom": 0
   },
-  "mount": "turret_or_hull",
-  "layer": "front",
   "anchors": {
     "mount": [
       0.5,
       0.5
     ],
     "muzzle": [
-      2.97,
+      4.5,
       0.5
     ],
     "smoke": [
@@ -43,12 +41,12 @@
   "moving": {
     "barrel": {
       "pivot": [
-        0.75,
+        0.8,
         0.5
       ],
       "elevation": [
         -8,
-        25
+        20
       ]
     }
   },
@@ -78,5 +76,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as wpn_c37_std)."
+  "notes": "Imported from v1 07_data.js. Art: pivot at 0.8 (inside the mantlet); barrel length 3.7 cells = 2 x 1.25 + 1.2 (07 section 7)."
 }

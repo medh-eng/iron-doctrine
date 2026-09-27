@@ -18,20 +18,18 @@
   },
   "overhang": {
     "left": 0,
-    "right": 0.5,
+    "right": 1.45,
     "top": 0,
     "bottom": 0
   },
-  "mount": "turret_or_hull",
-  "layer": "front",
   "anchors": {
     "mount": [
-      0.45,
-      0.95
+      0.5,
+      0.5
     ],
     "muzzle": [
-      1.41,
-      0.52
+      2.45,
+      0.5
     ],
     "smoke": [
       [
@@ -43,8 +41,8 @@
   "moving": {
     "barrel": {
       "pivot": [
-        0.4375,
-        0.5625
+        0.6,
+        0.5
       ],
       "elevation": [
         -10,
@@ -79,5 +77,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as wpn_mg_std)."
+  "notes": "Imported from v1 07_data.js. Art: ball mount in an armour collar; barrel length 1.85 cells = 1 x 1.25 + 0.6 (automatic)."
 }

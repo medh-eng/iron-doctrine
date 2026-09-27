@@ -21,17 +21,11 @@
     "top": 0,
     "bottom": 0
   },
-  "mount": "hull",
-  "layer": "front",
   "anchors": {
-    "mount": [
-      0.5,
-      0.95
-    ],
     "smoke": [
       [
         0.5,
-        0.2
+        0.5
       ]
     ]
   },
@@ -53,5 +47,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js. Art: Foundry batch A (delivered as log_fuel_std)."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay with a riveted 200 L tank, brass filler, sight glass; P3 hazard band."
 }
