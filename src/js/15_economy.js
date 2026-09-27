@@ -4,8 +4,9 @@
 // or one fleet's hold (01 §8.1). Owned settlements produce goods into their warehouse each day;
 // markets buy and sell every good; docked fleets load and unload; settlements can be upgraded.
 
-function emptyCargo() { const c = {}; for (const k of GOODS) c[k] = 0; return c; }
-const cargoUsed = (c) => { let n = 0; for (const k of GOODS) n += c[k] || 0; return n; };
+// A cargo: units of each good, plus part items [{ p, cond }] that take their mass ÷ 100 in units.
+function emptyCargo() { const c = { items: [] }; for (const k of GOODS) c[k] = 0; return c; }
+const cargoUsed = (c) => { let n = itemsUsed(c); for (const k of GOODS) n += c[k] || 0; return n; };
 
 // ---------- prices (08 §6)
 // Why this settlement won't trade with a faction right now ('' when it will).

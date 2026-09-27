@@ -124,7 +124,20 @@ SCREENS.map = {
   },
 
   // ---------- panels (02 §4.3, §4.4)
+  // Rebuilt on every refresh; the list keeps its scroll position while the same tab stays open.
   buildPanel() {
+    const old = this.panel.querySelector('.map-body');
+    const key = this.sel ? `${this.sel.kind}|${this.sel.id}|${this.tab}` : '';
+    const oldTabs = this.panel.querySelector('.map-tabs');
+    const top = old && key === this.panelKey ? old.scrollTop : 0;
+    const left = oldTabs && this.sel && this.panelKey && this.panelKey.startsWith(`${this.sel.kind}|${this.sel.id}|`) ? oldTabs.scrollLeft : 0;
+    this.panelKey = key;
+    this.buildPanelBody();
+    const body = this.panel.querySelector('.map-body'), tabs = this.panel.querySelector('.map-tabs');
+    if (body && top) body.scrollTop = top;
+    if (tabs && left) tabs.scrollLeft = left;
+  },
+  buildPanelBody() {
     const P = this.panel;
     P.textContent = '';
     // The panel can be closed so the whole map can be tapped; it also steps aside while a move is planned.
@@ -197,8 +210,11 @@ SCREENS.map = {
     const T = SETTLEMENT_TYPES[s.type];
     const own = s.faction === campaign.faction;
     P.appendChild(el('h3', 'map-title', `${s.name}${s.capital ? ' (capital)' : ''}`));
-    if (!own && this.tab === 'warehouse') this.tab = 'overview';
-    tab('overview', 'Info'); tab('market', 'Market'); if (own) tab('warehouse', 'Stores');
+    const tabsHere = [['overview', 'Info'], ['market', 'Market']];
+    if (own) tabsHere.push(['warehouse', 'Stores']);
+    if (own && hasWorkshop(s)) tabsHere.push(['workshop', 'Workshop'], ['yard', 'Yard']);
+    if (!tabsHere.some(([id]) => id === this.tab)) this.tab = 'overview';
+    for (const [id, label] of tabsHere) tab(id, label);
     P.appendChild(tabs);
     const rel = relation(s.faction, campaign.faction);
     const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
@@ -264,6 +280,10 @@ SCREENS.map = {
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
       }
+    } else if (this.tab === 'workshop') {
+      this.workshopTab(s, body, row, act, done);
+    } else if (this.tab === 'yard') {
+      this.yardTab(s, body, row, act, done);
     } else {
       // Warehouse (01 §8.1): what's here, what it makes, loading docked fleets.
       row('Stored', `${Math.floor(storeUsed(s))} of ${storeCap(s)} units`);
@@ -287,6 +307,14 @@ SCREENS.map = {
           g.appendChild(r);
         }
         body.appendChild(g);
+      }
+      const items = {};
+      for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
+      row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
+      if (fl) {
+        const r = act();
+        r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));
+        r.appendChild(button('Unload parts', () => done(transferItems(fl, s, -1)), 'btn btn-small'));
       }
       if (!fl) body.appendChild(el('p', 'card-text map-note', docked.length ? 'The docked fleets have no cargo bays.' : 'Dock a fleet with cargo bays here to load or unload.'));
     }

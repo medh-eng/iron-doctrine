@@ -654,6 +654,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         E(ec.fieldRearm.why === '', 'rearming from the hold failed');
         E(ec.upBlocked && !ec.upgrade.why && ec.upgrade.type === 'city', 'settlement upgrade wrong');
         E(ec.dry.unpaid >= 8 && ec.dry.deserted > 0 && ec.dry.closed, 'running out of money had no effect');
+        const wc = await G(() => window.__GAME__.workshopCheck());
+        const W = (c, what) => check(c, `${what} ${JSON.stringify(wc)}`);
+        W(wc.empty !== '' && wc.craft === '' && wc.queued === 1 && wc.made.items === 1 && wc.made.metal === 0 && Math.abs(wc.made.paid - wc.made.fee) < 0.01, 'crafting from warehouse goods wrong');
+        W(wc.away !== '' && wc.docked === '', 'crafting should use a docked hold but not a hold elsewhere');
+        W(wc.refine === '' && wc.refined === 2, 'refining scrap wrong');
+        W(wc.build === '' && wc.built.ships === 1 && wc.built.garrison && wc.built.captain && wc.seaInland !== '', 'building a ship wrong');
+        W(wc.repair === '' && wc.repaired, 'dock repair wrong');
+        W(wc.refit === '' && wc.refitted.design === 'scout' && wc.refitted.returned > 0, 'refit wrong');
+        W(wc.noBay && wc.dryHold && wc.fieldRepaired, 'field repair wrong');
         E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -723,9 +732,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'market'; S.refresh(); });
       await wait(200);
       await shot('26-market');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'workshop'; S.refresh(); });
+      await wait(200);
+      await shot('27-workshop');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'yard'; S.refresh(); });
+      await wait(200);
+      await shot('28-yard');
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

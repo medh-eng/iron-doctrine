@@ -93,6 +93,8 @@ function campaignTick(dtReal) {
         if (f1.fuel <= 0 && f0.fuel > 0) events.push({ stop: true, msg: `${fl.name} is stranded: no fuel.` });
       }
     }
+    for (const fl of playerFleets()) if (!fl.path.length) fieldRepair(fl, dt);
+    for (const n of stepWorks(dt)) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
     updateVisibility();
     // Contact (01 §6, §10.1): a player fleet meets a hostile fleet.
     for (const P of playerFleets()) {

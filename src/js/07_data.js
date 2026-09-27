@@ -351,6 +351,12 @@ const UPGRADES = [
   { from: 'fort', to: 'citadel', wood: 150, metal: 450, elec: 30, money: 7000, days: 8 },
 ];
 const HOME_STORE = { wood: 80, metal: 60, elec: 5, fuel: 40, ammo: 30, scrap: 20 };   // home city warehouse (08 §13)
+// Workshop and yard (08 §4–§5).
+const CRAFT_FEE = 0.1;                       // money fee: this share of the goods' base value
+const RECRUIT_CAPTAIN = 120;                 // a level-1 captain for a newly built ship (08 §13: 120 × level²)
+const REFINE = { city: { scrap: 4, hours: 1 }, metropolis: { scrap: 3, hours: 0.75 } };   // scrap and hours per electronics unit
+const FIELD_REPAIR_HP = 200;                 // HP per hour per repair bay on the map
+const FIELD_REPAIR_COST = 0.6;               // × the dock repair goods
 const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
 const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;
