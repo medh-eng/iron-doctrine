@@ -610,6 +610,7 @@ function campaignCheck() {
   // Refuel at the home city from the treasury.
   const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
   air.x = home.x + 0.5; air.y = home.y + 0.5; air.path = []; air.docked = home.id;
+  home.store.fuel = 0;                   // this checks the market; economyCheck covers the warehouse
   const t0 = campaign.treasury;
   const q = refuelQuote(air, home);
   const why = refuel(air, home);

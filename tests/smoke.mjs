@@ -641,6 +641,44 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         check(cc.persist.saved && cc.reload, `campaign results did not persist through save and load ${JSON.stringify([cc.persist, cc.reload])}`);
         check(cc.detach.inGarrison && cc.detach.outpost && cc.detach.back && cc.detach.alone === 0, `detach, garrison or outpost wrong ${JSON.stringify(cc.detach)}`);
         check(cc.deploy.field === 'inland' && cc.deploy.domains === 'land', `a ship deployed inland ${JSON.stringify(cc.deploy)}`);
+        // Part 4a: warehouses, production, markets, loading, stores, upgrades, running dry, old saves.
+        const ec = await G(() => window.__GAME__.economyCheck());
+        const E = (c, what) => check(c, `${what} ${JSON.stringify(ec)}`);
+        E(ec.kit.wood === 80 && ec.kit.metal === 60 && ec.kit.elec === 5, 'home warehouse starting kit wrong');
+        E(ec.production.made > 0 && Math.abs(ec.production.made - ec.production.expect) < 0.01 && ec.production.neutral === 0, 'daily production wrong');
+        E(ec.capped, 'a warehouse overfilled');
+        E(!ec.buy.why && Math.abs(ec.buy.paid - ec.buy.price) < 0.01, 'buying metal into the warehouse wrong');
+        E(ec.scrap.buy !== '' && ec.scrap.sell === '' && ec.scrap.left === 15, 'scrap should be sell-only');
+        E(!ec.load.why && ec.load.cap > 0 && ec.load.hold === 10 && ec.load.store === 10 && ec.undocked, 'loading a docked hold wrong');
+        E(ec.stores.fromStore > 0 && Math.abs(ec.stores.used - ec.stores.fromStore) < 0.01 && Math.abs(ec.stores.paid - ec.stores.cost) < 0.01, 'refuelling from the warehouse wrong');
+        E(ec.fieldRearm.why === '', 'rearming from the hold failed');
+        E(ec.upBlocked && !ec.upgrade.why && ec.upgrade.type === 'city', 'settlement upgrade wrong');
+        E(ec.dry.unpaid >= 8 && ec.dry.deserted > 0 && ec.dry.closed, 'running out of money had no effect');
+        const wc = await G(() => window.__GAME__.workshopCheck());
+        const W = (c, what) => check(c, `${what} ${JSON.stringify(wc)}`);
+        W(wc.empty !== '' && wc.craft === '' && wc.queued === 1 && wc.made.items === 1 && wc.made.metal === 0 && Math.abs(wc.made.paid - wc.made.fee) < 0.01, 'crafting from warehouse goods wrong');
+        W(wc.away !== '' && wc.docked === '', 'crafting should use a docked hold but not a hold elsewhere');
+        W(wc.refine === '' && wc.refined === 2, 'refining scrap wrong');
+        W(wc.build === '' && wc.built.ships === 1 && wc.built.garrison && wc.built.captain && wc.seaInland !== '', 'building a ship wrong');
+        W(wc.repair === '' && wc.repaired, 'dock repair wrong');
+        W(wc.refit === '' && wc.refitted.design === 'scout' && wc.refitted.returned > 0, 'refit wrong');
+        W(wc.noBay && wc.dryHold && wc.fieldRepaired, 'field repair wrong');
+        const rc = await G(() => window.__GAME__.recruitCheck());
+        const R = (c, what) => check(c, `${what} ${JSON.stringify(rc)}`);
+        R(rc.hireCap === '' && rc.captain.ok && rc.captain.level === rc.captain.want && rc.captain.paid === rc.captain.price, 'hiring a captain with a ship wrong');
+        R(rc.hireAdm === '' && rc.hireQm === '' && !rc.qmAtFort, 'hiring an admiral or quartermaster wrong');
+        R(rc.form === '' && rc.formed.fleets === 1 && rc.formed.ships === 1 && rc.formed.admiral && rc.formed.docked, 'forming a fleet wrong');
+        R(rc.promoteLow && rc.promote === '' && rc.promoted.rank === 'admiral' && rc.promoted.ship && rc.promoted.idle, 'promotion wrong');
+        R(Math.abs(rc.salvage.partRate - 0.12) < 0.03 && Math.abs(rc.salvage.scrap - 0.3) < 0.001 && rc.salvage.cond, 'salvage rates wrong');
+        R(rc.wreck.left === 12 && rc.wreck.sites === 1 && rc.collect === '' && rc.collected.scrap === 12 && rc.collected.items === 1 && rc.collected.sites === 0 && rc.expired, 'wreck sites wrong');
+        R(rc.fields >= 6 && rc.noCrane && rc.gather.got === 8 && rc.gather.field === 8, 'scrap fields wrong');
+        R(rc.studyCity && !rc.lockedBefore && rc.study === '' && rc.consumed && rc.unlocked, 'reverse-engineering wrong');
+        const vc = await G(() => window.__GAME__.convoyCheck());
+        const V = (c, what) => check(c, `${what} ${JSON.stringify(vc)}`);
+        V(vc.form === '' && vc.convoy.ships === 3 && vc.convoy.combat === 1 && vc.convoy.cap > 0, 'forming a convoy wrong');
+        V(vc.noGoods && vc.route === '' && vc.run.trips >= 2 && vc.run.fuelGot > 0 && vc.run.ammo > 0.9 && !vc.run.stranded && vc.run.storeUsed > 0, 'the supply route did not keep the fleet going');
+        V(vc.raid && vc.contact && vc.lost.gone, 'convoy raiding or interception wrong');
+        E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
       await wait(200);
@@ -697,9 +735,55 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await tapButton('Auto-resolve');
       await wait(300);
       check((await G(() => window.__GAME__.camp.campaign.journal.slice(-1)[0] || '')).includes('enemy ships destroyed'), 'auto-resolve did not record the battle');
+      // Settlement panels: the home warehouse (with a truck fleet docked) and the market.
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const home = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.capital);
+        S.cam.x = home.x + 10; S.cam.y = home.y;
+        S.select('settlement', home.id); S.panelOpen = true; S.tab = 'warehouse'; S.refresh();
+      });
+      await wait(200);
+      await shot('25-warehouse');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'market'; S.refresh(); });
+      await wait(200);
+      await shot('26-market');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'workshop'; S.refresh(); });
+      await wait(200);
+      await shot('27-workshop');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.tab = 'yard'; S.refresh(); });
+      await wait(200);
+      await shot('28-yard');
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const fort = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.type === 'fort');
+        S.cam.x = fort.x + 10; S.cam.y = fort.y;
+        S.select('settlement', fort.id); S.tab = 'barracks'; S.refresh();
+      });
+      await wait(200);
+      await shot('29-barracks');
+      // A convoy with a route, and the Supply layer.
+      await G(() => {
+        const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;
+        const home = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.capital);
+        C.campaign.treasury += 5000;
+        C.hire(home, C.offersAt(home).find((o) => o.kind === 'quartermaster'));
+        const t = C.makeShip("truck", C.campaign.faction, C.rng(1)); t.garrison = home.id;
+        C.formConvoy(home, C.idleAt(home, 'quartermaster')[0], 'land');
+        const cv = C.campaign.fleets.find((f) => f.convoy);
+        const land = C.playerFleets().find((f) => f.domain === 'land' && !f.convoy);
+        C.setRoute(cv, home.id, { fleet: land.id }, ['fuel', 'ammo']);
+        S.cam.x = home.x + 6; S.cam.y = home.y;
+        S.select('fleet', cv.id); S.tab = 'route'; S.logistics = true; S.refresh();
+      });
+      await wait(200);
+      await shot('30-convoy-route');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.panelOpen = false; S.refresh(); });
+      await wait(200);
+      await shot('31-supply-view');
+      await G(() => { const S = window.__GAME__.SCREENS.map; S.logistics = false; S.refresh(); });
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage, convoys');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

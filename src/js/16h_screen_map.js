@@ -53,6 +53,8 @@ SCREENS.map = {
     bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
     this.detailsBtn = button('Details', () => { this.panelOpen = true; this.refresh(); }, 'btn btn-small');
     bot.appendChild(this.detailsBtn);
+    this.supplyBtn = button('Supply', () => { this.logistics = !this.logistics; this.refresh(); }, 'btn btn-small map-speed');
+    bot.appendChild(this.supplyBtn);
     const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
     this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
     this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
@@ -105,6 +107,7 @@ SCREENS.map = {
     } else this.cargoEl.textContent = '';
     this.cargoEl.hidden = !this.cargoEl.textContent;
     this.speedBtns.forEach((b, i) => b.classList.toggle('on', campaign.speed === CLOCK_SPEEDS[i]));
+    this.supplyBtn.classList.toggle('on', !!this.logistics);
     this.goBtn.textContent = campaign.running ? 'Stop ❚❚' : 'Start ▶';
     this.buildPanel();
     this.buildMoveBar();
@@ -124,7 +127,20 @@ SCREENS.map = {
   },
 
   // ---------- panels (02 §4.3, §4.4)
+  // Rebuilt on every refresh; the list keeps its scroll position while the same tab stays open.
   buildPanel() {
+    const old = this.panel.querySelector('.map-body');
+    const key = this.sel ? `${this.sel.kind}|${this.sel.id}|${this.tab}` : '';
+    const oldTabs = this.panel.querySelector('.map-tabs');
+    const top = old && key === this.panelKey ? old.scrollTop : 0;
+    const left = oldTabs && this.sel && this.panelKey && this.panelKey.startsWith(`${this.sel.kind}|${this.sel.id}|`) ? oldTabs.scrollLeft : 0;
+    this.panelKey = key;
+    this.buildPanelBody();
+    const body = this.panel.querySelector('.map-body'), tabs = this.panel.querySelector('.map-tabs');
+    if (body && top) body.scrollTop = top;
+    if (tabs && left) tabs.scrollLeft = left;
+  },
+  buildPanelBody() {
     const P = this.panel;
     P.textContent = '';
     // The panel can be closed so the whole map can be tapped; it also steps aside while a move is planned.
@@ -152,7 +168,9 @@ SCREENS.map = {
         P.appendChild(body);
         return;
       }
-      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab('admiral', 'Admiral');
+      if (fl.convoy && this.tab === 'admiral') this.tab = 'route';
+      if (!fl.convoy && this.tab === 'route') this.tab = 'admiral';
+      tab('ships', 'Ships'); tab('cargo', 'Cargo'); tab(fl.convoy ? 'route' : 'admiral', fl.convoy ? 'Route' : 'Admiral');
       P.appendChild(tabs);
       const adm = fleetAdmiral(fl);
       if (this.tab === 'ships') {
@@ -161,7 +179,16 @@ SCREENS.map = {
           const r = el('div', 'map-ship');
           r.appendChild(el('b', '', st.name));
           r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
-          r.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          const btns = el('div', 'map-row');
+          btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          if (!cap) for (const o of campaign.officers.filter((q) => q.alive && q.fleetId === fl.id && q.rank === 'captain' && !q.shipId)) {
+            btns.appendChild(button(`Give command to ${o.name}`, () => { const why = assignCaptain(fl, sh, o); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
+          }
+          if (cap && cap.rank === 'captain' && cap.level >= PROMOTE_LEVEL && fl.docked) {
+            const s = byId('settlements', fl.docked);
+            if (s && s.faction === campaign.faction) btns.appendChild(button(`Promote to admiral (${RECRUIT.promote * cap.level})`, () => { const why = promote(s, fl, sh); ui.toast(why || `${cap.name} is now an admiral at ${s.name}.`); this.refresh(); }, 'btn btn-small'));
+          }
+          r.appendChild(btns);
           body.appendChild(r);
         }
         if (!fl.shipIds.length) body.appendChild(el('p', 'card-text', 'No ships.'));
@@ -176,9 +203,22 @@ SCREENS.map = {
         row('Fuel in tanks and hold', `${f.fuel.toFixed(1)} of ${f.cap.toFixed(1)} units`);
         row('Burn on the move', `${fleetBurn(fl).toFixed(2)} units/h`);
         row('March speed', `${Math.round(fleetSpeed(fl))} km/h`);
-        row('Hold', `${holdUsed(fl).toFixed(1)} of ${holdCap(fl).toFixed(0)} units (fuel ${(fl.hold.fuel || 0).toFixed(1)}, ammo ${(fl.hold.ammo || 0).toFixed(1)})`);
+        row('Hold', `${holdUsed(fl).toFixed(1)} of ${holdCap(fl).toFixed(0)} units`);
+        const inHold = GOODS.filter((k) => fl.hold[k] > 0.05).map((k) => `${GOOD_NAMES[k].toLowerCase()} ${fl.hold[k].toFixed(1)}`).join(' · ');
+        if (inHold) row('In the hold', inHold);
+        const ra = rearmQuote(fl, null);
+        if (ra.fromHold > 0.005) body.appendChild(button(`Rearm ${ra.fromHold.toFixed(2)} from the hold`, () => { const why = rearm(fl, null); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
         row('State', fl.stranded ? 'Stranded: no fuel' : fl.path.length ? 'Moving' : fl.docked ? `Docked at ${byId('settlements', fl.docked).name}` : 'Holding');
         if (fl.path.length) body.appendChild(button('Stop here', () => { fl.path = []; fl.dest = null; this.refresh(); }, 'btn btn-small'));
+        const w = wreckNear(fl);
+        if (w) body.appendChild(button(`Collect salvage (scrap ${w.scrap.toFixed(1)}, parts ${w.items.length})`, () => { const why = collectWreck(fl, w); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
+        const sf = fieldNear(fl);
+        if (sf) row('Scrap field', `${Math.floor(sf.left)} left · ${hasCrane(fl) ? (fl.path.length ? 'gathers when the fleet holds still' : `gathering ${SCRAP_FIELD_RATE}/h`) : 'needs a salvage crane'}`);
+        const items = {};
+        for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
+        if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
+      } else if (this.tab === 'route') {
+        this.routeTab(fl, body, row);
       } else {
         const lvl = adm ? adm.level : 1;
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
@@ -191,44 +231,119 @@ SCREENS.map = {
     }
     const s = byId('settlements', this.sel.id);
     const T = SETTLEMENT_TYPES[s.type];
+    const own = s.faction === campaign.faction;
     P.appendChild(el('h3', 'map-title', `${s.name}${s.capital ? ' (capital)' : ''}`));
-    tab('overview', 'Overview'); tab('market', 'Market');
+    const tabsHere = [['overview', 'Info'], ['market', 'Market']];
+    if (own) tabsHere.push(['warehouse', 'Stores']);
+    if (own && hasWorkshop(s)) tabsHere.push(['workshop', 'Workshop'], ['yard', 'Yard']);
+    if (own && OFFER_RANK[s.type]) tabsHere.push(['barracks', 'Barracks']);
+    if (!tabsHere.some(([id]) => id === this.tab)) this.tab = 'overview';
+    for (const [id, label] of tabsHere) tab(id, label);
     P.appendChild(tabs);
     const rel = relation(s.faction, campaign.faction);
+    const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
+    const act = () => { const r = el('div', 'map-row'); body.appendChild(r); return r; };
+    const done = (why) => { if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); };
     if (this.tab === 'overview') {
       row('Type', T.name + (s.coastal ? ', coastal' : ''));
       row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
       row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
       row('Terrain', MAP_TERRAIN[s.biome].name);
-      if (s.faction === campaign.faction) row('Money per day', Math.round(T.money * (T.money > 0 && s.coastal ? COASTAL_MONEY : 1)));
+      if (own) row('Money per day', Math.round(settlementMoney(s)));
+      if (own && servicesStopped(s)) row('Services', 'Stopped: upkeep unpaid');
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
-      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
       for (const fl of docked) {
         const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
         for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
       }
-    } else {
-      for (const good of ['fuel', 'ammo']) {
-        const b = buyPrice(s, good, campaign.faction);
-        row(good === 'fuel' ? 'Fuel (100 L)' : 'Ammo (100 kg)', b === null ? 'No trade (at war)' : `buy ${b.toFixed(1)} · sell ${(b * SELL_SHARE).toFixed(1)} · stock ${Math.floor(s.market[good])}`);
+      if (own && !OFFER_RANK[s.type]) this.barracks(s, body, row, act, done);
+      // Upgrades (08 §7): resources from this warehouse, money, days.
+      if (own) {
+        if (s.upgrade) row('Upgrading', `to ${SETTLEMENT_TYPES[s.upgrade.to].name}, ready on day ${s.upgrade.day}`);
+        else for (const u of upgradesFor(s)) {
+          body.appendChild(el('div', 'ws-label', `Upgrade to ${SETTLEMENT_TYPES[u.to].name}`));
+          row('Needs', `wood ${u.wood} · metal ${u.metal}${u.elec ? ` · electronics ${u.elec}` : ''} · money ${u.money} · ${u.days} days`);
+          const why = upgradeBlock(s, u);
+          if (why) body.appendChild(el('p', 'card-text map-note', why));
+          else act().appendChild(button(`Start: ${SETTLEMENT_TYPES[u.to].name}`, () => done(startUpgrade(s, u)), 'btn btn-small btn-primary'));
+        }
       }
-      const docked = playerFleets().filter((fl) => fl.docked === s.id && fl.shipIds.length);
-      if (!docked.length) body.appendChild(el('p', 'card-text', 'Dock a fleet here to trade: move it onto the settlement (ships to the water beside it).'));
+    } else if (this.tab === 'market') {
+      // Buy into or sell from: this warehouse (yours) or a docked fleet's hold.
+      const spots = (own ? [s] : []).concat(docked.filter((fl) => holdCap(fl) > 0));
+      let at = spots.find((q) => q.id === this.tradeAt) || spots[0] || null;
+      const block = tradeBlock(s, campaign.faction);
+      if (block) body.appendChild(el('p', 'card-text map-note', block));
+      if (spots.length > 1) {
+        const r = act();
+        for (const q of spots) r.appendChild(button(q === s ? 'Warehouse' : q.name, () => { this.tradeAt = q.id; this.refresh(); }, 'btn btn-small map-tab' + (q === at ? ' on' : '')));
+      }
+      if (at) body.appendChild(el('p', 'card-text map-note', `Trading for ${place(at).name} (${place(at).free.toFixed(0)} units free).`));
+      for (const good of GOODS) {
+        const b = buyPrice(s, good, campaign.faction), sp = sellPrice(s, good, campaign.faction);
+        const g = el('div', 'map-good');
+        const have = at ? ` · have ${Math.floor(place(at).c[good] || 0)}` : '';
+        g.appendChild(el('span', '', `${GOOD_NAMES[good]} (${GOOD_UNITS[good]})`));
+        g.appendChild(el('small', '', sp === null ? '—' : `${b === null ? 'buys only' : `buy ${b.toFixed(1)}`} · sell ${sp.toFixed(1)}${b === null ? '' : ` · stock ${Math.floor(s.market[good])}`}${have}`));
+        if (at && sp !== null) {
+          const r = el('div', 'map-row');
+          if (b !== null) r.appendChild(button('Buy 10', () => done(trade(at, s, good, 10)), 'btn btn-small'));
+          r.appendChild(button('Sell 10', () => done(trade(at, s, good, -10)), 'btn btn-small'));
+          g.appendChild(r);
+        }
+        body.appendChild(g);
+      }
+      if (!docked.length) body.appendChild(el('p', 'card-text map-note', 'Dock a fleet here to refuel and rearm: move it onto the settlement (ships to the water beside it).'));
       for (const fl of docked) {
         body.appendChild(el('div', 'ws-label', fl.name));
         const rf = refuelQuote(fl, s), ra = rearmQuote(fl, s);
-        const act = el('div', 'map-row');
-        act.appendChild(button(rf.why ? 'Refuel' : rf.units < 0.05 ? 'Tanks full' : `Refuel ${rf.units.toFixed(1)} units for ${Math.ceil(rf.cost)}`, () => { const why = refuel(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
-        act.appendChild(button(ra.why ? 'Rearm' : ra.units < 0.005 ? 'Magazines full' : `Rearm ${ra.units.toFixed(2)} units for ${Math.ceil(ra.cost)}`, () => { const why = rearm(fl, s); if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); }, 'btn btn-small'));
-        if (holdCap(fl) > 0) for (const good of ['fuel', 'ammo']) {
-          act.appendChild(button(`Buy 5 ${good}`, () => { const why = trade(fl, s, good, 5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
-          act.appendChild(button(`Sell 5 ${good}`, () => { const why = trade(fl, s, good, -5); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
-        }
-        body.appendChild(act);
+        const r = act();
+        const label = (q, verb, full) => (q.why ? verb : q.units < 0.005 ? full : `${verb} ${q.units.toFixed(q.units < 1 ? 2 : 1)}${q.cost ? ` for ${Math.ceil(q.cost)}` : ' (stores)'}`);
+        r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
+        r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
       }
+    } else if (this.tab === 'barracks') {
+      this.barracks(s, body, row, act, done);
+    } else if (this.tab === 'workshop') {
+      this.workshopTab(s, body, row, act, done);
+    } else if (this.tab === 'yard') {
+      this.yardTab(s, body, row, act, done);
+    } else {
+      // Warehouse (01 §8.1): what's here, what it makes, loading docked fleets.
+      row('Stored', `${Math.floor(storeUsed(s))} of ${storeCap(s)} units`);
+      const make = Object.entries(production(s)).map(([k, v]) => `${GOOD_NAMES[k].toLowerCase()} ${+v.toFixed(1)}`).join(' · ');
+      row('Makes per day', s.restart > campaign.day ? `nothing until day ${s.restart}` : make || 'nothing');
+      const withHold = docked.filter((fl) => holdCap(fl) > 0);
+      let fl = withHold.find((q) => q.id === this.tradeAt) || withHold[0] || null;
+      if (withHold.length > 1) {
+        const r = act();
+        for (const q of withHold) r.appendChild(button(q.name, () => { this.tradeAt = q.id; this.refresh(); }, 'btn btn-small map-tab' + (q === fl ? ' on' : '')));
+      }
+      if (fl) row(`${fl.name} hold`, `${holdUsed(fl).toFixed(0)} of ${holdCap(fl).toFixed(0)} units`);
+      for (const good of GOODS) {
+        const g = el('div', 'map-good');
+        g.appendChild(el('span', '', GOOD_NAMES[good]));
+        g.appendChild(el('small', '', `here ${Math.floor(s.store[good] || 0)}${fl ? ` · hold ${Math.floor(fl.hold[good] || 0)}` : ''}`));
+        if (fl) {
+          const r = el('div', 'map-row');
+          r.appendChild(button('Load 10', () => done(transfer(fl, s, good, 10)), 'btn btn-small'));
+          r.appendChild(button('Unload', () => done(transfer(fl, s, good, -1e9)), 'btn btn-small'));
+          g.appendChild(r);
+        }
+        body.appendChild(g);
+      }
+      const items = {};
+      for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
+      row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
+      if (fl) {
+        const r = act();
+        r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));
+        r.appendChild(button('Unload parts', () => done(transferItems(fl, s, -1)), 'btn btn-small'));
+      }
+      if (!fl) body.appendChild(el('p', 'card-text map-note', docked.length ? 'The docked fleets have no cargo bays.' : 'Dock a fleet with cargo bays here to load or unload.'));
     }
     P.appendChild(body);
   },
@@ -314,7 +429,19 @@ SCREENS.map = {
     // Settlements.
     for (const s of world.settlements) this.drawSettlement(g, s);
     // Fog of war over what your fleets and settlements can't see.
+    // Scrap fields (grey heaps) and battle wreckage (an amber cross, gone after a day).
+    for (const f of campaign.scrapFields || []) {
+      if (f.left <= 0) continue;
+      const x = this.sx(f.x), y = this.sy(f.y);
+      g.fillStyle = '#6B6660'; g.fillRect(x - 6, y - 1, 5, 4); g.fillRect(x + 1, y - 2, 5, 5); g.fillStyle = '#9A948A'; g.fillRect(x - 2, y - 5, 5, 5);
+    }
+    g.strokeStyle = PAL.amber; g.lineWidth = 2;
+    for (const w of campaign.wrecks || []) {
+      const x = this.sx(w.x), y = this.sy(w.y);
+      g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.moveTo(x + 5, y - 5); g.lineTo(x - 5, y + 5); g.stroke();
+    }
     this.drawFog(g);
+    if (this.logistics) this.drawLogistics(g);
     // Fleets: yours, and the enemy fleets you can see.
     // Counters at the same spot stand side by side.
     const shown = campaign.fleets.filter((fl) => fl.shipIds.length && (fl.faction === campaign.faction || fl.seen));

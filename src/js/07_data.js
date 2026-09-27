@@ -298,6 +298,7 @@ const MAP_TERRAIN = {
   ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
   ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },
 };
+const WORLD_GEN = 2;                  // map generator version (saves keep the one they started with)
 const ROAD_SPEED = 1.5;               // × on a road
 const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
 const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
@@ -323,17 +324,58 @@ const FACTIONS = [
 ];
 // Settlements (08 §7): money per day, market stock, garrison limit. Buy-price multipliers (08 §6).
 const SETTLEMENT_TYPES = {
-  village: { name: 'Village', money: 15, stock: { fuel: 60, ammo: 30 }, price: 1.1, garrison: 2 },
-  city: { name: 'City', money: 50, stock: { fuel: 200, ammo: 100 }, price: 1.0, garrison: 4 },
-  metropolis: { name: 'Metropolis', money: 150, stock: { fuel: 500, ammo: 250 }, price: 0.95, garrison: 6 },
-  fort: { name: 'Fort', money: -20, stock: { fuel: 250, ammo: 200 }, price: 1.05, garrison: 8 },
-  citadel: { name: 'Citadel', money: -60, stock: { fuel: 600, ammo: 500 }, price: 1.0, garrison: 12 },
+  village: { name: 'Village', money: 15, make: { wood: 6, metal: 4 }, store: 600, stock: { fuel: 60, ammo: 30, wood: 40, metal: 40, elec: 40, scrap: 40 }, price: 1.1, garrison: 2 },
+  city: { name: 'City', money: 50, make: { wood: 14, metal: 12 }, store: 2500, stock: { fuel: 200, ammo: 100, wood: 150, metal: 150, elec: 150, scrap: 150 }, price: 1.0, garrison: 4 },
+  metropolis: { name: 'Metropolis', money: 150, make: { wood: 24, metal: 24, elec: 6 }, store: 8000, stock: { fuel: 500, ammo: 250, wood: 400, metal: 400, elec: 400, scrap: 400 }, price: 0.95, garrison: 6 },
+  fort: { name: 'Fort', money: -20, make: {}, store: 1500, stock: { fuel: 250, ammo: 200, wood: 60, metal: 60, elec: 60, scrap: 60 }, price: 1.05, garrison: 8 },
+  citadel: { name: 'Citadel', money: -60, make: {}, store: 4000, stock: { fuel: 600, ammo: 500, wood: 200, metal: 200, elec: 200, scrap: 200 }, price: 1.0, garrison: 12 },
 };
-const PRICES = { fuel: 6, ammo: 12 };        // money per unit (fuel 100 L, ammo 100 kg)
+// Physical goods (01 §8.1): everything but money exists in one warehouse or hold. Units:
+// fuel 100 L, ammo 100 kg, wood and metal 100 kg, electronics 20 kg, scrap 100 kg.
+const GOODS = ['fuel', 'ammo', 'wood', 'metal', 'elec', 'scrap'];
+const GOOD_NAMES = { fuel: 'Fuel', ammo: 'Ammo', wood: 'Wood', metal: 'Metal', elec: 'Electronics', scrap: 'Scrap' };
+const GOOD_UNITS = { fuel: '100 L', ammo: '100 kg', wood: '100 kg', metal: '100 kg', elec: '20 kg', scrap: '100 kg' };
+const PRICES = { fuel: 6, ammo: 12, wood: 4, metal: 10, elec: 40, scrap: 3 };   // money per unit
+const SELL_ONLY = { scrap: true };           // markets buy scrap but don't sell it
 const OWN_PRICE = 0.85, TRUCE_PRICE = 1.2, SELL_SHARE = 0.6, COASTAL_MONEY = 1.2;
 const STOCK_REFILL = 0.1;                    // share of normal market stock refilled per day
+// Biome effects on production (08 §7): wood and metal multipliers, scrap per day.
+const BIOME_MAKE = {
+  forest: { wood: 1.5, metal: 0.7 }, hills: { wood: 0.7, metal: 1.5 }, mountains: { wood: 0.7, metal: 1.5 }, pass: { wood: 0.7, metal: 1.5 },
+  desert: { wood: 0.5, metal: 0.5, scrap: 3 }, ruins: { scrap: 6 },
+};
+// Settlement upgrades (08 §7): resources from that settlement's warehouse, money, days.
+const UPGRADES = [
+  { from: 'village', to: 'city', wood: 120, metal: 80, elec: 0, money: 1500, days: 3 },
+  { from: 'city', to: 'metropolis', wood: 300, metal: 300, elec: 40, money: 6000, days: 7 },
+  { from: 'village', to: 'fort', wood: 60, metal: 160, elec: 0, money: 2000, days: 4 },
+  { from: 'fort', to: 'citadel', wood: 150, metal: 450, elec: 30, money: 7000, days: 8 },
+];
+const HOME_STORE = { wood: 80, metal: 60, elec: 5, fuel: 40, ammo: 30, scrap: 20 };   // home city warehouse (08 §13)
+// Workshop and yard (08 §4–§5).
+const CRAFT_FEE = 0.1;                       // money fee: this share of the goods' base value
+const REFINE = { city: { scrap: 4, hours: 1 }, metropolis: { scrap: 3, hours: 0.75 } };   // scrap and hours per electronics unit
+const FIELD_REPAIR_HP = 200;                 // HP per hour per repair bay on the map
+const FIELD_REPAIR_COST = 0.6;               // × the dock repair goods
+// Recruitment (08 §13): captains 120 × level² plus the ship at 1.2 × its cost index; admirals
+// 600 × level; quartermasters 250; promotion 400 × level from captain level 6.
+const RECRUIT = { captain: 120, admiral: 600, quartermaster: 250, promote: 400, listPrice: 1.2 };
+const PROMOTE_LEVEL = 6;
+const OFFER_DAYS = 7;                        // forts and citadels renew their offers weekly
+// Salvage (08 §9).
+const SALVAGE = { part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
+const WRECK_HOURS = 24;                      // salvage left on the field is lost after a day
+const SCRAP_FIELDS = 10, SCRAP_FIELD_SIZE = [200, 600], SCRAP_FIELD_RATE = 4;   // fields, scrap each, scrap per hour
+const STUDY_DAYS = 3;                        // reverse-engineering at a metropolis
+// Convoys (01 §8.4).
+const CONVOY_SIZE = 6, CONVOY_COMBAT = 2;    // ships in a convoy, of which combat ships
+const CONVOY_WAIT = 6;                       // hours a convoy waits at its loading point when there's nothing to load
+const CONVOY_REPLAN = 6;
+const RAID_PULL = 0.6;                       // AI fleets treat convoys as this much closer (raiding)                     // path steps before a convoy chasing a fleet looks again
+const DESERT_DAYS = 3;                       // unpaid days before captains may desert (01 §8.5)
+const DESERT_CHANCE = 0.25;                  // per captain per unpaid day after that
 const START_MONEY = 1500;
-const WAGES = { captain: 4, admiral: 15 };   // money per day × level
+const WAGES = { captain: 4, admiral: 15, quartermaster: 8 };   // money per day (captains and admirals × level)
 // Ammo per shot in map units, by calibre (08 §8).
 const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0.06], [105, 0.14], [150, 0.35], [203, 0.8]];
 // XP (08 §10).

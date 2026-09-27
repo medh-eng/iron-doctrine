@@ -107,6 +107,7 @@ function applyBattleOutcome(B) {
     if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null });
   }
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
+  const wrecks = [];
   for (const [id, r] of rec) {
     const ship = byId('ships', id);
     if (!ship) continue;
@@ -115,6 +116,7 @@ function applyBattleOutcome(B) {
     const st = shipStats(ship);
     ship.battles++;
     if (r.lost) {
+      wrecks.push({ design: d, own: ship.faction === campaign.faction });
       if (ship.faction === campaign.faction) lostMine++;
       else { lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
       removeShip(ship, rng);
@@ -137,7 +139,14 @@ function applyBattleOutcome(B) {
     const losing = (fl.faction === campaign.faction) !== win;
     if (losing) fallBack(fl, fl.faction === campaign.faction ? sides.theirFleets[0] : sides.myFleets[0]);
   }
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.`;
+  // Salvage (08 §9): the winner holds the field; what doesn't fit in the holds stays for a day.
+  let salvage = '';
+  const winners = sides.myFleets.filter((fl) => fl.shipIds.length);
+  if (win && wrecks.length && winners.length) {
+    const got = takeSalvage(salvageFrom(wrecks, winners.flatMap(fleetShips), rng), winners, winners[0].x, winners[0].y);
+    salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
+  }
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}`;
   campaign.journal.push(`Day ${campaign.day}: ${summary}`);
   campaignStore.save();
   return { win, lostMine, lostTheirs, bounty, summary };
