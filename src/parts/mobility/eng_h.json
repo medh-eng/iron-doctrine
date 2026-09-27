@@ -1,0 +1,37 @@
+{
+  "id": "eng_h",
+  "name": "Diesel engine H",
+  "family": "eng_h",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 2
+  },
+  "stats": {
+    "mass": 1900,
+    "hp": 120,
+    "armor": 5,
+    "power": 520,
+    "rel": 0.992,
+    "heat": 45,
+    "fuelUse": 95
+  },
+  "cost": {
+    "metal": 12
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

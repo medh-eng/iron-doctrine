@@ -1,0 +1,39 @@
+{
+  "id": "emotor",
+  "name": "Electric motor + batteries",
+  "family": "emotor",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 1200,
+    "hp": 70,
+    "armor": 10,
+    "power": 200,
+    "rel": 0.996,
+    "heat": 5,
+    "sealed": 1
+  },
+  "behaviour": {
+    "electric": true,
+    "floods": true
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "submarines"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

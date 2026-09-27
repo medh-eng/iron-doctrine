@@ -1,0 +1,33 @@
+{
+  "id": "assault",
+  "name": "Assault gun",
+  "domain": "land",
+  "class": "tank",
+  "w": 13,
+  "h": 5,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["track",1,4],
+    ["track",3,4],
+    ["track",5,4],
+    ["track",7,4],
+    ["track",9,4],
+    ["arm20",0,2],
+    ["arm20",0,3],
+    ["eng_m",1,2],
+    ["ammo",4,2],
+    ["fuel_s",4,3],
+    ["crew2",5,2],
+    ["arm40",7,2],
+    ["arm40",7,3],
+    ["slope40",8,2],
+    ["arm80",8,3],
+    ["slope40",9,2],
+    ["arm80",9,3],
+    ["arm40",5,1],
+    ["arm40",6,1],
+    ["arm40",7,1],
+    ["c105",8,1],
+    ["optics",6,0]
+  ]
+}

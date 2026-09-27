@@ -1,0 +1,46 @@
+{
+  "id": "ngun",
+  "name": "Naval gun 120 mm, twin",
+  "family": "ngun",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "sea",
+    "land"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 3
+  },
+  "stats": {
+    "mass": 9000,
+    "hp": 200,
+    "armor": 25,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 130,
+    "reload": 6,
+    "range": 9000,
+    "vel": 120,
+    "dmg": 150,
+    "spread": 0.45,
+    "cal": 120,
+    "shells": 30,
+    "burst": 70,
+    "burstR": 2.2
+  },
+  "behaviour": {
+    "twin": true
+  },
+  "cost": {
+    "metal": 40
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

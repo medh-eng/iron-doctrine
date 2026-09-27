@@ -1,0 +1,39 @@
+{
+  "id": "wheel_s",
+  "name": "Road wheel",
+  "family": "wheel_s",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 80,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "contact": 0.04,
+    "maxLoad": 2000,
+    "cap": 90,
+    "radius": 0.25
+  },
+  "behaviour": {
+    "loco": "wheel"
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_petrol"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

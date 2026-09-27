@@ -1,253 +1,219 @@
-# Iron Doctrine: parts catalogue (v2)
+# Iron Doctrine: parts catalogue (v2.1)
 
-This file gives **starting values for the family base parts** ("std" variants). Variants and upgrades follow the balance rules in 08. The files in `src/parts/` are the source of truth once a part exists; this catalogue is the brief the Art Foundry works from. Tune numbers freely, but never show them to the player as ratings.
+**What this file is**
+- **Source of truth:** once a part exists, its file in `src/parts/` is the source of truth. This catalogue lists what exists and briefs what's still to make.
+- **Tables:** §2 is generated from the library files. §3 holds starting values for new parts.
+- **Rule:** tune numbers freely, but never show them to the player as ratings.
 
 ## Conventions
 
-- **Cells:** 0.5 m. Sizes are written width × height.
-- **Units:**
-  - mass in kg, armour in mm
-  - `power` in kW produced; `draw` in kW consumed
-  - `fuel` in L/h at full load
-  - `lift` in hundreds of kg supported (16 = 1.6 t)
-  - `thrust` in kN
-- **Cost keys:** W wood, M metal, E electronics, S scrap, $ money (the crafting fee).
-- **Tiers:** T0 timber and iron (start), T1 iron and steel, T2 heavy industry, T3 advanced, T4 Precursor.
-- **Unlock:** `start`, or the tech node id from 08 §11.
-- **Id prefix by category folder:**
+- **Ids are the game's own short ids** (`c75`, `eng_m`, `track`):
+  - a family's standard part: `id = family`
+  - a variant: `<family>_<variant>`, e.g. `c75_long`
+- **Folders are the game's categories:** `structure`, `mobility`, `weapon`, `system`, `logistics`. v2 adds `lift`, `missile` and `special`.
+- **Stat names are the game's own** (07 §7):
 
-  | Category | Prefix |
+  | Stat | Meaning |
   |---|---|
-  | mobility | `mob_` |
-  | lift | `lift_` |
-  | weapon | `wpn_` |
-  | missile | `mis_` |
-  | system | `sys_` |
-  | logistics | `log_` |
-  | crew | `crw_` |
-  | special | `spc_` |
+  | `power` | kW; negative = drawn |
+  | `fuelUse` | L/h |
+  | `rel` | Reliability |
+  | `maxLoad`, `cap` | kg, km/h |
+  | `contact`, `radius` | Contact area, wheel radius |
+  | `pen` | mm at 500 m |
+  | `dmg` | Damage per hit |
+  | `reload` | Seconds |
+  | `rpm` | Automatic weapons |
+  | `range` | Metres on the sheet |
+  | `spread` | Degrees, 1 sigma: lower is more accurate |
+  | `vel` | Muzzle speed on the battlefield, m/s |
+  | `cal` | Calibre, mm |
+  | `shells` | Rounds carried |
+  | `fuel`, `cargo` | Capacities |
+  | `sealed` | Watertight share |
 
-## 1. Structure materials (auto-tiled cells, `src/parts/materials.json`)
+  Words and on/off flags go in `behaviour` (e.g. `loco: "track"`, `auto: true`, `secondary: "torpedo"`).
+- **Cells:** 0.5 m, width × height.
+- **Cost keys:** W wood, M metal, E electronics, S scrap, $ money. Rubber and fuel are no longer costs (the import turned them into metal and wood, 1:1).
+- **Tiers:** T0 timber and iron (start), T1 iron and steel, T2 heavy industry, T3 advanced, T4 Precursor.
+- **Unlock:** `start`, or a tech node id (08 §11).
+
+## 1. Structure cells (`src/parts/materials.json`, auto-tiled)
 
 | id | Name | T | Mass | HP | Armour | Cost | Notes |
 |---|---|---|---|---|---|---|---|
-| timber | Timber frame | 0 | 40 | 25 | 3 | W1 | Burns |
-| plank | Plank hull | 0 | 70 | 40 | 8 | W2 | Burns; paintable |
-| ironwood | Iron-banded plank | 0 | 110 | 55 | 12 | W2 M1 | Burns; the starting armour |
-| wood_hull | Wooden ship hull | 0 | 90 | 50 | 8 | W3 | Gives buoyancy |
-| canvas_bag | Canvas gas bag | 0 | 12 | 15 | 0 | W1 $8 | Lift 1.6; burns |
-| iron_frame | Iron frame | 1 | 60 | 40 | 5 | M1 | |
-| steel_plate | Steel hull plate | 1 | 120 | 60 | 15 | M2 | |
-| arm20 | Armour 20 mm | 1 | 190 | 80 | 20 | M3 | |
-| steel_hull | Steel ship hull | 1 | 150 | 70 | 12 | M3 | Gives buoyancy |
-| rigid_env | Rigid envelope | 1 | 20 | 35 | 2 | M1 W1 $12 | Lift 1.8 |
-| arm40 | Armour 40 mm | 2 | 380 | 120 | 40 | M5 | |
-| arm80 | Armour 80 mm | 2 | 760 | 180 | 80 | M9 | |
-| slope40 | Sloped armour 40 mm | 2 | 300 | 110 | 40 | M5 | Triangle cell, ×1.41 effective vs level shots |
-| bulkhead | Watertight bulkhead | 2 | 200 | 100 | 10 | M2 | Stops flooding spreading |
-| composite | Composite armour | 3 | 330 | 130 | 45 | M4 E1 | Resists fire 0.5, plasma 0.6, acid 0.7 |
-| alloy | Light alloy | 3 | 90 | 55 | 14 | M3 E1 | |
-| armored_env | Armoured envelope | 3 | 45 | 70 | 8 | M2 E1 $20 | Lift 1.7 |
-| precursor | Precursor plating | 4 | 260 | 150 | 50 | M4 E3 S6 | Resists laser 0.5, EMP 0.5; can't be painted |
+| frame | Light frame | 0 | 60 | 40 | 5 | M1 | In game |
+| timber | Timber frame | 0 | 40 | 25 | 3 | W1 | In game; burns |
+| plate | Hull plate | 1 | 120 | 60 | 15 | M2 | In game |
+| arm20 | Armour 20 mm | 1 | 190 | 80 | 20 | M3 | In game |
+| arm40 | Armour 40 mm | 2 | 380 | 120 | 40 | M5 | In game |
+| arm80 | Armour 80 mm | 2 | 760 | 180 | 80 | M9 | In game |
+| slope40 | Sloped armour 40 mm | 2 | 300 | 110 | 40 | M5 | In game; triangle |
+| plank | Plank hull | 0 | 70 | 40 | 8 | W2 | New; burns |
+| ironwood | Iron-banded plank | 0 | 110 | 55 | 12 | W2 M1 | New; burns; the starting armour |
+| composite | Composite armour | 3 | 330 | 130 | 45 | M4 E1 | New; resists fire, plasma, acid |
+| alloy | Light alloy | 3 | 90 | 55 | 14 | M3 E1 | New |
+| precursor | Precursor plating | 4 | 260 | 150 | 50 | M4 E3 S6 | Planned: resists laser, EMP |
+| canvas_bag | Canvas gas bag | 0 | 12 | 15 | 0 | W1 $8 | Planned (airships): gasLift 1.6 |
+| rigid_env | Rigid envelope | 1 | 20 | 35 | 2 | M1 W1 $12 | Planned: gasLift 1.8 |
+| armored_env | Armoured envelope | 3 | 45 | 70 | 8 | M2 E1 $20 | Planned: gasLift 1.7 |
 
-`resist` values multiply the damage taken of that type (0.5 = half).
+`gasLift` is in hundreds of kg per cell (1.6 = 160 kg). It is **not** the game's `lift` stat, which is wing area and makes a design an aircraft.
 
-## 2. Classes
+## 2. Parts already in the game (imported from v1)
 
-See 01 §5 and `src/parts/classes.json`. They set grid size, part limit and captain level.
+The ✔ in the last column means SVG art exists. The rest use the code drawing until art arrives.
 
-## 3. Crew (`crw_`)
+| id | Name | Cat. | T | Cells | Mass | HP | Arm. | Key stats | Cost | Unlock | SVG |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| crew2 | Crew compartment | structure | 0 | 2×2 | 300 | 80 | 10 | crew 2 | M3 | start |  |
+| keel | Keel | structure | 0 | 2×1 | 500 | 120 | 10 | sealed 1 | M3 | start |  |
+| turret | Turret ring | structure | 0 | 3×1 | 250 | 90 | 20 | draw 5 | M3 | start |  |
+| bow | Bow section | structure | 1 | 2×2 | 450 | 130 | 10 | sealed 0.5 | M3 W1 | hull_iron |  |
+| bulk | Watertight bulkhead | structure | 1 | 1×2 | 200 | 100 | 10 | sealed 1 | M2 | hull_iron |  |
+| hull | Ship hull section | structure | 1 | 2×2 | 600 | 150 | 10 | sealed 1 | M4 W1 | hull_iron |  |
+| phull | Pressure hull section | structure | 2 | 2×2 | 2200 | 220 | 25 | sealed 1 | M8 | submarines |  |
+| tail | Tail unit | structure | 2 | 2×2 | 60 | 30 | 2 |  | M1 W1 | aviation |  |
+| wing | Wing section | structure | 2 | 2×1 | 90 | 30 | 2 | lift 6 | M1 W1 | aviation |  |
+| aprop | Air propeller | mobility | 0 | 1×2 | 80 | 20 | 2 |  | M1 W1 | start |  |
+| prop | Ship propeller | mobility | 0 | 1×2 | 300 | 50 | 10 |  | M2 | start |  |
+| eng_m | Diesel engine M | mobility | 1 | 3×2 | 1100 | 90 | 5 | power 300 | M7 | prop_diesel |  |
+| eng_s | Petrol engine S | mobility | 1 | 2×2 | 450 | 60 | 5 | power 110 | M3 | prop_petrol |  |
+| radiator | Radiator | mobility | 1 | 1×1 | 70 | 20 | 2 |  | M1 | prop_petrol |  |
+| track | Track segment | mobility | 1 | 2×1 | 450 | 70 | 10 | maxLoad 10000, cap 55 | M4 | prop_diesel |  |
+| wheel_l | Off-road wheel | mobility | 1 | 2×2 | 200 | 50 | 5 | maxLoad 5000, cap 75 | M4 | prop_petrol |  |
+| wheel_s | Road wheel | mobility | 1 | 1×1 | 80 | 30 | 5 | maxLoad 2000, cap 90 | M2 | prop_petrol |  |
+| aero | Aero piston engine | mobility | 2 | 2×1 | 600 | 50 | 5 | power 900 | M6 E1 | aviation |  |
+| ballast | Ballast tank | mobility | 2 | 2×2 | 300 | 80 | 10 | ballast 4000, sealed 1 | M3 | submarines |  |
+| emotor | Electric motor + batteries | mobility | 2 | 2×2 | 1200 | 70 | 10 | power 200, sealed 1 | M6 E3 | submarines |  |
+| eng_h | Diesel engine H | mobility | 2 | 4×2 | 1900 | 120 | 5 | power 520 | M12 | prop_heavy |  |
+| marine | Marine diesel | mobility | 2 | 4×3 | 5000 | 200 | 10 | power 1500, sealed 1 | M25 | prop_heavy |  |
+| rotor | Rotor | mobility | 2 | 4×1 | 400 | 50 | 2 |  | M4 E1 | rotorcraft |  |
+| thrust | Manoeuvre thruster | mobility | 2 | 1×1 | 150 | 30 | 5 | draw 40 | M1 E1 | prop_heavy |  |
+| trotor | Tail rotor | mobility | 2 | 1×1 | 60 | 20 | 2 |  | M1 | rotorcraft |  |
+| turb | Gas turbine | mobility | 2 | 3×2 | 900 | 80 | 5 | power 750 | M8 E3 | prop_turbine |  |
+| jet | Jet engine | mobility | 3 | 3×1 | 900 | 70 | 5 | jet 25000 | M10 E4 | jets |  |
+| c37 | Cannon 37 mm | weapon | 0 | 2×1 | 250 | 40 | 10 | pen 50, dmg 45, reload 2.5, range 1500, spread 0.55, shells 40 | M4 | start |  |
+| mg | Machine gun | weapon | 0 | 1×1 | 40 | 20 | 5 | pen 8, dmg 6, rpm 600, range 600, spread 1.4 | M1 | start |  |
+| smoke | Smoke launcher | weapon | 0 | 1×1 | 30 | 15 | 2 |  | M1 W1 | start |  |
+| c75 | Cannon 75 mm | weapon | 1 | 3×1 | 600 | 60 | 10 | pen 90, dmg 95, reload 5, range 2000, spread 0.5, shells 30 | M7 | guns_medium | ✔ |
+| hmg | Heavy machine gun | weapon | 1 | 1×1 | 80 | 25 | 5 | pen 20, dmg 11, rpm 450, range 1000, spread 1.2 | M2 | guns_medium |  |
+| aa40 | AA gun 40 mm | weapon | 2 | 3×2 | 1800 | 80 | 10 | pen 60, dmg 30, rpm 120, range 3500, spread 0.9 | M10 | guns_heavy |  |
+| ac20 | Autocannon 20 mm | weapon | 2 | 2×1 | 150 | 35 | 5 | pen 35, dmg 16, rpm 180, range 1200, spread 1 | M3 | guns_heavy |  |
+| bomb | Bomb rack | weapon | 2 | 2×1 | 1100 | 30 | 3 | pen 60, reload 0.5 | M2 | aviation |  |
+| c105 | Cannon 105 mm | weapon | 2 | 4×1 | 1300 | 80 | 10 | pen 150, dmg 150, reload 8, range 2500, spread 0.45, shells 20 | M12 | guns_heavy |  |
+| dc | Depth-charge rack | weapon | 2 | 2×1 | 300 | 40 | 5 | reload 4 | M2 | sonar |  |
+| how | Howitzer 150 mm | weapon | 2 | 4×2 | 2500 | 100 | 10 | pen 40, dmg 180, reload 12, range 8000, spread 0.9, shells 12 | M18 | guns_heavy |  |
+| ngun | Naval gun 120 mm, twin | weapon | 2 | 4×3 | 9000 | 200 | 25 | pen 130, dmg 150, reload 6, range 9000, spread 0.45, shells 30 | M40 | guns_heavy |  |
+| torp | Torpedo tube | weapon | 2 | 3×1 | 900 | 60 | 10 | reload 30, range 4000 | M8 E1 | submarines |  |
+| optics | Optics | system | 0 | 1×1 | 30 | 10 | 2 | spot 1.4 | M1 E1 | start |  |
+| fc | Fire-control computer | system | 1 | 1×1 | 60 | 15 | 2 | draw 5, accuracy 1.35 | M1 E5 | fire_control |  |
+| radio | Radio | system | 1 | 1×1 | 50 | 15 | 2 | draw 1 | M1 E1 | radio |  |
+| nsight | Night sight | system | 2 | 1×1 | 20 | 10 | 2 | draw 3 | M1 E4 | radar |  |
+| sonar | Sonar | system | 2 | 2×1 | 300 | 30 | 5 | draw 10, sonar 2000 | M2 E4 | sonar |  |
+| stab | Gun stabiliser | system | 2 | 1×1 | 90 | 15 | 2 | draw 8 | M2 E4 | stabiliser |  |
+| ammo | Ammo rack | logistics | 0 | 1×1 | 250 | 30 | 3 | shells 20 | M1 | start |  |
+| cargo | Cargo bay | logistics | 0 | 2×2 | 200 | 40 | 3 | cargo 2000 | M2 W1 | start |  |
+| fuel_s | Fuel tank 200 L | logistics | 0 | 1×1 | 220 | 30 | 3 | fuel 200 | M1 | start |  |
+| ammo_p | Protected ammo storage | logistics | 1 | 1×1 | 320 | 50 | 10 | shells 20 | M2 | cargo_2 |  |
+| fuel_l | Fuel tank 1000 L | logistics | 1 | 2×2 | 1050 | 60 | 3 | fuel 1000 | M3 | cargo_2 |  |
+| fuel_ss | Self-sealing tank 150 L | logistics | 1 | 1×1 | 210 | 40 | 3 | fuel 150 | M3 | cargo_2 |  |
 
-Every ship needs exactly one **bridge**, which holds the captain.
+## 3. New parts to add (starting values)
 
-| id | Name | T | Cells | Mass | HP | Armour | Stats | Cost | Unlock |
+### 3.1 Tier 0 (for the v2 campaign start)
+
+| id | Name | Cat. | Cells | Mass | HP | Arm. | Stats | Cost | Behaviour |
 |---|---|---|---|---|---|---|---|---|---|
-| crw_bridge_std | Command bridge | 0 | 2×2 | 350 | 90 | 10 | crewSlots 3 | W3 M1 $20 | start |
-| crw_cabin_std | Crew cabin | 0 | 2×1 | 180 | 50 | 6 | crewSlots 2 | W2 $10 | start |
+| steam | Steam engine | mobility | 3×2 | 1400 | 90 | 5 | power 120, heat 30, fuelUse 60, rel 0.985 | W2 M6 | — |
+| wheel_w | Spoked wheel | mobility | 2×2 | 160 | 40 | 3 | contact 0.1, maxLoad 3000, cap 35, radius 0.5, rel 0.993 | W2 M1 | loco wheel |
+| swivel | Swivel gun 20 mm | weapon | 1×1 | 60 | 20 | 3 | pen 12, dmg 18, reload 1.2, range 700, vel 200, spread 1.0, cal 20, shells 40 | W1 M1 | — |
+| whull | Wooden hull section | structure | 2×2 | 400 | 110 | 6 | sealed 1 | W4 | floods, burns |
+| wbow | Wooden bow section | structure | 2×2 | 300 | 95 | 6 | sealed 0.5 | W3 | floods, bowShape, burns |
 
-**Crew rules:** 1 crew per engine, 1 per gun (2 for guns 105 mm and up), and 1 per system that draws over 20 kW. If there are too few crew, reloads and repairs slow down.
+### 3.2 Airships (step 2.7)
 
-## 4. Mobility (`mob_`)
-
-| id | Name | T | Cells | Mass | HP | Stats | Rel. | Cost | Unlock |
+| id | Name | Cat. | T | Cells | Mass | HP | Stats | Cost | Unlock |
 |---|---|---|---|---|---|---|---|---|---|
-| mob_steam_std | Steam engine | 0 | 3×2 | 1400 | 90 | power 120, fuel 60, heat 30 | .985 | W2 M6 $40 | start |
-| mob_wheel_wood_std | Spoked wheel | 0 | 2×2 | 160 | 40 | load 3000, speedCap 35, grip .7 | .993 | W2 M1 $6 | start |
-| mob_prop_std | Ship screw | 0 | 1×2 | 250 | 50 | thrust 18 | .996 | M3 $10 | start |
-| mob_airprop_std | Air propeller | 0 | 1×2 | 90 | 25 | thrust 6 | .995 | W1 M1 $8 | start |
-| mob_petrol_std | Petrol engine | 1 | 2×2 | 450 | 60 | power 110, fuel 30, heat 12 | .990 | M3 $30 | prop_petrol |
-| mob_wheel_std | Rubber wheel | 1 | 1×1 | 80 | 30 | load 2000, speedCap 90, grip .85 | .995 | M1 $8 | prop_petrol |
-| mob_diesel_std | Diesel engine | 1 | 3×2 | 1100 | 90 | power 300, fuel 55, heat 25 | .994 | M7 $60 | prop_diesel |
-| mob_track_std | Track segment | 1 | 2×1 | 450 | 70 | load 10000, speedCap 55, grip .9 | .993 | M3 $12 | prop_diesel |
-| mob_marine_std | Marine diesel | 2 | 4×3 | 5000 | 200 | power 1500, fuel 300, heat 40 | .995 | M25 $200 | prop_marine |
-| mob_turbine_std | Gas turbine | 2 | 3×2 | 900 | 80 | power 750, fuel 220, heat 70 | .980 | M8 E3 $120 | prop_turbine |
-| mob_htrack_std | Heavy track | 2 | 2×1 | 700 | 110 | load 18000, speedCap 40, grip .95 | .992 | M5 $18 | prop_turbine |
-| mob_reactor_std | Precursor reactor | 4 | 3×3 | 2200 | 150 | power 1600, fuel 0, heat 90 | .975 | M10 E12 S20 $600 | prop_reactor |
+| lifteng | Lift engine | lift | 2 | 2×2 | 700 | 70 | liftForce 44000 (N), fuelUse 120, heat 30, rel 0.985 | M6 E1 $90 | lift_engines |
+| levitator | Levitator | lift | 4 | 2×2 | 400 | 80 | liftForce 78000, power −250, heat 40, rel 0.98 | M6 E10 S12 $500 | lift_levitator |
 
-**Track rules:** a run needs at least 3 segments; the belt is drawn by code. Each track segment has a contact area of 0.35 m², a heavy track segment 0.5 m².
+Envelopes are the planned materials in §1.
 
-## 5. Lift (`lift_`)
+**Airship physics** (reusing the v1 helicopter model):
+1. **Lift** = Σ envelope `gasLift` × 100 kg × g, plus lift engines' `liftForce`.
+2. **Moving:** ◀ ▶ move via air propellers (`aprop`); ▲ ▼ trim height.
+3. **Losing lift:** a destroyed envelope cell loses its lift, and canvas burns.
+4. **Falling:** below a lift margin of 1.0 the airship sinks, and it crashes the way a helicopter does.
 
-Envelope cells are structure materials (§1). These are the engines:
+### 3.3 Tier 1–2
 
-| id | Name | T | Cells | Mass | HP | Stats | Cost | Unlock |
-|---|---|---|---|---|---|---|---|---|
-| lift_engine_std | Lift engine | 2 | 2×2 | 700 | 70 | lift 45, fuel 120 | M6 E1 $90 | lift_engines |
-| lift_levitator_std | Levitator | 4 | 2×2 | 400 | 80 | lift 80, draw 250, heat 40 | M6 E10 S12 $500 | lift_levitator |
+| id | Name | Cat. | T | Cells | Mass | HP | Stats | Cost | Unlock |
+|---|---|---|---|---|---|---|---|---|---|
+| c57 | Cannon 57 mm | weapon | 1 | 2×1 | 380 | 50 | pen 70, dmg 70, reload 3.5, range 1800, vel 172, spread 0.52, cal 57, shells 34 | M5 $40 | guns_medium |
+| mortar | Mortar | weapon | 1 | 2×1 | 300 | 40 | pen 20, reload 6, range 2500, vel 90, spread 1.5, heDmg 90, heRadius 4; behaviour he, indirect | M4 $30 | guns_medium |
+| flare | Flare launcher | system | 1 | 1×1 | 40 | 15 | salvos 3, decoy 0.7 | M1 $12 | flares |
+| hold | Steel cargo hold | logistics | 1 | 3×3 | 500 | 90 | cargo 5000 | M5 $35 | cargo_2 |
+| repair | Repair bay | special | 1 | 2×2 | 600 | 60 | rate 8 (HP/s), power −5 | W1 M4 $40 | repair_bay |
+| crane | Salvage crane | special | 1 | 2×2 | 900 | 80 | effect 0.06, capacity 30 | M5 $40 | salvage |
+| flame | Flamethrower | weapon | 2 | 2×1 | 220 | 40 | dmg 30 (per second), range 60, spread 2; burns 0.05 fuel/s; behaviour fire | M2 $30 | flame |
+| rocket | Rocket pod | weapon | 2 | 2×1 | 200 | 30 | pen 70, dmg 80, reload 20, range 1500, spread 2.0, rounds 8; behaviour salvo | M3 $30 | rockets |
+| radar | Search radar | system | 2 | 2×1 | 250 | 20 | range 8000, power −25 | M3 E4 $80 | radar |
+| workshop | Mobile workshop | special | 2 | 3×2 | 1500 | 90 | effect 1, rate 1 | M8 E2 $120 | workshop |
 
-## 6. Weapons (`wpn_`)
+### 3.4 Tier 3–4 (missiles, carriers, energy; Part 5 of the v2 roadmap)
 
-**Column meanings:**
-- **Pen.:** mm at 500 m (HEAT and energy don't lose penetration with range).
-- **Dmg:** per hit (per second for the flamethrower).
-- **Reload:** seconds.
-
-| id | Name | T | Cells | Mass | HP | Pen. | Dmg | Reload | Range | Acc. | Other | Cost | Unlock |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| wpn_mg_std | Machine gun | 0 | 1×1 | 40 | 20 | 8 | 6 | 0.1 | 600 | .60 | Auto-fire | M1 $6 | start |
-| wpn_swivel20_std | Swivel gun 20 mm | 0 | 1×1 | 60 | 20 | 12 | 18 | 1.2 | 700 | .60 | | W1 M1 $8 | start |
-| wpn_c37_std | Light cannon 37 mm | 0 | 2×1 | 250 | 40 | 50 | 45 | 2.5 | 1500 | .75 | | W1 M3 $25 | start |
-| wpn_hmg_std | Heavy machine gun | 1 | 1×1 | 80 | 25 | 20 | 12 | 0.13 | 1000 | .62 | Auto; hits aircraft | M2 $12 | guns_medium |
-| wpn_c57_std | Cannon 57 mm | 1 | 2×1 | 380 | 50 | 70 | 75 | 3.5 | 1800 | .78 | | M5 $40 | guns_medium |
-| wpn_c75_std | Cannon 75 mm | 1 | 3×1 | 600 | 60 | 90 | 110 | 5 | 2000 | .80 | Barrel overhangs 1.5 cells | M7 $60 | guns_medium |
-| wpn_mortar_std | Mortar | 1 | 2×1 | 300 | 40 | 20 | 90 | 6 | 2500 | .50 | Indirect fire | M4 $30 | guns_medium |
-| wpn_c105_std | Cannon 105 mm | 2 | 4×1 | 1300 | 80 | 150 | 190 | 8 | 2500 | .80 | Heavy recoil | M12 $110 | guns_heavy |
-| wpn_how150_std | Howitzer 150 mm | 2 | 4×2 | 2500 | 100 | 40 | 260 | 12 | 8000 | .55 | Indirect; needs a spotter | M18 $160 | guns_heavy |
-| wpn_ac20_std | Autocannon 20 mm | 2 | 2×1 | 150 | 35 | 35 | 16 | 0.33 | 1200 | .70 | Auto; hits aircraft | M3 $30 | guns_heavy |
-| wpn_flak40_std | Flak 40 mm | 2 | 2×2 | 1800 | 80 | 60 | 40 | 0.5 | 3500 | .60 | Air bursts | M10 $80 | guns_heavy |
-| wpn_flame_std | Flamethrower | 2 | 2×1 | 220 | 40 | 0 | 30/s | 0 | 60 | .90 | Sets parts on fire; burns 0.05 fuel/s | M2 $30 | flame |
-| wpn_rocket_std | Rocket pod | 2 | 2×1 | 200 | 30 | 70 | 80 | 20 | 1500 | .45 | Salvo of 8, unguided | M3 $30 | rockets |
-| wpn_c203_std | Heavy gun 203 mm | 3 | 6×2 | 6500 | 180 | 260 | 420 | 14 | 9000 | .82 | L and XL classes only | M45 E2 $400 | guns_super |
-| wpn_rack_std | Missile rack | 3 | 2×1 | 250 | 40 | — | per missile | 3 | per missile | — | Holds 4 small | M3 E1 $40 | missiles |
-| wpn_vls_std | VLS block | 3 | 2×2 | 800 | 80 | — | per missile | 1.5 | per missile | — | Holds 8 small or medium | M8 E2 $120 | missiles |
-| wpn_laser_std | Pulse laser | 4 | 2×1 | 300 | 40 | 60 | 40 | 1.2 | 2500 | .95 | draw 120, heat 18 | M3 E6 S6 $220 | lasers |
-| wpn_hlaser_std | Heavy laser | 4 | 4×1 | 1100 | 70 | 140 | 120 | 3 | 4000 | .95 | draw 400, heat 45 | M8 E14 S12 $520 | energy_heavy |
-| wpn_plasma_std | Plasma cannon | 4 | 3×2 | 1600 | 90 | 180 | 260 | 5 | 1800 | .70 | draw 300, heat 60, splash | M10 E12 S14 $560 | plasma |
-| wpn_plance_std | Plasma lance | 4 | 5×2 | 3200 | 130 | 320 | 520 | 9 | 1400 | .75 | draw 700, heat 110 | M18 E22 S25 $1100 | energy_heavy |
-
-- **Penetration over range (kinetic):** pen × (1 − 0.12 × (r − 500)/500), never below 0.5 × pen.
-- **Ricochet** beyond 70°.
-- **Recoil impulse** = calibre² × 0.9 N·s.
-
-## 7. Systems (`sys_`)
-
-| id | Name | T | Cells | Mass | HP | Stats | Cost | Unlock |
-|---|---|---|---|---|---|---|---|---|
-| sys_optics_std | Spyglass and periscope | 0 | 1×1 | 30 | 10 | effect 1.4 (spotting ×) | M1 $6 | start |
-| sys_smoke_std | Smoke pots | 0 | 1×1 | 30 | 15 | effect 20 (s of smoke), 3 uses | W1 M1 $6 | start |
-| sys_radio_std | Radio | 1 | 1×1 | 50 | 15 | range 3000, draw 1 | M1 E1 $15 | radio |
-| sys_firectl_std | Fire control | 1 | 1×1 | 60 | 15 | effect 1.35 (accuracy ×), draw 5 | M1 E2 $30 | fire_control |
-| sys_flare_std | Flare launcher | 1 | 1×1 | 40 | 15 | effect 3 (salvos), decoy 0.7 | M1 $12 | flares |
-| sys_radar_std | Search radar | 2 | 2×1 | 250 | 20 | range 8000, draw 25 | M3 E4 $80 | radar |
-| sys_stab_std | Gun stabiliser | 2 | 1×1 | 90 | 15 | effect 0.6 (moving-fire penalty ×), draw 8 | M2 E2 $50 | stabiliser |
-| sys_ecm_std | ECM suite | 3 | 2×1 | 150 | 20 | effect 0.4 (enemy lock −40%), draw 30, heat 10 | M2 E6 $150 | ecm |
-| sys_dronecpu_std | Drone computer I | 3 | 1×1 | 80 | 20 | effect 2 (drones at once), range 3000, draw 15 | M1 E6 $150 | drones |
-| sys_dronecpu2_std | Drone computer II | 3 | 2×1 | 140 | 25 | effect 4, range 4500, draw 30 | M2 E12 $320 | drones_2 |
-| sys_dronecpu3_std | Drone computer III | 4 | 2×1 | 160 | 30 | effect 6, range 6000, draw 45 | M2 E18 S10 $520 | drones_3 |
-| sys_capacitor_std | Capacitor bank | 4 | 2×1 | 400 | 40 | effect 30 (MJ buffer), heat 5 | M3 E8 S8 $200 | lasers |
-
-## 8. Logistics (`log_`)
-
-Capacity is in units: fuel 100 L, ammo 100 kg, cargo 100 kg.
-
-| id | Name | T | Cells | Mass | HP | Stats | Cost | Unlock |
-|---|---|---|---|---|---|---|---|---|
-| log_fuel_std | Fuel barrels | 0 | 1×1 | 60 | 30 | capacity 2, fireChance .35 | W1 M1 $5 | start |
-| log_ammo_std | Ammo crates | 0 | 1×1 | 80 | 30 | capacity 1.5, detChance .4 | W1 M1 $5 | start |
-| log_cargo_std | Cargo bed | 0 | 2×2 | 200 | 40 | capacity 20 | W3 M1 $12 | start |
-| log_tank_std | Fuel cargo tank | 1 | 3×2 | 400 | 60 | capacity 40, fireChance .5 | M4 $30 | cargo_2 |
-| log_hold_std | Steel cargo hold | 1 | 3×3 | 500 | 90 | capacity 50 | M5 $35 | cargo_2 |
-| log_magazine_std | Missile magazine | 3 | 2×1 | 300 | 60 | capacity 4 (medium missiles), detChance .3 | M3 $40 | missiles |
-
-## 9. Special (`spc_`)
-
-| id | Name | T | Cells | Mass | HP | Stats | Cost | Unlock |
-|---|---|---|---|---|---|---|---|---|
-| spc_repair_std | Repair bay | 1 | 2×2 | 600 | 60 | rate 8 (HP/s field repair), draw 5 | W1 M4 $40 | repair_bay |
-| spc_salvage_std | Salvage crane | 1 | 2×2 | 900 | 80 | effect 0.06 (salvage chance +), capacity 30 (t towed) | M5 $40 | salvage |
-| spc_workshop_std | Mobile workshop | 2 | 3×2 | 1500 | 90 | effect 1 (field swaps of small parts), rate 1 | M8 E2 $120 | workshop |
-| spc_hangar_std | Drone hangar | 3 | 3×2 | 900 | 90 | capacity 4 (drones), rate 0.33 (launches/s), draw 10 | M6 E2 $140 | drones |
-| spc_fab_std | Fabricator | 3 | 2×2 | 800 | 70 | rate 0.02 (units/s built), draw 60, heat 15 | M6 E6 $220 | fabricators |
-| spc_clamp_std | Release clamp | 3 | 1×1 | 120 | 60 | capacity 2 (t held) | M2 E1 $40 | detachment |
-
-## 10. Missile parts (`mis_`, domain `missile`)
-
-Missiles are designed on the missile grids (01 §5). A missile needs **one warhead, one motor and fins**; guidance is optional.
-
-| id | Name | T | Cells | Mass | Stats | Cost | Unlock |
+| id | Name | Cat. | T | Cells | Key stats | Cost | Unlock |
 |---|---|---|---|---|---|---|---|
-| mis_warhead_he | HE warhead | 3 | 1×1 | 60 | damage 120 | M1 $10 | missiles |
-| mis_warhead_napalm | Napalm warhead | 3 | 1×1 | 70 | damage 60, fire area 40 m for 8 s | M1 $16 | warheads_special |
-| mis_warhead_acid | Acid warhead | 3 | 1×1 | 70 | damage 50, armour −2 mm/s for 10 s | M1 E1 $20 | warheads_special |
-| mis_warhead_emp | EMP warhead | 4 | 1×1 | 60 | damage 20, electronics off 5 s | E3 S3 $60 | warheads_emp |
-| mis_warhead_cluster | Cluster bus | 4 | 2×1 | 150 | carries 4 small missiles | M2 E1 $40 | warheads_emp |
-| mis_motor_std | Solid motor | 3 | 1×1 | 40 | speed 250 | M1 $8 | missiles |
-| mis_fuel_std | Fuel section | 3 | 1×1 | 30 | range +1500 | M1 $6 | missiles |
-| mis_fins_std | Fins | 3 | 1×1 | 10 | turn 1 | M1 $3 | missiles |
-| mis_guide_radar | Radar seeker | 3 | 1×1 | 20 | turn 3; flares weak against it, ECM strong | E2 $30 | missiles |
-| mis_guide_heat | Heat seeker | 3 | 1×1 | 20 | turn 3.5; flares strong against it, ECM weak | E2 $30 | missiles |
-| mis_guide_laser | Laser rider | 4 | 1×1 | 20 | turn 4; needs line of sight from launcher | E3 $50 | lasers |
+| rack | Missile rack | weapon | 3 | 2×1 | capacity 4 small, reload 3 | M3 E1 $40 | missiles |
+| vls | VLS block | weapon | 3 | 2×2 | capacity 8, reload 1.5 | M8 E2 $120 | missiles |
+| mag | Missile magazine | logistics | 3 | 2×1 | capacity 4 medium, detonate 0.3 | M3 $40 | missiles |
+| hangar_d | Drone hangar | special | 3 | 3×2 | capacity 4, rate 0.33, power −10 | M6 E2 $140 | drones |
+| hangar_a | Aircraft hangar | special | 3 | 6×3 | capacity 2 aircraft, rate 0.1, power −20 | M16 E3 $300 | carriers |
+| dcpu1 / dcpu2 / dcpu3 | Drone computer I / II / III | system | 3 / 3 / 4 | 1×1 / 2×1 / 2×1 | effect 2 / 4 / 6 drones, power −15 / −30 / −45 | E6 / E12 / E18 S10 | drones / drones_2 / drones_3 |
+| fab | Fabricator | special | 3 | 2×2 | rate 0.02 units/s, power −60, heat 15 | M6 E6 $220 | fabricators |
+| clamp | Release clamp | special | 3 | 1×1 | capacity 2 t | M2 E1 $40 | detachment |
+| ecm | ECM suite | system | 3 | 2×1 | effect 0.4, power −30, heat 10 | M2 E6 $150 | ecm |
+| c203 | Heavy gun 203 mm | weapon | 3 | 6×2 | pen 260, dmg 420, reload 14, range 9000, vel 140, spread 0.45, cal 203 | M45 E2 $400 | guns_super |
+| laser | Pulse laser | weapon | 4 | 2×1 | pen 60, dmg 40, reload 1.2, range 2500, spread 0.2, power −120, heat 18; behaviour beam | M3 E6 S6 $220 | lasers |
+| hlaser | Heavy laser | weapon | 4 | 4×1 | pen 140, dmg 120, reload 3, range 4000, spread 0.2, power −400, heat 45; behaviour beam | M8 E14 S12 $520 | energy_heavy |
+| plasma | Plasma cannon | weapon | 4 | 3×2 | pen 180, dmg 260, reload 5, range 1800, vel 110, spread 0.8, power −300, heat 60 | M10 E12 S14 $560 | plasma |
+| plance | Plasma lance | weapon | 4 | 5×2 | pen 320, dmg 520, reload 9, range 1400, vel 120, spread 0.6, power −700, heat 110 | M18 E22 S25 $1100 | energy_heavy |
+| cap | Capacitor bank | system | 4 | 2×1 | effect 30 (MJ), heat 5 | M3 E8 S8 $200 | lasers |
+| reactor | Precursor reactor | mobility | 4 | 3×3 | power 1600, heat 90, fuelUse 0, rel 0.975 | M10 E12 S20 $600 | prop_reactor |
 
-## 11. Drone parts (domain `drone`)
+**Missile parts** (category `missile`, on the missile grids):
 
-Drones are designed on the drone grids (01 §5). They need **a drone core** (a bridge equivalent, below) plus a way to move.
+| id | Stats |
+|---|---|
+| mw_he | dmg 120 |
+| mw_napalm | dmg 60, fire area |
+| mw_acid | dmg 50, corrodes armour |
+| mw_emp | dmg 20, electronics off 5 s |
+| mw_cluster | carries 4 small missiles |
+| mmotor | speed 250 |
+| mfuel | range +1500 |
+| mfins | turn 1 |
+| mseek_radar | turn 3 |
+| mseek_heat | turn 3.5 |
+| mseek_laser | turn 4 |
 
-| id | Name | T | Cells | Mass | Stats | Cost | Unlock |
-|---|---|---|---|---|---|---|---|
-| crw_dcore_std | Drone core | 3 | 1×1 | 30 | links to the drone computer | E2 $20 | drones |
-| mob_drotor_std | Drone rotor | 3 | 1×1 | 30 | thrust 1.5 | M1 E1 $15 | drones |
-| wpn_dgun_std | Drone gun | 3 | 1×1 | 25 | pen 12, dmg 8, reload 0.15, range 600 | M1 $10 | drones |
-| wpn_dcharge_std | Drone charge | 3 | 1×1 | 40 | damage 150, destroys the drone on impact | M1 $15 | drones |
-| sys_dcam_std | Drone camera | 3 | 1×1 | 10 | effect 1.5 (spotting) | E1 $15 | drones |
-| wpn_dlaser_std | Drone laser | 4 | 1×1 | 40 | pen 30, dmg 18, reload 1, draw 30 | E3 S2 $60 | lasers |
+**Drone parts** (domain `drone`):
 
-## 12. Terrain physics (battle)
+| id | Stats |
+|---|---|
+| dcore | The drone core (every drone needs one) |
+| drotor | liftForce 1500 |
+| dgun | pen 12, dmg 8 |
+| dcharge | dmg 150, destroys the drone on impact |
+| dcam | spot 1.5 |
+| dlaser | pen 30, dmg 18, power −30 |
 
-| Terrain | Softness | Grip μ | Concealment | Heat × | Notes |
-|---|---|---|---|---|---|
-| Road | 0 | 0.90 | 0 | 1.0 | |
-| Plains | 0.1 | 0.75 | 0.1 | 1.0 | |
-| Forest floor | 0.3 | 0.60 | 0.5 | 0.9 | Vehicles taller than 3 m are slowed 20% |
-| Sand | 0.5 | 0.50 | 0.1 | 1.3 | |
-| Snow and ice | 0.6 | 0.35 | 0.2 | 0.7 | |
-| Mud and marsh | 1.0 | 0.40 | 0.1 | 1.0 | |
-| Ruins and rubble | 0.2 | 0.65 | 0.6 | 1.0 | |
-| Rock and mountain | 0 | 0.80 | 0.3 | 0.9 | |
+## 4. Physics and formulas
 
-## 13. Formulas
-
-**Land**
-
-1. **Ground pressure** (kPa) = m g ÷ contact area ÷ 1000.
-2. **Pressure factor** = clamp(ground pressure ÷ 100, 0.3, 3).
-3. **Rolling resistance coefficient:**
-   - wheels: crr = 0.015 + softness × 0.25 × pressure factor
-   - tracks: crr = 0.04 + softness × 0.08 × pressure factor
-4. **Drive force** = min(P_eff ÷ max(v, 1), μ × load on driven contacts).
-   - P_eff = kW × 1000 × efficiency (wheels 0.85, tracks 0.75) × power availability.
-5. **Resistance** = crr m g + m g sin(slope) + 0.5 × 1.225 × 0.9 × A × v².
-6. **Bogged down:** if resistance at rest on flat ground is greater than the drive force, the vehicle is stuck ("Bogged down").
-7. **Tip angle** = atan(half the contact base ÷ centre-of-mass height).
-
-**Sea**
-
-- Beam = length × 0.18, clamped to 2.5–12 m.
-- Each hull cell below the waterline displaces 0.25 m² × beam.
-- Buoyancy = 1000 g × displaced volume.
-- Holed cells below the waterline flood at 0.5 t/s, spreading until a bulkhead stops it.
-
-**Air**
-
-- Total lift = Σ (envelope cell lift + lift engine lift) × 100 kg.
-- **Lift margin** = lift ÷ mass:
-  - below 1.0: the airship sinks
-  - 1.0–1.15: sluggish climb
-  - above 1.3: agile
-- A destroyed envelope cell loses its lift. Fire spreads between canvas cells.
-- Thrust from propellers gives speed against drag (0.5 × 1.225 × 1.1 × frontal area × v²).
-
-**Power, heat and reliability**
-
-- **Power budget:** power produced vs draw. When draw is greater, energy weapons charge slower and systems cut out in the order radar, ECM, fabricator.
-- **Heat balance:** heat produced × terrain factor − 2 per engine − radiators (T1 part, later). Overheating cuts power and weapon rate of fire; above 100% for 20 s, fires can start.
-- **Breakdowns** per operating hour = Σ(1 − reliability) × 0.5 × wear factor (1 + (1 − condition)).
+- **Already built:** these are implemented as specified in `design/v1/05_PARTS_CATALOGUE.md` §6–7:
+  - terrain physics
+  - ground movement
+  - stability
+  - ships, aircraft, reliability, heat, cost
+- **New in v2:** airships (§3.2), damage types, and material resistances (`resist` in materials.json: fire, plasma, acid, laser, EMP).

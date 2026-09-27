@@ -1,0 +1,25 @@
+{
+  "id": "heli",
+  "name": "Scout helicopter",
+  "domain": "aircraft",
+  "class": "aircraft",
+  "w": 12,
+  "h": 4,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["rotor",5,0],
+    ["frame",8,1],
+    ["trotor",0,3],
+    ["frame",1,3],
+    ["frame",2,3],
+    ["frame",3,3],
+    ["frame",4,3],
+    ["frame",5,3],
+    ["aero",6,2],
+    ["fuel_ss",6,3],
+    ["frame",7,3],
+    ["crew2",8,2],
+    ["optics",10,2],
+    ["hmg",10,3]
+  ]
+}

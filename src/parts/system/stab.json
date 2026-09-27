@@ -1,0 +1,36 @@
+{
+  "id": "stab",
+  "name": "Gun stabiliser",
+  "family": "stab",
+  "variant": "std",
+  "category": "system",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 90,
+    "hp": 15,
+    "armor": 2,
+    "power": -8,
+    "rel": 0.998
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "stabiliser"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

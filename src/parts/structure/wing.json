@@ -1,0 +1,34 @@
+{
+  "id": "wing",
+  "name": "Wing section",
+  "family": "wing",
+  "variant": "std",
+  "category": "structure",
+  "tier": 2,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 90,
+    "hp": 30,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "lift": 6
+  },
+  "cost": {
+    "metal": 1,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "aviation"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

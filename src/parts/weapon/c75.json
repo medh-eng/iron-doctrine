@@ -1,6 +1,6 @@
 {
-  "id": "wpn_c75_std",
-  "name": "75 mm cannon",
+  "id": "c75",
+  "name": "Cannon 75 mm",
   "family": "c75",
   "variant": "std",
   "category": "weapon",
@@ -8,7 +8,9 @@
   "domains": [
     "land",
     "sea",
-    "air"
+    "airship",
+    "aircraft",
+    "wall"
   ],
   "footprint": {
     "w": 3,
@@ -33,7 +35,7 @@
     ],
     "smoke": [
       [
-        1.0,
+        1,
         0.25
       ]
     ]
@@ -54,22 +56,23 @@
     "mass": 600,
     "hp": 60,
     "armor": 10,
+    "power": 0,
+    "rel": 0.998,
     "pen": 90,
-    "damage": 110,
-    "reload": 5.0,
+    "reload": 5,
     "range": 2000,
-    "accuracy": 0.8,
-    "recoil": 5.1,
-    "draw": 0,
-    "heat": 2,
-    "crew": 1,
-    "reliability": 0.997
+    "vel": 165,
+    "dmg": 95,
+    "spread": 0.5,
+    "cal": 75,
+    "shells": 30,
+    "burst": 55,
+    "burstR": 1.6,
+    "heDmg": 70,
+    "heRadius": 3
   },
-  "damageType": "kinetic",
-  "ammo": "shell_m",
   "cost": {
-    "metal": 7,
-    "money": 60
+    "metal": 7
   },
   "craftAt": "city",
   "unlock": {
@@ -86,7 +89,8 @@
           "name": "High-velocity rounds",
           "mods": {
             "pen": 1.3,
-            "damage": 1.1,
+            "vel": 1.15,
+            "dmg": 1.05,
             "reload": 1.05
           },
           "cost": {
@@ -100,8 +104,8 @@
           "name": "Quick-action breech",
           "mods": {
             "reload": 0.66,
-            "accuracy": 1.04,
-            "reliability": 0.8,
+            "spread": 0.96,
+            "rel": 0.8,
             "mass": 1.04
           },
           "cost": {
@@ -119,10 +123,11 @@
           "id": "long_tube",
           "name": "Lengthened tube",
           "mods": {
-            "pen": 1.55,
-            "damage": 1.1,
+            "pen": 1.5,
+            "vel": 1.25,
             "range": 1.3,
-            "accuracy": 1.1,
+            "spread": 0.9,
+            "dmg": 1.1,
             "mass": 1.15,
             "reload": 1.06
           },
@@ -137,11 +142,11 @@
           "name": "Autoloader",
           "mods": {
             "reload": 0.44,
-            "reliability": 0.7,
+            "rel": 0.7,
             "mass": 1.1
           },
           "adds": {
-            "draw": 6
+            "power": -6
           },
           "cost": {
             "metal": 6,
@@ -152,5 +157,5 @@
       ]
     }
   ],
-  "notes": "Reference part (golden sample) and family base for c75. Mk 3 options are totals relative to Mk 1. Reliability mods divide the failure rate (below 1 = less reliable)."
+  "notes": "Golden sample: the art reference for every part (design/07 \u00a712). Stats imported from v1 07_data.js. Barrel pivot and muzzle come from 'moving' and 'anchors' (the game reads them). Mk 3 options are totals relative to Mk 1."
 }

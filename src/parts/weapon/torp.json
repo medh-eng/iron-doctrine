@@ -1,0 +1,40 @@
+{
+  "id": "torp",
+  "name": "Torpedo tube",
+  "family": "torp",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 1
+  },
+  "stats": {
+    "mass": 900,
+    "hp": 60,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 30,
+    "range": 4000,
+    "rounds": 2
+  },
+  "behaviour": {
+    "secondary": "torpedo",
+    "wet": true
+  },
+  "cost": {
+    "metal": 8,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "submarines"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

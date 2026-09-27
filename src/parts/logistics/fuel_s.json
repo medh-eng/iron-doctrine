@@ -1,0 +1,37 @@
+{
+  "id": "fuel_s",
+  "name": "Fuel tank 200 L",
+  "family": "fuel_s",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 220,
+    "hp": 30,
+    "armor": 3,
+    "power": 0,
+    "rel": 0.998,
+    "fuel": 200,
+    "fire": 0.35
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

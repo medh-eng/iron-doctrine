@@ -1,0 +1,36 @@
+{
+  "id": "radio",
+  "name": "Radio",
+  "family": "radio",
+  "variant": "std",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 50,
+    "hp": 15,
+    "armor": 2,
+    "power": -1,
+    "rel": 0.998
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "radio"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

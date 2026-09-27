@@ -1,0 +1,38 @@
+{
+  "id": "dc",
+  "name": "Depth-charge rack",
+  "family": "dc",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 40,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 4,
+    "range": 0,
+    "rounds": 6
+  },
+  "behaviour": {
+    "secondary": "depth"
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "sonar"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "phull",
+  "name": "Pressure hull section",
+  "family": "phull",
+  "variant": "std",
+  "category": "structure",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 2200,
+    "hp": 220,
+    "armor": 25,
+    "power": 0,
+    "rel": 0.998,
+    "sealed": 1
+  },
+  "behaviour": {
+    "floods": true
+  },
+  "cost": {
+    "metal": 8
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "submarines"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

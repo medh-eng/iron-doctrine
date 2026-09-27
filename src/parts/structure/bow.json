@@ -1,0 +1,38 @@
+{
+  "id": "bow",
+  "name": "Bow section",
+  "family": "bow",
+  "variant": "std",
+  "category": "structure",
+  "tier": 1,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 450,
+    "hp": 130,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "sealed": 0.5
+  },
+  "behaviour": {
+    "floods": true,
+    "bowShape": true
+  },
+  "cost": {
+    "metal": 3,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "hull_iron"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

@@ -9,7 +9,8 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
 
 ## Where things are
 
-- `design/`: the design bible (v2). It is the source of truth, and you update it when a decision changes.
+- `design/`: the design bible (v2.1). It is the source of truth, and you update it when a decision changes.
+  - `design/v1/`: the v1 documents, kept because they specify systems that are built. Code comments like `design/05 §7.3` point there. Where v2 is silent, v1 rules stand.
   - `01_GAME_DESIGN`: world, factions, officers, fleets, settlements, logistics, battles, sieges, progression
   - `02_CONTROLS_AND_UI`: battle HUD, orders, map, panels, Drafting Office, settings
   - `03_ART_AND_AUDIO`: overall look, map, effects, music, sound
@@ -20,13 +21,16 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
   - `08_BALANCE_AND_ECONOMY`: balance bands, prices, production, salvage, XP, tech tree, perks
   - `09_FACTIONS`: the five factions
   - `10_PART_ROSTER`: art production order and status
+  - `07_ART_INTEGRATION`: the legacy PNG art contract (still supported by the code; no new PNG work)
 - `src/`: game source.
   - `src/js/*.js` are joined in filename order into one strict IIFE.
   - `src/styles.css`, `src/index.template.html`, and `src/assets/` (fonts and other files, copied as they are).
   - `src/assets/parts/<partId>/`: the older PNG part-image route (design `07_ART_INTEGRATION`, superseded by `07_ART_AND_PARTS`); the build still validates it.
-  - `src/parts/`: the part library: `materials.json`, `paints.json`, `classes.json`, and `<category>/<id>.json + .svg`.
-  - `src/vehicles/`: ship, missile and drone designs, used as templates and faction designs.
-- `tools/`: `part-lib.mjs` (shared rules), `check-parts.mjs`, `preview-parts.mjs`, `part-render.js` (the reference renderer to port), `png.mjs` (PNG writer/reader used by the build) and `make-art-placeholders.mjs`.
+  - `src/parts/`: the part library: `materials.json` (1×1 structure cells), `paints.json`, `classes.json`, and `<category>/<id>.json`, with an optional `.svg` for art.
+    - Ids, categories and stat names are the game's own (`c75`, `eng_m`; `pen`, `rel`, `fuelUse`).
+    - Since v2.1 it holds every v1 part with the exact v1 numbers.
+  - `src/vehicles/`: designs in the game's template format (all 15 v1 templates, then faction designs).
+- `tools/`: `part-lib.mjs` (shared rules), `check-parts.mjs`, `preview-parts.mjs`, `part-render.js` (the reference renderer to port), `import-v1-parts.mjs` (one-off; delete after step 2.5a), `png.mjs` (PNG writer/reader used by the build) and `make-art-placeholders.mjs`.
 - `build.mjs`: validates the part library, bundles it as `PART_LIBRARY`, and builds the game as a small static site.
   - `node build.mjs` writes the release build to `docs/` (`index.html`, `game.js`, `game.css`, `assets/`, the home-screen manifest and icons). GitHub Pages serves this folder as the live game.
   - `node build.mjs --test` writes a test build to `build-test/`, with test hooks included.
@@ -60,18 +64,19 @@ The producer doesn't write code. Explain decisions in plain language, and keep c
 The Art Foundry (a separate Claude project) delivers parts as `foundry-<name>.zip` files, containing repo paths only (design/07 §9).
 
 1. Unzip each one into the repo root, overwriting only the files it contains.
-2. Run `node tools/check-parts.mjs`.
-   - **Format errors:** fix small ones yourself (a colour off the palette, a viewBox, an id mismatch). For anything bigger, remove the part and report it in the summary.
+2. **For parts that already existed:** check with `git diff` that only the art fields changed (`overhang`, `anchors`, `moving`, `notes`) and that a `.svg` was added. If stats, footprint or behaviour changed, restore them and mention it in the summary.
+3. Run `node tools/check-parts.mjs`.
+   - **Format errors:** fix small ones yourself (a colour off the palette, a viewBox, an id mismatch). For anything bigger, remove the part and report it.
    - **Balance warnings:** leave them; list them in the summary.
-3. Run `node tools/preview-parts.mjs --part <id>` for new parts and look at the PNG. For new designs, use `--vehicle <id>`.
-4. Update the part's row in `design/10_PART_ROSTER.md` to `integrated`.
-5. Delete the zip, run `node build.mjs`, and commit: "Art: <names>".
-6. Never overwrite the golden sample (`wpn_c75_std`) unless the zip is explicitly a replacement for it.
+4. Run `node tools/preview-parts.mjs --part <id>`, plus `--vehicle <a template that uses it>`, and look at the PNGs.
+5. Update the part's row in `design/10_PART_ROSTER.md` to `integrated`.
+6. Delete the zip, run `node build.mjs`, and commit: "Art: <names>".
+7. Never overwrite the golden sample (`c75`) unless the zip is explicitly a replacement for it.
 
 ## Non-negotiables
 
 - **Self-contained site.** The build output in `docs/` is everything the game needs. Several files are fine (the producer lifted the one-file rule in v0.1.1); nothing is loaded from other websites (the build fails on external URLs). Part art is SVG from `PART_LIBRARY`; everything else is drawn in code. All audio comes from the Web Audio API. Fonts are system fonts or files in `src/assets/`.
-- **Data-driven parts.** Never hard-code a part's stats or look in game code. Read them from `PART_LIBRARY`. Missing art shows as a labelled grey placeholder block.
+- **Data-driven parts.** From step 2.5a on, never hard-code a part's stats or look in game code. Read them from `PART_LIBRARY`. Parts without SVG art keep their v1 code drawing.
 - **Landscape first.** Android Chrome is the main target, with a full-screen world. Portrait shows the rotate card and pauses the game. Desktop must work with mouse and keyboard.
 - **Screen edges.** Respect safe areas on all four sides. All text must be readable at 360 px screen height.
 - **Performance.** Target 60 fps on a mid-range Android phone:

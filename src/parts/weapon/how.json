@@ -1,0 +1,50 @@
+{
+  "id": "how",
+  "name": "Howitzer 150 mm",
+  "family": "how",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 2
+  },
+  "stats": {
+    "mass": 2500,
+    "hp": 100,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 40,
+    "reload": 12,
+    "range": 8000,
+    "vel": 95,
+    "dmg": 180,
+    "spread": 0.9,
+    "cal": 150,
+    "shells": 12,
+    "heDmg": 180,
+    "heRadius": 6
+  },
+  "behaviour": {
+    "he": true,
+    "indirect": true
+  },
+  "cost": {
+    "metal": 18
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

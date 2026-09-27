@@ -1,0 +1,36 @@
+{
+  "id": "rotor",
+  "name": "Rotor",
+  "family": "rotor",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 1
+  },
+  "stats": {
+    "mass": 400,
+    "hp": 50,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.985
+  },
+  "behaviour": {
+    "rotor": true
+  },
+  "cost": {
+    "metal": 4,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "rotorcraft"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

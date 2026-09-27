@@ -1,0 +1,29 @@
+{
+  "id": "scout",
+  "name": "Scout car",
+  "domain": "land",
+  "class": "tank",
+  "w": 10,
+  "h": 5,
+  "soft": true,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["wheel_s",1,4],
+    ["wheel_s",3,4],
+    ["wheel_s",6,4],
+    ["wheel_s",8,4],
+    ["plate",0,3],
+    ["eng_s",1,2],
+    ["crew2",3,2],
+    ["fuel_s",5,3],
+    ["radio",5,2],
+    ["plate",6,3],
+    ["plate",7,3],
+    ["plate",8,3],
+    ["arm20",6,2],
+    ["arm20",7,2],
+    ["slope40",8,2],
+    ["hmg",4,1],
+    ["optics",3,1]
+  ]
+}

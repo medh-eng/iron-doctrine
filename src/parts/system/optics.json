@@ -1,0 +1,37 @@
+{
+  "id": "optics",
+  "name": "Optics",
+  "family": "optics",
+  "variant": "std",
+  "category": "system",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 10,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "spot": 1.4
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

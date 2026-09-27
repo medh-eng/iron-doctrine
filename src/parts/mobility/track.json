@@ -1,0 +1,39 @@
+{
+  "id": "track",
+  "name": "Track segment",
+  "family": "track",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 450,
+    "hp": 70,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "contact": 0.35,
+    "maxLoad": 10000,
+    "cap": 55,
+    "radius": 0.25
+  },
+  "behaviour": {
+    "loco": "track"
+  },
+  "cost": {
+    "metal": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_diesel"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

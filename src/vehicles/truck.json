@@ -1,0 +1,32 @@
+{
+  "id": "truck",
+  "name": "Supply truck",
+  "domain": "land",
+  "class": "tank",
+  "w": 11,
+  "h": 5,
+  "soft": true,
+  "source": "v1 template (07_data.js TEMPLATES)",
+  "cells": [
+    ["wheel_l",1,3],
+    ["wheel_l",5,3],
+    ["wheel_l",8,3],
+    ["timber",0,2],
+    ["timber",1,2],
+    ["timber",2,2],
+    ["timber",3,2],
+    ["timber",4,2],
+    ["timber",5,2],
+    ["timber",6,2],
+    ["timber",7,2],
+    ["timber",8,2],
+    ["timber",9,2],
+    ["timber",10,2],
+    ["cargo",1,0],
+    ["cargo",3,0],
+    ["fuel_s",5,1],
+    ["timber",5,0],
+    ["crew2",6,0],
+    ["eng_s",8,0]
+  ]
+}

@@ -23,16 +23,23 @@ For each part, `tools/part-lib.mjs` compares its stats with its family base (`va
 
 **P** = the weighted average of the ratios. The base scores 1.00.
 
+Stat names are the game's own (05 conventions):
+- `rel` is reliability.
+- `draw` is power drawn, i.e. the size of a negative `power`.
+- `spread` is aiming error, so lower is better.
+
 | Category | Weights (a − sign means lower is better) |
 |---|---|
-| weapon | pen 3, damage 2, reload −2, range 1, accuracy 2, mass −1, hp 0.5, draw −1, heat −1, reliability 1 |
-| mobility | power 3, thrust 3, mass −1.5, fuel −1.5, heat −1, reliability 1, hp 0.5, speedCap 1, load 1, grip 1 |
-| lift | lift 3, mass −1, hp 1, draw −1, fuel −1, reliability 1 |
-| missile | damage 2, speed 1, range 1, turn 1, mass −1, hp 0.5 |
-| system | effect 3, range 1, draw −1, mass −1, hp 0.5, heat −1, reliability 1 |
-| logistics | capacity 3, mass −1, hp 1, fireChance −1, detChance −1 |
-| crew | crewSlots 2, armor 1, hp 1, mass −1 |
-| special | effect 3, rate 2, capacity 1, draw −1, mass −1, hp 0.5, reliability 1 |
+| structure | armor 2, hp 1, mass −1.5, crew 1, lift 2, sealed 1 |
+| mobility | power 3, jet 3, maxLoad 1, cap 1, contact 1, ballast 2, mass −1.5, fuelUse −1.5, heat −1, rel 1, hp 0.5 |
+| lift | lift 3, mass −1, hp 1, draw −1, fuelUse −1, rel 1 |
+| weapon | pen 3, dmg 2, reload −2, rpm 2, range 1, spread −2, vel 1, mass −1, hp 0.5, draw −1, heat −1, rel 1 |
+| missile | dmg 2, speed 1, range 1, turn 1, mass −1, hp 0.5 |
+| system | spot 2, accuracy 2, sonar 1, range 1, draw −1, mass −1, hp 0.5, heat −1, rel 1 |
+| logistics | fuel 2, shells 2, cargo 2, capacity 2, mass −1, hp 1, fire −1, detonate −1 |
+| special | effect 3, rate 2, capacity 1, draw −1, mass −1, hp 0.5, rel 1 |
+
+The tool is `tools/part-lib.mjs` (`WEIGHTS`). If you change a weight, change it here too.
 
 ## 3. Cost index and bands
 
@@ -54,9 +61,9 @@ For each part, `tools/part-lib.mjs` compares its stats with its family base (`va
 | Long barrel | + pen and range; − mass, reload, and a longer overhang (it catches on trees) |
 | Short or howitzer barrel | + damage (HE); − pen, range |
 | Lightweight | − mass; − hp, reliability |
-| Rugged | + reliability, hp; − mass, cost |
+| Rugged | + rel, hp; − mass, cost |
 | High-output | + power or lift; − fuel, heat, reliability |
-| Precision | + accuracy; − reload, electronics cost |
+| Precision | − spread; − reload, electronics cost |
 
 ## 4. Getting parts
 
@@ -262,18 +269,23 @@ Salvage only happens if you **win and hold the field**.
 
 - **Prerequisites:** each node needs its prerequisite (arrow).
 - **Tier 0** is known from the start.
-- The whole tree costs about 140 CP. A Grand Admiral earns about 58, so **choosing a doctrine is unavoidable**.
+- The whole tree costs about 160 CP (11 T1, 14 T2, 12 T3 and 8 T4 nodes). A Grand Admiral earns about 58, so **choosing a doctrine is unavoidable**.
+- The tree only applies to campaigns. The Gauntlet and the Battle Simulator have every part.
+
+Parts already in the game are placed in the tree by `tools/import-v1-parts.mjs` (the `TECH` table), and shown in 05 §2.
 
 | Branch | T1 | T2 | T3 | T4 |
 |---|---|---|---|---|
-| Hulls | hull_iron (iron frame, steel plate, arm20, steel hull) | hull_heavy (arm40, arm80, slope40, bulkhead) ← hull_iron | hull_advanced (composite, alloy) ← hull_heavy | hull_precursor (Precursor plating) ← hull_advanced |
-| Lift | lift_rigid (rigid envelope) | lift_engines (lift engine) ← lift_rigid | lift_armoured (armoured envelope) ← lift_engines | lift_levitator ← lift_armoured |
-| Propulsion | prop_petrol (petrol engine, rubber wheel); prop_diesel (diesel engine, track) | prop_turbine (turbine, heavy track) ← prop_diesel; prop_marine ← prop_diesel | — | prop_reactor ← prop_turbine + hull_advanced |
-| Guns | guns_medium (57, 75, HMG, mortar) | guns_heavy (105, 150 howitzer, 20 mm autocannon, flak) ← guns_medium; flame ← guns_medium; rockets ← guns_medium | guns_super (203 mm) ← guns_heavy | — |
-| Missiles and drones | — | — | missiles (rack, VLS, magazine, HE, motor, fuel, fins, seekers) ← rockets; warheads_special (napalm, acid) ← missiles; drones (drone computer I, hangar, drone parts) ← radio; drones_2 ← drones; fabricators ← workshop; detachment (release clamp) ← hull_advanced | warheads_emp (EMP, cluster) ← warheads_special; drones_3 ← drones_2 |
-| Energy | — | — | — | lasers (pulse laser, capacitor, laser seeker, drone laser) ← fire_control + hull_advanced; plasma ← lasers; energy_heavy (heavy laser, plasma lance) ← plasma |
-| Systems | radio; fire_control; flares | radar ← radio; stabiliser ← fire_control; workshop (mobile workshop) ← repair_bay | ecm ← radar | — |
-| Logistics | cargo_2 (fuel tank, steel hold); repair_bay; salvage (salvage crane) | — | — | — |
+| Hulls | hull_iron (plate, arm20, hull, bow, bulk) | hull_heavy (arm40, arm80, slope40) ← hull_iron | hull_advanced (composite, alloy) ← hull_heavy | hull_precursor (Precursor plating) ← hull_advanced |
+| Lift | lift_rigid (rigid envelope) | lift_engines (lifteng) ← lift_rigid | lift_armoured (armoured envelope) ← lift_engines | lift_levitator ← lift_armoured |
+| Propulsion | prop_petrol (eng_s, radiator, wheel_s, wheel_l); prop_diesel (eng_m, track) | prop_heavy (eng_h, marine, thrust) ← prop_diesel; prop_turbine (turb) ← prop_diesel | — | prop_reactor ← prop_turbine + hull_advanced |
+| Guns | guns_medium (c57, c75, hmg, mortar) | guns_heavy (c105, how, ac20, aa40, ngun) ← guns_medium; flame ← guns_medium; rockets ← guns_medium | guns_super (c203) ← guns_heavy | — |
+| Sea | — | submarines (phull, ballast, emotor, torp) ← hull_iron; sonar (sonar, dc) ← radio | carriers (aircraft hangar) ← aviation + hull_heavy | — |
+| Air | — | aviation (wing, tail, aero, bomb) ← prop_petrol; rotorcraft (rotor, trotor) ← aviation | jets (jet) ← aviation + prop_turbine | — |
+| Missiles and drones | — | — | missiles (rack, VLS, magazine, missile parts) ← rockets; warheads_special (napalm, acid) ← missiles; drones (dcpu1, drone hangar, drone parts) ← radio; drones_2 ← drones; fabricators ← workshop; detachment (clamp) ← hull_advanced | warheads_emp (EMP, cluster) ← warheads_special; drones_3 ← drones_2 |
+| Energy | — | — | — | lasers (laser, cap, laser seeker, drone laser) ← fire_control + hull_advanced; plasma ← lasers; energy_heavy (hlaser, plance) ← plasma |
+| Systems | radio; fire_control (fc); flares | radar (radar, nsight) ← radio; stabiliser (stab) ← fire_control; workshop ← repair_bay | ecm ← radar | — |
+| Logistics | cargo_2 (fuel_ss, ammo_p, fuel_l, hold); repair_bay (repair); salvage (crane) | — | — | — |
 
 ## 12. Perks (Command Points)
 

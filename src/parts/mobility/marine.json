@@ -1,0 +1,38 @@
+{
+  "id": "marine",
+  "name": "Marine diesel",
+  "family": "marine",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 3
+  },
+  "stats": {
+    "mass": 5000,
+    "hp": 200,
+    "armor": 10,
+    "power": 1500,
+    "rel": 0.995,
+    "heat": 40,
+    "fuelUse": 300,
+    "sealed": 1
+  },
+  "behaviour": {
+    "floods": true
+  },
+  "cost": {
+    "metal": 25
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

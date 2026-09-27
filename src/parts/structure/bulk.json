@@ -1,0 +1,36 @@
+{
+  "id": "bulk",
+  "name": "Watertight bulkhead",
+  "family": "bulk",
+  "variant": "std",
+  "category": "structure",
+  "tier": 1,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 2
+  },
+  "stats": {
+    "mass": 200,
+    "hp": 100,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "sealed": 1
+  },
+  "behaviour": {
+    "bulkhead": true
+  },
+  "cost": {
+    "metal": 2
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "hull_iron"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

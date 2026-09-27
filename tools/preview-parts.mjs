@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Renders preview sheets to PNG so parts and vehicles can be reviewed before they go into the game.
-//   node tools/preview-parts.mjs --part wpn_c75_std [--part ...]
-//   node tools/preview-parts.mjs --vehicle test_gun_block [--scheme directorate]
+//   node tools/preview-parts.mjs --part c75 [--part ...]
+//   node tools/preview-parts.mjs --vehicle medium [--scheme directorate]
 //   node tools/preview-parts.mjs --all
 // Output: preview/<id>.png  (git-ignored). Needs Playwright + Chromium (see design/04 §11).
 import { mkdirSync, readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { loadLibrary, vehicleSummary, costIndex, balanceReport } from './part-lib.mjs';
+import { loadLibrary, vehicleSummary, costIndex, balanceReport, normalizeVehicle } from './part-lib.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'preview');
@@ -56,6 +56,8 @@ const jobs = [
   ...partIds.map((id) => ({ kind: 'part', id, info: { cost: costIndex(lib.parts[id].cost), p: bal[id] ? bal[id].p : 1 } })),
   ...vehIds.map((id) => ({ kind: 'vehicle', id, info: vehicleSummary(lib.vehicles[id], lib) })),
 ];
+// The renderer draws structure cells and component parts separately.
+for (const id of Object.keys(lib.vehicles)) lib.vehicles[id] = normalizeVehicle(lib.vehicles[id], lib);
 
 const page = `<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;background:#0d1117;font-family:Roboto Condensed,Arial Narrow,sans-serif}

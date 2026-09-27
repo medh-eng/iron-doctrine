@@ -1,0 +1,48 @@
+{
+  "id": "ac20",
+  "name": "Autocannon 20 mm",
+  "family": "ac20",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 150,
+    "hp": 35,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 35,
+    "rpm": 180,
+    "range": 1200,
+    "vel": 240,
+    "dmg": 16,
+    "spread": 1,
+    "cal": 20,
+    "burst": 4
+  },
+  "behaviour": {
+    "auto": true,
+    "aa": true
+  },
+  "cost": {
+    "metal": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

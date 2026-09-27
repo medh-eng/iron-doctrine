@@ -33,9 +33,22 @@
   }
 
   var cache = new Map();
+  // Parts with no SVG art yet get a labelled placeholder block (the game uses its code drawing instead).
+  function placeholder(def) {
+    var u = 32, w = def.footprint.w * u, h = def.footprint.h * u;
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#5A6068'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#14171B'; g.lineWidth = 2; g.strokeRect(1, 1, w - 2, h - 2);
+    g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1;
+    for (var i = -h; i < w; i += 8) { g.beginPath(); g.moveTo(i, h); g.lineTo(i + h, 0); g.stroke(); }
+    g.fillStyle = '#E6DCC3'; g.font = 'bold ' + Math.min(12, h * 0.45) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(def.id, w / 2, h / 2, w - 4);
+    return Promise.resolve(cv);
+  }
   function partImage(lib, id, scheme) {
     var key = id + '|' + scheme.p1 + scheme.p2 + scheme.p3;
-    if (!cache.has(key)) cache.set(key, loadImage(applyScheme(lib.svg[id], scheme)));
+    if (!cache.has(key)) cache.set(key, lib.svg[id] ? loadImage(applyScheme(lib.svg[id], scheme)) : placeholder(lib.parts[id]));
     return cache.get(key);
   }
 

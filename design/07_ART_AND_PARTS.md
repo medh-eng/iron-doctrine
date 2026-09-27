@@ -1,4 +1,4 @@
-# Iron Doctrine: art and parts (the contract)
+# Iron Doctrine: art and parts (the contract, v2.1)
 
 This file is shared by the **game repo** and the **Art Foundry** project. `tools/part-lib.mjs` enforces the format rules, so if this file and the tool disagree, fix one of them so they match.
 
@@ -177,89 +177,94 @@ The reference implementation is `tools/part-render.js`. The game ports it as `05
 
 ## 6. How the game renders parts
 
-1. **Paint:** replace the tokens in the SVG text with the ship's colours.
-2. **Rasterise** each group (the body, and each moving group) to an offscreen canvas at the needed scale. Cache it by part + paint + scale.
-3. **Camouflage:** draw the pattern clipped to the `class="paint"` shapes, then draw the detail on top.
-4. **Damage:**
-   - scorch overlay by damage fraction
-   - holes (dark with a hot rim) where penetrations happened
-   - fire and smoke from `anchors.smoke`
-   - destroyed parts detach as debris sprites
-5. **Moving groups** are drawn with rotation around `data-pivot`: barrel elevation, spinning wheels and rotors, turning radar.
-6. **Composition:** structure cells (§4) first, then parts in list order. `f: 1` mirrors a part around its footprint centre.
+1. **Paint:** replace the tokens in the SVG text with the side's colours. Until factions arrive, the player side uses `league` and the enemy uses `directorate`.
+2. **Rasterise** the body, and each moving group separately, to offscreen images at 64 px per cell. The game then draws them through the same path as the old PNG route (`05b_art.js`), so sprite caching and damage overlays are unchanged.
+3. **Order of preference:** SVG art first, then the legacy PNG route, then the code drawing in `drawPart()`.
+4. **Barrels:**
+   - The barrel image rotates about `moving.barrel.pivot`.
+   - Shells and muzzle flashes start at `anchors.muzzle`.
+   - The distance from pivot to muzzle is that part's barrel length. The game doesn't stretch SVG barrels.
+5. **Damage:** unchanged from v1 (scorch, holes, fire, detached debris using the same image).
+6. **Structure cells** (materials) are auto-tiled (§4).
+7. **Flipping:** `f: 1` mirrors a part around its footprint centre. Enemy vehicles are drawn mirrored as a whole, as in v1.
 
-## 7. Part JSON
+## 7. Part JSON (`src/parts/<category>/<id>.json`)
 
 ```json
 {
-  "id": "wpn_c75_std",              // = file name; prefix by category (05 conventions)
-  "name": "75 mm cannon",
-  "family": "c75", "variant": "std",
-  "category": "weapon",             // mobility|lift|weapon|missile|system|logistics|crew|special = folder name
-  "tier": 1,                        // 0–4
-  "domains": ["land","sea","air"],  // land|sea|air|drone|missile
-  "footprint": {"w": 3, "h": 1},
+  "id": "c75", "name": "Cannon 75 mm", "family": "c75", "variant": "std",
+  "category": "weapon",               // structure|mobility|lift|weapon|missile|system|logistics|special = folder
+  "tier": 1,                          // 0–4
+  "domains": ["land","sea","airship","aircraft","wall"],
+  "footprint": {"w": 3, "h": 1},      // must equal the game's footprint for existing parts
   "overhang": {"left": 0, "right": 1.5, "top": 0, "bottom": 0},
-  "mount": "turret_or_hull", "layer": "front",
-  "anchors": {"mount": [0.5, 0.5], "muzzle": [4.5, 0.5], "smoke": [[1.0, 0.25]]},
+  "anchors": {"muzzle": [4.5, 0.5], "smoke": [[1, 0.25]]},
   "moving": {"barrel": {"pivot": [0.94, 0.5], "elevation": [-8, 20]}},
-  "stats": {"mass": 600, "hp": 60, "armor": 10, "pen": 90, "damage": 110, "reload": 5, "range": 2000,
-            "accuracy": 0.8, "heat": 2, "crew": 1, "reliability": 0.997},
-  "damageType": "kinetic", "ammo": "shell_m",
-  "cost": {"metal": 7, "money": 60},  // keys: wood metal elec scrap money
+  "stats": {"mass": 600, "hp": 60, "armor": 10, "power": 0, "rel": 0.998, "pen": 90, "reload": 5,
+            "range": 2000, "vel": 165, "dmg": 95, "spread": 0.5, "cal": 75, "shells": 30, "burst": 55,
+            "burstR": 1.6, "heDmg": 70, "heRadius": 3},
+  "behaviour": {},                    // words and on/off flags, e.g. {"auto": true, "aa": true}
+  "cost": {"metal": 7},               // keys: wood metal elec scrap money
   "craftAt": "city",                  // city | metropolis
   "unlock": {"tech": "guns_medium"},  // or {"start": true} | {"faction": "league"} | {"salvage": true}
-  "pros": [], "cons": [],             // required non-empty for variants (not "std")
+  "pros": [], "cons": [],             // required non-empty for variants
   "upgrades": [ {"mark": 2, "options": [ {...}, {...} ]}, {"mark": 3, "options": [ ... ]} ],
   "notes": ""
 }
 ```
 
-- **Stats** must be numbers. `mass` and `hp` are required.
-- **Stat names per category** are the ones the balance tool weighs (08 §2). Use `draw` for power consumed.
-- **Anchors and pivots** are in cells, relative to the footprint's top-left. They must lie inside the drawing area.
-- **Upgrade option format:**
+**Ids and stats**
+- **Ids:** the family's standard part has `id = family`, `variant = "std"`. Variants are `<family>_<variant>`.
+- **Stats** are numbers, with the game's names (05 conventions). `mass` and `hp` are required. The game copies `stats` and `behaviour` straight into its part object, so the names must be exactly the ones the code uses.
+- **Existing parts:** **the Art Foundry never changes an existing part's stats, footprint or behaviour.** It adds `overhang`, `anchors`, `moving` and the `.svg`.
 
-  ```json
-  {"id", "name", "mods": {stat: multiplier}, "adds": {stat: amount}, "cost": {...}}
-  ```
+**Anchors and pivots**
+- They are in cells, relative to the footprint's top-left.
+- **For guns, keep close to the v1 convention**, so the art matches the feel of the game:
+  - pivot at the centre of the rearmost cell, half-way up: `[0.5, h/2]`
+  - muzzle at pivot + barrel length, where barrel length in cells = `w × 1.25 + (automatic ? 0.6 : 1.2)`
+  - the gun's art may move the pivot as far as 0.6 cells forward (the golden sample's is at 0.94)
 
-  - A `reliability` multiplier divides the failure rate. Below 1 means less reliable.
-  - Mk 3 options are totals relative to Mk 1.
-  - Offer **two options per mark**: branches, not a ladder.
-- **`balanceNote`:** a string that explains a deliberate outlier. It silences that balance warning.
+**Upgrade options:** `{id, name, mods: {stat: multiplier}, adds: {stat: amount}, cost}`.
+- A `rel` multiplier divides the failure rate, so below 1 means less reliable.
+- Mk 3 options are totals relative to Mk 1.
+- Offer two options per mark.
+
+**`balanceNote`** explains a deliberate outlier and silences that balance warning.
 
 ## 8. Vehicle designs (`src/vehicles/<id>.json`)
 
+This is the game's own template format, plus `domain` and `class`:
+
 ```json
 {
-  "id": "league_tank_t0", "name": "Harbour tank", "domain": "land", "class": "tank",
-  "faction": "league", "mark": 1, "paint": {"scheme": "league", "camo": "none"},
-  "cells": [ {"m": "ironwood", "x": 1, "y": 4, "w": 8, "h": 2}, {"m": "slope40", "x": 9, "y": 4, "o": 0} ],
-  "parts": [ {"p": "wpn_c37_std", "x": 6, "y": 3}, {"p": "mob_wheel_wood_std", "x": 1, "y": 6, "f": 0} ]
+  "id": "medium", "name": "Medium tank", "domain": "land", "class": "tank", "w": 14, "h": 7,
+  "faction": "league", "paint": {"scheme": "league", "camo": "none"},
+  "cells": [
+    ["track", 2, 6], ["arm20", 1, 4], ["eng_m", 2, 4], ["c75", 8, 2]
+  ]
 }
 ```
 
-- **`cells`:** structure materials. `w` and `h` fill a rectangle; `o` is the slope orientation.
-- **`parts`:** components at their footprint's top-left cell.
+- **Each cell** is `[partOrMaterialId, x, y]`, at the part's top-left. An optional 4th element holds options, e.g. `{"f": 1}` to flip.
+- **Flags:** v1 flags such as `soft` and `fixed` are kept as they are.
+- **Domains:** `land`, `sea` (ships and submarines), `airship`, `aircraft` (planes and helicopters), `drone`, `missile`. The class comes from `src/parts/classes.json`.
 - **The checker enforces:**
-  - class grid limits
-  - part count
+  - the class grid and part limits
   - no overlaps
-  - known materials and parts
-- **Missiles** use `domain: "missile"` and classes `missile_s`, `missile_m` or `missile_l`.
-- **Drones** use `domain: "drone"` and classes `drone_1`, `drone_2` or `drone_3`.
+  - known ids
+- **Existing designs:** the 15 v1 templates are already in `src/vehicles/`. Preview them (`--vehicle medium`) to see how a part will sit in real designs.
 
 ## 9. Delivery and checks
 
-- **Foundry zips:** the Art Foundry delivers `foundry-<short-name>.zip`. It contains repo paths only:
-  - `src/parts/<category>/<id>.json` + `.svg`
-  - `src/vehicles/<id>.json`
+- **Foundry zips:** the Art Foundry delivers `foundry-<short-name>.zip` with repo paths only:
+  - `src/parts/<category>/<id>.svg`, plus the part's `.json`, updated with its art fields
+  - new `src/vehicles/<id>.json`
   - `src/parts/materials.json` or `paints.json`, only when they change
 - **Before delivery:**
   - `node tools/check-parts.mjs` shows no errors
   - balance warnings are either fixed or explained with `balanceNote`
-  - `node tools/preview-parts.mjs --part <id>` (and `--vehicle <id>`) has been reviewed
+  - `node tools/preview-parts.mjs --part <id>` has been reviewed, plus at least one template that uses the part (`--vehicle <id>`)
 - **The repo** integrates zips as described in CLAUDE.md.
 
 ## 10. Battlefield palettes
@@ -291,4 +296,4 @@ The reference implementation is `tools/part-render.js`. The game ports it as `05
 
 ## 12. Golden sample
 
-`src/parts/weapon/wpn_c75_std.svg` + `.json` is the reference for style, structure and format. Match its level of detail and its lighting.
+`src/parts/weapon/c75.svg` + `.json` is the reference for style, structure and format. Match its level of detail and its lighting.

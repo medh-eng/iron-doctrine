@@ -1,0 +1,36 @@
+{
+  "id": "keel",
+  "name": "Keel",
+  "family": "keel",
+  "variant": "std",
+  "category": "structure",
+  "tier": 0,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 500,
+    "hp": 120,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "sealed": 1
+  },
+  "behaviour": {
+    "keel": true
+  },
+  "cost": {
+    "metal": 3
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

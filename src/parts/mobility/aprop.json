@@ -1,0 +1,37 @@
+{
+  "id": "aprop",
+  "name": "Air propeller",
+  "family": "aprop",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 0,
+  "domains": [
+    "aircraft",
+    "airship"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 2
+  },
+  "stats": {
+    "mass": 80,
+    "hp": 20,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "airprop": true
+  },
+  "cost": {
+    "metal": 1,
+    "wood": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

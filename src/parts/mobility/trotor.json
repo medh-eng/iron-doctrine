@@ -1,0 +1,35 @@
+{
+  "id": "trotor",
+  "name": "Tail rotor",
+  "family": "trotor",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 20,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "trotor": true
+  },
+  "cost": {
+    "metal": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "rotorcraft"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

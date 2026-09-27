@@ -1,5 +1,22 @@
 {
- "_about": "Structure cell materials (design/05 \u00a71, design/07 \u00a74). Stats are per 0.5 m cell. look.kind picks the auto-tile style.",
+ "_about": "Structure cells (1x1), auto-tiled by the renderer (design/07 \u00a74). Ids are the game's part ids. Stats per 0.5 m cell. 'planned' = needs a v2 mechanic the game doesn't have yet; the game skips those until then.",
+ "frame": {
+  "name": "Light frame",
+  "tier": 0,
+  "mass": 60,
+  "hp": 40,
+  "armor": 5,
+  "cost": {
+   "metal": 1
+  },
+  "look": {
+   "kind": "frame",
+   "color": "#4F565E",
+   "paintable": false,
+   "rivets": true,
+   "seam": 1
+  }
+ },
  "timber": {
   "name": "Timber frame",
   "tier": 0,
@@ -57,66 +74,8 @@
    "seam": 2
   }
  },
- "wood_hull": {
-  "name": "Wooden ship hull",
-  "tier": 0,
-  "mass": 90,
-  "hp": 50,
-  "armor": 8,
-  "cost": {
-   "wood": 3
-  },
-  "burns": true,
-  "hull": true,
-  "look": {
-   "kind": "wood",
-   "color": "#8E6035",
-   "paintable": true,
-   "paint": "p1",
-   "rivets": false,
-   "seam": 3
-  }
- },
- "canvas_bag": {
-  "name": "Canvas gas bag",
-  "tier": 0,
-  "mass": 12,
-  "hp": 15,
-  "armor": 0,
-  "cost": {
-   "wood": 1,
-   "money": 8
-  },
-  "lift": 1.6,
-  "burns": true,
-  "look": {
-   "kind": "envelope",
-   "color": "#B9A77A",
-   "paintable": true,
-   "paint": "p2",
-   "rivets": false,
-   "seam": 4
-  }
- },
- "iron_frame": {
-  "name": "Iron frame",
-  "tier": 1,
-  "mass": 60,
-  "hp": 40,
-  "armor": 5,
-  "cost": {
-   "metal": 1
-  },
-  "look": {
-   "kind": "frame",
-   "color": "#4F565E",
-   "paintable": false,
-   "rivets": true,
-   "seam": 1
-  }
- },
- "steel_plate": {
-  "name": "Steel hull plate",
+ "plate": {
+  "name": "Hull plate",
   "tier": 1,
   "mass": 120,
   "hp": 60,
@@ -149,46 +108,6 @@
    "paint": "p1",
    "rivets": true,
    "seam": 2
-  }
- },
- "steel_hull": {
-  "name": "Steel ship hull",
-  "tier": 1,
-  "mass": 150,
-  "hp": 70,
-  "armor": 12,
-  "cost": {
-   "metal": 3
-  },
-  "hull": true,
-  "look": {
-   "kind": "plate",
-   "color": "#8A9199",
-   "paintable": true,
-   "paint": "p1",
-   "rivets": true,
-   "seam": 3
-  }
- },
- "rigid_env": {
-  "name": "Rigid envelope",
-  "tier": 1,
-  "mass": 20,
-  "hp": 35,
-  "armor": 2,
-  "cost": {
-   "metal": 1,
-   "wood": 1,
-   "money": 12
-  },
-  "lift": 1.8,
-  "look": {
-   "kind": "envelope",
-   "color": "#D8CCAA",
-   "paintable": true,
-   "paint": "p2",
-   "rivets": true,
-   "seam": 3
   }
  },
  "arm40": {
@@ -244,27 +163,8 @@
    "paint": "p1",
    "rivets": true,
    "seam": 2
-  }
- },
- "bulkhead": {
-  "name": "Watertight bulkhead",
-  "tier": 2,
-  "mass": 200,
-  "hp": 100,
-  "armor": 10,
-  "cost": {
-   "metal": 2
   },
-  "hull": true,
-  "stopsFlooding": true,
-  "look": {
-   "kind": "plate",
-   "color": "#4F565E",
-   "paintable": true,
-   "paint": "p2",
-   "rivets": true,
-   "seam": 1
-  }
+  "sloped": true
  },
  "composite": {
   "name": "Composite armour",
@@ -309,27 +209,6 @@
    "seam": 3
   }
  },
- "armored_env": {
-  "name": "Armoured envelope",
-  "tier": 3,
-  "mass": 45,
-  "hp": 70,
-  "armor": 8,
-  "cost": {
-   "metal": 2,
-   "elec": 1,
-   "money": 20
-  },
-  "lift": 1.7,
-  "look": {
-   "kind": "envelope",
-   "color": "#8E9BA8",
-   "paintable": true,
-   "paint": "p2",
-   "rivets": true,
-   "seam": 2
-  }
- },
  "precursor": {
   "name": "Precursor plating",
   "tier": 4,
@@ -351,6 +230,73 @@
    "paintable": false,
    "rivets": false,
    "seam": 2
-  }
+  },
+  "planned": true
+ },
+ "canvas_bag": {
+  "name": "Canvas gas bag",
+  "tier": 0,
+  "mass": 12,
+  "hp": 15,
+  "armor": 0,
+  "cost": {
+   "wood": 1,
+   "money": 8
+  },
+  "burns": true,
+  "look": {
+   "kind": "envelope",
+   "color": "#B9A77A",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": false,
+   "seam": 4
+  },
+  "gasLift": 1.6,
+  "planned": true
+ },
+ "rigid_env": {
+  "name": "Rigid envelope",
+  "tier": 1,
+  "mass": 20,
+  "hp": 35,
+  "armor": 2,
+  "cost": {
+   "metal": 1,
+   "wood": 1,
+   "money": 12
+  },
+  "look": {
+   "kind": "envelope",
+   "color": "#D8CCAA",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": true,
+   "seam": 3
+  },
+  "gasLift": 1.8,
+  "planned": true
+ },
+ "armored_env": {
+  "name": "Armoured envelope",
+  "tier": 3,
+  "mass": 45,
+  "hp": 70,
+  "armor": 8,
+  "cost": {
+   "metal": 2,
+   "elec": 1,
+   "money": 20
+  },
+  "look": {
+   "kind": "envelope",
+   "color": "#8E9BA8",
+   "paintable": true,
+   "paint": "p2",
+   "rivets": true,
+   "seam": 2
+  },
+  "gasLift": 1.7,
+  "planned": true
  }
 }

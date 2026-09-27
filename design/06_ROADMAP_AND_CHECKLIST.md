@@ -1,85 +1,116 @@
-# Iron Doctrine: roadmap and release checklist (v2)
+# Iron Doctrine: roadmap and release checklist (v2.1)
 
-- **Releases:** each part is a playable release on the GitHub Pages link. Part N is version 0.N.x.
-- **Sessions:** a part may span several sessions (sub-steps a, b, c).
-- **Progress log:** each session ends with a row in the table at the bottom.
-- **v2 note:** Part 1a (engine core) is the same as in v1. Keep whatever is already built. From 1b onwards the plan follows the v2 design (01).
+- **Releases:** each step is a playable release on the GitHub Pages link. Sessions end with a Progress log row.
+- **What v2.1 does:** it fits design v2 onto the game that already exists. v1 reached v0.2.2 (land, sea, submarine, aircraft and helicopter battles), and none of that is thrown away.
+- **Order:** first bridge the existing game to v2 (steps 2.5–2.8), then build the campaign (0.3 onwards).
 
-## Where the build stands going into v2 (v0.2.2)
+## Where the build stands (v0.2.3)
 
-v1 got as far as its Part 2c before the v2 design arrived. That work is kept and reused; it is not the v2 plan yet.
+| Area | State |
+|---|---|
+| Engine core (v1 Part 1a) | Done: saves, audio, input, thumb controls, settings, pause, static-site build, manifest |
+| Battles | Done (v1): land, ships, submarines, aircraft and helicopters; per-part damage, flooding, spotting; squad of 3 with orders; enemy AI; effects; music layers; Start/Stop time |
+| Drafting Office, Workshop, Blueprints | Done (v1): all v1 domains, templates, randomise, stats drawer, marks |
+| Gauntlet | Done (the v1 ladder, renamed) |
+| Part library | Built into the game as `PART_LIBRARY`, **but not used yet**. After this update it holds all 52 v1 parts, 7 structure cells and 15 templates, with the exact v1 numbers |
+| Art | The golden sample (c75) exists as SVG. Everything else uses the code drawing. The PNG route (design `07_ART_INTEGRATION`) is legacy |
+| v2 features | Not built: reserves and three-on-field, command wheel, Battle Simulator, airships, classes and tiers in the designer, paint schemes, then the whole campaign |
 
-- **Done (Part 1a):** everything listed under 1a below, including the manifest and icons (v0.1.0 and v0.1.1).
-- **Already built, to be adapted to v2 (1b and 1c):**
-  - land physics (terrain heightfield, wheels and tracks, ground pressure, slopes, tipping, bogging)
-  - sea physics (buoyancy per hull cell, flooding, bulkheads), submarines, aircraft and helicopters
-  - projectiles, penetration by angle, per-part damage, fire, debris, spotting; kinetic and HE
-  - a squad of 3 with orders and swap, enemy AI, effects, floating text, battle music layers, Start/Stop time
-  - the Drafting Office v1 (land, sea, submarine, air grids, templates, randomise, stats drawer, marks)
-  - the AI-vs-AI title demo; blueprints and medals
-  - the v1 ladder, now labelled **Gauntlet** (the optional mode in 01 §15)
-- **Not built yet for v2:** the SVG part renderer and `PART_LIBRARY`-driven parts (parts are still defined in `07_data.js` and drawn in code), airships and envelopes, three-on-field with reserves, the command wheel, the Battle Simulator, and paint schemes.
-- **Still v1-only:** the PNG part-image route in `src/assets/parts` (design `07_ART_INTEGRATION`), superseded by the SVG library (`07_ART_AND_PARTS`).
+## Step 2.5: bridge to the part library (v0.2.4)
 
-## Part 1: Battle core (v0.1)
+### 2.5a. Parts and templates come from `PART_LIBRARY`
 
-### 1a. Engine core (unchanged from v1) — done in v0.1.0 and v0.1.1
+- Before switching, run `node tools/verify-bridge.mjs`: it must report 0 differences. Then save a snapshot of `PARTS` and `TEMPLATES` (a test-only JSON dump).
+- **Build the game's objects from the library** (adapter in `07_data.js`, design 04 §9):
+  - `PARTS[id] = { id, name, cat: category, w, h, cost, ...stats, ...behaviour }`
+  - materials become 1×1 `structure` parts (`shape: "slope"` → `sloped: true`)
+  - entries with `planned: true` are skipped
+- **Templates:** `TEMPLATES[id]` = the vehicle JSON.
+- **Remove** `PART_ROWS`, `WEAPON_STATS` and `TEMPLATES` from `07_data.js`. Keep the game constants.
+- **Delete** `tools/import-v1-parts.mjs` and `tools/verify-bridge.mjs`.
+- **Test:** a smoke test compares the new `PARTS` and `TEMPLATES` with the snapshot. The only allowed differences are cost keys (rubber became metal, fuel became wood, with the same totals) and new fields.
+- **The Drafting Office shows the tier** of each part (a small "T0–T4" tag), as a fact, not a rating.
 
-- boot, landscape layout, rotate card
-- input router and transparent thumb controls
-- audio engine, first sound effects, title music
-- Settings, Pause, saves
-- title screen skeleton
-- extend the test harness (the starter repo already has the build, test build, smoke test and screenshots)
-- optional: web app manifest and icons, so the home-screen app opens full screen and sideways
+### 2.5b. SVG part art
 
-### 1b. Battle core: land and air
+- **`05b_art.js` gets the SVG source** (07 §6):
+  1. paint tokens per side (player `league`, enemy `directorate`)
+  2. rasterise the body and moving groups at 64 px per cell
+  3. feed the same `art.byPart` entries the PNG route uses
+- **Barrels:** pivot and muzzle come from the JSON (`moving.barrel.pivot`, `anchors.muzzle`) when present; `barrelLength()` and the pivot helper use them. Otherwise the v1 rule applies.
+- **Structure cells** use the auto-tiling from `tools/part-render.js` (seams, bevels, rivets per material look) in the sprite painter.
+- **Order of preference:** SVG, then PNG, then code drawing.
+- **Test:** the Medium tank's 75 mm gun shows the SVG art in the Drafting Office and in battle (screenshot), recoils and elevates correctly, and shells leave from the muzzle.
 
-- `05b_partrender.js`: port `tools/part-render.js`, with SVG paint tokens, auto-tiled structure and moving groups (07 §6). Composed ships are cached as sprites.
-- Designs load from `PART_LIBRARY.vehicles`. Use the batch F starting designs as soon as they exist; until then use simple placeholder designs built from materials plus `wpn_c75_std`.
-- **Physics:**
-  - land: terrain heightfield, wheels and tracks, ground pressure, slopes, tipping, bogging
-  - air: lift margin, thrust, climb and descend, falling when envelopes are lost
-- **Combat:**
-  - projectiles, penetration and angle, per-part damage, fire, debris, spotting
-  - damage types: kinetic and HE for now
-- **Three on the field and reserves:**
-  - line-up, pull back, entry from the rear edge
-  - destroyed ships replaced
-  - win and lose checks
-- **Control:** drive one ship and swap. The command wheel gives Move to, Fire at, Hold, Pull back, Smoke. The reserve drawer.
-- **Enemy AI:** captain skill by level; uses its own reserve rotation.
-- **Feel:** effects and floating text; battle music with intensity layers; tactical Start/Stop time.
+### 2.5c. Housekeeping
 
-### 1c. Sea, Drafting Office v1, Battle Simulator
+- `UPDATE_NOTES.md` and `APPLY_V2_1.md` are already gone (deleted when v2.1 was applied).
+- **Code comments** that cite `design/0N §x` refer to `design/v1/` (see its README). Update them when you touch a file.
+- **Title menu:** the Gauntlet group stays; Workshop and Blueprints stay; the Battle Simulator is added in 2.6.
 
-- **Sea physics:** buoyancy per hull cell, waves, flooding and bulkheads. Coastal battlefields mix land, sea and air.
-- **Drafting Office v1** (ship tab):
-  - domain and class selector with grid and part limits
-  - palette of tier 0–1 parts and materials
-  - templates (the batch F designs), scratch build
-  - stats drawer (numbers only), marks and change log
-  - paint (schemes, custom colours, camouflage)
-- **Battle Simulator:** pick your designs, a battlefield and an enemy force by tier; fight straight away.
-- **Title screen:** AI-vs-AI demo battle behind it.
+### Acceptance (2.5)
 
-### Acceptance (Part 1)
+- [ ] The game plays exactly as before (all v1 tests pass). Parts and templates now come from `src/parts` and `src/vehicles`.
+- [ ] A new foundry zip (SVG plus the JSON art fields) shows up in the game after integration, with no code changes.
+- [ ] The c75 SVG art renders in both League and Directorate colours, at phone scale, with the barrel moving correctly.
 
-- [ ] Both thumbs work at once. FIRE tap auto-aims; press-and-drag aims manually. Swap, Group and Utility work. The command wheel orders work.
-- [x] Tap, drag and pinch on the world never steal a touch from the controls. (v0.1.0)
-- [ ] Three-on-field works on both sides: pull back → the next ship arrives from the rear; destroyed ships are replaced; line-up order is respected.
-- [ ] Damage is visible and physical: parts detach, a lost engine immobilises, a lost gun goes silent, lost envelopes make an airship fall, flooding sinks a ship.
-- [ ] These emerge from the numbers without special-case code:
-  - top-heavy designs tip
-  - underpowered designs stall on hills
-  - tracks beat wheels in mud
-  - overloaded airships sink
-- [ ] Ships look like 07 describes: part art, auto-tiled hull and paint schemes render correctly at phone scale.
-- [ ] Designer: class limits are enforced and invalid placements explained. Saving makes the next mark.
-- [ ] Audio: every Part 1 action has a distinct sound; Music, Sound and Vibration toggles are remembered.
-- [ ] Smooth on a phone, no console errors, release checklist passed.
+## Step 2.6: three on the field and the Battle Simulator (v0.2.5)
 
-## Part 2: World map and fleets (v0.2)
+- **Reserves and line-up for both sides:**
+  - at most 3 ships on the field each
+  - pull back (the ship drives off the rear edge, then the next in line enters 5 s later)
+  - destroyed ships replaced from reserve
+  - the battle ends when one side has no ships left
+- **Controls:**
+  - the v1 order chips become the **command wheel**: Move to, Fire at, Hold, Pull back, Smoke
+  - the **reserve drawer** in the top bar
+  - the pre-battle line-up editor
+- **Battle Simulator screen** (title menu):
+  - pick your designs (any number; 3 fight at a time)
+  - pick a battlefield: inland, coast or sea; weather; time of day
+  - pick the enemy: a force size, and templates or designs from the blueprint gallery
+  - fight; the result card shows losses and damage, with no campaign effects
+- **Aircraft and helicopters** fight as ordinary units here for now (01 §5).
+- **The Gauntlet keeps its v1 rules** (waves, lives, score). Reserves don't apply there.
+
+### Acceptance (2.6)
+
+- [ ] Both sides rotate ships correctly. Line-up order is respected. The reserve drawer and "Send in" work with thumbs.
+- [ ] The command wheel works on phone (long-press) and desktop (right-click).
+- [ ] The Battle Simulator runs land, coast and sea battles. The Gauntlet is unchanged.
+
+## Step 2.7: airships (v0.2.6)
+
+- **New parts:** envelope materials `canvas_bag` and `rigid_env` (remove `planned`), and the `lifteng` part (05 §3.2).
+- **Physics:** lift from envelopes and lift engines against mass, using the helicopter controller for movement and height. Burst or burning envelopes lose lift; below a lift margin of 1.0 the airship sinks, and it crashes the way a helicopter does.
+- **Domains:** a design with envelopes or lift engines and no wings or rotors is an `airship`. The Drafting Office shows lift, mass and lift margin, with factual warnings.
+- **Templates:** the airship templates from roster batch E. Placeholder art is fine until the Foundry delivers.
+- **Battlefields:** airships can deploy on every battlefield (01 §10.2).
+
+### Acceptance (2.7)
+
+- [ ] An airship designed from scratch flies, climbs, descends, fights and falls when its envelopes are shot up.
+- [ ] A gunship can fight alongside tanks inland and alongside ships at sea.
+
+## Step 2.8: classes, tiers and paint (v0.2.7)
+
+- **Designer class selector:** domain and class set the grid and part limit (`classes.json`). The v1 grid sizes are replaced by the classes.
+- **Existing designs that no longer fit a class** keep working. They're marked "outside class limits: refit needed" (campaign only).
+- **Paint:**
+  - faction schemes and custom P1, P2 and P3 colours from the paint-shop palette
+  - camouflage patterns (07 §3)
+  - the player's scheme is chosen in the Simulator for now
+- **New tier 0 parts** (roster batch D: steam, wheel_w, swivel, whull, wbow), plus the plank and ironwood cells.
+- **Faction starting designs** (roster batch F) appear as templates when delivered.
+
+### Acceptance (2.8)
+
+- [ ] Every template and blueprint loads with a class. Class limits are enforced in the designer with factual messages.
+- [ ] A design painted in the Directorate scheme shows its colours on SVG parts and paintable structure cells.
+
+## Part 3: world map and fleets (v0.3)
+
+This is v2 "Part 2" (the world map): the open world, the five factions, settlements, officers and fleets, map movement, fuel and stranding, the clock, contact, the pre-battle card, persistence and saves. The details are unchanged from the v2 plan:
 
 - **World generation** (seeded):
   - terrain, biomes, roads, ruins and scrap fields, sea
@@ -98,10 +129,11 @@ v1 got as far as its Part 2c before the v2 design arrived. That work is kept and
   - stranding
 - **Faction choice** at New campaign; the starting set-up from 01 §4.3.
 - **Settlements (basic):** dock, buy and sell fuel and ammo at markets, the treasury.
-- **Contact → pre-battle card → battle or auto-resolve → results back on the map.**
+- **Contact → pre-battle card → battle (using the 2.6 rotation) or auto-resolve → results back on the map.**
 - **Persistence:** ship damage, losses and XP, captain survival; saves and loads.
+- **Title menu:** **Campaign** appears here, not before.
 
-### Acceptance (Part 2)
+### Acceptance (Part 3)
 
 - [ ] A new campaign in any faction starts with the correct home territory and 3 fleets.
 - [ ] Fleets move by domain rules; fuel burns; an empty fleet is stranded; path previews warn before it happens.
@@ -109,7 +141,7 @@ v1 got as far as its Part 2c before the v2 design arrived. That work is kept and
 - [ ] Battles start from map contact. Only allowed domains deploy. Results persist.
 - [ ] Removing a captain garrisons them where they're left. Captains can't move alone.
 
-## Part 3: Economy, logistics and sieges (v0.3)
+## Part 4: economy, logistics and sieges (v0.4)
 
 - **Warehouses and holds:**
   - physical cargo for every resource except money
@@ -125,48 +157,49 @@ v1 got as far as its Part 2c before the v2 design arrived. That work is kept and
 - **Settlement upgrades** (village → city or fort → …).
 - **Sieges:** walls, emplacement slots (install parts), keep, garrison rotation, capture, plunder.
 
-### Acceptance (Part 3)
+### Acceptance (Part 4)
 
 - [ ] A campaign cannot be sustained on salvage alone. Supply routes visibly keep a fleet going.
 - [ ] Crafting only works with the materials physically at that settlement or in the docked hold.
 - [ ] A convoy on a standing route runs by itself, can be intercepted, and its loss is felt at the other end.
 - [ ] Sieges work from both sides. A captured settlement changes owner and restarts production after 2 days.
 
-## Part 4: Research and advanced warfare (v0.4)
+## Part 5: research and advanced warfare (v0.5)
 
 - **Tech tree and perks:** Command Points, research at cities and metropolises (08 §11–12).
 - **Grand Admiral ranks;** admiral and captain levelling fully applied.
 - **Drafting Office:** Missile tab (missile designer) and Drone tab (drone designer, grid limit set by the drone computer).
 - **Missiles:** racks, VLS, magazines; guidance vs flares and ECM; warheads HE, napalm, acid, EMP, cluster.
-- **Carriers and drones:** hangars, drone computers, drone orders; drones lost when their carrier leaves or dies.
+- **Carriers, drones and air wings:**
+  - hangars and drone computers; aircraft and helicopters now launch from carriers and airfields (01 §5)
+  - drone orders; drones and air wings lost when their carrier leaves or dies
 - **Fabricators;** release clamps and detachable sections.
 - **Flamethrowers, lasers, plasma;** power and heat management; damage types and material resistances.
 - **Radar, ECM, stabilisers;** the tier 3–4 music layer.
 
-### Acceptance (Part 4)
+### Acceptance (Part 5)
 
 - [ ] Researching a node unlocks its parts for crafting and the designer. Command Points force real choices.
 - [ ] A drone carrier built in the designer launches drones that follow orders, and loses them when it retreats.
 - [ ] Every warhead type has a visible, distinct effect. Flares beat heat seekers more than radar seekers.
 - [ ] Energy weapons are limited by power and heat, not ammo.
 
-## Part 5: Living world and polish (v0.5 → 1.0)
+## Part 6: living world and polish (v0.6 → 1.0)
 
 - **Faction strategic AI:** expand, run convoys, raid, besiege, defend capitals; personalities per 09.
 - **AI designs evolve** to counter what the player fields most (the no-meta pillar).
 - **Relations:** war and truce changes, reputation, charters for neutral villages.
 - **Win and lose conditions,** the war journal, medals, the blueprint gallery.
-- **Optional:** the Gauntlet mode.
 - **Balance pass** with simulator telemetry (08); performance pass on a mid-range Android phone.
 - **Accessibility pass:** text size, colour-blind-safe status icons, reduced motion.
 
 ## Ongoing: art integration
 
-- Foundry zips arrive in any order (10_PART_ROSTER). Integrate them as CLAUDE.md describes, whenever they appear in the repo root.
-- **Code must never hard-code a part's look.** Everything comes from `PART_LIBRARY`.
-- **Placeholders:** until a part's art exists, the designer shows a labelled grey block with the part's footprint. The part is usable in code as soon as its JSON exists.
+- Foundry zips arrive in roster order (10). Integrate them as CLAUDE.md describes, whenever they appear in the repo root.
+- **After 2.5, no code change is needed** for new art: the library carries it.
+- **Before 2.5,** integrate zips anyway. The art simply waits in the library until 2.5b draws it.
 
-## Release checklist (every part)
+## Release checklist (every step)
 
 - [ ] `node build.mjs` passes (part library, syntax, no test code, no external URLs).
 - [ ] `npm test` passes at all 5 viewports with no console errors. Screenshots reviewed.
@@ -181,6 +214,7 @@ v1 got as far as its Part 2c before the v2 design arrived. That work is kept and
 | Date | Part | Version | What changed | Notes / next |
 |---|---|---|---|---|
 | 2026-09-26 | Design v2 | 0.2.3 | Design v2 and the part library pipeline applied from the update pack. Design 01–06 rewritten, 07–10 added. The build now checks `src/parts` and `src/vehicles` and bundles them into the game as `PART_LIBRARY` (1 part, the golden sample 75 mm gun, and 1 test design). Part checker and preview tools added. The v1 Proving Ground ladder is now called the Gauntlet on the title screen and in medals. Kept from before: the static-site build (not one file) and all v1 game code. | The game doesn't use `PART_LIBRARY` yet; parts are still built in code. The title menu doesn't have the v2 items yet (campaign, Battle Simulator), since those screens don't exist. | Part 1b (v2): port the part renderer, then three-on-field and reserves |
+| 2026-09-27 | Design v2.1 | 0.2.3 | Design v2.1 applied: the part library now uses the game's own ids, categories and stat names, and holds all 52 v1 parts, 15 structure cells and the 15 v1 templates, copied exactly from the game's data (bridge check: 0 differences). The golden sample 75 mm gun is now `c75`. v1 design docs archived in `design/v1/`. Roadmap now continues from v0.2.3 with steps 2.5 to 2.8. Docs, tools and data only; no game code changed. | Two art zips on `main` (`foundry-batch-a`, `foundry-bridge`) use the pre-v2.1 part names (`wpn_c37_std` etc.) and are not integrated yet; waiting on the producer: rename to the game's ids, or have the Foundry resend. | Step 2.5a: parts from the library |
 
 ### v1 progress log (before design v2)
 

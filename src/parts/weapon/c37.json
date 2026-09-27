@@ -1,0 +1,46 @@
+{
+  "id": "c37",
+  "name": "Cannon 37 mm",
+  "family": "c37",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 0,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 250,
+    "hp": 40,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 50,
+    "reload": 2.5,
+    "range": 1500,
+    "vel": 180,
+    "dmg": 45,
+    "spread": 0.55,
+    "cal": 37,
+    "shells": 40,
+    "burst": 25,
+    "burstR": 1
+  },
+  "cost": {
+    "metal": 4
+  },
+  "craftAt": "city",
+  "unlock": {
+    "start": true
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}

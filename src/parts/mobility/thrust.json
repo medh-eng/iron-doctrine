@@ -1,0 +1,37 @@
+{
+  "id": "thrust",
+  "name": "Manoeuvre thruster",
+  "family": "thrust",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 2,
+  "domains": [
+    "sea"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 150,
+    "hp": 30,
+    "armor": 5,
+    "power": -40,
+    "rel": 0.998,
+    "heat": 5
+  },
+  "behaviour": {
+    "thruster": true
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "prop_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Imported from v1 07_data.js."
+}
