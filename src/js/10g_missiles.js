@@ -75,6 +75,7 @@ function initLaunchers(V) {
     const size = missileStats(md).size;
     w.rounds = Math.max(1, Math.floor(w.def.rounds / size)) + (w.def.size > 1 ? Math.floor(mags * 2 / size) : 0);
     if (w.def.size > 1) mags = 0;           // magazines feed the first VLS
+    w.maxRounds = w.rounds;
   }
   V.flareSalvos = 0;
   for (const p of V.parts) if (p.def.salvos) V.flareSalvos += p.def.salvos;

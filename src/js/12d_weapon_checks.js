@@ -190,4 +190,41 @@ function droneCheck() {
   for (const pool of [shells, missiles, particles, debris, beams, flames, firePatches, decoys, floaters, smokeColumns]) pool.forEachAlive((p) => { p.alive = false; });
   return out;
 }
+
+// Fabricators refill launchers; release clamps drop a section that drives off on its own if it
+// has crew; the music gains its tier 3–4 layer (design/06 Part 5).
+function fabClampCheck() {
+  const out = {};
+  const B = createBattle(0, { cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 57 }), reserves: true, demo: true, squad: [designFromTemplate('medium')], enemyForce: [designFromTemplate('light')] });
+  const fabd = designFromTemplate('medium');
+  fabd.cells.push({ p: 'fab', x: 0, y: 0 }, { p: 'rack', x: 2, y: 0 });
+  const F = makeVehicle(fabd, 0, 60, 1, B.T);
+  const rack = F.weapons.find((w) => w.def.id === 'rack');
+  rack.rounds = 0;
+  for (let t = 0; t < 51; t += 0.5) stepFabricator(B, F, 0.5);
+  out.fab = { rounds: rack.rounds, max: rack.maxRounds };
+  // Two scouts joined by clamps: the front one is released and drives off.
+  const scout = TEMPLATES.scout.cells;
+  const cells = scout.map(([p, x, y]) => ({ p, x, y })).concat(scout.map(([p, x, y]) => ({ p, x: x + 10, y })), [{ p: 'clamp', x: 9, y: 3 }, { p: 'clamp', x: 9, y: 2 }]);
+  const pair = { id: 'test_pair', name: 'Scout pair', w: 20, h: 5, cells };
+  const V = makeVehicle(pair, 0, 80, 1, B.T);
+  V.ai = makeAI('squad', B.cfg);
+  B.units.push(V);
+  const n0 = B.units.length, p0 = V.parts.filter((p) => p.alive).length;
+  out.release = releaseClamps(B, V);
+  const S = B.units[B.units.length - 1];
+  out.section = { spawned: B.units.length - n0, crew: S !== V && S.crew > 0, parts: S.parts.length, left: V.parts.filter((p) => p.alive).length, before: p0 };
+  out.again = releaseClamps(B, V) !== '';
+  // One clamp can't hold a whole scout.
+  const one = { id: 'test_one', name: 'Heavy pair', w: 20, h: 5, cells: cells.filter((c) => !(c.p === 'clamp' && c.y === 2)) };
+  const V1 = makeVehicle(one, 0, 120, 1, B.T);
+  out.heavy = releaseClamps(B, V1);
+  // Music era: a battle with tier 4 parts is era 4; the Gauntlet's level 1 isn't.
+  const lz = designFromTemplate('medium');
+  lz.cells.find((c) => PARTS[c.p].cat === 'weapon' && !PARTS[c.p].auto).p = 'laser';
+  const B4 = createBattle(0, { cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 58 }), reserves: true, demo: true, squad: [lz], enemyForce: [designFromTemplate('light')] });
+  out.era = { tier4: B4.era, level1: createBattle(1, { demo: true }).era };
+  for (const pool of [shells, missiles, particles, debris, beams, flames, firePatches, decoys, floaters]) pool.forEachAlive((p) => { p.alive = false; });
+  return out;
+}
 /*TEST:END*/

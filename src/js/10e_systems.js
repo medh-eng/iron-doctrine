@@ -147,6 +147,8 @@ function stepSystems(B, V, dt) {
   V.overheat = over;
   V.heatMul = 1 - 0.5 * over;
   stepEnergy(B, V, dt);
+  stepFabricator(B, V, dt);
+  aiRelease(B, V);
   V.overheatT = over > 0 ? (V.overheatT || 0) + dt : 0;
   if (V.overheatT > OVERHEAT_FIRE_SECS && over >= 0.5 && B.rng.next() < dt * 0.05) {
     const i = V.parts.findIndex((p) => p.alive && p.def.power > 0);

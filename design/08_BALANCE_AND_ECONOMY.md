@@ -294,6 +294,8 @@ Parts already in the game were placed in the tree by the one-off v1 import (step
 | Systems | radio; fire_control (fc); flares | radar (radar, nsight) ← radio; stabiliser (stab) ← fire_control; workshop ← repair_bay | ecm ← radar | — |
 | Logistics | cargo_2 (fuel_ss, ammo_p, fuel_l, hold); repair_bay (repair); salvage (crane) | — | — | — |
 
+**As built (v0.5.0):** tier 0 parts, `unlock.start` parts and your faction's parts are known from the start; a node unlocks the parts whose JSON names it. Research is one job in the settlement's workshop queue.
+
 ## 12. Perks (Command Points)
 
 | Perk | CP | Effect |

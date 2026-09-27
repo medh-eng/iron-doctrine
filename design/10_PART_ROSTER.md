@@ -119,12 +119,15 @@ Start with the League and the Directorate, then the others.
 
 c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop.
 
+- **Status (v0.5.0):** JSON in the game, art todo: c57, mortar, flare, hold, flame. Already in the game from v1: repair, crane, rocket (as `rpod`), radar (as `radar_s`). Still to add: workshop (mobile workshop).
+
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
 - **Missiles:** rack, vls, mag, and the missile parts.
 - **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts.
 - **Other:** fab, clamp, ecm, c203.
 - **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.
+- **Status (v0.5.0):** JSON in the game with code drawings, art todo: rack, vls, mag, mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat, mseek_laser, hangar_d, hangar_a, dcpu1, dcpu2, dcpu3, dcore, drotor, dgun, dcharge, dcam, dlaser, fab, clamp, c203, laser, hlaser, plasma, plance, cap, reactor. ecm is in from v1. Still to add: levitator (with Precursor plating, T4).
 
 ## Batch I: later
 

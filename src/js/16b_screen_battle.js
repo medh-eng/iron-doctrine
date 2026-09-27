@@ -263,6 +263,11 @@ SCREENS.battle = {
       b.style.left = '0px'; b.style.top = '100px';
       r.appendChild(b);
     }
+    if (V.parts.some((p) => p.alive && p.def.clamp)) {
+      const b = button('Release clamps', () => { this.closeWheel(); const why = releaseClamps(B, V); if (why) this.say(why); else this.orderDone(V, 'Released'); }, 'btn btn-small cmd-item cmd-wide');
+      b.style.left = '0px'; b.style.top = V.droneCap ? '150px' : '100px';
+      r.appendChild(b);
+    }
     const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
     x.setAttribute('aria-label', `Close orders for ${V.name}`);
     r.appendChild(x);

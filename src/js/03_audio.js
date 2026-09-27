@@ -289,6 +289,21 @@ const audio = {
   // Battle music intensity 0..3 (design/03 §6.3).
   intensity: 0,
   setIntensity(n) { this.intensity = clamp(n, 0, 3); },
+  // Tech era of the battle (design/03: T3 and T4 battles add a pulsing synth bass).
+  era: 0,
+  setEra(n) { this.era = n; },
+  synthBass(bus, t, hz, dur, vel) {
+    const out = this.voice(bus, t, dur + 0.1, vel);
+    const g = this.gain(out);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vel * 0.16, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const f = this.filter('lowpass', 900, 6, g);
+    f.frequency.setValueAtTime(1400, t);
+    f.frequency.exponentialRampToValueAtTime(160, t + dur);
+    this.osc('sawtooth', hz, t, t + dur + 0.05, f);
+    this.osc('square', hz / 2, t, t + dur + 0.05, f);
+  },
 
   // ---------- sound effects (design/03 §7)
   quiet: false,      // behind the title only menu sounds play
@@ -331,6 +346,8 @@ const THEMES = {
         a.strings(bus, t, midiToHz(root), sd * 16, 0.9);
         a.strings(bus, t, midiToHz(root + 7), sd * 16, 0.7);
       }
+      // Tier 3–4 battles: a pulsing synth bass on the eighths, under the orchestra.
+      if (a.era >= 3 && s % 2 === 0) a.synthBass(bus, t, midiToHz(root + (s % 8 === 6 ? 7 : 0)), sd * 1.7, a.era >= 4 ? 0.9 : 0.7);
       if (lvl >= 1) {
         if (s === 0 || s === 8 || (s === 11 && rng.next() < 0.5)) a.kick(bus, t, 0.7);
         if (s % 2 === 0) {

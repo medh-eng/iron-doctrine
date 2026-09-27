@@ -234,6 +234,12 @@ Envelopes are the planned materials in §1.
 | dcam | spot 1.5 |
 | dlaser | pen 30, dmg 18, power −30 |
 
+**As built (v0.5.0), battle numbers where this sheet gives none:**
+- Missiles: speed = 25 + 20 × motors × √(40 × motors ÷ mass kg) m/s (25–110); reach = (1000 + 1500 per fuel cell) × 0.05 m; turn = 0.35 × (fins + seeker turn) rad/s (unguided 0.2 × fins); lock at launch: radar 55%, heat 65%, laser 60% (+20% with fire control; radar + the ship's radar lock, −40% against ECM). Standard missiles: S = heat seeker, HE, fuel, motor; M = radar, 2 HE, fins, 2 fuel, 2 motors; L = radar, 3 HE, fins, 3 fuel, 3 motors.
+- Drones: speed = 8 + 5 × (lift ÷ weight − 1) m/s (6–26); a drone needs a core and lift ≥ 1.2 × weight, falls below 50% of its hit points, hovers 14 m up and 12 m from its target.
+- Energy weapons: recharge rate = spare power ÷ the recharging weapons' draw (max 1), × (1 − overheat), 0 from 90% overheat; a shot's heat (`shotHeat`) is shed into the heat balance over about 2 s. Flamethrower reach 400 (20 m on the field) instead of the sheet's 60.
+- Missile, drone and energy parts have no art yet; they draw as simple code shapes.
+
 ## 4. Physics and formulas
 
 - **Already built:** these are implemented as specified in `design/v1/05_PARTS_CATALOGUE.md` §6–7:

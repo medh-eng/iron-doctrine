@@ -213,6 +213,7 @@ function rebuildVehicle(V, first) {
   let energyDraw = 0, capMax = 0;
   for (const p of V.parts) if (p.alive) { if (p.def.energy) energyDraw -= p.def.power; if (p.def.capacity && p.def.cat === 'system') capMax += p.def.capacity * 1000; }
   V.energyDraw = energyDraw;
+  V.fabRate = V.parts.reduce((a, p) => a + (p.alive && p.def.fab ? p.def.rate : 0), 0);   // fabricators (10i)
   if (V.capMax === undefined) V.cap = capMax;
   V.capMax = capMax;
   V.cap = Math.min(V.cap || 0, capMax);

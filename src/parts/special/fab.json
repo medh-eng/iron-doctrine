@@ -1,0 +1,47 @@
+{
+  "id": "fab",
+  "name": "Fabricator",
+  "family": "fab",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 700,
+    "hp": 60,
+    "armor": 6,
+    "power": -60,
+    "rel": 0.998,
+    "rate": 0.02,
+    "heat": 15
+  },
+  "behaviour": {
+    "fab": true
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 6,
+    "money": 220
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "fabricators"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5e (design/05 \u00a73.4). No art yet (code drawing). Makes a missile or a drone every 50 s in battle, for launchers and hangars that aren\u2019t full."
+}

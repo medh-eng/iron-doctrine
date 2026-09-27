@@ -712,6 +712,11 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         DR(dr.attack && dr.shots && dr.recall.up === 0 && dr.recall.stock === 4, 'drones did not follow orders');
         DR(dr.retreat.before > 0 && dr.retreat.after === 0, 'drones should be lost when their carrier retreats');
         DR(dr.designs.std === 0 && dr.designs.grid === 1 && dr.designs.noCore && dr.wing.launched > 0 && dr.wing.flier && dr.wing.lost, 'drone designs or air wing wrong');
+        const fc = await G(() => window.__GAME__.fabClampCheck());
+        const FC = (c, what) => check(c, `${what} ${JSON.stringify(fc)}`);
+        FC(fc.fab.rounds === 1 && fc.fab.max === 4, 'the fabricator did not make a missile');
+        FC(fc.release === '' && fc.section.spawned === 1 && fc.section.crew && fc.section.left < fc.section.before && fc.again && fc.heavy !== '', 'release clamps wrong');
+        FC(fc.era.tier4 === 4 && fc.era.level1 < 3, 'the tier 3–4 music layer is not set by the battle');
         E(ec.migrate.ok && ec.migrate.v === 3 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

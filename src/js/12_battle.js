@@ -121,6 +121,12 @@ function createBattle(level, opts = {}) {
       if (V === B.me) B.pendingSwap = 1.2;
     }
   };
+  // Music era: the highest part tier on the field or in reserve (design/03 T3–T4 layer).
+  let era = 0;
+  for (const V of B.units) for (const p of V.parts) if (p.def.tier > era) era = p.def.tier;
+  for (const side of B.reserve || []) for (const e of side) for (const c of e.design.cells) if (PARTS[c.p].tier > era) era = PARTS[c.p].tier;
+  B.era = era;
+  if (!B.demo) audio.setEra(era);
   updateSpotting(B);
   return B;
 }

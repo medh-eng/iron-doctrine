@@ -1,0 +1,46 @@
+{
+  "id": "clamp",
+  "name": "Release clamp",
+  "family": "clamp",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 25,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "capacity": 2
+  },
+  "behaviour": {
+    "clamp": true
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 1,
+    "money": 40
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "detachment"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5e (design/05 \u00a73.4). No art yet (code drawing). Holds a detachable section of up to 2 t per clamp; Release drops it, or sends it off on its own if it has crew and can move."
+}
