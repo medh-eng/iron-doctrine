@@ -228,7 +228,7 @@ function rebuildVehicle(V, first) {
 const _wf = { fx: 0, fy: 0, tq: 0 };
 
 function stepVehicle(V, T, dt) {
-  if (V.gone) return;
+  if (V.gone || V.anchored) return;           // siege structures stand where they were built
   const b = V.body;
   const h = dt / PHYS_SUBSTEPS;
   const st = V.stats;
@@ -362,6 +362,8 @@ function separateVehicles(list) {
       if (B.gone) continue;
       // A ship pulling back passes its own side's ships (they make room on the road).
       if (A.side === B.side && (A.pulling || B.pulling)) continue;
+      // Defenders pass through their own walls and keep (the gates).
+      if (A.side === B.side && (A.structure || B.structure)) continue;
       const dx = B.body.x - A.body.x;
       const need = (A.len + B.len) / 2 * 0.85;
       if (Math.abs(dx) >= need || Math.abs(B.body.y - A.body.y) > (A.height + B.height) / 2) continue;

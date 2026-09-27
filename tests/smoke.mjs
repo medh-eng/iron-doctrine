@@ -678,6 +678,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         V(vc.form === '' && vc.convoy.ships === 3 && vc.convoy.combat === 1 && vc.convoy.cap > 0, 'forming a convoy wrong');
         V(vc.noGoods && vc.route === '' && vc.run.trips >= 2 && vc.run.fuelGot > 0 && vc.run.ammo > 0.9 && !vc.run.stranded && vc.run.storeUsed > 0, 'the supply route did not keep the fleet going');
         V(vc.raid && vc.contact && vc.lost.gone, 'convoy raiding or interception wrong');
+        const sg = await G(() => window.__GAME__.siegeCheck());
+        const Q = (c, what) => check(c, `${what} ${JSON.stringify(sg)}`);
+        Q(sg.block === '' && sg.structures.walls === 2 && sg.structures.keep && sg.structures.emplacements === sg.structures.slots && sg.structures.side === 1 && sg.structures.anchored && sg.structures.militia >= 1 && sg.wallStill, 'siege defences wrong');
+        Q(sg.keepWin === 'win' && sg.captured.owner === 'league' && sg.captured.restart === 2 && sg.captured.plunder === 10, 'capturing by the keep wrong');
+        Q(sg.restart.day1 === 0 && sg.restart.day2 > 0 && sg.restart.plunderPaid, 'production restart or plunder wrong');
+        Q(sg.install === '' && sg.installed && sg.defend.side === 0 && sg.defend.empl && sg.defend.squad > 0, 'emplacements or defending wrong');
+        Q(sg.held.owner === 'league' && sg.held.walls < 0.9 && sg.held.mended && sg.auto, 'a failed siege should leave mending walls');
+        Q(sg.aiTarget && sg.aiSiege, 'the AI did not besiege a weak settlement');
         E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -783,7 +791,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await G(() => { const S = window.__GAME__.SCREENS.map; S.logistics = false; S.refresh(); });
       await G(() => window.__GAME__.go('battle', { level: 1 }));
       await wait(200);
-      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage, convoys');
+      steps.push('three on the field, command wheel, reserve drawer, Battle Simulator, airships, campaign, economy, workshop and yard, recruitment and salvage, convoys, sieges');
     }
 
     // ---------- 9f. Boss blueprint: clearing level 10 captures the Behemoth for the gallery

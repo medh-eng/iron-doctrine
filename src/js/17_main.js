@@ -170,6 +170,7 @@ window.__GAME__ = {
   workshopCheck: () => workshopCheck(),
   recruitCheck: () => recruitCheck(),
   convoyCheck: () => convoyCheck(),
+  siegeCheck: () => siegeCheck(),
   camp: {
     get campaign() { return campaign; }, get world() { return world; },
     newCampaign, planMove, orderMove, campaignTick, fleetFuel, fleetShips, playerFleets, refuel, rearm, refuelQuote, dailyEconomy,

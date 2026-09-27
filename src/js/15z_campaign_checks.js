@@ -283,4 +283,70 @@ function convoyCheck() {
   out.lost = { gone: !campaign.fleets.includes(cv) || !cv.shipIds.length };
   return out;
 }
+
+// Part 4e (01 §11): siege battles with walls, keep and emplacements; capture restarts production
+// after two days with plunder; a failed siege leaves walls damaged that mend; AI sieges you.
+function siegeCheck() {
+  newCampaign('league', 8383);
+  const out = {};
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const target = world.settlements.find((s) => s.faction && s.faction !== 'league' && relation(s.faction, 'league') === 'war' && s.type === 'city');
+  land.x = target.x + 1.5; land.y = target.y + 0.5; land.path = [];
+  out.block = siegeBlock(land, target);
+  const contact = { siege: target.id, fleet: land.id };
+  const B = createSiegeBattle(contact, true);
+  const S = B.siege;
+  out.structures = { walls: S.walls.length, keep: !!S.keep, emplacements: S.emplacements.length, slots: SETTLEMENT_TYPES.city.slots, side: S.defender, anchored: S.walls.every((V) => V.anchored && V.structure), militia: B.units.filter((V) => V.design.name && V.design.name.startsWith('Militia')).length };
+  // A wall stands still after a few seconds of battle, and blocks the attackers but not its own side.
+  const wx = S.walls[0].body.x;
+  for (let t = 0; t < 3; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.wallStill = Math.abs(S.walls[0].body.x - wx) < 0.01;
+  // Knock the keep down: the attacker wins and the city changes hands.
+  for (const p of S.keep.parts) p.hp = 1;
+  checkVehicleState(B, S.keep, null);
+  for (let t = 0; t < 0.2 && !B.result; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.keepWin = B.result;
+  const res = applyBattleOutcome(B);
+  out.captured = { owner: target.faction, restart: target.restart - campaign.day, plunder: target.plunder - campaign.day, text: res.siege };
+  // Production restarts after two days; plunder pays meanwhile.
+  const w0 = target.store.wood, t0 = campaign.treasury;
+  campaign.day++; dailyEconomy();
+  const w1 = target.store.wood;
+  campaign.day++; dailyEconomy();
+  out.restart = { day1: +(w1 - w0).toFixed(2), day2: +(target.store.wood - w1).toFixed(2), plunderPaid: campaign.treasury - t0 > plunderValue(target) };
+  // Emplacements: a gun from the warehouse goes into a slot and fights for you.
+  itemsAt(target.store).push({ p: 'c37', cond: 1 });
+  out.install = installEmplacement(target, 0, 'c37');
+  out.installed = target.emplace[0] === 'c37' && !itemsAt(target.store).some((it) => it.p === 'c37');
+  // You defend: an enemy fleet besieges; you hold; the walls are left damaged and mend.
+  const enemy = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war' && fl.shipIds.length);
+  enemy.x = target.x + 1.5; enemy.y = target.y + 0.5; enemy.path = [];
+  const D = createSiegeBattle({ siege: target.id, fleet: enemy.id }, true);
+  out.defend = { side: D.siege.defender, empl: D.siege.emplacements.length && D.siege.emplacements[0].side === 0, squad: D.squad.length };
+  for (const V of D.siege.walls) for (const p of V.parts) p.hp *= 0.5;
+  D.result = 'win';
+  applyBattleOutcome(D);
+  const hurt = target.wallHp;
+  campaign.day++; dailyEconomy();
+  out.held = { owner: target.faction, walls: +hurt.toFixed(2), mended: target.wallHp > hurt };
+  // Auto-resolve a siege end to end.
+  const r2 = autoResolveSiege({ siege: target.id, fleet: enemy.id });
+  out.auto = !!r2.summary;
+  // AI siege: a strong enemy fleet marches on a weak settlement of yours and lays siege.
+  newCampaign('league', 8384);
+  campaign.day = SIEGE.aiFrom + 1;
+  const vil = world.settlements.find((s) => s.faction === 'league' && s.type === 'village');
+  const ai = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  for (const fl of campaign.fleets) if (fl !== ai && fl.faction !== 'league') { fl.x = fl.y = 1; fl.cooldown = 1e6; fl.ai.t = 1e6; }
+  for (const fl of playerFleets()) { fl.x = 2; fl.y = WORLD_H - 2; fl.path = []; fl.cooldown = 1e6; }
+  const at = portCell(vil, 'land');
+  ai.x = at[0] + 3; ai.y = at[1]; ai.path = []; ai.cooldown = 0;
+  for (let k = 0; k < 4; k++) { const sh = makeShip('medium', ai.faction, makeRng(k)); sh.fleetId = ai.id; ai.shipIds.push(sh.id); }
+  aiThink(ai);
+  out.aiTarget = ai.ai.siege === vil.id;
+  let ev = null;
+  for (let h = 0; h < 48 && !ev; h++) { campaign.running = true; ev = campaignTick(1).find((e) => e.contact && e.contact.siege); }
+  out.aiSiege = !!(ev && ev.contact.siege === vil.id && ev.contact.defend);
+  return out;
+}
 /*TEST:END*/

@@ -69,6 +69,7 @@ function applyShipState(V) {
 }
 
 function createCampaignBattle(contact, headless) {
+  if (contact.siege) return createSiegeBattle(contact, headless);
   const mine = byId('fleets', contact.mine), theirs = byId('fleets', contact.theirs);
   const sides = battleSides(mine, theirs);
   const B = createBattle(0, {
@@ -146,10 +147,11 @@ function applyBattleOutcome(B) {
     const got = takeSalvage(salvageFrom(wrecks, winners.flatMap(fleetShips), rng), winners, winners[0].x, winners[0].y);
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}`;
+  const siegeNote = B.siege ? applySiege(B, win) : '';
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
   campaign.journal.push(`Day ${campaign.day}: ${summary}`);
   campaignStore.save();
-  return { win, lostMine, lostTheirs, bounty, summary };
+  return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
 }
 
 function gainXp(o, xp) {

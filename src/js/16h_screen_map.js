@@ -245,6 +245,7 @@ SCREENS.map = {
     const act = () => { const r = el('div', 'map-row'); body.appendChild(r); return r; };
     const done = (why) => { if (why) ui.toast(why); else audio.sfx('order'); this.refresh(); };
     if (this.tab === 'overview') {
+      if (!own && rel !== 'truce') this.siegeButtons(s, body);
       row('Type', T.name + (s.coastal ? ', coastal' : ''));
       row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
       row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
@@ -260,6 +261,9 @@ SCREENS.map = {
         }
       }
       if (own && !OFFER_RANK[s.type]) this.barracks(s, body, row, act, done);
+      if (own) this.defences(s, body, row, done);
+      if (s.plunder >= campaign.day && own) row('Plunder', `${Math.round(plunderValue(s))} a day until day ${s.plunder}`);
+      if (s.restart > campaign.day) row('Production', `restarts on day ${s.restart}`);
       // Upgrades (08 §7): resources from this warehouse, money, days.
       if (own) {
         if (s.upgrade) row('Upgrading', `to ${SETTLEMENT_TYPES[s.upgrade.to].name}, ready on day ${s.upgrade.day}`);
@@ -355,7 +359,7 @@ SCREENS.map = {
     const events = campaignTick(dt);
     for (const e of events) if (e.msg) ui.toast(e.msg, 3500);
     const contact = events.find((e) => e.contact);
-    if (contact) this.preBattle(contact.contact);
+    if (contact) { if (contact.contact.siege) this.preSiege(contact.contact); else this.preBattle(contact.contact); }
     this.t = (this.t || 0) + dt;
     if (was !== campaign.running || this.t > 0.25) { this.t = 0; this.refresh(); }
   },
@@ -416,6 +420,7 @@ SCREENS.map = {
     g.fillRect(0, 0, w, h);
     const ox = this.sx(0), oy = this.sy(0);
     g.drawImage(this.base, ox, oy, WORLD_W * z, WORLD_H * z);
+    if (this.territoryDirty) { this.terr = renderTerritory(); this.territoryDirty = false; }
     g.drawImage(this.terr, ox, oy, WORLD_W * z, WORLD_H * z);
     // Weather fronts.
     for (const f of campaign.weather || []) {
