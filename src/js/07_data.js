@@ -471,12 +471,14 @@ const PERKS = [
 const CAPTAIN_ACC_PER_LEVEL = 0.02, CAPTAIN_REACT_PER_LEVEL = 0.03, CAPTAIN_REPAIR_PER_LEVEL = 0.01;
 // Grand Admiral XP (08 §10) besides battles.
 const GA_XP = { capture: { village: 100, fort: 250, city: 300, citadel: 700, metropolis: 800 }, convoy: 20, reverse: 50 };
-// Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
+// Starting fleets (01 §4.3). A faction's own batch F designs (<faction>_tank_t0, _corvette_t0,
+// _gunship_t0 in src/vehicles) replace these templates where they exist (startDesign in 14b).
 const START_FLEETS = [
   { domain: 'land', ships: ['medium', 'light', 'scout'] },
   { domain: 'sea', ships: ['gunboat', 'gunboat', 'gunboat'] },
   { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
 ];
+const START_DESIGN_KIND = { land: 'tank', sea: 'corvette', air: 'gunship' };
 const AI_FLEETS = [
   { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
   { domain: 'sea', ships: ['gunboat', 'gunboat'] },

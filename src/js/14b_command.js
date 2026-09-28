@@ -164,7 +164,9 @@ function newCampaign(factionId, seed) {
       const base = spec.domain === 'sea' && !portCell(home, 'sea') ? world.settlements.find((s) => s.faction === F.id && portCell(s, 'sea')) : home;
       if (!base) continue;
       const at = portCell(base, spec.domain) || [base.x + 0.5, base.y + 0.5];
-      const fl = makeFleet(F.id, spec.domain, at[0], at[1], spec.ships, rng, player && spec.domain === 'land' ? ga : null);
+      const own = `${F.id}_${START_DESIGN_KIND[spec.domain]}_t0`;
+      const ships = TEMPLATES[own] ? spec.ships.map(() => own) : spec.ships;
+      const fl = makeFleet(F.id, spec.domain, at[0], at[1], ships, rng, player && spec.domain === 'land' ? ga : null);
       if (player && spec.domain === 'land') { ga.fleetId = fl.id; fl.name = 'Flag fleet'; }
       else if (player) fl.name = spec.domain === 'sea' ? 'Sea fleet' : 'Air fleet';
       fl.docked = base.id;

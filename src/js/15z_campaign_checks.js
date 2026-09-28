@@ -125,7 +125,8 @@ function workshopCheck() {
   out.repaired = sh.hp === null;
   // Refit: light → medium keeps parts that stay, returns removed parts as items.
   const it0 = itemsAt(home.store).length;
-  const light = fleetShips(land).find((x) => x.design === 'light');
+  const light = fleetShips(land)[0];      // starting designs vary by faction; refit from a v1 light tank
+  if (light) { light.design = 'light'; light.hp = null; }
   const fq = light ? refitQuote(home, light, 'scout') : null;
   out.refit = light ? refitShip(home, land, light, 'scout') : 'no light tank';
   run((fq ? fq.hours : 0) + 1);

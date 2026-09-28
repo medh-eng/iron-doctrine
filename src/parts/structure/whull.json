@@ -33,5 +33,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Roster D4/D5, starting values from 05 \u00a73.1 (step 2.8)."
+  "notes": "New in v2.1 (05 section 3.1). Art: painted plank strakes (P1) with trenails, a P2 wale, iron knee straps and a lidded port; soft shading so sections tile in rows.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

@@ -33,5 +33,35 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Step 2.7 (05 \u00a73.2): lift in newtons while it has fuel; adds to the envelopes' gas lift and lets the airship climb."
+  "notes": "New in v2.1 (05 section 3.2). Art (T2): ducted lift fan blowing downward, welded P1 duct with an intake grille, a slot showing the fan, downwash louvres with a P3/black hazard band, engine exhaust stubs. The fan group is edge-on: animate it by oscillating its horizontal scale, not by rotation. Anchor 'thrust' = downwash exit for dust and heat shimmer.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0.2
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.05
+    ],
+    "thrust": [
+      1,
+      2.1
+    ],
+    "exhaust": [
+      [
+        0.12,
+        0.72
+      ]
+    ]
+  },
+  "moving": {
+    "fan": {
+      "pivot": [
+        1,
+        0.875
+      ]
+    }
+  }
 }

@@ -17,7 +17,7 @@
   },
   "overhang": {
     "left": 0,
-    "right": 0.75,
+    "right": 1.95,
     "top": 0,
     "bottom": 0
   },
@@ -29,13 +29,13 @@
       0.95
     ],
     "muzzle": [
-      1.72,
-      0.375
+      2.95,
+      0.5
     ],
     "smoke": [
       [
         0.5,
-        0.6
+        0.7
       ]
     ]
   },
@@ -43,7 +43,7 @@
     "barrel": {
       "pivot": [
         0.5,
-        0.375
+        0.5
       ],
       "elevation": [
         -10,
@@ -76,5 +76,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "New tier 0 part (not used by the game yet). Art: Foundry batch A (delivered as wpn_swivel20_std)."
+  "notes": "New in v2.1 (05 section 3.1). Art: long brass barrel with iron rings, removable breech chamber and wooden tiller, on an iron yoke and a P1 post. Barrel length 2.45 cells = 1 x 1.25 + 1.2 (07 section 7)."
 }

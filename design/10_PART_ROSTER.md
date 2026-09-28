@@ -81,11 +81,11 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
+| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A; batch D copy identical) |
 | D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
-| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
-| D4 | whull | Wooden hull section | structure | 2×2 | JSON added in step 2.8 (art todo) |
-| D5 | wbow | Wooden bow section | structure | 2×2 | JSON added in step 2.8 (art todo) |
+| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A; longer barrel from batch D) |
+| D4 | whull | Wooden hull section | structure | 2×2 | integrated (batch D) |
+| D5 | wbow | Wooden bow section | structure | 2×2 | integrated (batch D) |
 | D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
 | D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
 | D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
@@ -94,9 +94,9 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | What | Status |
 |---|---|---|---|
-| E1 | lifteng | Lift engine (JSON + art) | todo |
-| E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | todo |
-| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | JSON built in step 2.7 (art todo) |
+| E1 | lifteng | Lift engine (JSON + art) | integrated (batch E; art only, the repo's stats and metropolis crafting kept) |
+| E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | delivered (batch E); not taken: the zip's materials.json marked both `planned` and made the canvas unpaintable, so the repo's looks stay |
+| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | integrated (batch E) |
 
 ## Batch F: faction starting designs (`src/vehicles/`, tier 0 parts only)
 
@@ -109,8 +109,8 @@ Start with the League and the Directorate, then the others.
 
 | # | id pattern | Status |
 |---|---|---|
-| F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | todo |
-| F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | todo |
+| F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | integrated (batch F1–F2); the League's starting fleets use them |
+| F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | integrated (batch F1–F2); the Directorate's starting fleets use them |
 | F3 | skyreach_…, clans_…, lumen_… | todo |
 
 **Rules:** ordinary but handsome; they pass the checker; air designs have a lift margin of 1.15–1.3, ships float with about 30% freeboard, and tanks don't bog down on plains.

@@ -806,7 +806,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         C.formConvoy(home, C.idleAt(home, 'quartermaster')[0], 'land');
         const cv = C.campaign.fleets.find((f) => f.convoy);
         const land = C.playerFleets().find((f) => f.domain === 'land' && !f.convoy);
-        C.setRoute(cv, home.id, { fleet: land.id }, ['fuel', 'ammo']);
+        // The land fleet may have lost the auto-resolve above; then deliver to the fort instead.
+        const fort = C.campaign.settlements.find((q) => q.faction === C.campaign.faction && q.type === 'fort');
+        C.setRoute(cv, home.id, land ? { fleet: land.id } : { settlement: fort.id }, ['fuel', 'ammo']);
         S.cam.x = home.x + 6; S.cam.y = home.y;
         S.select('fleet', cv.id); S.tab = 'route'; S.logistics = true; S.refresh();
       });
