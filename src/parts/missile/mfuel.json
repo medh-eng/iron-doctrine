@@ -1,0 +1,31 @@
+{
+  "id": "mfuel",
+  "name": "Propellant section",
+  "family": "mfuel",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 20,
+    "hp": 6,
+    "armor": 0,
+    "range": 1500
+  },
+  "cost": {
+    "metal": 1,
+    "money": 4
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab."
+}

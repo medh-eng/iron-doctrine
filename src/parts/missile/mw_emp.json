@@ -1,0 +1,37 @@
+{
+  "id": "mw_emp",
+  "name": "EMP warhead",
+  "family": "mw_emp",
+  "variant": "std",
+  "category": "missile",
+  "tier": 4,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 10,
+    "armor": 0,
+    "dmg": 20,
+    "blast": 6,
+    "stun": 5
+  },
+  "behaviour": {
+    "warhead": "emp"
+  },
+  "cost": {
+    "metal": 1,
+    "elec": 2,
+    "money": 20
+  },
+  "unlock": {
+    "tech": "warheads_emp"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Weapons, turrets and sensors within 6 m stop for 5 s."
+}

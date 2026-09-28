@@ -1,0 +1,40 @@
+{
+  "id": "mw_cluster",
+  "name": "Cluster warhead",
+  "family": "mw_cluster",
+  "variant": "std",
+  "category": "missile",
+  "tier": 4,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 2
+  },
+  "stats": {
+    "mass": 160,
+    "hp": 20,
+    "armor": 0,
+    "dmg": 60,
+    "blast": 2,
+    "bomblets": 4
+  },
+  "behaviour": {
+    "warhead": "cluster",
+    "sizes": [
+      "missile_l"
+    ]
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 1,
+    "money": 30
+  },
+  "unlock": {
+    "tech": "warheads_emp"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Large missiles only: splits into 4 small HE missiles near the target."
+}

@@ -64,6 +64,22 @@ const LOCK_FC = 0.2;              // added by a fire-control computer
 const LOCK_ECM = 0.4;             // share of lock chance a target's ECM takes away
 const ECM_RADAR = 0.3;            // share of radar range a target's ECM takes away
 const ROCKET_SALVO_GAP = 0.1;     // seconds between rockets in a salvo
+// Designed missiles (Part 5b, design/01 §10.5, design/05 §3.4). A missile design's numbers come
+// from its parts: speed from motors against mass, range from propellant, turn from seeker and fins.
+const MSL = {
+  motorLoad: 100,          // kg one motor pushes at its full speed
+  speedMin: 0.4, speedMax: 1.3,
+  velScale: 0.25,          // catalogue speed (m/s) → battle speed
+  baseRange: 1000,         // m without propellant sections
+  turnScale: 0.4,          // (seeker turn + fins) → rad/s in battle
+  units: { missile_s: 1, missile_m: 2, missile_l: 4 },   // launcher and magazine space per missile
+  lock: { radar: 0.55, heat: 0.7 },                      // base lock chance by seeker
+  flareRadar: 0.25,        // share of a flare's decoy chance that works on a radar seeker
+  flareGap: 4,             // seconds between flare salvos
+  flareReact: 45,          // m: a crew fires flares when a locked missile comes this close
+  clusterAt: 30,           // m from the target where a cluster warhead splits
+  burnDps: 6,              // napalm: damage per second to parts in the burning patch
+};
 // Heat (design/v1/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
 // in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
 // power and automatic fire rate; 20 s above 100% can start a fire.
@@ -104,7 +120,10 @@ const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
 // ---------- templates: the designs in src/vehicles (design/05 §8). Grid rows go top (y = 0)
 // to bottom; front faces right. cells: [partId, x, y]
-const TEMPLATES = PART_LIBRARY.vehicles;
+const TEMPLATES = {};
+// Missile designs (Part 5b) live in src/vehicles too, with domain 'missile'; they are kept apart.
+const MISSILE_TEMPLATES = {};
+for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : TEMPLATES)[id] = v;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
 const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2'];

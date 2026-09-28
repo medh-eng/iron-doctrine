@@ -1,0 +1,50 @@
+{
+  "id": "msl_m_acid",
+  "name": "Medium heat seeker, acid",
+  "domain": "missile",
+  "class": "missile_m",
+  "w": 10,
+  "h": 2,
+  "cells": [
+    [
+      "mmotor",
+      0,
+      0
+    ],
+    [
+      "mfuel",
+      2,
+      0
+    ],
+    [
+      "mw_acid",
+      4,
+      0
+    ],
+    [
+      "mw_acid",
+      6,
+      0
+    ],
+    [
+      "mseek_heat",
+      9,
+      0
+    ],
+    [
+      "mmotor",
+      0,
+      1
+    ],
+    [
+      "mfuel",
+      2,
+      1
+    ],
+    [
+      "mfins",
+      3,
+      1
+    ]
+  ]
+}

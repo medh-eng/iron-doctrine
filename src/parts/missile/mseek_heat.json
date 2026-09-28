@@ -1,0 +1,34 @@
+{
+  "id": "mseek_heat",
+  "name": "Heat seeker",
+  "family": "mseek_heat",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 6,
+    "hp": 4,
+    "armor": 0,
+    "turn": 3.5
+  },
+  "behaviour": {
+    "seeker": "heat"
+  },
+  "cost": {
+    "elec": 1,
+    "money": 8
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Lock helped by fire control only; ECM can't jam it; flares often fool it."
+}

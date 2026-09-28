@@ -1,0 +1,41 @@
+{
+  "id": "flare",
+  "name": "Flare launcher",
+  "family": "flare",
+  "variant": "std",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 15,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "salvos": 3,
+    "decoy": 0.7
+  },
+  "behaviour": {
+    "flares": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 12
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "flares"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.3). 3 salvos; each breaks a heat seeker's lock 70% of the time, a radar seeker's 17%."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "mw_napalm",
+  "name": "Napalm warhead",
+  "family": "mw_napalm",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 10,
+    "armor": 0,
+    "dmg": 60,
+    "blast": 2,
+    "burn": 8
+  },
+  "behaviour": {
+    "warhead": "napalm"
+  },
+  "cost": {
+    "metal": 1,
+    "money": 14
+  },
+  "unlock": {
+    "tech": "warheads_special"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Leaves a burning patch and sets parts on fire."
+}

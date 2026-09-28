@@ -1,0 +1,30 @@
+{
+  "id": "msl_s_rocket",
+  "name": "Small unguided rocket, HE",
+  "domain": "missile",
+  "class": "missile_s",
+  "w": 6,
+  "h": 1,
+  "cells": [
+    [
+      "mmotor",
+      0,
+      0
+    ],
+    [
+      "mfuel",
+      2,
+      0
+    ],
+    [
+      "mfuel",
+      3,
+      0
+    ],
+    [
+      "mw_he",
+      4,
+      0
+    ]
+  ]
+}

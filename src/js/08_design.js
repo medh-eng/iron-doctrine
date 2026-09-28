@@ -12,6 +12,7 @@ function designFromTemplate(id) {
     soft: !!t.soft,
     mark: 1,
     cells: t.cells.map(([p, x, y]) => ({ p, x, y })),
+    missile: t.missile,
   };
 }
 

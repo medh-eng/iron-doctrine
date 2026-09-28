@@ -115,6 +115,7 @@ function gauss(rng) { return (rng.next() + rng.next() + rng.next() - 1.5) * 1.15
 // Fire weapon w of V along world angle `ang`. spreadMul scales the aiming error.
 function fireWeapon(B, V, w, ang, spreadMul) {
   const d = w.def;
+  if (V.empT > 0) return false;            // an EMP burst has the guns dead for a few seconds (10f)
   if (!d.auto) {
     if (V.shells <= 0) return false;
     V.shells--;
@@ -233,7 +234,7 @@ function shellVsVehicle(B, s, V) {
     let ny = axis === 'y' ? -Math.sign(ddy) : 0;
     if (d.sloped && ddx * 0.7071 + ddy * 0.7071 < 0) { nx = 0.7071; ny = 0.7071; }
     const cos = Math.max(0.05, Math.abs(ddx * nx + ddy * ny));
-    const eff = d.armor / cos;
+    const eff = (d.armor * (part.corrode === undefined ? 1 : part.corrode)) / cos;
     if (first) {
       first = false;
       hx = cx; hy = cy;
@@ -457,7 +458,8 @@ function explode(B, x, y, dmg, radius, source) {
       localToWorld(V, tmp.x, tmp.y, tmp);
       const dd = Math.hypot(tmp.x - x, tmp.y - y);
       if (dd >= radius) return;
-      const armourCut = p.def.armor > 20 ? 20 / p.def.armor : 1;
+      const arm = p.def.armor * (p.corrode === undefined ? 1 : p.corrode);
+      const armourCut = arm > 20 ? 20 / arm : 1;
       damagePart(B, V, i, dmg * (1 - dd / radius) * armourCut, source);
     });
   }

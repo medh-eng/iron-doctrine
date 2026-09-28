@@ -1,0 +1,31 @@
+{
+  "id": "mfins",
+  "name": "Steering fins",
+  "family": "mfins",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 5,
+    "hp": 4,
+    "armor": 0,
+    "turn": 1
+  },
+  "cost": {
+    "metal": 1,
+    "money": 4
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab."
+}

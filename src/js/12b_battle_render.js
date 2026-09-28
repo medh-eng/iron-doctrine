@@ -729,6 +729,28 @@ function drawParticles(g) {
         g.fillStyle = '#DCEBF2';
         g.beginPath(); g.arc(x, y, Math.max(1, p.size * S * 0.5), 0, Math.PI * 2); g.fill();
         break;
+      case FX_FLARE:
+        // A white-hot flare with a magenta-amber glow (design/03 §6).
+        g.globalAlpha = 0.45 * (1 - k);
+        g.fillStyle = '#FF9A5A';
+        g.beginPath(); g.arc(x, y, p.size * S * 1.4, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1 - k * 0.6;
+        g.fillStyle = '#FFF6E0';
+        g.beginPath(); g.arc(x, y, Math.max(1.5, p.size * S * 0.45), 0, Math.PI * 2); g.fill();
+        break;
+      case FX_ACID:
+        g.globalAlpha = 0.9 * (1 - k);
+        g.fillStyle = k < 0.5 ? '#D6E84A' : '#8FA82A';
+        g.beginPath(); g.arc(x, y, Math.max(1, p.size * S * 0.5), 0, Math.PI * 2); g.fill();
+        break;
+      case FX_ARC: {
+        // A jagged blue arc along the particle's direction.
+        g.globalAlpha = 1 - k;
+        g.strokeStyle = '#8FD0FF'; g.lineWidth = 1.5;
+        const ex = p.vx * 0.03 * S, ey = -p.vy * 0.03 * S, j = (p.shade - 0.5) * 0.6 * S;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + ex * 0.35 - ey * 0.02 + j, y + ey * 0.35 + j); g.lineTo(x + ex * 0.65 - j, y + ey * 0.65 - j * 0.5); g.lineTo(x + ex, y + ey); g.stroke();
+        break;
+      }
       case FX_BUBBLE:
         g.globalAlpha = 0.6 * (1 - k);
         g.strokeStyle = '#CFE6F0'; g.lineWidth = 1;
@@ -736,7 +758,7 @@ function drawParticles(g) {
         break;
       case FX_RING:
         g.globalAlpha = 0.6 * (1 - k);
-        g.strokeStyle = '#FFE9B8'; g.lineWidth = 2;
+        g.strokeStyle = p.shade === 1 ? '#5FB4FF' : '#FFE9B8'; g.lineWidth = 2;
         g.beginPath(); g.arc(x, y, p.size * S, 0, Math.PI * 2); g.stroke();
         break;
     }
@@ -852,6 +874,7 @@ function renderBattle(g, B) {
   drawWater(g, B);
   drawShells(g);
   drawMissiles(g);
+  drawFirePatches(g);
   drawParticles(g);
   drawWeather(g, B);
 }

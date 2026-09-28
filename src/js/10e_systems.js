@@ -5,7 +5,8 @@
 // chance, the target's ECM cuts it. Locked, it steers at the target within its turn rate;
 // unlocked, it flies straight on a bad heading and misses. That is what makes the sensors matter.
 
-const missiles = makePool(() => ({ alive: false, x: 0, y: 0, ang: 0, t: 0, kind: '', def: null, target: null, locked: false, shooter: null, side: 0, trail: 0 }), 24);
+const missiles = makePool(() => ({ alive: false, x: 0, y: 0, ang: 0, t: 0, kind: '', def: null, target: null, locked: false, shooter: null, side: 0, trail: 0,
+  msl: null, B: null, fooled: false, fx: 0, fy: 0, split: false, vert: 0, hot: false }), 32);
 const salvos = makePool(() => ({ alive: false, V: null, w: null, n: 0, gap: 0, tx: 0, ty: 0 }), 8);
 
 // Lock chance of V's missiles of this kind against U.
@@ -20,7 +21,7 @@ function launchMissile(B, V, w, U) {
   weaponPivot(V, w, _p);
   const m = missiles.take();
   m.x = _p.x; m.y = _p.y + 0.2;
-  m.kind = kind; m.def = w.def; m.target = U; m.t = 0; m.trail = 0;
+  m.kind = kind; m.def = w.def; m.target = U; m.t = 0; m.trail = 0; m.msl = null;
   m.shooter = V; m.side = V.side;
   // SAMs leave the rail steeply toward the target's side; anti-tank missiles straight at it.
   m.ang = kind === 'sam' ? (U.body.x >= m.x ? 0.35 : 0.65) * Math.PI : Math.atan2(U.body.y + U.height * 0.3 - m.y, U.body.x - m.x);
@@ -71,6 +72,7 @@ function stepSalvos(B, dt) {
 function stepMissiles(B, dt) {
   const T = B.T;
   missiles.forEachAlive((m) => {
+    if (m.msl) { stepDesigned(B, m, dt); return; }      // Part 5b designed missiles (10f)
     const M = MISSILE[m.kind];
     m.t += dt;
     const U = m.target;
@@ -135,6 +137,7 @@ function autoSam(B, V, w) {
 // ---------- heat, breakdowns, field repair (per vehicle, every battle step)
 function stepSystems(B, V, dt) {
   if (V.destroyed || V.gone) return;
+  stepWarheadEffects(B, V, dt);
   // Heat: engines only run hot while driving (fliers always).
   const running = V.flier || V.throttle !== 0;
   const ter = B.T.terrainAt(V.body.x);
@@ -201,6 +204,7 @@ function drawMissiles(g) {
     g.save();
     g.translate(view.sx(m.x), view.sy(m.y));
     g.rotate(-m.ang);
+    if (m.msl) { drawDesignedMissile(g, m, S); g.restore(); return; }
     g.fillStyle = '#3a3f47';
     g.fillRect(-0.5 * S, -0.08 * S, S, 0.16 * S);
     g.fillStyle = PAL.amber;

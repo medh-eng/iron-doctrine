@@ -117,11 +117,11 @@ Start with the League and the Directorate, then the others.
 
 ## Batch G: new tier 1–2 parts (JSON + art; 05 §3.3)
 
-c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop.
+c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. (`flare` JSON added in step 5b; art todo.)
 
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
-- **Missiles:** rack, vls, mag, and the missile parts.
+- **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b (art todo; missiles in flight are drawn in code).
 - **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts.
 - **Other:** fab, clamp, ecm, c203.
 - **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.

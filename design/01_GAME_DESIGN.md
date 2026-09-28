@@ -343,6 +343,9 @@ Side view, landscape, generated from the location.
 
 **Missiles**
 - Missiles fire from racks and VLS launchers.
+- **Rules of a missile design (5b):** at least one rocket motor; one or more warheads, all of one kind; at most one seeker, at the nose (the right end); a cluster warhead only in a large missile. Numbers: speed = the motor's 250 m/s × √(motors × 100 kg ÷ mass), within 0.4–1.3×; range 1000 m + 1500 m per propellant section; turn = 0.4 × (seeker turn + fins) rad/s, slower for missiles over 150 kg.
+- **Launchers:** each ship design carries one missile design. A rack holds 4 space (small 1, medium 2; no large); a VLS holds 8 (large 4) and fires straight up before turning; a magazine holds 8 in reserve and refills an empty launcher one missile at a time (double reload time). A hit magazine can blow up (0.3).
+- **Guidance numbers:** radar lock 55% + fire control 20% + radar, × 0.6 against ECM; heat lock 70% + fire control, ECM has no effect. A flare salvo (3 per launcher) breaks a heat seeker's lock 70% of the time and a radar seeker's 17.5%; the crew fire them by themselves when a locked missile comes within 45 m, at most every 4 s. A fooled missile chases the flares.
 - **Guidance:** unguided, radar or heat seeking; laser guidance comes later. Flares and ECM can defeat guidance.
 - **Warheads:**
 
@@ -353,6 +356,8 @@ Side view, landscape, generated from the location.
   | Acid | Armour corrodes over time |
   | EMP | Electronics, turrets and drones stop working for a few seconds |
   | Cluster | Splits into small missiles |
+
+  In numbers (5b): HE 120 dmg, 2.5 m blast. Napalm 60 dmg, sets up to 2 parts it hits on fire, and leaves an 8 s burning patch (6 dmg/s to the lowest two rows of whatever stands in it). Acid 50 dmg; armour within 3 m corrodes to half over about 6 s and stays so for the battle. EMP 20 dmg; for 5 s, within 6 m, weapons don't fire or reload, turrets don't turn, and radar gives no lock. Cluster: splits 30 m from the target into 4 small HE missiles (60 dmg each) that keep the seeker.
 
 **Fabricators**
 - Fabricators build missiles, drones or ammo **during battle**, using the ship's own metal and electronics.

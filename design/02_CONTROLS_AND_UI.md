@@ -197,6 +197,7 @@ Only the services that type has are shown (01 §7.1).
 ```
 
 - **Tabs:** Ship, Missile, Drone.
+  - **Missile** (built in 5b, a card opened from the Missiles button): size chips (small 6×1, medium 10×2, large 16×3), the designs to start from, the missile grid (tap a cell to place the chosen part, tap a part to remove it), the missile parts, the numbers (mass, speed, range, guidance and turn rate, warhead, space, cost) and plain rule problems. Save as new keeps it with your designs; Carry on this ship sets the missile this ship's racks and VLS carry. The Ship tab's stats show the missile carried and how many each launcher holds.
 - **Selectors:** domain and class set the grid and part limit. The part counter shows used / allowed.
 - **Palette:**
   - Unlocked parts only, filtered by domain.

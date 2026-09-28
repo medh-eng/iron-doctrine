@@ -177,6 +177,19 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(mc.atgmFcRadar > mc.atgmFc + 0.05 && mc.atgmVsEcm < mc.atgmFc - 0.1, `radar and ECM don't change anti-tank missile hit rates (${JSON.stringify(mc)})`);
       check(mc.samNaval > mc.samSearch + 0.05 && mc.samVsEcm < mc.samSearch - 0.1, `radar and ECM don't change SAM hit rates (${JSON.stringify(mc)})`);
       console.log(`     missile hit rates: ATGM ${mc.atgmFc} / +radar ${mc.atgmFcRadar} / vs ECM ${mc.atgmVsEcm}; SAM ${mc.samSearch} / naval radar ${mc.samNaval} / vs ECM ${mc.samVsEcm}`);
+      // Part 5b: designed missiles, launchers, flares, warheads.
+      const dsm = await G(() => window.__GAME__.designedMissileCheck());
+      const DM = (c, what) => check(c, `${what} ${JSON.stringify(dsm)}`);
+      DM(dsm.library.length === 7 && dsm.library.every((m) => !m.errors.length && m.speed > 150 && m.range >= 2500), 'library missile designs broken');
+      DM(dsm.noMotor.length && dsm.seekerBack.length && dsm.clusterSmall.length && dsm.mixed.length, 'broken missile designs were accepted');
+      const rr = dsm.rates;
+      DM(rr.heat - rr.heatFlares > 2 * (rr.radar - rr.radarFlares) && rr.heat - rr.heatFlares > 0.4, 'flares should beat heat seekers far more than radar seekers');
+      DM(rr.radarEcm < rr.radar - 0.15 && rr.heatEcm > rr.heat - 0.15 && rr.unguided > 0.8, 'ECM should jam radar seekers only');
+      const wh = dsm.warheads;
+      DM(wh.he.damage > 50 && wh.napalm.patch && wh.napalm.fires > 0 && wh.acid.corroded > 0 && wh.emp.gunsDead && wh.cluster.split >= 4, 'a warhead had no effect');
+      DM(dsm.capacity.rack === 4 && dsm.capacity.vls === 8 && dsm.capacity.mag === 8 && dsm.vlsUp && dsm.refill.rounds === 1 && dsm.refill.mag === 7, 'launcher capacity, VLS launch or magazine refill wrong');
+      DM(dsm.large.rack === 'missile_m' && dsm.large.vls === 'msl_l_cluster' && dsm.large.vlsRounds === 2, 'a large missile should go in the VLS only');
+      console.log(`     designed missile hit rates: heat ${rr.heat} / flares ${rr.heatFlares} / ECM ${rr.heatEcm}; radar ${rr.radar} / flares ${rr.radarFlares} / ECM ${rr.radarEcm}; unguided ${rr.unguided}`);
       const sy = await G(() => window.__GAME__.systemsCheck());
       check(sy.hotPower < 0.95 && sy.coolPower === 1, `heat did not cut power or radiators did not help (${JSON.stringify(sy)})`);
       check(sy.repaired > 20 && sy.brokeDown, `repair or breakdown failed (${JSON.stringify(sy)})`);
@@ -547,6 +560,30 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await closeUp(0, 0, 15, 'svg-1-league-c75');
       await closeUp(11, 1, 8, 'svg-2-directorate-c75');
       steps.push('SVG art');
+    }
+
+    // ---------- 9f2. Part 5b: the Missile tab in the Drafting Office
+    {
+      await G(() => { const g = window.__GAME__; const d = g.designFromTemplate('medium'); d.cells.push({ p: 'rack', x: 0, y: 2 }); g.go('designer', { design: d, base: null, owned: true }); });
+      await wait(300);
+      const hit = (sel) => (vp.mobile ? page.locator(sel).tap() : page.locator(sel).click());
+      await tapButton('Missiles');
+      await wait(200);
+      check(await page.locator('.card-missile .ms-part').count() === 4, 'Missile tab did not show the ship\'s missile');
+      await hit('.ms-brush[data-part="mw_emp"]');
+      await hit('.ms-part[data-part="mw_he"]');
+      await hit('.ms-cell[data-x="3"][data-y="0"]');
+      await wait(100);
+      check(await page.locator('.ms-part[data-part="mw_emp"]').count() === 1, 'placing a missile part did nothing');
+      await tapButton('Save as new');
+      await wait(100);
+      check(await G(() => window.__GAME__.save.designs.missiles.length === 1), 'saving a missile design did nothing');
+      await tapButton('Carry on this ship');
+      check(await G(() => /^m/.test(window.__GAME__.SCREENS.designer.st.d.missile || '')), 'the ship did not take the new missile');
+      await shot('16b-missile-tab');
+      await tapButton('Close');
+      await G(() => { window.__GAME__.save.designs.missiles.length = 0; });
+      steps.push('missile tab');
     }
 
     // ---------- 9g. Step 2.6: three on the field, command wheel, reserve drawer, Battle Simulator

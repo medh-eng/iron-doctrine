@@ -1,0 +1,48 @@
+{
+  "id": "rack",
+  "name": "Missile rack",
+  "family": "rack",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 120,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 3,
+    "capacity": 4,
+    "range": 2500,
+    "cal": 90
+  },
+  "behaviour": {
+    "secondary": "launcher",
+    "sizes": [
+      "missile_s",
+      "missile_m"
+    ]
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 1,
+    "money": 40
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Holds 4 small or 2 medium missiles of the ship's missile design."
+}

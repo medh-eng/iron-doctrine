@@ -1,0 +1,37 @@
+{
+  "id": "mw_acid",
+  "name": "Acid warhead",
+  "family": "mw_acid",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 35,
+    "hp": 10,
+    "armor": 0,
+    "dmg": 50,
+    "blast": 2,
+    "corrode": 0.5,
+    "time": 20
+  },
+  "behaviour": {
+    "warhead": "acid"
+  },
+  "cost": {
+    "metal": 1,
+    "money": 14
+  },
+  "unlock": {
+    "tech": "warheads_special"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Armour within 3 m corrodes to half over about 6 s."
+}

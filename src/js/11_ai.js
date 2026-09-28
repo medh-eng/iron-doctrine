@@ -95,6 +95,7 @@ function aimPoint(B, U, out) {
 
 // Turn the barrel toward `angle` (world) at the elevation rate; handles swinging sides.
 function trainWeapon(V, w, angle, face, dt) {
+  if (V.empT > 0) return false;            // turrets frozen by an EMP burst (10f)
   if (w.face === undefined) { w.face = V.dir; w.angle = angleFromElevation(V, 0, V.dir); w.swing = 0; }
   if (face !== w.face) {
     if (!w.turret && !weaponArc(V, w).both) return false;
@@ -112,6 +113,7 @@ function trainWeapon(V, w, angle, face, dt) {
 
 // Reloading, automatic weapons and (for AI) the main gun.
 function runWeapons(B, V, dt, aiControlled) {
+  if (V.empT > 0) return;                  // EMP: nothing fires or reloads until it passes
   const loaderPenalty = V.loaderShort ? 1.6 : 1;
   const tmp = { x: 0, y: 0 };
   for (const w of V.weapons) {
@@ -120,6 +122,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
     if (w.reload > 0) w.reload -= dt;
     if (d.secondary) {
+      if (d.secondary === 'launcher') refillLauncher(V, w);
       if (d.secondary === 'sam') autoSam(B, V, w);
       else if (aiControlled) { if (d.secondary === 'bomb') aiBomb(B, V, w); else aiSecondary(B, V, w); }
       continue;

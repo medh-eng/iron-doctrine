@@ -1,0 +1,34 @@
+{
+  "id": "mmotor",
+  "name": "Rocket motor",
+  "family": "mmotor",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 8,
+    "armor": 0,
+    "speed": 250
+  },
+  "behaviour": {
+    "motor": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 8
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Each motor pushes about 100 kg of missile at full speed."
+}

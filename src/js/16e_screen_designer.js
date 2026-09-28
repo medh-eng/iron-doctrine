@@ -253,6 +253,7 @@ SCREENS.designer = {
     this.chips = el('div', 'dz-chips');
     top.appendChild(this.chips);
     top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
+    top.appendChild(button('Missiles', () => openMissileDesigner(this), 'btn btn-small dz-msl'));
     r.appendChild(top);
     // Palette.
     const pal = el('div', 'dz-palette');
@@ -471,6 +472,12 @@ SCREENS.designer = {
     if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
     if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
     if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'launcher')) {
+      const md = missileDesign(s.d.missile || DEFAULT_MISSILE);
+      const ms = md && missileStats(md);
+      row('Missile carried', ms ? `${ms.name} (${missileClass(ms.cls).name})` : 'none');
+      for (const w of rep.weapons.filter((q) => q.secondary === 'launcher')) row(`${w.name} holds`, ms && w.sizes.includes(ms.cls) ? `${Math.floor(w.capacity / ms.units)}` : 'this size won’t fit');
+    }
     if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
@@ -677,6 +684,7 @@ SCREENS.designer = {
       changelog: s.baseOwned ? changeLog(s.base, out).concat(JSON.stringify(s.d.paint || null) !== JSON.stringify(s.base.paint || null) ? ['Repainted'] : []) : ['New design'],
       cls: s.cls,
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
+      missile: s.d.missile || undefined,      // the missile its racks and VLS carry (Part 5b)
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),
