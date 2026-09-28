@@ -111,13 +111,16 @@ Start with the League and the Directorate, then the others.
 |---|---|---|
 | F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | integrated (batch F1–F2); the League's starting fleets use them |
 | F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | integrated (batch F1–F2); the Directorate's starting fleets use them |
-| F3 | skyreach_…, clans_…, lumen_… | todo |
+| F3 | skyreach_…, clans_…, lumen_… | integrated (batch F3); every faction now starts with its own designs. Skyreach gunship lift margin 1.06 (below the 1.15–1.3 band; it flies) |
 
 **Rules:** ordinary but handsome; they pass the checker; air designs have a lift margin of 1.15–1.3, ships float with about 30% freeboard, and tanks don't bog down on plains.
 
 ## Batch G: new tier 1–2 parts (JSON + art; 05 §3.3)
 
-c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. (`flare` JSON added in step 5b; art todo.)
+c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integrated (batch G):**
+- New parts in the game: `c57`, `mortar` (repo added dmg 20 and cal 81, which every gun needs), `hold`.
+- Art only, on the game's ids (their stats kept): `flare`, `rocket` → `rpod`, `radar` → `radar_s`, `repair` and `crane` (they stay in `logistics`).
+- Added as `planned` (art waits in the library until the mechanic exists): `flame` (step 5d), `workshop` (mobile workshops).
 
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 

@@ -1,0 +1,41 @@
+{
+  "id": "skyreach_tank_t0",
+  "name": "Skyreach scout tank",
+  "domain": "land",
+  "class": "tank",
+  "w": 14,
+  "h": 7,
+  "faction": "skyreach",
+  "paint": {
+    "scheme": "skyreach",
+    "camo": "none"
+  },
+  "source": "foundry batch F",
+  "cells": [
+    ["wheel_w", 1, 5],
+    ["wheel_w", 5, 5],
+    ["wheel_w", 9, 5],
+    ["plank", 0, 3],
+    ["plank", 0, 4],
+    ["steam", 1, 3],
+    ["crew2", 4, 3],
+    ["fuel_s", 6, 3],
+    ["ammo", 6, 4],
+    ["plank", 7, 3],
+    ["plank", 8, 3],
+    ["plank", 9, 3],
+    ["plank", 10, 3],
+    ["plank", 11, 3],
+    ["plank", 7, 4],
+    ["plank", 8, 4],
+    ["plank", 9, 4],
+    ["plank", 10, 4],
+    ["mg", 11, 4],
+    ["turret", 4, 2],
+    ["plank", 7, 2],
+    ["optics", 8, 2],
+    ["plank", 4, 1],
+    ["c37", 5, 1],
+    ["optics", 4, 0]
+  ]
+}

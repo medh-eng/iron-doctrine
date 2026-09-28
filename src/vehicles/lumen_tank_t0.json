@@ -1,0 +1,42 @@
+{
+  "id": "lumen_tank_t0",
+  "name": "Lumen sentinel tank",
+  "domain": "land",
+  "class": "tank",
+  "w": 14,
+  "h": 7,
+  "faction": "lumen",
+  "paint": {
+    "scheme": "lumen",
+    "camo": "none"
+  },
+  "source": "foundry batch F",
+  "cells": [
+    ["wheel_w", 1, 5],
+    ["wheel_w", 5, 5],
+    ["wheel_w", 9, 5],
+    ["ironwood", 0, 3],
+    ["ironwood", 0, 4],
+    ["steam", 1, 3],
+    ["crew2", 4, 3],
+    ["fuel_s", 6, 3],
+    ["ammo", 6, 4],
+    ["ironwood", 7, 3],
+    ["ironwood", 8, 3],
+    ["ironwood", 9, 3],
+    ["ironwood", 10, 3],
+    ["ironwood", 11, 3],
+    ["ironwood", 7, 4],
+    ["ironwood", 8, 4],
+    ["ironwood", 9, 4],
+    ["ironwood", 10, 4],
+    ["ironwood", 11, 4],
+    ["turret", 5, 2],
+    ["smoke", 4, 2],
+    ["ironwood", 8, 2],
+    ["ironwood", 5, 1],
+    ["c37", 6, 1],
+    ["optics", 5, 0],
+    ["optics", 9, 2]
+  ]
+}

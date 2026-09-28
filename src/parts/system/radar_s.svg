@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -48 64 80" data-part="radar_s" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.3"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.65" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.42"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="cyl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.25"/><stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0.5"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M4 31.6V14Q4 12 6 12H58Q60 12 60 14V31.6Z" fill="#FF00FF"/>
+<path d="M4 26H60V28.4H4Z" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<rect x="29.6" y="-24" width="4.8" height="36.4" fill="url(#cyl)" stroke="#14171B" stroke-width="0.6"/>
+<rect x="28" y="-2" width="8" height="3" rx="0.8" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<path d="M24 12L29.6 2M40 12L34.4 2" stroke="#4F565E" stroke-width="1.4" fill="none"/>
+<path d="M4 31.6V14Q4 12 6 12H58Q60 12 60 14V31.6Z" fill="url(#shade)"/>
+<path d="M20 12.6V31M44 12.6V31" stroke="#4F565E" stroke-width="1.1" fill="none"/>
+<path d="M20 12.6V31M44 12.6V31" stroke="#C4CAD0" stroke-opacity="0.55" stroke-width="0.61" stroke-dasharray="0.9 1.1" fill="none"/>
+<rect x="8" y="15" width="10" height="8" rx="0.8" fill="#14171B"/>
+<path d="M9 22Q11 16 13 19T17 16" stroke="#7BC47F" stroke-width="0.9" fill="none"/>
+<circle cx="50" cy="17.6" r="1.4" fill="#7BC47F" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="54.6" cy="17.6" r="1.4" fill="#FFB23E" stroke="#14171B" stroke-width="0.4"/>
+<path d="M24 16H40V23H24Z" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<path d="M26 18H38M26 20.6H38" stroke="#4F565E" stroke-width="0.8" fill="none"/>
+<g fill="url(#bolt)"><circle cx="6.6" cy="14.6" r="1.25"/><circle cx="57.4" cy="14.6" r="1.25"/><circle cx="6.6" cy="29.6" r="1.25"/><circle cx="57.4" cy="29.6" r="1.25"/></g>
+<path d="M60 20Q64 20 63 26" stroke="#23201E" stroke-width="1.2" fill="none"/>
+<path d="M5 31V14Q5 13 6 13H58" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.8" fill="none"/>
+<path d="M4 31.6V14Q4 12 6 12H58Q60 12 60 14V31.6Z" stroke="#14171B" stroke-width="1" fill="none"/>
+</g>
+</g>
+<g id="antenna" data-role="radar" data-pivot="32 -27.2">
+<g class="detail">
+<path d="M4 -39.2Q32 -32.2 60 -39.2V-19.2Q32 -13.2 4 -19.2Z" fill="#2E3339" fill-opacity="0.35"/>
+<path d="M4 -39.2Q32 -32.2 60 -39.2V-19.2Q32 -13.2 4 -19.2Z" stroke="#14171B" stroke-width="2.2" fill="none"/>
+<path d="M4 -39.2Q32 -32.2 60 -39.2V-19.2Q32 -13.2 4 -19.2Z" stroke="#8A9199" stroke-width="1.2" fill="none"/>
+<path d="M11 -37.67V-17.89M18 -36.58V-16.95M25 -35.92V-16.39M32 -35.7V-16.2M39 -35.92V-16.39M46 -36.58V-16.95M53 -37.67V-17.89" stroke="#4F565E" stroke-opacity="0.9" stroke-width="0.8" fill="none"/>
+<path d="M4 -29.2Q32 -23.2 60 -29.2" stroke="#4F565E" stroke-opacity="0.9" stroke-width="0.8" fill="none"/>
+<path d="M32 -27.2V-45.2" stroke="#14171B" stroke-width="1.8" fill="none"/>
+<path d="M32 -27.2V-45.2" stroke="#4F565E" stroke-width="1" fill="none"/>
+<path d="M29 -49.2H35L34 -45.2H30Z" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<rect x="28" y="-29.8" width="8" height="5.2" rx="1" fill="#3A3F45" stroke="#14171B" stroke-width="0.6"/>
+</g>
+</g>
+</svg>

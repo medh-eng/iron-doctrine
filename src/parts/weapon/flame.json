@@ -1,0 +1,71 @@
+{
+  "id": "flame",
+  "name": "Flamethrower",
+  "family": "flame",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 2,
+  "domains": [
+    "land",
+    "sea",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0.8,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      2.8,
+      0.5
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.6,
+        0.5
+      ],
+      "elevation": [
+        -10,
+        15
+      ]
+    }
+  },
+  "stats": {
+    "mass": 220,
+    "hp": 40,
+    "armor": 8,
+    "power": 0,
+    "rel": 0.998,
+    "dmg": 30,
+    "range": 60,
+    "spread": 2,
+    "fuelUse": 0.05
+  },
+  "behaviour": {
+    "fire": true
+  },
+  "cost": {
+    "metal": 2,
+    "money": 30
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "flame"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.3). Art: welded slab mount (T2) with a hazard-striped fuel bottle; projector tube with a hose, pilot-light igniter glowing at the nozzle. Projector length 2.2 cells (not the 07 gun length). fuelUse = the 0.05 fuel per second from 05. Planned until step 5d (flamethrowers).",
+  "planned": true
+}

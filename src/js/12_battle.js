@@ -428,6 +428,7 @@ function physicsCheck() {
 function svgArtCheck() {
   const out = { missing: [], failed: art.failed.slice(), muzzle: [] };
   for (const id of Object.keys(PART_LIBRARY.svg)) {
+    if (!PARTS[id]) continue;              // planned parts: their art waits until the mechanic exists
     const hasBarrel = PART_LIBRARY.svg[id].includes('data-role="barrel"');
     for (let s = 0; s < 2; s++) {
       const e = (art.painted[sideScheme(s).key] || {})[id];
