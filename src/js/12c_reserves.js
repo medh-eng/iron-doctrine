@@ -33,6 +33,7 @@ function reserveEntry(design, V) {
     e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
     e.health = vehicleHealth(V);
     e.fuel = V.fuel; e.shells = V.shells;
+    e.msl = missilesLeft(V);
   }
   return e;
 }
@@ -76,6 +77,7 @@ function restoreDamage(V, e) {
   if (lost) rebuildVehicle(V);
   if (e.fuel !== null) V.fuel = e.fuel;
   if (e.shells !== null) V.shells = e.shells;
+  if (e.msl !== null && e.msl !== undefined) loadVehicleMissiles(V, e.msl);
 }
 
 function enterFromReserve(B, side, slot) {

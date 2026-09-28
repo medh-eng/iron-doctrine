@@ -153,6 +153,7 @@ window.__GAME__ = {
   airCheck: () => airCheck(),
   missileCheck: () => missileCheck(),
   designedMissileCheck: () => designedMissileCheck(),
+  missileStockCheck: () => missileStockCheck(),
   missileShowcase: (id) => missileShowcase(id),
   systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope

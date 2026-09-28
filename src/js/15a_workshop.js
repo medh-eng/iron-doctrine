@@ -88,8 +88,15 @@ function transferItems(fl, s, dir) {
   if (!ownStore(s) || fl.docked !== s.id) return 'The fleet is not docked at your settlement.';
   const [from, to] = dir > 0 ? [place(s), place(fl)] : [place(fl), place(s)];
   const src = itemsAt(from.c);
-  if (!src.length) return `${from.name}: no parts.`;
   let room = to.free, moved = 0;
+  // Missiles (5b2) move with the parts.
+  for (const [id, n] of Object.entries(missilesAt(from.c))) {
+    const k = Math.min(n, Math.floor(room / missileUnits(id)));
+    if (k <= 0) continue;
+    from.c.missiles[id] -= k; if (!from.c.missiles[id]) delete from.c.missiles[id];
+    missilesAt(to.c)[id] = (missilesAt(to.c)[id] || 0) + k; room -= k * missileUnits(id); moved += k;
+  }
+  if (!src.length && !moved) return `${from.name}: no parts.`;
   for (let i = src.length - 1; i >= 0; i--) {
     const u = PARTS[src[i].p].mass / 100;
     if (u > room) continue;
@@ -245,6 +252,7 @@ function refitShip(s, fl, ship, designId) {
 function jobName(j) {
   if (j.kind === 'part') return PARTS[j.p].name;
   if (j.kind === 'refine') return `${j.n} electronics`;
+  if (j.kind === 'missile') return `${j.n} × ${(missileDesign(j.m) || { name: 'missile' }).name}`;
   if (j.kind === 'study') return `Study: ${PARTS[j.p].name}`;
   if (j.kind === 'ship') return shipDesign({ design: j.design }).name;
   if (j.kind === 'repair') { const fl = byId('fleets', j.fleet); return `Repairs: ${fl ? fl.name : 'a fleet'}`; }
@@ -253,6 +261,7 @@ function jobName(j) {
 function finishJob(s, j, rng) {
   if (j.kind === 'part') { itemsAt(s.store).push({ p: j.p, cond: 1 }); return `${s.name}: ${PARTS[j.p].name} made.`; }
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
+  if (j.kind === 'missile') { missilesAt(s.store)[j.m] = (missilesAt(s.store)[j.m] || 0) + j.n; return `${s.name}: ${jobName(j)} made.`; }
   if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);

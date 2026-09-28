@@ -218,6 +218,9 @@ SCREENS.map = {
         const items = {};
         for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
         if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
+        const held = Object.entries(missilesAt(fl.hold));
+        if (held.length) row('Missiles in the hold', held.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
+        for (const sh of fleetShips(fl)) { const m = shipMissiles(sh); if (m) row(`${shipStats(sh).name}: missiles`, `${m.n} of ${m.cap} · ${m.name}`); }
       } else if (this.tab === 'route') {
         this.routeTab(fl, body, row);
       } else {
@@ -309,6 +312,12 @@ SCREENS.map = {
         const label = (q, verb, full) => (q.why ? verb : q.units < 0.005 ? full : `${verb} ${q.units.toFixed(q.units < 1 ? 2 : 1)}${q.cost ? ` for ${Math.ceil(q.cost)}` : ' (stores)'}`);
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
+        // Missiles (5b2): fill the launchers from missiles in stock here.
+        const lo = fleetShips(fl).map(shipMissiles).filter(Boolean);
+        if (lo.length) {
+          const have = lo.reduce((a, m) => a + m.n, 0), cap = lo.reduce((a, m) => a + m.cap, 0);
+          r.appendChild(button(have >= cap ? `Missiles ${have}/${cap}` : `Load missiles ${have}/${cap}`, () => done(loadMissiles(fl, s)), 'btn btn-small'));
+        }
       }
     } else if (this.tab === 'barracks') {
       this.barracks(s, body, row, act, done);
@@ -343,6 +352,8 @@ SCREENS.map = {
       const items = {};
       for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
       row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
+      const stock = Object.entries(missilesAt(s.store));
+      if (stock.length) row('Missiles', stock.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
       if (fl) {
         const r = act();
         r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));

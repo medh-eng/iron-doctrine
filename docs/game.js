@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.5.2';
+const GAME_VERSION = '0.5.3';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -8062,6 +8062,7 @@ function reserveEntry(design, V) {
     e.hp = V.parts.map((p) => (p.alive ? p.hp : 0));
     e.health = vehicleHealth(V);
     e.fuel = V.fuel; e.shells = V.shells;
+    e.msl = missilesLeft(V);
   }
   return e;
 }
@@ -8105,6 +8106,7 @@ function restoreDamage(V, e) {
   if (lost) rebuildVehicle(V);
   if (e.fuel !== null) V.fuel = e.fuel;
   if (e.shells !== null) V.shells = e.shells;
+  if (e.msl !== null && e.msl !== undefined) loadVehicleMissiles(V, e.msl);
 }
 
 function enterFromReserve(B, side, slot) {
@@ -8268,6 +8270,8 @@ function battleDesign(ship) {
     hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
     fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
     ammo: ship.ammo,
+    // Your ships take in only the missiles they carry (5b2); other factions' are full for now.
+    missiles: ship.faction === campaign.faction && missileLoadout(d) ? shipMissiles(ship).n : null,
   };
   return d;
 }
@@ -8283,6 +8287,7 @@ function applyShipState(V) {
   }
   if (V.fuelMax) V.fuel = V.fuelMax * clamp(s.fuel, 0, 1);
   if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
+  if (s.missiles !== null && s.missiles !== undefined) loadVehicleMissiles(V, s.missiles);
 }
 
 function createCampaignBattle(contact, headless) {
@@ -8320,9 +8325,9 @@ function applyBattleOutcome(B) {
   const win = B.result === 'win';
   const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
   const rec = new Map();
-  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null });
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V) });
   for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
-    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null });
+    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl });
   }
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
@@ -8343,6 +8348,7 @@ function applyBattleOutcome(B) {
     ship.hp = r.hp.map((hp, i) => hp / PARTS[d.cells[i].p].hp);
     if (r.fuel !== null) ship.fuel = st.fuelCap * r.fuel;
     if (r.ammo !== null) ship.ammo = r.ammo;
+    if (r.msl !== null && r.msl !== undefined && ship.faction === campaign.faction) ship.missiles = { id: missileLoadout(d).id, n: r.msl };
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
   }
   if (!win) gaXp /= 2;
@@ -9273,8 +9279,8 @@ function weatherSpeed(fl) {
 // markets buy and sell every good; docked fleets load and unload; settlements can be upgraded.
 
 // A cargo: units of each good, plus part items [{ p, cond }] that take their mass ÷ 100 in units.
-function emptyCargo() { const c = { items: [] }; for (const k of GOODS) c[k] = 0; return c; }
-const cargoUsed = (c) => { let n = itemsUsed(c); for (const k of GOODS) n += c[k] || 0; return n; };
+function emptyCargo() { const c = { items: [], missiles: {} }; for (const k of GOODS) c[k] = 0; return c; }
+const cargoUsed = (c) => { let n = itemsUsed(c) + missilesUsed(c); for (const k of GOODS) n += c[k] || 0; return n; };
 
 // ---------- prices (08 §6)
 // Why this settlement won't trade with a faction right now ('' when it will).
@@ -9584,8 +9590,15 @@ function transferItems(fl, s, dir) {
   if (!ownStore(s) || fl.docked !== s.id) return 'The fleet is not docked at your settlement.';
   const [from, to] = dir > 0 ? [place(s), place(fl)] : [place(fl), place(s)];
   const src = itemsAt(from.c);
-  if (!src.length) return `${from.name}: no parts.`;
   let room = to.free, moved = 0;
+  // Missiles (5b2) move with the parts.
+  for (const [id, n] of Object.entries(missilesAt(from.c))) {
+    const k = Math.min(n, Math.floor(room / missileUnits(id)));
+    if (k <= 0) continue;
+    from.c.missiles[id] -= k; if (!from.c.missiles[id]) delete from.c.missiles[id];
+    missilesAt(to.c)[id] = (missilesAt(to.c)[id] || 0) + k; room -= k * missileUnits(id); moved += k;
+  }
+  if (!src.length && !moved) return `${from.name}: no parts.`;
   for (let i = src.length - 1; i >= 0; i--) {
     const u = PARTS[src[i].p].mass / 100;
     if (u > room) continue;
@@ -9741,6 +9754,7 @@ function refitShip(s, fl, ship, designId) {
 function jobName(j) {
   if (j.kind === 'part') return PARTS[j.p].name;
   if (j.kind === 'refine') return `${j.n} electronics`;
+  if (j.kind === 'missile') return `${j.n} × ${(missileDesign(j.m) || { name: 'missile' }).name}`;
   if (j.kind === 'study') return `Study: ${PARTS[j.p].name}`;
   if (j.kind === 'ship') return shipDesign({ design: j.design }).name;
   if (j.kind === 'repair') { const fl = byId('fleets', j.fleet); return `Repairs: ${fl ? fl.name : 'a fleet'}`; }
@@ -9749,6 +9763,7 @@ function jobName(j) {
 function finishJob(s, j, rng) {
   if (j.kind === 'part') { itemsAt(s.store).push({ p: j.p, cond: 1 }); return `${s.name}: ${PARTS[j.p].name} made.`; }
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
+  if (j.kind === 'missile') { missilesAt(s.store)[j.m] = (missilesAt(s.store)[j.m] || 0) + j.n; return `${s.name}: ${jobName(j)} made.`; }
   if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
@@ -10434,6 +10449,133 @@ function gaXpFor(kind, arg) {
   if (!ga) return;
   const xp = kind === 'capture' ? GA_XP.capture[arg] || 0 : GA_XP[kind] || 0;
   if (xp) gainXp(ga, xp);
+}
+
+/* ---------- 15g_missile_stock.js ---------- */
+/* ==== 15g MISSILE STOCK ==== */
+// Missiles as campaign items (Part 5b2; design/01 §5, §8; design/04 Cargo.missiles). A missile
+// design is crafted at a metropolis workshop from its parts' goods; the missiles wait in the
+// warehouse (store.missiles = {designId: n}) or a hold, and take cargo space by mass. Each ship
+// carries missiles of one design (ship.missiles = {id, n}), up to what its launchers and
+// magazines hold; a docked fleet loads them from stock. In battle a ship has only what it
+// carries, and what it didn't fire comes home. Other factions' ships don't count missiles yet.
+
+const missilesAt = (c) => c.missiles || (c.missiles = {});
+function missileUnits(id) { const md = missileDesign(id); return md ? missileStats(md).mass / 100 : 1; }
+function missilesUsed(c) { let n = 0; for (const [id, k] of Object.entries(c.missiles || {})) n += k * missileUnits(id); return n; }
+
+// The missile a design carries and how many it holds: its launchers that take that size, plus
+// magazines. null when it has no launcher.
+function missileLoadout(d) {
+  const launchers = d.cells.map((c) => PARTS[c.p]).filter((P) => P && P.secondary === 'launcher');
+  if (!launchers.length) return null;
+  let md = missileDesign(d.missile || DEFAULT_MISSILE);
+  if (!md || validateMissile(md).length || !launchers.some((P) => P.sizes.includes(md.class))) md = Object.values(MISSILE_TEMPLATES).find((m) => launchers[0].sizes.includes(m.class));
+  const ms = missileStats(md);
+  let cap = 0;
+  for (const P of launchers) if (P.sizes.includes(ms.cls)) cap += Math.floor(P.capacity / ms.units);
+  const mag = d.cells.reduce((s, c) => s + (PARTS[c.p] && PARTS[c.p].magazine ? PARTS[c.p].capacity : 0), 0);
+  return { id: md.id, name: md.name, cap: cap + Math.floor(mag / ms.units) };
+}
+// What a ship carries now (of its loadout's design; any other kind counts as none).
+function shipMissiles(ship) {
+  const lo = missileLoadout(shipDesign(ship));
+  if (!lo) return null;
+  const m = ship.missiles;
+  return { ...lo, n: m && m.id === lo.id ? Math.min(m.n, lo.cap) : 0 };
+}
+
+// Missiles of design id on hand at a settlement: its warehouse, then docked holds.
+function missilesOnHand(s, id) {
+  let n = ownStore(s) ? missilesAt(s.store)[id] || 0 : 0;
+  for (const fl of dockedHere(s)) n += missilesAt(fl.hold)[id] || 0;
+  return n;
+}
+function takeMissiles(s, id, n) {
+  const spots = (ownStore(s) ? [s.store] : []).concat(dockedHere(s).map((fl) => fl.hold));
+  let got = 0;
+  for (const c of spots) {
+    const k = Math.min(n - got, missilesAt(c)[id] || 0);
+    if (k > 0) { c.missiles[id] -= k; got += k; if (!c.missiles[id]) delete c.missiles[id]; }
+  }
+  return got;
+}
+
+// Fill every ship of a docked fleet with its missile; missiles of another kind go to the warehouse.
+function loadMissiles(fl, s) {
+  if (!ownStore(s) || fl.docked !== s.id) return 'The fleet is not docked at your settlement.';
+  let loaded = 0, want = 0, name = '';
+  for (const ship of fleetShips(fl)) {
+    const lo = missileLoadout(shipDesign(ship));
+    if (!lo) continue;
+    const m = ship.missiles;
+    if (m && m.id !== lo.id && m.n > 0) missilesAt(s.store)[m.id] = (missilesAt(s.store)[m.id] || 0) + m.n;
+    const have = m && m.id === lo.id ? m.n : 0;
+    const got = takeMissiles(s, lo.id, Math.max(0, lo.cap - have));
+    ship.missiles = { id: lo.id, n: have + got };
+    loaded += got; want += Math.max(0, lo.cap - have); name = lo.name;
+  }
+  if (!want) return name ? 'Launchers full.' : 'No ship in this fleet has a missile launcher.';
+  if (!loaded) return `No ${name} missiles here.`;
+  return '';
+}
+
+// ---------- crafting at a metropolis workshop
+function missileBlock(s, md) {
+  const why = servicesBlock(s);
+  if (why) return why;
+  if (s.type !== 'metropolis') return 'Missiles are made at a metropolis.';
+  if (validateMissile(md).length) return validateMissile(md)[0];
+  const locked = missileCells(md).find((c) => !partUnlocked(c.p));
+  return locked ? `${PARTS[locked.p].name} is not researched.` : '';
+}
+function missileQuote(s, md, n) {
+  const cost = {};
+  for (const c of missileCells(md)) addCost(cost, PARTS[c.p].cost, n);
+  const hours = n * (0.5 + 0.15 * missileCells(md).length) * (s.type === 'metropolis' ? 0.75 : 1) * (perk('master_crafters') ? 0.75 : 1);
+  return { cost: withFee(cost), hours };
+}
+function craftMissiles(s, id, n) {
+  const md = missileDesign(id);
+  if (!md) return 'Unknown missile design.';
+  const why = missileBlock(s, md);
+  if (why) return why;
+  const q = missileQuote(s, md, n);
+  const lack = lackOf(s, q.cost);
+  if (lack) return lack;
+  consume(s, q.cost);
+  (s.queue = s.queue || []).push({ kind: 'missile', m: id, n, hours: q.hours, left: q.hours });
+  return '';
+}
+
+// ---------- battle: what a campaign ship takes in, and what comes home
+// Load a vehicle's launchers and magazines with n missiles of its carried design.
+function loadVehicleMissiles(V, n) {
+  const lo = missileLoadout(V.design);
+  if (!lo) return;
+  let units = 1;
+  for (const w of V.weapons) {
+    if (w.def.secondary !== 'launcher') continue;
+    if (!w.msl || w.msl.id !== lo.id) { w.rounds = 0; continue; }
+    units = w.msl.units;
+    w.rounds = Math.min(Math.floor(w.def.capacity / units), n);
+    n -= w.rounds;
+  }
+  const magCap = V.parts.reduce((s, p) => s + (p.alive && p.def.magazine ? p.def.capacity : 0), 0);
+  V.magUnits = Math.min(magCap, Math.max(0, n) * units);
+}
+// Missiles still aboard: in live launchers, and in the magazines if one survives.
+function missilesLeft(V) {
+  const lo = missileLoadout(V.design);
+  if (!lo) return null;
+  let n = 0, units = 1;
+  for (const w of V.weapons) {
+    if (w.def.secondary !== 'launcher' || !w.msl || w.msl.id !== lo.id) continue;
+    units = w.msl.units;
+    if (V.parts[w.part].alive) n += w.rounds;
+  }
+  if (V.parts.some((p) => p.alive && p.def.magazine)) n += Math.floor((V.magUnits || 0) / units);
+  return n;
 }
 
 /* ---------- 15z_campaign_checks.js ---------- */
@@ -13102,6 +13244,9 @@ SCREENS.map = {
         const items = {};
         for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
         if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
+        const held = Object.entries(missilesAt(fl.hold));
+        if (held.length) row('Missiles in the hold', held.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
+        for (const sh of fleetShips(fl)) { const m = shipMissiles(sh); if (m) row(`${shipStats(sh).name}: missiles`, `${m.n} of ${m.cap} · ${m.name}`); }
       } else if (this.tab === 'route') {
         this.routeTab(fl, body, row);
       } else {
@@ -13193,6 +13338,12 @@ SCREENS.map = {
         const label = (q, verb, full) => (q.why ? verb : q.units < 0.005 ? full : `${verb} ${q.units.toFixed(q.units < 1 ? 2 : 1)}${q.cost ? ` for ${Math.ceil(q.cost)}` : ' (stores)'}`);
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
+        // Missiles (5b2): fill the launchers from missiles in stock here.
+        const lo = fleetShips(fl).map(shipMissiles).filter(Boolean);
+        if (lo.length) {
+          const have = lo.reduce((a, m) => a + m.n, 0), cap = lo.reduce((a, m) => a + m.cap, 0);
+          r.appendChild(button(have >= cap ? `Missiles ${have}/${cap}` : `Load missiles ${have}/${cap}`, () => done(loadMissiles(fl, s)), 'btn btn-small'));
+        }
       }
     } else if (this.tab === 'barracks') {
       this.barracks(s, body, row, act, done);
@@ -13227,6 +13378,8 @@ SCREENS.map = {
       const items = {};
       for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
       row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
+      const stock = Object.entries(missilesAt(s.store));
+      if (stock.length) row('Missiles', stock.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
       if (fl) {
         const r = act();
         r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));
@@ -13575,6 +13728,24 @@ Object.assign(SCREENS.map, {
       r.appendChild(button('Craft', () => done(craft(s, id)), 'btn btn-small'));
       g.appendChild(r);
       body.appendChild(g);
+    }
+    // Missiles (5b2): crafted from their parts' goods at a metropolis; they go to the warehouse.
+    if (s.type === 'metropolis') {
+      const list = missileDesigns().filter((md) => !validateMissile(md).length && missileCells(md).every((c) => partUnlocked(c.p)));
+      if (list.length) body.appendChild(el('div', 'ws-label', 'Craft missiles'));
+      for (const md of list) {
+        const q = missileQuote(s, md, 1), n = missilesOnHand(s, md.id);
+        const g = el('div', 'map-good');
+        g.appendChild(el('span', '', `${md.name}${n ? ` (${n} in stock)` : ''}`));
+        g.appendChild(el('small', '', `each: ${costText(q.cost)} · ${hoursText(q.hours)}`));
+        const r = el('div', 'map-row');
+        r.appendChild(button('×1', () => done(craftMissiles(s, md.id, 1)), 'btn btn-small'));
+        r.appendChild(button('×4', () => done(craftMissiles(s, md.id, 4)), 'btn btn-small'));
+        g.appendChild(r);
+        body.appendChild(g);
+      }
+      const locked = missileDesigns().length - list.length;
+      if (locked) body.appendChild(el('p', 'card-text map-note', `${locked} missile designs need research.`));
     }
     // Reverse-engineering (08 §4): salvaged enemy parts studied at a metropolis.
     if (s.type === 'metropolis') {

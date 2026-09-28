@@ -54,6 +54,24 @@ Object.assign(SCREENS.map, {
       g.appendChild(r);
       body.appendChild(g);
     }
+    // Missiles (5b2): crafted from their parts' goods at a metropolis; they go to the warehouse.
+    if (s.type === 'metropolis') {
+      const list = missileDesigns().filter((md) => !validateMissile(md).length && missileCells(md).every((c) => partUnlocked(c.p)));
+      if (list.length) body.appendChild(el('div', 'ws-label', 'Craft missiles'));
+      for (const md of list) {
+        const q = missileQuote(s, md, 1), n = missilesOnHand(s, md.id);
+        const g = el('div', 'map-good');
+        g.appendChild(el('span', '', `${md.name}${n ? ` (${n} in stock)` : ''}`));
+        g.appendChild(el('small', '', `each: ${costText(q.cost)} · ${hoursText(q.hours)}`));
+        const r = el('div', 'map-row');
+        r.appendChild(button('×1', () => done(craftMissiles(s, md.id, 1)), 'btn btn-small'));
+        r.appendChild(button('×4', () => done(craftMissiles(s, md.id, 4)), 'btn btn-small'));
+        g.appendChild(r);
+        body.appendChild(g);
+      }
+      const locked = missileDesigns().length - list.length;
+      if (locked) body.appendChild(el('p', 'card-text map-note', `${locked} missile designs need research.`));
+    }
     // Reverse-engineering (08 §4): salvaged enemy parts studied at a metropolis.
     if (s.type === 'metropolis') {
       const spots = [s.store].concat(dockedHere(s).map((fl) => fl.hold));

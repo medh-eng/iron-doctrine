@@ -416,4 +416,62 @@ function researchCheck() {
   out.captureXp = ga.xp - x0;
   return out;
 }
+// Part 5b2: missiles as items: crafted at a metropolis, stocked, loaded, carried into battle.
+function missileStockCheck() {
+  newCampaign('league', 7272);
+  const out = {};
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  const run = (h) => { for (let t = 0; t < h; t += 0.5) stepWorks(0.5); };
+  out.city = craftMissiles(home, 'msl_s_heat', 4);
+  home.type = 'metropolis';
+  out.locked = craftMissiles(home, 'msl_s_heat', 4);
+  techState().known.push('missiles');
+  for (const g of GOODS) home.store[g] = 50;
+  campaign.treasury += 5000;
+  const q = missileQuote(home, missileDesign('msl_s_heat'), 4);
+  const used0 = storeUsed(home);
+  out.craft = craftMissiles(home, 'msl_s_heat', 4);
+  run(q.hours + 1);
+  out.made = missilesAt(home.store).msl_s_heat || 0;
+  out.space = +(storeUsed(home) - used0 + (q.cost.metal || 0) + (q.cost.elec || 0)).toFixed(2);
+  out.unitEach = +missileUnits('msl_s_heat').toFixed(2);
+  // A ship with a rack, docked at home, loads them.
+  const d = Object.assign(designFromTemplate('light'), { id: 'test_msl', missile: 'msl_s_heat' });
+  d.cells.push({ p: 'rack', x: 0, y: 0 });
+  save.designs.list.push(d);
+  const fl = makeFleet('league', 'land', home.x + 0.5, home.y + 0.5, ['test_msl'], makeRng(3));
+  fl.docked = home.id;
+  const ship = fleetShips(fl)[0];
+  out.before = shipMissiles(ship);
+  out.load = loadMissiles(fl, home);
+  out.after = shipMissiles(ship);
+  out.stockAfter = missilesAt(home.store).msl_s_heat || 0;
+  out.full = loadMissiles(fl, home);
+  // Battle: only what she carries goes in; what she didn't fire comes home.
+  const B = createBattle(4);
+  const V = makeVehicle(battleDesign(ship), 0, 100, 1, B.T);
+  applyShipState(V);
+  const rack = V.weapons.find((w) => w.def.id === 'rack');
+  out.inBattle = rack.rounds;
+  const T = makeVehicle(designFromTemplate('light'), 1, 190, -1, B.T);
+  B.units = [V, T];
+  launchDesigned(B, V, rack, T);
+  missiles.forEachAlive((m) => { m.alive = false; });
+  out.left = missilesLeft(V);
+  applyBattleOutcome({ units: [V], reserve: [[], []], result: 'win', sides: { myFleets: [], theirFleets: [] } });
+  out.home = ship.missiles;
+  // An empty ship takes in none.
+  ship.missiles = { id: 'msl_s_heat', n: 0 };
+  const V2 = makeVehicle(battleDesign(ship), 0, 100, 1, B.T);
+  applyShipState(V2);
+  out.emptyRounds = V2.weapons.find((w) => w.def.id === 'rack').rounds;
+  // Missiles move between the warehouse and a hold with the parts.
+  missilesAt(home.store).msl_s_heat = 2;
+  const trucks = makeFleet('league', 'land', home.x + 0.5, home.y + 0.5, ['truck'], makeRng(2));
+  trucks.docked = home.id;
+  out.transfer = transferItems(trucks, home, 1);
+  out.inHold = missilesAt(trucks.hold).msl_s_heat || 0;
+  save.designs.list.splice(save.designs.list.indexOf(d), 1);
+  return out;
+}
 /*TEST:END*/

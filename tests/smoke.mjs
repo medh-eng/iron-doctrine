@@ -733,6 +733,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         RS(rs.perk === '' && rs.priceRatio === 0.92 && rs.wider !== '' && rs.gaCap === 4, 'perks or fleet size wrong');
         RS(rs.acc === 1.08 && rs.react === 0.88 && rs.stopped && rs.captureXp === 300, 'captain skill, lost research or capture XP wrong');
         steps.push('research and perks');
+        // Part 5b2: missiles as items.
+        const ms = await G(() => window.__GAME__.missileStockCheck());
+        const MS = (c, what) => check(c, `${what} ${JSON.stringify(ms)}`);
+        MS(/metropolis/.test(ms.city) && /not researched/.test(ms.locked) && ms.craft === '' && ms.made === 4 && Math.abs(ms.space - 4 * ms.unitEach) < 0.05, 'crafting missiles wrong');
+        MS(ms.before.n === 0 && ms.load === '' && ms.after.n === 4 && ms.stockAfter === 0 && ms.full !== '', 'loading missiles wrong');
+        MS(ms.inBattle === 4 && ms.left === 3 && ms.home.n === 3 && ms.emptyRounds === 0 && ms.transfer === '' && ms.inHold === 2, 'missiles in battle or holds wrong');
+        steps.push('missile stock');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

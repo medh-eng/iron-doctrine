@@ -40,6 +40,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 10a–10e_*.js           combat, effects, naval weapons, air weapons, systems (missiles, rockets, heat, breakdowns, repair)
 10f_missiles.js        designed missiles (Part 5b): missile stats and rules, launchers, magazines, flares, warheads
 12d_missile_checks.js  test-only checks of designed missiles
+15g_missile_stock.js   missiles as campaign items (5b2): crafting, stock, loading, battle in and out
 16m_screen_missiles.js the Drafting Office's Missile tab
 12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
 16g_screen_simulator.js the Battle Simulator screen (01 §15)
