@@ -3,7 +3,7 @@
 // action cluster, order chips, world gestures and keyboard.
 
 const ORDERS = ['Follow', 'Escort', 'Hold', 'Attack', 'Back'];
-const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket' };
+const ALT_LABEL = { torpedo: 'Torp', depth: 'Charge', bomb: 'Bomb', atgm: 'Missile', rockets: 'Rocket', launcher: 'Missile' };
 const TEST_RANGE_HOW = { land: 'Mud, hills and a trench.', sea: 'Open water off a beach.', air: 'Open air over hills.', heli: 'Open air over hills.' };
 const FLIGHT_HOW = { air: '▶ ◀ throttle, ▲ ▼ pitch; hold ▲ to loop round.', heli: '◀ ▶ move, ▲ ▼ height.', sub: '▲ ▼ depth.' };
 // The test range that suits a design's domain.

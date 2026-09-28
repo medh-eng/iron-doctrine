@@ -131,6 +131,7 @@ function stepConvoys(dt) {
       }
       if (!T.shipIds) fl.docked = T.id;
       convoyDeliver(fl, T);
+      if (fl.faction === campaign.faction) gaXpFor('convoy');
       r.trips++;
       r.step = 'toA';
     }

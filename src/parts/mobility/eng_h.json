@@ -33,5 +33,33 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay, heavy V12 diesel (T2): both cylinder banks, supercharger, twin exhaust stacks with heat shields, hazard-striped flywheel guard, weld seams and big bolts.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "exhaust": [
+      [
+        0.25,
+        0.1
+      ],
+      [
+        0.46,
+        0.1
+      ]
+    ],
+    "smoke": [
+      [
+        1.6,
+        0.6
+      ],
+      [
+        3.2,
+        0.9
+      ]
+    ]
+  }
 }

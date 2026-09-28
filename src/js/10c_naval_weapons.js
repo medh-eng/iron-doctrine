@@ -18,10 +18,13 @@ function gunUnderWater(B, V, w) {
 function engageRange(V) {
   const mw = mainWeapon(V);
   let r = mw ? weaponRange(mw.def) : 0;
-  for (const w of V.weapons) if (/^(torpedo|atgm|rockets)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, weaponRange(w.def) * 0.9);
+  for (const w of V.weapons) if (/^(torpedo|atgm|rockets|launcher)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, secondaryRange(w) * 0.9);
   if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
   return r;
 }
+
+// Range of a secondary weapon; a missile launcher's comes from the missile it carries (10f).
+const secondaryRange = (w) => (w.msl ? w.msl.range * BATTLE_DISTANCE_SCALE : weaponRange(w.def));
 
 // Depth a torpedo should run at to hit U: just above its keel; with no ship to aim at,
 // the launch depth (at least 1.5 m down).
@@ -81,12 +84,14 @@ function playerSecondary(B) {
   }
   const tgt = autoTarget(B);
   // Rockets and guided missiles (Part 2d) go at the target.
-  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') && w.rounds > 0);
+  const aimed = list.find((w) => (w.def.secondary === 'atgm' || w.def.secondary === 'rockets' || w.def.secondary === 'launcher') && w.rounds > 0);
   if (aimed) {
     if (!tgt) return 'No target';
     if (aimed.reload > 0) return 'Reloading';
-    if (Math.abs(tgt.body.x - V.body.x) > weaponRange(aimed.def)) return 'Out of range';
-    if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
+    if (V.empT > 0) return 'Electronics down';
+    if (Math.abs(tgt.body.x - V.body.x) > secondaryRange(aimed)) return 'Out of range';
+    if (aimed.def.secondary === 'launcher') launchDesigned(B, V, aimed, tgt);
+    else if (aimed.def.secondary === 'atgm') launchMissile(B, V, aimed, tgt);
     else { const a = aimPoint(B, tgt, { x: 0, y: 0 }); fireSalvo(B, V, aimed, a.x, a.y); }
     return '';
   }
@@ -112,6 +117,13 @@ function playerSecondary(B) {
 function aiSecondary(B, V, w) {
   if (w.rounds <= 0 || w.reload > 0 || V.destroyed || (B.cfg.holdFire && V.side === 1)) return;
   const ai = V.ai;
+  if (w.def.secondary === 'launcher') {
+    const tgt = ai && ai.target;
+    if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && !(w.msl && w.msl.seeker))) return;
+    if (Math.abs(tgt.body.x - V.body.x) > secondaryRange(w)) return;
+    launchDesigned(B, V, w, tgt);
+    return;
+  }
   if (w.def.secondary === 'atgm' || w.def.secondary === 'rockets') {
     const tgt = ai && ai.target;
     if (!tgt || tgt.destroyed || !tgt.seen || ai.react > 0 || (tgt.flier && w.def.secondary === 'atgm')) return;

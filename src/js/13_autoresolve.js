@@ -51,6 +51,8 @@ function battleDesign(ship) {
     hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
     fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
     ammo: ship.ammo,
+    // Your ships take in only the missiles they carry (5b2); other factions' are full for now.
+    missiles: ship.faction === campaign.faction && missileLoadout(d) ? shipMissiles(ship).n : null,
   };
   return d;
 }
@@ -66,6 +68,7 @@ function applyShipState(V) {
   }
   if (V.fuelMax) V.fuel = V.fuelMax * clamp(s.fuel, 0, 1);
   if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
+  if (s.missiles !== null && s.missiles !== undefined) loadVehicleMissiles(V, s.missiles);
 }
 
 function createCampaignBattle(contact, headless) {
@@ -103,9 +106,9 @@ function applyBattleOutcome(B) {
   const win = B.result === 'win';
   const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
   const rec = new Map();
-  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null });
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V) });
   for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
-    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null });
+    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl });
   }
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
@@ -126,6 +129,7 @@ function applyBattleOutcome(B) {
     ship.hp = r.hp.map((hp, i) => hp / PARTS[d.cells[i].p].hp);
     if (r.fuel !== null) ship.fuel = st.fuelCap * r.fuel;
     if (r.ammo !== null) ship.ammo = r.ammo;
+    if (r.msl !== null && r.msl !== undefined && ship.faction === campaign.faction) ship.missiles = { id: missileLoadout(d).id, n: r.msl };
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
   }
   if (!win) gaXp /= 2;
@@ -238,8 +242,8 @@ function detachShip(fl, ship) {
 
 function pickUp(fl, ship) {
   if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
-  const cap = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)];
-  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships at admiral level ${(fleetAdmiral(fl) || { level: 1 }).level}).`;
+  const cap = fleetCap(fl);
+  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;
   if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
   ship.fleetId = fl.id;

@@ -33,5 +33,23 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay, four-cylinder petrol engine: spark plugs and HT leads, carburettor, pancake air cleaner (P3 band). Anchor 'exhaust' = tailpipe at the rear.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "exhaust": [
+      0.19,
+      1.8
+    ],
+    "smoke": [
+      [
+        0.8,
+        0.6
+      ]
+    ]
+  }
 }

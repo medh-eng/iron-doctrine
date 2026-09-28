@@ -546,3 +546,50 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .map-panel { position: absolute; }
 .map-close { position: absolute; right: 6px; top: 4px; min-width: 44px; padding: 0; }
 .map-title { padding-right: 52px; min-height: 44px; line-height: 44px; }
+
+/* Research and perks (Part 5a) */
+.card-research { width: min(96vw, 1100px); max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 12px); display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; }
+.rs-head { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; min-width: 0; overflow: hidden; }
+.rs-head .card-title { margin: 0 4px 0 0; font-size: 16px; white-space: nowrap; }
+.rs-head .ws-fact { font-size: 12px; padding: 2px 6px; }
+.rs-tabs { justify-content: flex-start; flex-wrap: nowrap; gap: 6px; margin: 0; overflow-x: auto; }
+.rs-tabs .btn { min-height: 36px; padding: 4px 12px; font-size: 14px; flex-shrink: 0; }
+.rs-job { margin: 0; font-size: 13px; color: var(--amber); }
+.rs-tree { overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; display: grid; grid-template-columns: 74px repeat(10, 128px); gap: 4px; min-height: 0; flex: 1; }
+.rs-branch { font-size: 12px; font-weight: 700; color: var(--amber); padding: 2px 4px; position: sticky; top: 0; background: rgba(18, 24, 32, 0.96); }
+.rs-tier { font-size: 12px; color: rgba(214, 238, 255, 0.85); position: sticky; left: 0; background: rgba(18, 24, 32, 0.96); padding: 4px 2px; }
+.rs-corner { position: sticky; top: 0; left: 0; background: rgba(18, 24, 32, 0.96); z-index: 1; }
+.rs-cell { display: flex; flex-direction: column; gap: 4px; }
+.rs-node { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 1px; padding: 5px 6px; min-height: 44px; border-radius: 8px; border: 1px solid rgba(214, 238, 255, 0.3); background: rgba(10, 30, 48, 0.72); color: var(--linen); font: inherit; }
+.rs-node b { font-size: 12px; line-height: 1.15; }
+.rs-node small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+.rs-known { border-color: var(--amber); background: rgba(255, 178, 62, 0.16); }
+.rs-researching { border-color: var(--amber); border-style: dashed; }
+.rs-locked { opacity: 0.55; }
+.rs-why { font-size: 12px; color: rgba(214, 238, 255, 0.8); margin: -2px 0 4px; }
+.rs-perks { overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 4px; min-height: 0; flex: 1; }
+.rs-perk { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; background: rgba(10, 30, 48, 0.6); }
+.rs-perk.on { box-shadow: inset 0 0 0 1px var(--amber); }
+.rs-perk-txt { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rs-perk-txt b { font-size: 13px; }
+.rs-perk-txt small { font-size: 12px; color: rgba(214, 238, 255, 0.8); }
+.card-text.bad { color: #FF6B5A; }
+.card-research > .rs-head, .card-research > .rs-tabs, .card-research > .rs-job { flex-shrink: 0; }
+
+/* Missile designer (Part 5b; design/02 §6) */
+.card-missile { width: min(96vw, 900px); max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 12px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; }
+.card-missile > * { flex-shrink: 0; }
+.ms-row { justify-content: flex-start; flex-wrap: wrap; gap: 6px; margin: 0; }
+.ms-row .btn { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+.ms-pick { min-height: 34px; max-width: 240px; font: inherit; font-size: 13px; color: var(--linen); background: rgba(10, 30, 48, 0.9); border: 1px solid rgba(214, 238, 255, 0.35); border-radius: 8px; padding: 2px 6px; }
+.ms-grid-wrap { display: flex; justify-content: center; padding: 4px 0; }
+.ms-grid { position: relative; background-color: rgba(10, 40, 70, 0.8); background-image: linear-gradient(rgba(214, 238, 255, 0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(214, 238, 255, 0.18) 1px, transparent 1px); border: 1px solid rgba(214, 238, 255, 0.45); }
+.ms-cell { position: absolute; background: transparent; border: 0; padding: 0; cursor: pointer; }
+.ms-part { position: absolute; border-radius: 5px; border: 1px solid rgba(0, 0, 0, 0.5); background: #59606b; color: #F2EEE3; font: inherit; font-size: 10px; font-weight: 700; padding: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; letter-spacing: -0.2px; cursor: pointer; }
+.ms-he { background: #8A7A3A; } .ms-napalm { background: #A5482A; } .ms-acid { background: #6F8A22; } .ms-emp { background: #2F6FA8; } .ms-cluster { background: #5B6470; }
+.ms-seeker { background: #40505E; } .ms-motor { background: #6B4A3A; }
+.ms-palette { display: flex; flex-wrap: wrap; gap: 5px; }
+.ms-brush { min-height: 34px; font-size: 13px; padding: 4px 8px; }
+.ms-brush.on { border-color: var(--amber); color: var(--amber); }
+.ms-facts { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); column-gap: 16px; font-size: 13px; }
+.ms-errors { margin: 0; font-size: 13px; }

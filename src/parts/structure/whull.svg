@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" data-part="whull" data-cell="32">
+<defs>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.42"/></linearGradient>
+<linearGradient id="soft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.12"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.16"/></linearGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M0 0H64V64H0Z" fill="#FF00FF"/>
+<path d="M0 29H64V35H0Z" fill="#00FFFF"/>
+</g>
+<g class="detail">
+<rect x="0" y="0" width="64" height="64" fill="url(#soft)"/>
+<path d="M0 5.8H64M0 11.6H64M0 17.4H64M0 23.2H64M0 40.8H64M0 46.6H64M0 52.4H64M0 58.2H64" stroke="#000000" stroke-opacity="0.32" stroke-width="0.8" fill="none"/>
+<path d="M0 6.5H64M0 12.3H64M0 18.1H64M0 23.9H64M0 41.5H64M0 47.3H64M0 53.1H64M0 58.9H64" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="0.7" fill="none"/>
+<path d="M40 0V5.8M14 5.8V11.6M52 11.6V17.4M26 17.4V23.2M8 23.2V29M34 35V40.8M56 40.8V46.6M20 46.6V52.4M44 52.4V58.2M10 58.2V64" stroke="#000000" stroke-opacity="0.3" stroke-width="0.7" fill="none"/>
+<g fill="#000000" fill-opacity="0.4"><circle cx="38.6" cy="2.9" r="0.6"/><circle cx="41.4" cy="2.9" r="0.6"/><circle cx="12.6" cy="8.7" r="0.6"/><circle cx="15.4" cy="8.7" r="0.6"/><circle cx="50.6" cy="14.5" r="0.6"/><circle cx="53.4" cy="14.5" r="0.6"/><circle cx="24.6" cy="20.3" r="0.6"/><circle cx="27.4" cy="20.3" r="0.6"/><circle cx="6.6" cy="26.1" r="0.6"/><circle cx="9.4" cy="26.1" r="0.6"/><circle cx="32.6" cy="37.9" r="0.6"/><circle cx="35.4" cy="37.9" r="0.6"/><circle cx="54.6" cy="43.7" r="0.6"/><circle cx="57.4" cy="43.7" r="0.6"/><circle cx="18.6" cy="49.5" r="0.6"/><circle cx="21.4" cy="49.5" r="0.6"/><circle cx="42.6" cy="55.3" r="0.6"/><circle cx="45.4" cy="55.3" r="0.6"/><circle cx="8.6" cy="61.1" r="0.6"/><circle cx="11.4" cy="61.1" r="0.6"/></g>
+<path d="M0 29H64V35H0Z" fill="url(#tube)"/>
+<path d="M0 29.7H64" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.8" fill="none"/>
+<path d="M0 34.6H64" stroke="#000000" stroke-opacity="0.4" stroke-width="0.9" fill="none"/>
+<rect x="14.5" y="8" width="3" height="21.6" rx="0.6" fill="#4F565E" stroke="#14171B" stroke-width="0.5"/>
+<g fill="url(#bolt)"><circle cx="16" cy="11" r="0.9"/><circle cx="16" cy="18" r="0.9"/><circle cx="16" cy="25" r="0.9"/></g>
+<rect x="46.5" y="8" width="3" height="21.6" rx="0.6" fill="#4F565E" stroke="#14171B" stroke-width="0.5"/>
+<g fill="url(#bolt)"><circle cx="48" cy="11" r="0.9"/><circle cx="48" cy="18" r="0.9"/><circle cx="48" cy="25" r="0.9"/></g>
+<rect x="26.4" y="10.4" width="11.2" height="10" rx="0.6" fill="#14171B" fill-opacity="0.55"/>
+<rect x="27.2" y="11" width="9.6" height="8.8" fill="none" stroke="#14171B" stroke-width="0.7"/>
+<path d="M27.2 13H37M27.2 17.6H37" stroke="#4F565E" stroke-width="1.2" fill="none"/>
+<circle cx="32" cy="18.8" r="1" fill="none" stroke="#4F565E" stroke-width="0.8"/>
+<rect x="0" y="50" width="64" height="14" fill="url(#grime)" fill-opacity="0.6"/>
+<g fill="#857650" fill-opacity="0.45"><circle cx="6" cy="60" r="1"/><circle cx="30" cy="62" r="1"/><circle cx="52" cy="59.4" r="1"/></g>
+<path d="M0.5 0.5H63.5V63.5H0.5Z" stroke="#14171B" stroke-opacity="0.5" stroke-width="1" fill="none"/>
+<path d="M1.3 62.7V1.3H62.7" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="0.7" fill="none"/>
+</g>
+</g>
+</svg>

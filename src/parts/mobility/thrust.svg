@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" data-part="thrust" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.3"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.65" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.42"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<radialGradient id="tun" cx="0.5" cy="0.5" r="0.5"><stop offset="0.55" stop-color="#14171B"/><stop offset="0.85" stop-color="#2E3339"/><stop offset="1" stop-color="#4F565E"/></radialGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M0.6 0.6H31.4V31.4H0.6ZM4.4 14.6a11.6 11.6 0 1 0 23.2 0a11.6 11.6 0 1 0 -23.2 0Z" fill="#FF00FF" fill-rule="evenodd"/>
+<path d="M0.6 27.4H31.4V31.4H0.6Z" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<circle cx="16" cy="14.6" r="11.6" fill="url(#tun)" stroke="#14171B" stroke-width="0.8"/>
+<path d="M0.6 0.6H31.4V27.4H0.6Z" fill="url(#shade)" fill-opacity="0.8"/>
+<path d="M3.2 27.4L5 31.4M8.6 27.4L10.4 31.4M14 27.4L15.8 31.4M19.4 27.4L21.2 31.4M24.8 27.4L26.6 31.4M30.2 27.4L31.4 30" stroke="#14171B" stroke-opacity="0.85" stroke-width="1.8" fill="none"/>
+<g fill="url(#bolt)"><circle cx="3.4" cy="3.4" r="1.25"/><circle cx="28.6" cy="3.4" r="1.25"/><circle cx="3.4" cy="24.6" r="1.25"/><circle cx="28.6" cy="24.6" r="1.25"/></g>
+<circle cx="16" cy="14.6" r="12.6" fill="none" stroke="#4F565E" stroke-width="1.2"/>
+<path d="M1.4 30.6V1.4H30.6" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.8" fill="none"/>
+<path d="M0.6 0.6H31.4V31.4H0.6Z" stroke="#14171B" stroke-width="1" fill="none"/>
+</g>
+</g>
+<g id="impeller" data-role="rotor" data-pivot="16 14.6">
+<g class="detail">
+<path d="M18.38 13.54L25.31 13.29Q26.07 16.2 24.45 18.72L18.25 15.9ZM17.06 16.98L17.31 23.91Q14.4 24.67 11.88 23.05L14.7 16.85ZM13.62 15.66L6.69 15.91Q5.93 13 7.55 10.48L13.75 13.3ZM14.94 12.22L14.69 5.29Q17.6 4.53 20.12 6.15L17.3 12.35Z" fill="#C9A04A" stroke="#14171B" stroke-width="0.6"/>
+<path d="M18.38 13.54L25.31 13.29Q26.07 16.2 24.45 18.72L18.25 15.9ZM17.06 16.98L17.31 23.91Q14.4 24.67 11.88 23.05L14.7 16.85ZM13.62 15.66L6.69 15.91Q5.93 13 7.55 10.48L13.75 13.3ZM14.94 12.22L14.69 5.29Q17.6 4.53 20.12 6.15L17.3 12.35Z" fill="url(#shade)"/>
+<circle cx="16" cy="14.6" r="3" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<circle cx="16" cy="14.6" r="1" fill="#C4CAD0"/>
+</g>
+</g>
+</svg>

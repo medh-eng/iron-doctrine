@@ -190,9 +190,9 @@ Envelopes are the planned materials in §1.
 
 | id | Name | Cat. | T | Cells | Key stats | Cost | Unlock |
 |---|---|---|---|---|---|---|---|
-| rack | Missile rack | weapon | 3 | 2×1 | capacity 4 small, reload 3 | M3 E1 $40 | missiles |
-| vls | VLS block | weapon | 3 | 2×2 | capacity 8, reload 1.5 | M8 E2 $120 | missiles |
-| mag | Missile magazine | logistics | 3 | 2×1 | capacity 4 medium, detonate 0.3 | M3 $40 | missiles |
+| rack | Missile rack | weapon | 3 | 2×1 | capacity 4 (small 1, medium 2 each), reload 3 | M3 E1 $40 | missiles |
+| vls | VLS block | weapon | 3 | 2×2 | capacity 8 (large 4 each), reload 1.5, fires vertically | M8 E2 $120 | missiles |
+| mag | Missile magazine | logistics | 3 | 2×1 | capacity 8 (4 medium), detonate 0.3 | M3 $40 | missiles |
 | hangar_d | Drone hangar | special | 3 | 3×2 | capacity 4, rate 0.33, power −10 | M6 E2 $140 | drones |
 | hangar_a | Aircraft hangar | special | 3 | 6×3 | capacity 2 aircraft, rate 0.1, power −20 | M16 E3 $300 | carriers |
 | dcpu1 / dcpu2 / dcpu3 | Drone computer I / II / III | system | 3 / 3 / 4 | 1×1 / 2×1 / 2×1 | effect 2 / 4 / 6 drones, power −15 / −30 / −45 | E6 / E12 / E18 S10 | drones / drones_2 / drones_3 |
@@ -207,7 +207,7 @@ Envelopes are the planned materials in §1.
 | cap | Capacitor bank | system | 4 | 2×1 | effect 30 (MJ), heat 5 | M3 E8 S8 $200 | lasers |
 | reactor | Precursor reactor | mobility | 4 | 3×3 | power 1600, heat 90, fuelUse 0, rel 0.975 | M10 E12 S20 $600 | prop_reactor |
 
-**Missile parts** (category `missile`, on the missile grids):
+**Missile parts** (category `missile`, on the missile grids; in the library since 5b). Footprints: warheads, motor 2×1 (cluster 4×2, large only); propellant, fins and seekers 1×1. Masses: warheads 30–40 kg (cluster 160), motor 30, propellant 20, fins 5, seekers 6–8. Laser seekers wait for laser guidance. Designs: `src/vehicles/msl_*.json` (domain `missile`).
 
 | id | Stats |
 |---|---|

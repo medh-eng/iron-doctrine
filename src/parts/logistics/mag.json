@@ -1,0 +1,41 @@
+{
+  "id": "mag",
+  "name": "Missile magazine",
+  "family": "mag",
+  "variant": "std",
+  "category": "logistics",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 200,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.998,
+    "capacity": 8,
+    "detonate": 0.3
+  },
+  "behaviour": {
+    "magazine": true
+  },
+  "cost": {
+    "metal": 3,
+    "money": 40
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Reserve missiles: 8 small, 4 medium or 2 large; refills empty launchers."
+}

@@ -45,6 +45,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
     r.appendChild(top);
@@ -217,6 +218,9 @@ SCREENS.map = {
         const items = {};
         for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
         if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
+        const held = Object.entries(missilesAt(fl.hold));
+        if (held.length) row('Missiles in the hold', held.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
+        for (const sh of fleetShips(fl)) { const m = shipMissiles(sh); if (m) row(`${shipStats(sh).name}: missiles`, `${m.n} of ${m.cap} · ${m.name}`); }
       } else if (this.tab === 'route') {
         this.routeTab(fl, body, row);
       } else {
@@ -224,7 +228,7 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
-        row('Fleet size', `${fl.shipIds.length} of ${FLEET_SIZE[Math.min(9, lvl - 1)]}`);
+        row('Fleet size', `${fl.shipIds.length} of ${fleetCap(fl)}`);
       }
       P.appendChild(body);
       return;
@@ -255,7 +259,7 @@ SCREENS.map = {
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
-        const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
+        const room = fleetCap(fl) - fl.shipIds.length;
         for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
@@ -308,6 +312,12 @@ SCREENS.map = {
         const label = (q, verb, full) => (q.why ? verb : q.units < 0.005 ? full : `${verb} ${q.units.toFixed(q.units < 1 ? 2 : 1)}${q.cost ? ` for ${Math.ceil(q.cost)}` : ' (stores)'}`);
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
+        // Missiles (5b2): fill the launchers from missiles in stock here.
+        const lo = fleetShips(fl).map(shipMissiles).filter(Boolean);
+        if (lo.length) {
+          const have = lo.reduce((a, m) => a + m.n, 0), cap = lo.reduce((a, m) => a + m.cap, 0);
+          r.appendChild(button(have >= cap ? `Missiles ${have}/${cap}` : `Load missiles ${have}/${cap}`, () => done(loadMissiles(fl, s)), 'btn btn-small'));
+        }
       }
     } else if (this.tab === 'barracks') {
       this.barracks(s, body, row, act, done);
@@ -342,6 +352,8 @@ SCREENS.map = {
       const items = {};
       for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
       row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
+      const stock = Object.entries(missilesAt(s.store));
+      if (stock.length) row('Missiles', stock.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
       if (fl) {
         const r = act();
         r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));

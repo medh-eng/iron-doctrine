@@ -35,5 +35,25 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: rubber tyre on a pressed-steel disc painted P1; wheel group spins about the hub. Leaf-spring stub attaches to the hull above.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "contact": [
+      0.5,
+      1
+    ]
+  },
+  "moving": {
+    "wheel": {
+      "pivot": [
+        0.5,
+        0.5
+      ]
+    }
+  }
 }

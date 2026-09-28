@@ -74,6 +74,7 @@ function economyCheck() {
 // garrison, dock repair, refits returning parts, field repair from the hold.
 function workshopCheck() {
   newCampaign('league', 5151);
+  techState().known = TECH.filter((n) => n.tier === 1).map((n) => n.id);   // an established campaign: tier 1 researched
   const out = {};
   const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
   const run = (h) => { for (let t = 0; t < h; t += 0.5) stepWorks(0.5); };
@@ -124,7 +125,8 @@ function workshopCheck() {
   out.repaired = sh.hp === null;
   // Refit: light → medium keeps parts that stay, returns removed parts as items.
   const it0 = itemsAt(home.store).length;
-  const light = fleetShips(land).find((x) => x.design === 'light');
+  const light = fleetShips(land)[0];      // starting designs vary by faction; refit from a v1 light tank
+  if (light) { light.design = 'light'; light.hp = null; }
   const fq = light ? refitQuote(home, light, 'scout') : null;
   out.refit = light ? refitShip(home, land, light, 'scout') : 'no light tank';
   run((fq ? fq.hours : 0) + 1);
@@ -347,6 +349,129 @@ function siegeCheck() {
   let ev = null;
   for (let h = 0; h < 48 && !ev; h++) { campaign.running = true; ev = campaignTick(1).find((e) => e.contact && e.contact.siege); }
   out.aiSiege = !!(ev && ev.contact.siege === vil.id && ev.contact.defend);
+  return out;
+}
+// Research and perks (Part 5a): Command Points come from rank; a node costs CP, money and
+// warehouse goods and takes days; it unlocks parts for crafting and the Drafting Office;
+// prerequisites hold; the tree costs far more CP than a Grand Admiral earns; perks act.
+function researchCheck() {
+  newCampaign('league', 6161);
+  const out = {};
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  const ga = grandAdmiral();
+  const gm = TECH_BY_ID.guns_medium;
+  out.cp1 = cpEarned();
+  out.noCp = researchBlock(gm, home);
+  gainXp(ga, Math.round(150 * Math.pow(3, 1.7)));            // level 4
+  out.level = ga.level;
+  out.cp4 = cpEarned();
+  out.lockedBefore = !partUnlocked('c75');
+  out.craftBefore = craft(home, 'c75');
+  out.heavyBlocked = researchBlock(TECH_BY_ID.guns_heavy, home);
+  const m0 = campaign.treasury;
+  out.start = startResearch(gm, home);
+  out.paid = Math.round(m0 - campaign.treasury);
+  out.cpAfter = cpFree();
+  out.busy = researchBlock(TECH_BY_ID.radio, home);
+  for (let d = 0; d < TECH_TIERS[1].days; d++) { campaign.day++; dailyEconomy(); }
+  out.known = techKnown('guns_medium');
+  out.unlocked = partUnlocked('c75');
+  out.craftAfter = craft(home, 'c75');
+  const D = SCREENS.designer;
+  const was = { lock: D.lockParts, st: D.st };
+  D.st = { d: { w: 20, h: 10, cells: [] }, cls: 'light' };
+  D.lockParts = true;
+  out.designerLocked = D.placeCheck('c105', 0, 0);
+  out.designerOk = D.placeCheck('c75', 0, 0);
+  D.lockParts = was.lock; D.st = was.st;
+  // The whole tree against the most CP a Grand Admiral can earn.
+  out.treeCp = TECH.reduce((a, n) => a + nodeCp(n), 0);
+  out.maxCp = CP_PER_LEVEL * 29;
+  // Perks: Merchant charter lowers buy prices 8%; Wider command needs 3 CP.
+  const b0 = buyPrice(home, 'metal', 'league');
+  out.perk = buyPerk('merchant_charter');
+  out.priceRatio = +(buyPrice(home, 'metal', 'league') / b0).toFixed(3);
+  out.wider = buyPerk('wider_command');
+  const flag = campaign.fleets.find((f) => f.faction === 'league' && f.admiralId === campaign.ga);
+  out.gaCap = flag ? fleetCap(flag) : null;
+  // Captain skill: a level 5 captain aims 8% better in battle.
+  const ship = campaign.ships.find((s) => s.faction === 'league' && s.captainId);
+  byId('officers', ship.captainId).level = 5;
+  const V = { design: { _shipId: ship.id }, ai: { accuracy: 0.5, reaction: 1 } };
+  applyCaptain(V);
+  out.acc = +(V.ai.accuracy / 0.5).toFixed(3);
+  out.react = +V.ai.reaction.toFixed(3);
+  // A research job stops when its city is lost; the CP come back.
+  const city = world.settlements.find((s) => s.faction === 'league' && s.type === 'city') || home;
+  city.store.elec = 50;
+  const free0 = cpFree();
+  out.start2 = startResearch(TECH_BY_ID.radio, city);
+  city.faction = 'directorate';
+  campaign.day++; dailyEconomy();
+  out.stopped = !techState().job && cpFree() === free0 && !techKnown('radio');
+  city.faction = 'league';
+  // Grand Admiral XP from a capture.
+  const x0 = ga.xp;
+  gaXpFor('capture', 'city');
+  out.captureXp = ga.xp - x0;
+  return out;
+}
+// Part 5b2: missiles as items: crafted at a metropolis, stocked, loaded, carried into battle.
+function missileStockCheck() {
+  newCampaign('league', 7272);
+  const out = {};
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  const run = (h) => { for (let t = 0; t < h; t += 0.5) stepWorks(0.5); };
+  out.city = craftMissiles(home, 'msl_s_heat', 4);
+  home.type = 'metropolis';
+  out.locked = craftMissiles(home, 'msl_s_heat', 4);
+  techState().known.push('missiles');
+  for (const g of GOODS) home.store[g] = 50;
+  campaign.treasury += 5000;
+  const q = missileQuote(home, missileDesign('msl_s_heat'), 4);
+  const used0 = storeUsed(home);
+  out.craft = craftMissiles(home, 'msl_s_heat', 4);
+  run(q.hours + 1);
+  out.made = missilesAt(home.store).msl_s_heat || 0;
+  out.space = +(storeUsed(home) - used0 + (q.cost.metal || 0) + (q.cost.elec || 0)).toFixed(2);
+  out.unitEach = +missileUnits('msl_s_heat').toFixed(2);
+  // A ship with a rack, docked at home, loads them.
+  const d = Object.assign(designFromTemplate('light'), { id: 'test_msl', missile: 'msl_s_heat' });
+  d.cells.push({ p: 'rack', x: 0, y: 0 });
+  save.designs.list.push(d);
+  const fl = makeFleet('league', 'land', home.x + 0.5, home.y + 0.5, ['test_msl'], makeRng(3));
+  fl.docked = home.id;
+  const ship = fleetShips(fl)[0];
+  out.before = shipMissiles(ship);
+  out.load = loadMissiles(fl, home);
+  out.after = shipMissiles(ship);
+  out.stockAfter = missilesAt(home.store).msl_s_heat || 0;
+  out.full = loadMissiles(fl, home);
+  // Battle: only what she carries goes in; what she didn't fire comes home.
+  const B = createBattle(4);
+  const V = makeVehicle(battleDesign(ship), 0, 100, 1, B.T);
+  applyShipState(V);
+  const rack = V.weapons.find((w) => w.def.id === 'rack');
+  out.inBattle = rack.rounds;
+  const T = makeVehicle(designFromTemplate('light'), 1, 190, -1, B.T);
+  B.units = [V, T];
+  launchDesigned(B, V, rack, T);
+  missiles.forEachAlive((m) => { m.alive = false; });
+  out.left = missilesLeft(V);
+  applyBattleOutcome({ units: [V], reserve: [[], []], result: 'win', sides: { myFleets: [], theirFleets: [] } });
+  out.home = ship.missiles;
+  // An empty ship takes in none.
+  ship.missiles = { id: 'msl_s_heat', n: 0 };
+  const V2 = makeVehicle(battleDesign(ship), 0, 100, 1, B.T);
+  applyShipState(V2);
+  out.emptyRounds = V2.weapons.find((w) => w.def.id === 'rack').rounds;
+  // Missiles move between the warehouse and a hold with the parts.
+  missilesAt(home.store).msl_s_heat = 2;
+  const trucks = makeFleet('league', 'land', home.x + 0.5, home.y + 0.5, ['truck'], makeRng(2));
+  trucks.docked = home.id;
+  out.transfer = transferItems(trucks, home, 1);
+  out.inHold = missilesAt(trucks.hold).msl_s_heat || 0;
+  save.designs.list.splice(save.designs.list.indexOf(d), 1);
   return out;
 }
 /*TEST:END*/

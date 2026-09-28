@@ -1,0 +1,48 @@
+{
+  "id": "vls",
+  "name": "VLS block",
+  "family": "vls",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 900,
+    "hp": 60,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "reload": 1.5,
+    "capacity": 8,
+    "range": 2500,
+    "cal": 90
+  },
+  "behaviour": {
+    "secondary": "launcher",
+    "vertical": true,
+    "sizes": [
+      "missile_s",
+      "missile_m",
+      "missile_l"
+    ]
+  },
+  "cost": {
+    "metal": 8,
+    "elec": 2,
+    "money": 120
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Holds 8 small, 4 medium or 2 large missiles; fires straight up."
+}

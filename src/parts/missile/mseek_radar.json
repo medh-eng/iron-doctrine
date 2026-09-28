@@ -1,0 +1,34 @@
+{
+  "id": "mseek_radar",
+  "name": "Radar seeker",
+  "family": "mseek_radar",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 8,
+    "hp": 4,
+    "armor": 0,
+    "turn": 3
+  },
+  "behaviour": {
+    "seeker": "radar"
+  },
+  "cost": {
+    "elec": 1,
+    "money": 10
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Lock helped by the launcher's fire control and radar; cut by ECM; flares rarely fool it."
+}

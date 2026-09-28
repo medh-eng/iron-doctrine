@@ -247,6 +247,7 @@ function updateBattle(B, dt) {
   stepUnderwater(B, dt);
   stepSalvos(B, dt);
   stepMissiles(B, dt);
+  stepFirePatches(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -617,6 +618,17 @@ function campaignCheck() {
   const q = refuelQuote(air, home);
   const why = refuel(air, home);
   out.refuel = { why, spent: Math.round(t0 - campaign.treasury), quote: Math.round(q.cost), full: fleetFuel(air).fuel > 0 };
+  // Only allowed domains deploy: inland keeps ships out, open sea keeps tanks out.
+  const inl = world.settlements.find((q) => !q.coastal && !isSeaCell(world, q.x, q.y) && battlePlace(q.x, q.y).field === 'inland');
+  // (Checked before the contact fight below, which the land fleet may lose.)
+  const lf = playerFleets().find((fl) => fl.domain === 'land');
+  const sea2d = playerFleets().find((fl) => fl.domain === 'sea');
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.shipIds.length && relation(fl.faction, 'league') === 'war');
+  const was = [lf, sea2d, en].map((fl) => [fl.x, fl.y]);
+  lf.x = inl.x + 0.5; lf.y = inl.y + 0.5; sea2d.x = lf.x + 1; sea2d.y = lf.y; en.x = lf.x + 0.5; en.y = lf.y;
+  const sd = battleSides(lf, en);
+  out.deploy = { field: sd.place.field, domains: [...new Set(sd.mine.map((sh) => mapDomain(designReport(shipDesign(sh)).domain)))].join(',') };
+  [lf, sea2d, en].forEach((fl, i) => { [fl.x, fl.y] = was[i]; });
   // Contact: an enemy fleet at war next to the land fleet → auto-resolve; results persist.
   const enemy = campaign.fleets.find((fl) => fl.faction !== 'league' && relation(fl.faction, 'league') === 'war' && fl.domain === 'land');
   enemy.x = land.x + 1; enemy.y = land.y; enemy.path = []; enemy.cooldown = 0; land.cooldown = 0; land.path = [];
@@ -644,13 +656,6 @@ function campaignCheck() {
   const back = pickUp(sea2, g2) === '' && sea2.shipIds.includes(g2.id) && !campaign.outposts.length;
   const alone = campaign.officers.filter((o) => o.alive && o.rank === 'captain' && !o.shipId && !o.fleetId && !o.garrisonedAt).length;
   out.detach = { why: w1, inGarrison, outpost, back, alone };
-  // Only allowed domains deploy: inland keeps ships out, open sea keeps tanks out.
-  const inl = world.settlements.find((q) => !q.coastal && !isSeaCell(world, q.x, q.y) && battlePlace(q.x, q.y).field === 'inland');
-  const lf = playerFleets().find((fl) => fl.domain === 'land');
-  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.shipIds.length && relation(fl.faction, 'league') === 'war');
-  lf.x = inl.x + 0.5; lf.y = inl.y + 0.5; sea2.x = lf.x + 1; sea2.y = lf.y; en.x = lf.x + 0.5; en.y = lf.y;
-  const sd = battleSides(lf, en);
-  out.deploy = { field: sd.place.field, domains: [...new Set(sd.mine.map((sh) => mapDomain(designReport(shipDesign(sh)).domain)))].join(',') };
   const snap = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh']));
   campaignStore.load();
   out.reload = JSON.stringify(campaign.ships.map((s) => [s.id, s.hp ? s.hp.reduce((a, b) => a + b, 0).toFixed(3) : 'fresh'])) === snap;

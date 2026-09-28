@@ -33,5 +33,17 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: streamlined dome (P2) with a rubber acoustic window and transducer array. Anchor 'ping' = window centre.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "ping": [
+      1,
+      0.56
+    ]
+  }
 }

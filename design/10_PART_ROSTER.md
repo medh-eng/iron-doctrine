@@ -25,41 +25,41 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | A9 | optics | Optics | system | 1×1 | integrated (batch A1) |
 | A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A1) |
 | A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A1) |
-| A12 | wheel_s | Road wheel | mobility | 1×1 | todo |
-| A13 | eng_s | Petrol engine S | mobility | 2×2 | todo |
-| A14 | hmg | Heavy machine gun | weapon | 1×1 | todo |
-| A15 | c105 | Cannon 105 mm | weapon | 4×1 | todo |
+| A12 | wheel_s | Road wheel | mobility | 1×1 | integrated (batch A2) |
+| A13 | eng_s | Petrol engine S | mobility | 2×2 | integrated (batch A2) |
+| A14 | hmg | Heavy machine gun | weapon | 1×1 | integrated (batch A2) |
+| A15 | c105 | Cannon 105 mm | weapon | 4×1 | integrated (batch A2) |
 | A16 | smoke | Smoke launcher | weapon | 1×1 | integrated (batch A) |
-| A17 | wheel_l | Off-road wheel | mobility | 2×2 | todo |
+| A17 | wheel_l | Off-road wheel | mobility | 2×2 | integrated (batch A2) |
 | A18 | cargo | Cargo bay | logistics | 2×2 | integrated (batch A) |
-| A19 | how | Howitzer 150 mm | weapon | 4×2 | todo |
-| A20 | eng_h | Diesel engine H | mobility | 4×2 | todo |
-| A21 | fc | Fire-control computer | system | 1×1 | todo |
-| A22 | stab | Gun stabiliser | system | 1×1 | todo |
-| A23 | nsight | Night sight | system | 1×1 | todo |
-| A24 | radiator | Radiator | mobility | 1×1 | todo |
-| A25 | fuel_ss | Self-sealing tank 150 L | logistics | 1×1 | todo |
-| A26 | ammo_p | Protected ammo storage | logistics | 1×1 | todo |
+| A19 | how | Howitzer 150 mm | weapon | 4×2 | integrated (batch A2) |
+| A20 | eng_h | Diesel engine H | mobility | 4×2 | integrated (batch A2) |
+| A21 | fc | Fire-control computer | system | 1×1 | integrated (batch A2) |
+| A22 | stab | Gun stabiliser | system | 1×1 | integrated (batch A2) |
+| A23 | nsight | Night sight | system | 1×1 | integrated (batch A2) |
+| A24 | radiator | Radiator | mobility | 1×1 | integrated (batch A2) |
+| A25 | fuel_ss | Self-sealing tank 150 L | logistics | 1×1 | integrated (batch A2) |
+| A26 | ammo_p | Protected ammo storage | logistics | 1×1 | integrated (batch A2) |
 
 ## Batch B: ships and submarines (art for existing parts)
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| B1 | hull | Ship hull section | structure | 2×2 | todo |
-| B2 | bow | Bow section | structure | 2×2 | todo |
-| B3 | keel | Keel | structure | 2×1 | todo |
-| B4 | bulk | Watertight bulkhead | structure | 1×2 | todo |
-| B5 | marine | Marine diesel | mobility | 4×3 | todo |
+| B1 | hull | Ship hull section | structure | 2×2 | integrated (batch B) |
+| B2 | bow | Bow section | structure | 2×2 | integrated (batch B) |
+| B3 | keel | Keel | structure | 2×1 | integrated (batch B) |
+| B4 | bulk | Watertight bulkhead | structure | 1×2 | integrated (batch B) |
+| B5 | marine | Marine diesel | mobility | 4×3 | integrated (batch B) |
 | B6 | prop | Ship propeller | mobility | 1×2 | integrated (batch A) |
-| B7 | thrust | Manoeuvre thruster | mobility | 1×1 | todo |
-| B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | todo |
-| B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | todo |
-| B10 | sonar | Sonar | system | 2×1 | todo |
-| B11 | dc | Depth-charge rack | weapon | 2×1 | todo |
-| B12 | torp | Torpedo tube | weapon | 3×1 | todo |
-| B13 | phull | Pressure hull section | structure | 2×2 | todo |
-| B14 | ballast | Ballast tank | mobility | 2×2 | todo |
-| B15 | emotor | Electric motor + batteries | mobility | 2×2 | todo |
+| B7 | thrust | Manoeuvre thruster | mobility | 1×1 | integrated (batch B) |
+| B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | integrated (batch B) |
+| B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | integrated (batch B) |
+| B10 | sonar | Sonar | system | 2×1 | integrated (batch B) |
+| B11 | dc | Depth-charge rack | weapon | 2×1 | integrated (batch B) |
+| B12 | torp | Torpedo tube | weapon | 3×1 | integrated (batch B) |
+| B13 | phull | Pressure hull section | structure | 2×2 | integrated (batch B) |
+| B14 | ballast | Ballast tank | mobility | 2×2 | integrated (batch B) |
+| B15 | emotor | Electric motor + batteries | mobility | 2×2 | integrated (batch B) |
 
 ## Batch C: aircraft and helicopters (art for existing parts)
 
@@ -81,11 +81,11 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A) |
+| D1 | steam | Steam engine | mobility | 3×2 | integrated (batch A; batch D copy identical) |
 | D2 | wheel_w | Spoked wheel | mobility | 2×2 | integrated (batch A) |
-| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A) |
-| D4 | whull | Wooden hull section | structure | 2×2 | JSON added in step 2.8 (art todo) |
-| D5 | wbow | Wooden bow section | structure | 2×2 | JSON added in step 2.8 (art todo) |
+| D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A; longer barrel from batch D) |
+| D4 | whull | Wooden hull section | structure | 2×2 | integrated (batch D) |
+| D5 | wbow | Wooden bow section | structure | 2×2 | integrated (batch D) |
 | D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
 | D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
 | D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
@@ -94,9 +94,9 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | What | Status |
 |---|---|---|---|
-| E1 | lifteng | Lift engine (JSON + art) | todo |
-| E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | todo |
-| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | JSON built in step 2.7 (art todo) |
+| E1 | lifteng | Lift engine (JSON + art) | integrated (batch E; art only, the repo's stats and metropolis crafting kept) |
+| E2 | canvas_bag, rigid_env | Envelope looks (materials.json `look`; kind `envelope`) | delivered (batch E); not taken: the zip's materials.json marked both `planned` and made the canvas unpaintable, so the repo's looks stay |
+| E3 | Airship templates | `gunship_t0` (canvas bags, steam, aprop, swivel), `gunship_t2` (rigid envelope, lift engines, c37) | integrated (batch E) |
 
 ## Batch F: faction starting designs (`src/vehicles/`, tier 0 parts only)
 
@@ -109,19 +109,19 @@ Start with the League and the Directorate, then the others.
 
 | # | id pattern | Status |
 |---|---|---|
-| F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | todo |
-| F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | todo |
+| F1 | league_tank_t0, league_corvette_t0, league_gunship_t0 | integrated (batch F1–F2); the League's starting fleets use them |
+| F2 | directorate_tank_t0, directorate_corvette_t0, directorate_gunship_t0 | integrated (batch F1–F2); the Directorate's starting fleets use them |
 | F3 | skyreach_…, clans_…, lumen_… | todo |
 
 **Rules:** ordinary but handsome; they pass the checker; air designs have a lift margin of 1.15–1.3, ships float with about 30% freeboard, and tanks don't bog down on plains.
 
 ## Batch G: new tier 1–2 parts (JSON + art; 05 §3.3)
 
-c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop.
+c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. (`flare` JSON added in step 5b; art todo.)
 
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
-- **Missiles:** rack, vls, mag, and the missile parts.
+- **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b (art todo; missiles in flight are drawn in code).
 - **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts.
 - **Other:** fab, clamp, ecm, c203.
 - **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.

@@ -124,7 +124,7 @@ function rebuildVehicle(V, first) {
   V.grid = occupancy(D, V.alive);
 
   let I = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0, jets = 0;
+  let engines = 0, crew = 0, fuelMax = 0, shellsMax = 10, loco = 0, spot = 1, fc = 1, stab = false, smoke = 0, sonar = 0, jets = 0, flares = 0, flareDecoy = 0;
   const contacts = [];
   const weapons = [];
   V.night = 0;
@@ -147,6 +147,7 @@ function rebuildVehicle(V, first) {
     if (d.sonar) sonar = Math.max(sonar, d.sonar * BATTLE_DISTANCE_SCALE);
     if (d.id === 'stab') stab = true;
     if (d.id === 'smoke') smoke += d.salvos;
+    if (d.flares) { flares += d.salvos; flareDecoy = Math.max(flareDecoy, d.decoy); }
     if (d.propeller || d.airprop || d.jet || d.rotor) loco++;
     if (d.jet) jets++;
     if (d.loco) {
@@ -215,6 +216,9 @@ function rebuildVehicle(V, first) {
   if (V.heatMul === undefined) V.heatMul = 1;
   V.stab = stab;
   V.smoke = V.smoke === undefined ? smoke : Math.min(V.smoke, smoke);
+  V.flares = V.flares === undefined ? flares : Math.min(V.flares, flares);
+  V.flareDecoy = flareDecoy;
+  for (const w of weapons) if (w.def.secondary === 'launcher' && w.msl === undefined) armLauncher(V, w);
   V.bounds = { minX, maxX, minY, maxY };
   V.len = maxX - minX;
   V.height = maxY - minY;

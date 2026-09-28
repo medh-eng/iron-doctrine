@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.4.0';
+const GAME_VERSION = '0.5.3';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -69,7 +69,7 @@ const DEFAULT_PROFILE = {
 };
 
 // Saved designs (v2). Stored under irondoctrine.designs.
-const DEFAULT_DESIGNS = { list: [] };
+const DEFAULT_DESIGNS = { list: [], missiles: [] };
 
 // Graphics quality (design/02 §7)
 const QUALITY = {

@@ -32,5 +32,19 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay with a finned core, P2 header tank and a fan (role rotor) whose guard rings spin with it.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "moving": {
+    "fan": {
+      "pivot": [
+        0.5,
+        0.56875
+      ]
+    }
+  }
 }

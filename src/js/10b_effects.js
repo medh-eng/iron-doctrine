@@ -2,7 +2,7 @@
 // The joy layer (design/03 §5): muzzle flashes, sparks, dirt, explosions, smoke,
 // fire, shockwave rings. Particles are pooled and capped by the quality setting.
 
-const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6, FX_SPRAY = 7, FX_BUBBLE = 8;
+const FX_FLASH = 0, FX_SMOKE = 1, FX_SPARK = 2, FX_DIRT = 3, FX_FIRE = 4, FX_RING = 5, FX_EMBER = 6, FX_SPRAY = 7, FX_BUBBLE = 8, FX_FLARE = 9, FX_ACID = 10, FX_ARC = 11;
 
 const particles = makePool(() => ({
   alive: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 1, size: 1, grow: 0, g: 0, shade: 0,

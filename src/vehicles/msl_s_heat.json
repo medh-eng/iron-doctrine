@@ -1,0 +1,30 @@
+{
+  "id": "msl_s_heat",
+  "name": "Small heat seeker, HE",
+  "domain": "missile",
+  "class": "missile_s",
+  "w": 6,
+  "h": 1,
+  "cells": [
+    [
+      "mmotor",
+      0,
+      0
+    ],
+    [
+      "mfuel",
+      2,
+      0
+    ],
+    [
+      "mw_he",
+      3,
+      0
+    ],
+    [
+      "mseek_heat",
+      5,
+      0
+    ]
+  ]
+}

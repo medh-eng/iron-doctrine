@@ -38,11 +38,17 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 08_design.js           designer model: grid, domainOf, validation, stats, marks
 09a–09d_physics_*.js   terrain, rigid bodies, water (ships, submarines), air (aircraft, helicopters)
 10a–10e_*.js           combat, effects, naval weapons, air weapons, systems (missiles, rockets, heat, breakdowns, repair)
+10f_missiles.js        designed missiles (Part 5b): missile stats and rules, launchers, magazines, flares, warheads
+12d_missile_checks.js  test-only checks of designed missiles
+15g_missile_stock.js   missiles as campaign items (5b2): crafting, stock, loading, battle in and out
+16m_screen_missiles.js the Drafting Office's Missile tab
 12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
 16g_screen_simulator.js the Battle Simulator screen (01 §15)
 13_autoresolve.js      campaign battles: battlefield, sides, headless auto-resolve, results, retreat, garrisons
 14_world.js            world generation (terrain, settlements, roads, territory), path finding
 14b_command.js         campaign state and saves, officers, ships, fleets, movement, fuel, weather
+15f_research.js        tech tree, research jobs, Command Points, perks, fleet caps, captain skill (Part 5a)
+16l_screen_research.js the Research and perks card
 15_economy.js          treasury, fuel and ammo markets, refuel and rearm, fleet holds, daily income and wages
 15c_factions.js        the clock, fog of war, contacts, the factions' strategic AI
 16h_screen_map.js      the world map screen, panels and the pre-battle card

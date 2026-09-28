@@ -32,5 +32,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: pressure hull (T2): heavy frames with big bolts, weld seams, free-flood slots; darker than the surface hull.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

@@ -33,5 +33,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: riveted hull plating (P1) with a strake lap and one brass porthole; soft shading and seam-weight edges so sections tile in rows.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

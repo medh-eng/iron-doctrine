@@ -34,6 +34,8 @@ SCREENS.designer = {
 
   // arg: { design, base } to edit, { restore } to come back from a test drive, or nothing for a scratch build.
   enter(arg = {}) {
+    // Opened from the campaign (Research card): researched parts only (design/02 §6, Part 5a).
+    if (!arg.restore) { this.lockParts = !!this.campaignParts && !!campaign; this.campaignParts = false; }
     if (arg.restore) this.st = arg.restore;
     else this.load(arg.design || this.scratch(), arg.base || null, arg.owned !== false && !!arg.design);
     this.build();
@@ -85,6 +87,7 @@ SCREENS.designer = {
   // Why a part can't go at (x, y), or '' if it can. ignore = index of a part being moved.
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
+    if (this.lockParts && !partUnlocked(id)) { const t = PART_LIBRARY.parts[id] && PART_LIBRARY.parts[id].unlock; return `${P.name} is not researched${t && t.tech && TECH_BY_ID[t.tech] ? ` (${TECH_BY_ID[t.tech].name})` : ''}.`; }
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
     // The class part limit (structure cells don't count).
     const cls = classById(this.st.cls);
@@ -250,6 +253,7 @@ SCREENS.designer = {
     this.chips = el('div', 'dz-chips');
     top.appendChild(this.chips);
     top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
+    top.appendChild(button('Missiles', () => openMissileDesigner(this), 'btn btn-small dz-msl'));
     r.appendChild(top);
     // Palette.
     const pal = el('div', 'dz-palette');
@@ -296,7 +300,7 @@ SCREENS.designer = {
     list.textContent = '';
     for (const t of this.palette.querySelectorAll('.dz-tab')) t.setAttribute('aria-selected', String(t.dataset.cat === this.st.cat));
     for (const P of Object.values(PARTS)) {
-      if (P.cat !== this.st.cat) continue;
+      if (P.cat !== this.st.cat || (this.lockParts && !partUnlocked(P.id))) continue;
       const b = el('button', 'dz-part');
       b.type = 'button';
       b.dataset.part = P.id;
@@ -468,6 +472,12 @@ SCREENS.designer = {
     if (sys.sonarKm) row('Sonar', `${sys.sonarKm} km`);
     if (sys.ecm) row('ECM', 'enemy lock −40%, enemy radar −30%');
     if (rep.weapons.some((w) => w.secondary === 'atgm')) row('Anti-tank missile lock', `${Math.round(sys.lockAtgm * 100)}% (vs ECM ${Math.round(sys.lockAtgm * (1 - LOCK_ECM) * 100)}%)`);
+    if (rep.weapons.some((w) => w.secondary === 'launcher')) {
+      const md = missileDesign(s.d.missile || DEFAULT_MISSILE);
+      const ms = md && missileStats(md);
+      row('Missile carried', ms ? `${ms.name} (${missileClass(ms.cls).name})` : 'none');
+      for (const w of rep.weapons.filter((q) => q.secondary === 'launcher')) row(`${w.name} holds`, ms && w.sizes.includes(ms.cls) ? `${Math.floor(w.capacity / ms.units)}` : 'this size won’t fit');
+    }
     if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
     head('Top speed');
@@ -508,6 +518,7 @@ SCREENS.designer = {
 
   // Requisition to build: the price difference from a design you already own, or the full cost.
   buildCost() {
+    if (this.lockParts) return 0;          // campaign designs are paid for in the yard, not in Requisition
     const now = costOf(this.st.d);
     const before = this.st.baseOwned ? costOf(this.st.base) : 0;
     return Math.max(0, now - before);
@@ -673,6 +684,7 @@ SCREENS.designer = {
       changelog: s.baseOwned ? changeLog(s.base, out).concat(JSON.stringify(s.d.paint || null) !== JSON.stringify(s.base.paint || null) ? ['Repainted'] : []) : ['New design'],
       cls: s.cls,
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
+      missile: s.d.missile || undefined,      // the missile its racks and VLS carry (Part 5b)
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),

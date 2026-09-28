@@ -152,6 +152,9 @@ window.__GAME__ = {
   subCheck: () => subCheck(),
   airCheck: () => airCheck(),
   missileCheck: () => missileCheck(),
+  designedMissileCheck: () => designedMissileCheck(),
+  missileStockCheck: () => missileStockCheck(),
+  missileShowcase: (id) => missileShowcase(id),
   systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope
   randomCheck: () => { const out = []; for (let i = 0; i < 12; i++) for (const cls of Object.keys(CLASSES)) { const d = randomDesign(1000 + i * 31, cls); const v = validateDesign(d); out.push({ cls, seed: i, ok: v.ok && d.id === 'random', errors: v.errors }); } return out; },
@@ -167,6 +170,7 @@ window.__GAME__ = {
   classCheck: () => classCheck(),
   campaignCheck: () => campaignCheck(),
   economyCheck: () => economyCheck(),
+  researchCheck: () => researchCheck(),
   workshopCheck: () => workshopCheck(),
   recruitCheck: () => recruitCheck(),
   convoyCheck: () => convoyCheck(),

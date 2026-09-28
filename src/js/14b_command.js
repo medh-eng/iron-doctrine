@@ -3,7 +3,7 @@
 // `campaign` is the whole running campaign as plain JSON-safe data (design/04 §7); the terrain
 // comes from its seed (`world`). Saved to irondoctrine.campaign.slot1.
 
-const CAMPAIGN_VERSION = 2;
+const CAMPAIGN_VERSION = 3;
 const CAMPAIGN_KEY = 'irondoctrine.campaign.slot1';
 let campaign = null;
 let world = null;
@@ -50,6 +50,10 @@ function migrateCampaign(c, v) {
     }
     for (const fl of c.fleets) fl.hold = Object.assign(emptyCargo(), fl.hold || {});
     c.unpaid = 0;
+  }
+  if (v < 3) {
+    // v3 (Part 5a): the tech tree. Tier 1 parts were free before it, so their nodes are known.
+    c.tech = { known: TECH.filter((n) => n.tier === 1).map((n) => n.id), perks: [], job: null };
   }
   c.v = CAMPAIGN_VERSION;
 }
@@ -135,6 +139,7 @@ function newCampaign(factionId, seed) {
   const home = world.settlements.find((s) => s.faction === factionId && s.capital);
   if (home) Object.assign(home.store, HOME_STORE);
   campaign.wrecks = []; campaign.unlocked = [];
+  campaign.tech = { known: [], perks: [], job: null };
   makeScrapFields(makeRng(seed + 11));
   const rng = makeRng(seed + 7);
   // Relations: the player is at war with the two nearest factions and in truce with the others;
@@ -159,7 +164,9 @@ function newCampaign(factionId, seed) {
       const base = spec.domain === 'sea' && !portCell(home, 'sea') ? world.settlements.find((s) => s.faction === F.id && portCell(s, 'sea')) : home;
       if (!base) continue;
       const at = portCell(base, spec.domain) || [base.x + 0.5, base.y + 0.5];
-      const fl = makeFleet(F.id, spec.domain, at[0], at[1], spec.ships, rng, player && spec.domain === 'land' ? ga : null);
+      const own = `${F.id}_${START_DESIGN_KIND[spec.domain]}_t0`;
+      const ships = TEMPLATES[own] ? spec.ships.map(() => own) : spec.ships;
+      const fl = makeFleet(F.id, spec.domain, at[0], at[1], ships, rng, player && spec.domain === 'land' ? ga : null);
       if (player && spec.domain === 'land') { ga.fleetId = fl.id; fl.name = 'Flag fleet'; }
       else if (player) fl.name = spec.domain === 'sea' ? 'Sea fleet' : 'Air fleet';
       fl.docked = base.id;
@@ -182,6 +189,7 @@ function fleetSpeed(fl) {
   if (!Number.isFinite(v)) return 0;
   v *= MARCH;
   if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
+  if (fl.convoy && fl.faction === campaign.faction && perk('quartermaster_corps')) v *= 1.2;
   return v;
 }
 // Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
@@ -189,6 +197,7 @@ function fleetBurn(fl) {
   let b = 0;
   for (const s of fleetShips(fl)) b += shipStats(s).burn;
   if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
+  if (fl.faction === campaign.faction && perk('frugal_engines')) b *= 0.9;
   return b;
 }
 function fleetFuel(fl) {

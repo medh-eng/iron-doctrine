@@ -30,5 +30,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway ballast tank: water level with bubbles, floor flood grating, vent valve handwheel, valve box (P2) with status lamps.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

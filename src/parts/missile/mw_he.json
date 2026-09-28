@@ -1,0 +1,35 @@
+{
+  "id": "mw_he",
+  "name": "HE warhead",
+  "family": "mw_he",
+  "variant": "std",
+  "category": "missile",
+  "tier": 3,
+  "domains": [
+    "missile"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 10,
+    "armor": 0,
+    "dmg": 120,
+    "blast": 2.5
+  },
+  "behaviour": {
+    "warhead": "he"
+  },
+  "cost": {
+    "metal": 1,
+    "money": 10
+  },
+  "unlock": {
+    "tech": "missiles"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab."
+}
