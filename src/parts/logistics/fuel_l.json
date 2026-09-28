@@ -33,5 +33,19 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: cutaway bay with a 1000 L horizontal tank (P2, dished ends, P3 band) on saddles, manhole, valve and level gauge.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        1,
+        1
+      ]
+    ]
+  }
 }

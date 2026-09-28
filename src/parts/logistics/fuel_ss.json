@@ -33,5 +33,19 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: quilted rubber-armoured tank in a steel cage, P3 band; reads differently from the riveted fuel_s at a glance.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        0.5,
+        0.5
+      ]
+    ]
+  }
 }

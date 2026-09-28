@@ -44,5 +44,39 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: pintle mount; the barrel group carries receiver, P1 shield, P2 ammo can and an AA ring sight. Barrel length 1.85 cells = 1 x 1.25 + 0.6 (automatic). High elevation limit because the gun is AA-capable.",
+  "overhang": {
+    "left": 0,
+    "right": 1.4,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.55,
+      0.95
+    ],
+    "muzzle": [
+      2.4,
+      0.45
+    ],
+    "smoke": [
+      [
+        0.5,
+        0.4
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.55,
+        0.45
+      ],
+      "elevation": [
+        -10,
+        80
+      ]
+    }
+  }
 }

@@ -34,5 +34,21 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: stern rack: three depth-charge drums (P1 with P3 rims) on sloping rails, hazard-striped end stop, release lever. Anchor 'drop' = where charges roll off.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.95
+    ],
+    "drop": [
+      0.05,
+      0.85
+    ]
+  }
 }

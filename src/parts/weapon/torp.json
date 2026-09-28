@@ -36,5 +36,21 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art: tube (P1, P3 band) on saddles with a dogged breech door and handwheel, hinged muzzle cap. Anchor 'muzzle' = launch point.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.5,
+      0.95
+    ],
+    "muzzle": [
+      2.98,
+      0.5
+    ]
+  }
 }

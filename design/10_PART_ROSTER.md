@@ -25,41 +25,41 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | A9 | optics | Optics | system | 1×1 | integrated (batch A1) |
 | A10 | fuel_s | Fuel tank 200 L | logistics | 1×1 | integrated (batch A1) |
 | A11 | ammo | Ammo rack | logistics | 1×1 | integrated (batch A1) |
-| A12 | wheel_s | Road wheel | mobility | 1×1 | todo |
-| A13 | eng_s | Petrol engine S | mobility | 2×2 | todo |
-| A14 | hmg | Heavy machine gun | weapon | 1×1 | todo |
-| A15 | c105 | Cannon 105 mm | weapon | 4×1 | todo |
+| A12 | wheel_s | Road wheel | mobility | 1×1 | integrated (batch A2) |
+| A13 | eng_s | Petrol engine S | mobility | 2×2 | integrated (batch A2) |
+| A14 | hmg | Heavy machine gun | weapon | 1×1 | integrated (batch A2) |
+| A15 | c105 | Cannon 105 mm | weapon | 4×1 | integrated (batch A2) |
 | A16 | smoke | Smoke launcher | weapon | 1×1 | integrated (batch A) |
-| A17 | wheel_l | Off-road wheel | mobility | 2×2 | todo |
+| A17 | wheel_l | Off-road wheel | mobility | 2×2 | integrated (batch A2) |
 | A18 | cargo | Cargo bay | logistics | 2×2 | integrated (batch A) |
-| A19 | how | Howitzer 150 mm | weapon | 4×2 | todo |
-| A20 | eng_h | Diesel engine H | mobility | 4×2 | todo |
-| A21 | fc | Fire-control computer | system | 1×1 | todo |
-| A22 | stab | Gun stabiliser | system | 1×1 | todo |
-| A23 | nsight | Night sight | system | 1×1 | todo |
-| A24 | radiator | Radiator | mobility | 1×1 | todo |
-| A25 | fuel_ss | Self-sealing tank 150 L | logistics | 1×1 | todo |
-| A26 | ammo_p | Protected ammo storage | logistics | 1×1 | todo |
+| A19 | how | Howitzer 150 mm | weapon | 4×2 | integrated (batch A2) |
+| A20 | eng_h | Diesel engine H | mobility | 4×2 | integrated (batch A2) |
+| A21 | fc | Fire-control computer | system | 1×1 | integrated (batch A2) |
+| A22 | stab | Gun stabiliser | system | 1×1 | integrated (batch A2) |
+| A23 | nsight | Night sight | system | 1×1 | integrated (batch A2) |
+| A24 | radiator | Radiator | mobility | 1×1 | integrated (batch A2) |
+| A25 | fuel_ss | Self-sealing tank 150 L | logistics | 1×1 | integrated (batch A2) |
+| A26 | ammo_p | Protected ammo storage | logistics | 1×1 | integrated (batch A2) |
 
 ## Batch B: ships and submarines (art for existing parts)
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| B1 | hull | Ship hull section | structure | 2×2 | todo |
-| B2 | bow | Bow section | structure | 2×2 | todo |
-| B3 | keel | Keel | structure | 2×1 | todo |
-| B4 | bulk | Watertight bulkhead | structure | 1×2 | todo |
-| B5 | marine | Marine diesel | mobility | 4×3 | todo |
+| B1 | hull | Ship hull section | structure | 2×2 | integrated (batch B) |
+| B2 | bow | Bow section | structure | 2×2 | integrated (batch B) |
+| B3 | keel | Keel | structure | 2×1 | integrated (batch B) |
+| B4 | bulk | Watertight bulkhead | structure | 1×2 | integrated (batch B) |
+| B5 | marine | Marine diesel | mobility | 4×3 | integrated (batch B) |
 | B6 | prop | Ship propeller | mobility | 1×2 | integrated (batch A) |
-| B7 | thrust | Manoeuvre thruster | mobility | 1×1 | todo |
-| B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | todo |
-| B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | todo |
-| B10 | sonar | Sonar | system | 2×1 | todo |
-| B11 | dc | Depth-charge rack | weapon | 2×1 | todo |
-| B12 | torp | Torpedo tube | weapon | 3×1 | todo |
-| B13 | phull | Pressure hull section | structure | 2×2 | todo |
-| B14 | ballast | Ballast tank | mobility | 2×2 | todo |
-| B15 | emotor | Electric motor + batteries | mobility | 2×2 | todo |
+| B7 | thrust | Manoeuvre thruster | mobility | 1×1 | integrated (batch B) |
+| B8 | ngun | Naval gun 120 mm, twin | weapon | 4×3 | integrated (batch B) |
+| B9 | fuel_l | Fuel tank 1000 L | logistics | 2×2 | integrated (batch B) |
+| B10 | sonar | Sonar | system | 2×1 | integrated (batch B) |
+| B11 | dc | Depth-charge rack | weapon | 2×1 | integrated (batch B) |
+| B12 | torp | Torpedo tube | weapon | 3×1 | integrated (batch B) |
+| B13 | phull | Pressure hull section | structure | 2×2 | integrated (batch B) |
+| B14 | ballast | Ballast tank | mobility | 2×2 | integrated (batch B) |
+| B15 | emotor | Electric motor + batteries | mobility | 2×2 | integrated (batch B) |
 
 ## Batch C: aircraft and helicopters (art for existing parts)
 

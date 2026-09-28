@@ -46,5 +46,39 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js. Art (T2): welded carriage and cheek plate (P1, hazard band), breech ring behind the trunnion, recuperator and recoil sled move with the barrel. Barrel length 6.2 cells = 4 x 1.25 + 1.2. Elevation up to 65 degrees for indirect fire.",
+  "overhang": {
+    "left": 0,
+    "right": 3.2,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.1,
+      1.95
+    ],
+    "muzzle": [
+      7.2,
+      1
+    ],
+    "smoke": [
+      [
+        0.9,
+        1.6
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1,
+        1
+      ],
+      "elevation": [
+        -3,
+        65
+      ]
+    }
+  }
 }
