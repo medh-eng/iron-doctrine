@@ -294,6 +294,8 @@ Parts already in the game were placed in the tree by the one-off v1 import (step
 | Systems | radio; fire_control (fc); flares | radar (radar, nsight) ← radio; stabiliser (stab) ← fire_control; workshop ← repair_bay | ecm ← radar | — |
 | Logistics | cargo_2 (fuel_ss, ammo_p, fuel_l, hold); repair_bay (repair); salvage (crane) | — | — | — |
 
+**As built (v0.5.0):** research is one job at a time for the whole faction, at the chosen settlement; the money comes from the treasury and the electronics and scrap from that settlement's warehouse. If the settlement changes hands the job stops: its CP come back, the money and goods don't. The Lumen Collective can research every tier at their cities; the Directorate's heavy-guns node costs 2 CP. Parts of tier 0 are always known; any other part needs its node (its `unlock.tech`) or a reverse-engineered family. A campaign saved before v0.5.0 keeps all tier 1 nodes, since tier 1 parts were free until then.
+
 ## 12. Perks (Command Points)
 
 | Perk | CP | Effect |
@@ -316,6 +318,8 @@ Parts already in the game were placed in the tree by the one-off v1 import (step
 | **Trade** | | |
 | Merchant charter | 2 | Buy prices −8%, sell prices +8% |
 | Tax reform | 3 | Settlement money +15% |
+
+**As built (v0.5.0):** perks are bought on the Research card and act at once. Veteran eye and Iron discipline apply to your ships in campaign battles; Quick rotation to reserve entry and aircraft leaving in campaign battles; the fleet-size perks to fleets led by the Grand Admiral or an admiral.
 
 ## 13. Recruitment, wages, start
 

@@ -167,6 +167,7 @@ window.__GAME__ = {
   classCheck: () => classCheck(),
   campaignCheck: () => campaignCheck(),
   economyCheck: () => economyCheck(),
+  researchCheck: () => researchCheck(),
   workshopCheck: () => workshopCheck(),
   recruitCheck: () => recruitCheck(),
   convoyCheck: () => convoyCheck(),

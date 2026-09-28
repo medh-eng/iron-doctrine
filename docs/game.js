@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.4.0';
+const GAME_VERSION = '0.5.0';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -2741,6 +2741,90 @@ const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0
 // XP (08 §10).
 const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
 const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+
+// ---------- the tech tree and perks (design/08 §11–12, Part 5a)
+// Research costs per tier: Command Points, money (treasury), electronics and scrap (from the
+// warehouse of the settlement doing the research), days; and where it can be done.
+const TECH_TIERS = {
+  1: { cp: 2, money: 400, elec: 0, scrap: 0, days: 2, at: 'city' },
+  2: { cp: 3, money: 1200, elec: 10, scrap: 0, days: 4, at: 'city' },
+  3: { cp: 4, money: 3000, elec: 40, scrap: 0, days: 6, at: 'metropolis' },
+  4: { cp: 6, money: 6000, elec: 100, scrap: 50, days: 10, at: 'metropolis' },
+};
+const CP_PER_LEVEL = 2;          // Grand Admiral: +2 CP per level from level 2 (58 by level 30)
+// Nodes: id, name, branch, tier, prerequisites (all needed), and what arrives later (for nodes
+// whose parts aren't in the game yet). A node's parts are the library parts whose unlock.tech names it.
+const TECH_BRANCHES = ['Hulls', 'Lift', 'Propulsion', 'Guns', 'Sea', 'Air', 'Missiles and drones', 'Energy', 'Systems', 'Logistics'];
+const TECH = [
+  ['hull_iron', 'Iron hulls', 'Hulls', 1, []],
+  ['hull_heavy', 'Heavy armour', 'Hulls', 2, ['hull_iron']],
+  ['hull_advanced', 'Composite and alloy hulls', 'Hulls', 3, ['hull_heavy'], 'Composite and alloy materials'],
+  ['hull_precursor', 'Precursor plating', 'Hulls', 4, ['hull_advanced'], 'Precursor plating'],
+  ['lift_rigid', 'Rigid envelopes', 'Lift', 1, []],
+  ['lift_engines', 'Lift engines', 'Lift', 2, ['lift_rigid']],
+  ['lift_armoured', 'Armoured envelopes', 'Lift', 3, ['lift_engines'], 'Armoured envelopes'],
+  ['lift_levitator', 'Levitators', 'Lift', 4, ['lift_armoured'], 'Levitators'],
+  ['prop_petrol', 'Petrol engines', 'Propulsion', 1, []],
+  ['prop_diesel', 'Diesels and tracks', 'Propulsion', 1, []],
+  ['prop_heavy', 'Heavy and marine diesels', 'Propulsion', 2, ['prop_diesel']],
+  ['prop_turbine', 'Gas turbines', 'Propulsion', 2, ['prop_diesel']],
+  ['prop_reactor', 'Reactors', 'Propulsion', 4, ['prop_turbine', 'hull_advanced'], 'Reactors'],
+  ['guns_medium', 'Medium guns', 'Guns', 1, []],
+  ['guns_heavy', 'Heavy guns', 'Guns', 2, ['guns_medium']],
+  ['flame', 'Flamethrowers', 'Guns', 2, ['guns_medium'], 'Flamethrowers'],
+  ['rockets', 'Rockets', 'Guns', 2, ['guns_medium']],
+  ['guns_super', 'Super-heavy guns', 'Guns', 3, ['guns_heavy'], 'The 203 mm gun'],
+  ['submarines', 'Submarines', 'Sea', 2, ['hull_iron']],
+  ['sonar', 'Sonar and depth charges', 'Sea', 2, ['radio']],
+  ['carriers', 'Carriers', 'Sea', 3, ['aviation', 'hull_heavy'], 'Aircraft hangars'],
+  ['aviation', 'Aviation', 'Air', 2, ['prop_petrol']],
+  ['rotorcraft', 'Rotorcraft', 'Air', 2, ['aviation']],
+  ['jets', 'Jets', 'Air', 3, ['aviation', 'prop_turbine']],
+  ['missiles', 'Missiles', 'Missiles and drones', 3, ['rockets']],
+  ['warheads_special', 'Napalm and acid warheads', 'Missiles and drones', 3, ['missiles'], 'Napalm and acid warheads'],
+  ['drones', 'Drones', 'Missiles and drones', 3, ['radio'], 'Drone computers, hangars and parts'],
+  ['drones_2', 'Drones II', 'Missiles and drones', 3, ['drones'], 'Larger drone computers'],
+  ['fabricators', 'Fabricators', 'Missiles and drones', 3, ['workshop'], 'Fabricators'],
+  ['detachment', 'Detachable sections', 'Missiles and drones', 3, ['hull_advanced'], 'Release clamps'],
+  ['warheads_emp', 'EMP and cluster warheads', 'Missiles and drones', 4, ['warheads_special'], 'EMP and cluster warheads'],
+  ['drones_3', 'Drones III', 'Missiles and drones', 4, ['drones_2'], 'The largest drone computers'],
+  ['lasers', 'Lasers', 'Energy', 4, ['fire_control', 'hull_advanced'], 'Lasers, capacitors, laser seekers'],
+  ['plasma', 'Plasma', 'Energy', 4, ['lasers'], 'Plasma weapons'],
+  ['energy_heavy', 'Heavy energy weapons', 'Energy', 4, ['plasma'], 'Heavy lasers and plasma lances'],
+  ['radio', 'Radio', 'Systems', 1, []],
+  ['fire_control', 'Fire control', 'Systems', 1, []],
+  ['flares', 'Flares', 'Systems', 1, [], 'Flare launchers'],
+  ['radar', 'Radar', 'Systems', 2, ['radio']],
+  ['stabiliser', 'Stabilisers', 'Systems', 2, ['fire_control']],
+  ['workshop', 'Field workshops', 'Systems', 2, ['repair_bay'], 'Workshop parts'],
+  ['ecm', 'ECM', 'Systems', 3, ['radar']],
+  ['cargo_2', 'Better stores', 'Logistics', 1, []],
+  ['repair_bay', 'Repair bays', 'Logistics', 1, []],
+  ['salvage', 'Salvage gear', 'Logistics', 1, []],
+].map(([id, name, branch, tier, needs, later]) => ({ id, name, branch, tier, needs, later: later || '' }));
+// Faction research modifiers (09): Command Point discounts on nodes.
+const TECH_FACTION_CP = { directorate: { guns_heavy: -1 }, lumen: { tier4Energy: 0.7 } };
+// Perks (08 §12): bought with Command Points, active at once.
+const PERKS = [
+  ['veteran_eye', 'Veteran eye', 'Command', 1, '+5% accuracy for all your captains'],
+  ['quick_rotation', 'Quick rotation', 'Command', 2, 'Pull-back and reserve entry times −40%'],
+  ['iron_discipline', 'Iron discipline', 'Command', 2, 'AI captains react 20% faster'],
+  ['wider_command', 'Wider command', 'Command', 3, 'Grand Admiral fleet size +2'],
+  ['second_in_command', 'Second in command', 'Command', 3, 'Admirals’ fleet size +1'],
+  ['deep_holds', 'Deep holds', 'Logistics', 1, 'Cargo capacity +10%'],
+  ['frugal_engines', 'Frugal engines', 'Logistics', 2, 'Map fuel use −10%'],
+  ['scavengers', 'Scavengers', 'Logistics', 2, 'Salvage chance +4%, scrap +20%'],
+  ['quartermaster_corps', 'Quartermaster corps', 'Logistics', 2, 'Convoys +20% speed, +10% cargo'],
+  ['field_engineers', 'Field engineers', 'Engineering', 1, 'Field repair +30%'],
+  ['master_crafters', 'Master crafters', 'Engineering', 2, 'Crafting time −25%'],
+  ['refinery_knowhow', 'Refinery know-how', 'Engineering', 2, 'Refining needs 1 less scrap'],
+  ['merchant_charter', 'Merchant charter', 'Trade', 2, 'Buy prices −8%, sell prices +8%'],
+  ['tax_reform', 'Tax reform', 'Trade', 3, 'Settlement money +15%'],
+].map(([id, name, group, cp, text]) => ({ id, name, group, cp, text }));
+// Officer levels in battle (08 §10): per level above 1.
+const CAPTAIN_ACC_PER_LEVEL = 0.02, CAPTAIN_REACT_PER_LEVEL = 0.03, CAPTAIN_REPAIR_PER_LEVEL = 0.01;
+// Grand Admiral XP (08 §10) besides battles.
+const GA_XP = { capture: { village: 100, fort: 250, city: 300, citadel: 700, metropolis: 800 }, convoy: 20, reverse: 50 };
 // Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
 const START_FLEETS = [
   { domain: 'land', ships: ['medium', 'light', 'scout'] },
@@ -7487,6 +7571,9 @@ const EDGE_EXIT = 6;              // metres from the rear edge at which a pullin
 const AIR_EXIT_SECS = 3;          // aircraft pulling back fly off after this long
 const ENEMY_PULL_HEALTH = 0.35;   // enemy captains pull back below this share of hit points
 
+// Quick rotation (08 §12): in campaign battles your reserves enter and aircraft leave 40% sooner.
+const quickRotation = (B, side) => (side === 0 && B.contact && perk('quick_rotation') ? 0.6 : 1);
+
 function vehicleHealth(V) {
   let hp = 0;
   for (const p of V.parts) if (p.alive) hp += p.hp;
@@ -7559,12 +7646,14 @@ function enterFromReserve(B, side, slot) {
     V = makeVehicle(e.design, 0, x, 1, B.T);
     if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : V.domain === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', B.cfg);
+    applyCaptain(V);
     V.label = String(slot + 1);
     B.units.push(V);
     B.squad[slot] = V;
     if (B.me.destroyed || B.me.withdrawn) takeVehicle(B, V);
   } else {
     V = spawnEnemy(B, e.design, 'attack', x);
+    applyCaptain(V);
     B.enemySlots[slot] = V;
   }
   restoreDamage(V, e);
@@ -7602,7 +7691,7 @@ function withdraw(B, V) {
   if (B.target === V) B.target = null;
   const slots = side === 0 ? B.squad : B.enemySlots;
   const slot = slots.indexOf(V);
-  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY * quickRotation(B, side) });
   if (V === B.me) {
     const next = B.squad.find((U) => !U.destroyed);
     if (next) takeVehicle(B, next);
@@ -7620,7 +7709,7 @@ function stepReserves(B, dt) {
       if (!V) continue;
       if (V.destroyed && !V.withdrawn && !V.replaced) {
         V.replaced = true;
-        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY * quickRotation(B, side) });
         continue;
       }
       if (V.destroyed) continue;
@@ -7629,7 +7718,7 @@ function stepReserves(B, dt) {
       if (!V.pulling) continue;
       V.pullT += dt;
       if (V !== B.me) V.throttle = side === 0 ? -1 : 1;
-      const out = V.flier ? V.pullT > AIR_EXIT_SECS : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
+      const out = V.flier ? V.pullT > AIR_EXIT_SECS * quickRotation(B, side) : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
       if (out) withdraw(B, V);
     }
   }
@@ -7891,8 +7980,8 @@ function detachShip(fl, ship) {
 
 function pickUp(fl, ship) {
   if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
-  const cap = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)];
-  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships at admiral level ${(fleetAdmiral(fl) || { level: 1 }).level}).`;
+  const cap = fleetCap(fl);
+  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;
   if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
   ship.fleetId = fl.id;
@@ -8060,7 +8149,7 @@ function captureSettlement(s, faction) {
   s.restart = campaign.day + SIEGE.restartDays;
   s.queue = []; s.yard = []; delete s.upgrade; delete s.offers;
   s.wallHp = Math.max(0.25, s.wallHp || 0); s.keepHp = Math.max(0.25, s.keepHp || 0);
-  if (faction === campaign.faction) s.plunder = campaign.day + SIEGE.plunderDays; else delete s.plunder;
+  if (faction === campaign.faction) { s.plunder = campaign.day + SIEGE.plunderDays; gaXpFor('capture', s.type); } else delete s.plunder;
   // Garrison ships of the old owner that didn't fight here are lost with it.
   const rng = makeRng(campaign.seed + campaign.day * 5 + s.x);
   for (const sh of campaign.ships.filter((q) => q.garrison === s.id)) removeShip(sh, rng);
@@ -8397,7 +8486,7 @@ function fleetPath(w, domain, x0, y0, x1, y1) {
 // `campaign` is the whole running campaign as plain JSON-safe data (design/04 §7); the terrain
 // comes from its seed (`world`). Saved to irondoctrine.campaign.slot1.
 
-const CAMPAIGN_VERSION = 2;
+const CAMPAIGN_VERSION = 3;
 const CAMPAIGN_KEY = 'irondoctrine.campaign.slot1';
 let campaign = null;
 let world = null;
@@ -8444,6 +8533,10 @@ function migrateCampaign(c, v) {
     }
     for (const fl of c.fleets) fl.hold = Object.assign(emptyCargo(), fl.hold || {});
     c.unpaid = 0;
+  }
+  if (v < 3) {
+    // v3 (Part 5a): the tech tree. Tier 1 parts were free before it, so their nodes are known.
+    c.tech = { known: TECH.filter((n) => n.tier === 1).map((n) => n.id), perks: [], job: null };
   }
   c.v = CAMPAIGN_VERSION;
 }
@@ -8529,6 +8622,7 @@ function newCampaign(factionId, seed) {
   const home = world.settlements.find((s) => s.faction === factionId && s.capital);
   if (home) Object.assign(home.store, HOME_STORE);
   campaign.wrecks = []; campaign.unlocked = [];
+  campaign.tech = { known: [], perks: [], job: null };
   makeScrapFields(makeRng(seed + 11));
   const rng = makeRng(seed + 7);
   // Relations: the player is at war with the two nearest factions and in truce with the others;
@@ -8576,6 +8670,7 @@ function fleetSpeed(fl) {
   if (!Number.isFinite(v)) return 0;
   v *= MARCH;
   if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
+  if (fl.convoy && fl.faction === campaign.faction && perk('quartermaster_corps')) v *= 1.2;
   return v;
 }
 // Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
@@ -8583,6 +8678,7 @@ function fleetBurn(fl) {
   let b = 0;
   for (const s of fleetShips(fl)) b += shipStats(s).burn;
   if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
+  if (fl.faction === campaign.faction && perk('frugal_engines')) b *= 0.9;
   return b;
 }
 function fleetFuel(fl) {
@@ -8722,8 +8818,10 @@ function marketPrice(s, good, faction) {
   if (faction === 'league' && rel === 'own') p *= 0.85;
   return p;
 }
-const buyPrice = (s, good, faction) => (SELL_ONLY[good] ? null : marketPrice(s, good, faction));
-const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : SELL_ONLY[good] ? b : b * SELL_SHARE; };
+// Merchant charter (08 §12): your buy prices −8%, sell prices +8%.
+const charter = (faction, k) => (faction === campaign.faction && perk('merchant_charter') ? k : 1);
+const buyPrice = (s, good, faction) => (SELL_ONLY[good] ? null : marketPrice(s, good, faction) === null ? null : marketPrice(s, good, faction) * charter(faction, 0.92));
+const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : (SELL_ONLY[good] ? b : b * SELL_SHARE) * charter(faction, 1.08); };
 
 // Forts and citadels cost upkeep; unpaid, their services stop (01 §8.5).
 const servicesStopped = (s) => campaign.unpaid > 0 && SETTLEMENT_TYPES[s.type].money < 0;
@@ -8747,7 +8845,9 @@ function shipAmmoFull(ship) {
 function holdCap(fl) {
   let kg = 0;
   for (const s of fleetShips(fl)) for (const c of shipDesign(s).cells) kg += PARTS[c.p].cargo || 0;
-  return kg / 100;
+  // Deep holds +10%; Quartermaster corps +10% for convoys (08 §12).
+  const mine = fl.faction === campaign.faction;
+  return (kg / 100) * (mine && perk('deep_holds') ? 1.1 : 1) * (mine && fl.convoy && perk('quartermaster_corps') ? 1.1 : 1);
 }
 const holdUsed = (fl) => cargoUsed(fl.hold);
 const storeCap = (s) => SETTLEMENT_TYPES[s.type].store;
@@ -8844,7 +8944,7 @@ function production(s) {
   if (B.scrap) out.scrap = B.scrap;
   return out;
 }
-const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1); };
+const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1) * (m > 0 && s.faction === campaign.faction && perk('tax_reform') ? 1.15 : 1); };
 
 // ---------- upgrades (08 §7)
 const upgradesFor = (s) => UPGRADES.filter((u) => u.from === s.type);
@@ -8889,6 +8989,7 @@ function dailyEconomy() {
     if (s.keepHp !== undefined && s.keepHp < 1) s.keepHp = Math.min(1, s.keepHp + SIEGE.wallRepair);
     if (s.plunder >= campaign.day && s.faction === campaign.faction) income += plunderValue(s);
   }
+  researchDay(news);
   for (const o of campaign.officers) {
     if (!o.alive || o.faction !== campaign.faction) continue;
     if (o.rank === 'captain') wages += WAGES.captain * o.level;
@@ -8923,12 +9024,14 @@ function dailyEconomy() {
 // (ships, repairs, refits); only the first job in each queue advances.
 
 // ---------- what can be made where
-// Until the tech tree (Part 5), tier 0–1 parts count as researched; reverse-engineered
-// families (campaign.unlocked) also count.
+// Tier 0 parts are known from the start; the rest need their tech node (Part 5a, 15f) or a
+// reverse-engineered family (campaign.unlocked).
 const partUnlocked = (id) => {
-  if (PARTS[id].tier <= 1) return true;
-  const lib = PART_LIBRARY.parts[id], known = campaign.unlocked || [];
-  return known.includes(id) || (!!lib && known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family));
+  const lib = PART_LIBRARY.parts[id];
+  if (!lib || PARTS[id].tier <= 0) return true;
+  if (lib.unlock && lib.unlock.tech && techKnown(lib.unlock.tech)) return true;
+  const known = campaign.unlocked || [];
+  return known.includes(id) || known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family);
 };
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
 // City: tier 0–2 parts marked for cities; metropolis: everything.
@@ -8958,7 +9061,7 @@ function withFee(cost) {
   cost.money = (cost.money || 0) + value * CRAFT_FEE;
   return cost;
 }
-const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1); };
+const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1) * (perk('master_crafters') ? 0.75 : 1); };
 function costText(c) {
   const parts = GOODS.filter((g) => c[g] > 0.005).map((g) => `${GOOD_NAMES[g].toLowerCase()} ${+c[g].toFixed(1)}`);
   if (c.money > 0.5) parts.push(`money ${Math.ceil(c.money)}`);
@@ -9034,7 +9137,7 @@ function craft(s, id) {
   (s.queue = s.queue || []).push({ kind: 'part', p: id, hours: q.hours, left: q.hours });
   return '';
 }
-const refineRate = (s) => REFINE[s.type] || null;
+const refineRate = (s) => (REFINE[s.type] ? { scrap: REFINE[s.type].scrap - (perk('refinery_knowhow') ? 1 : 0), hours: REFINE[s.type].hours } : null);
 function refine(s, n) {
   const R = refineRate(s);
   const why = servicesBlock(s) || (!R ? 'No refinery here.' : '');
@@ -9169,7 +9272,7 @@ function jobName(j) {
 function finishJob(s, j, rng) {
   if (j.kind === 'part') { itemsAt(s.store).push({ p: j.p, cond: 1 }); return `${s.name}: ${PARTS[j.p].name} made.`; }
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
-  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
+  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
     sh.garrison = s.id;
@@ -9210,7 +9313,7 @@ function repairBays(fl) {
 function fieldRepair(fl, dt) {
   const bays = repairBays(fl);
   if (!bays) return;
-  let hp = FIELD_REPAIR_HP * dt * bays;
+  let hp = FIELD_REPAIR_HP * dt * bays * (fl.faction === campaign.faction && perk('field_engineers') ? 1.3 : 1);
   for (const sh of fleetShips(fl)) {
     if (!sh.hp) continue;
     const cells = shipDesign(sh).cells;
@@ -9475,7 +9578,9 @@ function salvageRates(ships) {
   for (const sh of ships) for (const c of shipDesign(sh).cells) if (PARTS[c.p].salvage || c.p === 'crane') cranes++;
   cranes = Math.min(SALVAGE.maxCranes, cranes);
   const clan = campaign.faction === 'clans' ? SALVAGE.clans : 1;
-  return { part: (SALVAGE.part + cranes * SALVAGE.crane) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan };
+  // Scavengers (08 §12): +4% part chance, +20% scrap.
+  const sc = perk('scavengers');
+  return { part: (SALVAGE.part + cranes * SALVAGE.crane + (sc ? 0.04 : 0)) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan * (sc ? 1.2 : 1) };
 }
 // wrecks: [{ design, own }] of ships destroyed. Returns { scrap, items }.
 function salvageFrom(wrecks, winners, rng) {
@@ -9695,11 +9800,163 @@ function stepConvoys(dt) {
       }
       if (!T.shipIds) fl.docked = T.id;
       convoyDeliver(fl, T);
+      if (fl.faction === campaign.faction) gaXpFor('convoy');
       r.trips++;
       r.step = 'toA';
     }
   }
   return news;
+}
+
+/* ---------- 15f_research.js ---------- */
+/* ==== 15f RESEARCH, PERKS AND RANKS ==== */
+// The tech tree, perks and Command Points (design/01 §12, design/08 §10–12).
+// The Grand Admiral earns 2 CP per level from level 2. A node costs CP, money from the
+// treasury, and electronics and scrap from the warehouse of the city or metropolis doing the
+// research, and takes days; one research job runs at a time. A finished node unlocks its parts
+// for the workshops, yards and the campaign Drafting Office. Perks cost CP only and act at once.
+// The whole tree costs about 160 CP against 58 at level 30, so choosing is unavoidable.
+
+const TECH_BY_ID = Object.fromEntries(TECH.map((n) => [n.id, n]));
+const PERK_BY_ID = Object.fromEntries(PERKS.map((p) => [p.id, p]));
+
+function techState() {
+  if (!campaign.tech) campaign.tech = { known: [], perks: [], job: null };
+  return campaign.tech;
+}
+const techKnown = (id) => techState().known.includes(id);
+const perk = (id) => !!campaign && !!campaign.tech && campaign.tech.perks.includes(id);
+const grandAdmiral = () => byId('officers', campaign.ga);
+
+// Command Points: earned, spent (known nodes, the node being researched, perks), free.
+function cpEarned() { const ga = grandAdmiral(); return ga ? CP_PER_LEVEL * (ga.level - 1) : 0; }
+function nodeCp(n) {
+  const mod = TECH_FACTION_CP[campaign.faction] || {};
+  let cp = TECH_TIERS[n.tier].cp + (mod[n.id] || 0);
+  if (mod.tier4Energy && n.tier === 4 && n.branch === 'Energy') cp = Math.round(cp * mod.tier4Energy);
+  return Math.max(1, cp);
+}
+function cpSpent() {
+  const t = techState();
+  let cp = 0;
+  for (const id of t.known) if (TECH_BY_ID[id]) cp += nodeCp(TECH_BY_ID[id]);
+  if (t.job) cp += nodeCp(TECH_BY_ID[t.job.node]);
+  for (const id of t.perks) if (PERK_BY_ID[id]) cp += PERK_BY_ID[id].cp;
+  return cp;
+}
+const cpFree = () => cpEarned() - cpSpent();
+
+// The library parts a node unlocks.
+function nodeParts(id) {
+  return Object.values(PART_LIBRARY.parts).filter((P) => P.unlock && P.unlock.tech === id).map((P) => P.id);
+}
+
+// 'known', 'researching', 'ready' (prerequisites met) or 'locked'.
+function nodeStatus(n) {
+  const t = techState();
+  if (t.known.includes(n.id)) return 'known';
+  if (t.job && t.job.node === n.id) return 'researching';
+  return n.needs.every(techKnown) ? 'ready' : 'locked';
+}
+
+// Where a tier can be researched: cities and metropolises for T1–T2, metropolises for T3–T4.
+// The Lumen Collective research every tier at their cities (09).
+function researchPlaces(n) {
+  const metro = TECH_TIERS[n.tier].at === 'metropolis' && campaign.faction !== 'lumen';
+  return world.settlements.filter((s) => s.faction === campaign.faction && (s.type === 'metropolis' || (!metro && s.type === 'city')));
+}
+
+// Why node n can't be researched at settlement s now, or ''.
+function researchBlock(n, s) {
+  const t = techState(), T = TECH_TIERS[n.tier];
+  if (t.known.includes(n.id)) return 'Already known.';
+  if (t.job) return `${TECH_BY_ID[t.job.node].name} is being researched.`;
+  const missing = n.needs.filter((id) => !techKnown(id));
+  if (missing.length) return `Needs ${missing.map((id) => TECH_BY_ID[id].name).join(' and ')}.`;
+  if (cpFree() < nodeCp(n)) return `Needs ${nodeCp(n)} Command Points; ${cpFree()} free.`;
+  if (!s) return T.at === 'metropolis' ? 'Needs one of your metropolises.' : 'Needs one of your cities or metropolises.';
+  if (!researchPlaces(n).includes(s)) return `${s.name} can’t research tier ${n.tier}.`;
+  if (campaign.treasury < T.money) return `Needs ${T.money} money; the treasury holds ${Math.round(campaign.treasury)}.`;
+  if ((s.store.elec || 0) < T.elec) return `Needs ${T.elec} electronics in ${s.name}’s warehouse; it holds ${Math.floor(s.store.elec || 0)}.`;
+  if ((s.store.scrap || 0) < T.scrap) return `Needs ${T.scrap} scrap in ${s.name}’s warehouse; it holds ${Math.floor(s.store.scrap || 0)}.`;
+  return '';
+}
+
+function startResearch(n, s) {
+  const why = researchBlock(n, s);
+  if (why) return why;
+  const T = TECH_TIERS[n.tier];
+  campaign.treasury -= T.money;
+  s.store.elec -= T.elec;
+  s.store.scrap -= T.scrap;
+  techState().job = { node: n.id, at: s.id, daysLeft: T.days };
+  campaign.journal.push(`Day ${campaign.day}: research on ${n.name} began at ${s.name}.`);
+  return '';
+}
+
+// Once a day (from dailyEconomy): the research job moves on. If the settlement is lost the job
+// stops; its Command Points come back, the money and goods don't.
+function researchDay(news) {
+  const t = techState();
+  if (!t.job) return;
+  const s = world.settlements.find((q) => q.id === t.job.at);
+  const n = TECH_BY_ID[t.job.node];
+  if (!s || s.faction !== campaign.faction) {
+    t.job = null;
+    news.push(`Research on ${n.name} stopped: ${s ? s.name : 'the settlement'} was lost.`);
+    return;
+  }
+  if (--t.job.daysLeft > 0) return;
+  t.job = null;
+  t.known.push(n.id);
+  const parts = nodeParts(n.id).map((id) => PARTS[id] && PARTS[id].name).filter(Boolean);
+  news.push(`Research complete: ${n.name}${parts.length ? ` (${parts.join(', ')})` : ''}.`);
+  campaign.journal.push(`Day ${campaign.day}: research complete: ${n.name}.`);
+}
+
+function buyPerk(id) {
+  const P = PERK_BY_ID[id], t = techState();
+  if (!P) return 'Unknown perk.';
+  if (t.perks.includes(id)) return 'Already taken.';
+  if (cpFree() < P.cp) return `Needs ${P.cp} Command Points; ${cpFree()} free.`;
+  t.perks.push(id);
+  campaign.journal.push(`Day ${campaign.day}: perk taken: ${P.name}.`);
+  return '';
+}
+
+// ---------- ranks (08 §10)
+// Grand Admiral: fleet size and flagship class as for an admiral of level min(10, ⌈L ÷ 3⌉).
+function commandLevel(o) { return !o ? 1 : o.rank === 'grand' ? Math.min(10, Math.ceil(o.level / 3)) : o.level; }
+// Ships a fleet may hold: by its commander's level, plus perks for your own fleets.
+function fleetCap(fl) {
+  const o = fleetAdmiral(fl);
+  let cap = FLEET_SIZE[Math.min(9, commandLevel(o) - 1)];
+  if (fl.faction === campaign.faction && o) {
+    if (o.rank === 'grand' && perk('wider_command')) cap += 2;
+    if (o.rank === 'admiral' && perk('second_in_command')) cap += 1;
+  }
+  return cap;
+}
+
+// Captain skill in battle (08 §10): +2% accuracy and −3% reaction time per level above 1, and
+// your perks. Called once for each ship as it enters a campaign battle.
+function applyCaptain(V) {
+  const id = V.design && V.design._shipId;
+  if (!id || !campaign || !V.ai) return;
+  const ship = byId('ships', id);
+  const cap = ship && byId('officers', ship.captainId);
+  const L = cap ? cap.level : 1;
+  V.ai.accuracy *= 1 + CAPTAIN_ACC_PER_LEVEL * (L - 1) + (ship && ship.faction === campaign.faction && perk('veteran_eye') ? 0.05 : 0);
+  V.ai.reaction *= Math.max(0.4, 1 - CAPTAIN_REACT_PER_LEVEL * (L - 1)) * (ship && ship.faction === campaign.faction && perk('iron_discipline') ? 0.8 : 1);
+  V.captainLevel = L;
+}
+
+// Grand Admiral XP from outside battle (08 §10): captures, convoy deliveries, reverse-engineering.
+function gaXpFor(kind, arg) {
+  const ga = grandAdmiral();
+  if (!ga) return;
+  const xp = kind === 'capture' ? GA_XP.capture[arg] || 0 : GA_XP[kind] || 0;
+  if (xp) gainXp(ga, xp);
 }
 
 /* ---------- 15z_campaign_checks.js ---------- */
@@ -11091,6 +11348,8 @@ SCREENS.designer = {
 
   // arg: { design, base } to edit, { restore } to come back from a test drive, or nothing for a scratch build.
   enter(arg = {}) {
+    // Opened from the campaign (Research card): researched parts only (design/02 §6, Part 5a).
+    if (!arg.restore) { this.lockParts = !!this.campaignParts && !!campaign; this.campaignParts = false; }
     if (arg.restore) this.st = arg.restore;
     else this.load(arg.design || this.scratch(), arg.base || null, arg.owned !== false && !!arg.design);
     this.build();
@@ -11142,6 +11401,7 @@ SCREENS.designer = {
   // Why a part can't go at (x, y), or '' if it can. ignore = index of a part being moved.
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
+    if (this.lockParts && !partUnlocked(id)) { const t = PART_LIBRARY.parts[id] && PART_LIBRARY.parts[id].unlock; return `${P.name} is not researched${t && t.tech && TECH_BY_ID[t.tech] ? ` (${TECH_BY_ID[t.tech].name})` : ''}.`; }
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
     // The class part limit (structure cells don't count).
     const cls = classById(this.st.cls);
@@ -11353,7 +11613,7 @@ SCREENS.designer = {
     list.textContent = '';
     for (const t of this.palette.querySelectorAll('.dz-tab')) t.setAttribute('aria-selected', String(t.dataset.cat === this.st.cat));
     for (const P of Object.values(PARTS)) {
-      if (P.cat !== this.st.cat) continue;
+      if (P.cat !== this.st.cat || (this.lockParts && !partUnlocked(P.id))) continue;
       const b = el('button', 'dz-part');
       b.type = 'button';
       b.dataset.part = P.id;
@@ -11565,6 +11825,7 @@ SCREENS.designer = {
 
   // Requisition to build: the price difference from a design you already own, or the full cost.
   buildCost() {
+    if (this.lockParts) return 0;          // campaign designs are paid for in the yard, not in Requisition
     const now = costOf(this.st.d);
     const before = this.st.baseOwned ? costOf(this.st.base) : 0;
     return Math.max(0, now - before);
@@ -12183,6 +12444,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
     r.appendChild(top);
@@ -12362,7 +12624,7 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
-        row('Fleet size', `${fl.shipIds.length} of ${FLEET_SIZE[Math.min(9, lvl - 1)]}`);
+        row('Fleet size', `${fl.shipIds.length} of ${fleetCap(fl)}`);
       }
       P.appendChild(body);
       return;
@@ -12393,7 +12655,7 @@ SCREENS.map = {
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
-        const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
+        const room = fleetCap(fl) - fl.shipIds.length;
         for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
@@ -13116,6 +13378,130 @@ Object.assign(SCREENS.map, {
     });
   },
 });
+
+/* ---------- 16l_screen_research.js ---------- */
+/* ==== 16l RESEARCH AND PERKS ==== */
+// The Research card on the campaign map (design/02 §7): the Grand Admiral card (level, XP,
+// Command Points), the tech tree with branches left to right and tiers top to bottom, the perk
+// list, and the campaign Drafting Office, which offers researched parts only. Numbers only.
+
+function openResearch(tab = 'tech') {
+  const wasRunning = campaign.running;
+  campaign.running = false;                    // the clock waits while you choose
+  const c = ui.card('', 'card-research');
+  let close = null;
+  const draw = () => {
+    c.textContent = '';
+    const ga = grandAdmiral();
+    const head = el('div', 'rs-head');
+    head.appendChild(el('h2', 'card-title', 'Research'));
+    const next = ga && ga.level < 30 ? Math.round(150 * Math.pow(ga.level, 1.7)) : null;
+    head.appendChild(el('span', 'ws-fact', `Grand Admiral L${ga ? ga.level : 1}`));
+    head.appendChild(el('span', 'ws-fact', `XP ${ga ? Math.round(ga.xp) : 0}${next ? `/${next}` : ''}`));
+    head.appendChild(el('span', 'ws-fact', `CP ${cpFree()} free of ${cpEarned()}`));
+    c.appendChild(head);
+    const tabs = el('div', 'card-row rs-tabs');
+    for (const [id, label] of [['tech', 'Tech tree'], ['perks', 'Perks']]) tabs.appendChild(button(label, () => { tab = id; draw(); }, 'btn btn-small map-tab' + (tab === id ? ' on' : '')));
+    tabs.appendChild(button('Drafting Office', () => { close(); SCREENS.designer.returnTo = 'map'; SCREENS.designer.campaignParts = true; screens.go('designer'); }, 'btn btn-small'));
+    tabs.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
+    c.appendChild(tabs);
+    const job = techState().job;
+    if (job) c.appendChild(el('p', 'card-text rs-job', `Researching ${TECH_BY_ID[job.node].name} at ${(world.settlements.find((s) => s.id === job.at) || { name: '?' }).name}: ${job.daysLeft} day${job.daysLeft === 1 ? '' : 's'} left.`));
+    c.appendChild(tab === 'tech' ? techGrid(draw) : perkList(draw));
+  };
+  draw();
+  close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
+}
+
+// Branches as columns, tiers as rows; each node a button showing its state and CP.
+function techGrid(redraw) {
+  const box = el('div', 'rs-tree');
+  box.appendChild(el('div', 'rs-corner'));
+  for (const b of TECH_BRANCHES) box.appendChild(el('div', 'rs-branch', b));
+  for (let tier = 1; tier <= 4; tier++) {
+    const T = TECH_TIERS[tier];
+    box.appendChild(el('div', 'rs-tier', `T${tier} · ${T.days} d · ${T.at === 'metropolis' ? 'metropolis' : 'city'}`));
+    for (const b of TECH_BRANCHES) {
+      const cell = el('div', 'rs-cell');
+      for (const n of TECH.filter((q) => q.branch === b && q.tier === tier)) {
+        const st = nodeStatus(n);
+        const nb = button('', () => techCard(n, redraw), `rs-node rs-${st}`);
+        nb.dataset.node = n.id;
+        nb.appendChild(el('b', '', n.name));
+        nb.appendChild(el('small', '', st === 'known' ? 'Known' : st === 'researching' ? 'Researching' : `${nodeCp(n)} CP`));
+        cell.appendChild(nb);
+      }
+      box.appendChild(cell);
+    }
+  }
+  return box;
+}
+
+// One node: what it unlocks, its costs, prerequisites, and a research button per place.
+function techCard(n, redraw) {
+  const T = TECH_TIERS[n.tier];
+  const c = ui.card(n.name, 'card-scroll');
+  let close = null;
+  const facts = el('div', 'result-facts');
+  const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+  row('Tier', n.tier);
+  row('Command Points', nodeCp(n));
+  row('Money', T.money);
+  if (T.elec) row('Electronics (warehouse)', T.elec);
+  if (T.scrap) row('Scrap (warehouse)', T.scrap);
+  row('Days', T.days);
+  row('Needs', n.needs.length ? n.needs.map((id) => `${TECH_BY_ID[id].name}${techKnown(id) ? ' (known)' : ''}`).join(', ') : '—');
+  const parts = nodeParts(n.id).map((id) => PARTS[id].name);
+  row('Unlocks', parts.length ? parts.join(', ') : n.later ? `${n.later} (not in the game yet)` : '—');
+  c.appendChild(facts);
+  const col = el('div', 'card-col');
+  const st = nodeStatus(n);
+  if (st === 'known' || st === 'researching') col.appendChild(el('p', 'card-text', st === 'known' ? 'Known.' : 'Being researched.'));
+  else {
+    const places = researchPlaces(n);
+    const first = researchBlock(n, null);
+    if (first && !/^Needs one of/.test(first)) col.appendChild(el('p', 'card-text bad', first));
+    else if (!places.length) col.appendChild(el('p', 'card-text bad', researchBlock(n, null)));
+    for (const s of places) {
+      const why = researchBlock(n, s);
+      const b = button(`Research at ${s.name}`, () => {
+        const w = startResearch(n, s);
+        if (w) { ui.toast(w); return; }
+        audio.sfx('medal');
+        ui.toast(`Research on ${n.name} began at ${s.name}.`);
+        close(); redraw();
+      }, why ? 'btn' : 'btn btn-primary');
+      if (why) { b.disabled = true; col.appendChild(b); col.appendChild(el('small', 'rs-why', why)); } else col.appendChild(b);
+    }
+  }
+  col.appendChild(button('Close', () => close(), 'btn', 'back'));
+  c.appendChild(col);
+  close = ui.open(c);
+}
+
+function perkList(redraw) {
+  const box = el('div', 'rs-perks');
+  for (const group of ['Command', 'Logistics', 'Engineering', 'Trade']) {
+    box.appendChild(el('div', 'rs-branch', group));
+    for (const P of PERKS.filter((q) => q.group === group)) {
+      const has = techState().perks.includes(P.id);
+      const r = el('div', 'rs-perk' + (has ? ' on' : ''));
+      const t = el('div', 'rs-perk-txt');
+      t.appendChild(el('b', '', `${P.name} · ${P.cp} CP`));
+      t.appendChild(el('small', '', P.text));
+      r.appendChild(t);
+      if (has) r.appendChild(el('span', 'ws-fact', 'Taken'));
+      else {
+        const b = button('Take', () => { const why = buyPerk(P.id); if (why) ui.toast(why); else { audio.sfx('medal'); redraw(); } }, 'btn btn-small');
+        b.dataset.perk = P.id;
+        if (cpFree() < P.cp) b.disabled = true;
+        r.appendChild(b);
+      }
+      box.appendChild(r);
+    }
+  }
+  return box;
+}
 
 /* ---------- 17_main.js ---------- */
 /* ==== 17 MAIN ==== */

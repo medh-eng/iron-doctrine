@@ -43,6 +43,8 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 13_autoresolve.js      campaign battles: battlefield, sides, headless auto-resolve, results, retreat, garrisons
 14_world.js            world generation (terrain, settlements, roads, territory), path finding
 14b_command.js         campaign state and saves, officers, ships, fleets, movement, fuel, weather
+15f_research.js        tech tree, research jobs, Command Points, perks, fleet caps, captain skill (Part 5a)
+16l_screen_research.js the Research and perks card
 15_economy.js          treasury, fuel and ammo markets, refuel and rearm, fleet holds, daily income and wages
 15c_factions.js        the clock, fog of war, contacts, the factions' strategic AI
 16h_screen_map.js      the world map screen, panels and the pre-battle card

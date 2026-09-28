@@ -387,6 +387,90 @@ const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0
 // XP (08 §10).
 const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
 const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+
+// ---------- the tech tree and perks (design/08 §11–12, Part 5a)
+// Research costs per tier: Command Points, money (treasury), electronics and scrap (from the
+// warehouse of the settlement doing the research), days; and where it can be done.
+const TECH_TIERS = {
+  1: { cp: 2, money: 400, elec: 0, scrap: 0, days: 2, at: 'city' },
+  2: { cp: 3, money: 1200, elec: 10, scrap: 0, days: 4, at: 'city' },
+  3: { cp: 4, money: 3000, elec: 40, scrap: 0, days: 6, at: 'metropolis' },
+  4: { cp: 6, money: 6000, elec: 100, scrap: 50, days: 10, at: 'metropolis' },
+};
+const CP_PER_LEVEL = 2;          // Grand Admiral: +2 CP per level from level 2 (58 by level 30)
+// Nodes: id, name, branch, tier, prerequisites (all needed), and what arrives later (for nodes
+// whose parts aren't in the game yet). A node's parts are the library parts whose unlock.tech names it.
+const TECH_BRANCHES = ['Hulls', 'Lift', 'Propulsion', 'Guns', 'Sea', 'Air', 'Missiles and drones', 'Energy', 'Systems', 'Logistics'];
+const TECH = [
+  ['hull_iron', 'Iron hulls', 'Hulls', 1, []],
+  ['hull_heavy', 'Heavy armour', 'Hulls', 2, ['hull_iron']],
+  ['hull_advanced', 'Composite and alloy hulls', 'Hulls', 3, ['hull_heavy'], 'Composite and alloy materials'],
+  ['hull_precursor', 'Precursor plating', 'Hulls', 4, ['hull_advanced'], 'Precursor plating'],
+  ['lift_rigid', 'Rigid envelopes', 'Lift', 1, []],
+  ['lift_engines', 'Lift engines', 'Lift', 2, ['lift_rigid']],
+  ['lift_armoured', 'Armoured envelopes', 'Lift', 3, ['lift_engines'], 'Armoured envelopes'],
+  ['lift_levitator', 'Levitators', 'Lift', 4, ['lift_armoured'], 'Levitators'],
+  ['prop_petrol', 'Petrol engines', 'Propulsion', 1, []],
+  ['prop_diesel', 'Diesels and tracks', 'Propulsion', 1, []],
+  ['prop_heavy', 'Heavy and marine diesels', 'Propulsion', 2, ['prop_diesel']],
+  ['prop_turbine', 'Gas turbines', 'Propulsion', 2, ['prop_diesel']],
+  ['prop_reactor', 'Reactors', 'Propulsion', 4, ['prop_turbine', 'hull_advanced'], 'Reactors'],
+  ['guns_medium', 'Medium guns', 'Guns', 1, []],
+  ['guns_heavy', 'Heavy guns', 'Guns', 2, ['guns_medium']],
+  ['flame', 'Flamethrowers', 'Guns', 2, ['guns_medium'], 'Flamethrowers'],
+  ['rockets', 'Rockets', 'Guns', 2, ['guns_medium']],
+  ['guns_super', 'Super-heavy guns', 'Guns', 3, ['guns_heavy'], 'The 203 mm gun'],
+  ['submarines', 'Submarines', 'Sea', 2, ['hull_iron']],
+  ['sonar', 'Sonar and depth charges', 'Sea', 2, ['radio']],
+  ['carriers', 'Carriers', 'Sea', 3, ['aviation', 'hull_heavy'], 'Aircraft hangars'],
+  ['aviation', 'Aviation', 'Air', 2, ['prop_petrol']],
+  ['rotorcraft', 'Rotorcraft', 'Air', 2, ['aviation']],
+  ['jets', 'Jets', 'Air', 3, ['aviation', 'prop_turbine']],
+  ['missiles', 'Missiles', 'Missiles and drones', 3, ['rockets']],
+  ['warheads_special', 'Napalm and acid warheads', 'Missiles and drones', 3, ['missiles'], 'Napalm and acid warheads'],
+  ['drones', 'Drones', 'Missiles and drones', 3, ['radio'], 'Drone computers, hangars and parts'],
+  ['drones_2', 'Drones II', 'Missiles and drones', 3, ['drones'], 'Larger drone computers'],
+  ['fabricators', 'Fabricators', 'Missiles and drones', 3, ['workshop'], 'Fabricators'],
+  ['detachment', 'Detachable sections', 'Missiles and drones', 3, ['hull_advanced'], 'Release clamps'],
+  ['warheads_emp', 'EMP and cluster warheads', 'Missiles and drones', 4, ['warheads_special'], 'EMP and cluster warheads'],
+  ['drones_3', 'Drones III', 'Missiles and drones', 4, ['drones_2'], 'The largest drone computers'],
+  ['lasers', 'Lasers', 'Energy', 4, ['fire_control', 'hull_advanced'], 'Lasers, capacitors, laser seekers'],
+  ['plasma', 'Plasma', 'Energy', 4, ['lasers'], 'Plasma weapons'],
+  ['energy_heavy', 'Heavy energy weapons', 'Energy', 4, ['plasma'], 'Heavy lasers and plasma lances'],
+  ['radio', 'Radio', 'Systems', 1, []],
+  ['fire_control', 'Fire control', 'Systems', 1, []],
+  ['flares', 'Flares', 'Systems', 1, [], 'Flare launchers'],
+  ['radar', 'Radar', 'Systems', 2, ['radio']],
+  ['stabiliser', 'Stabilisers', 'Systems', 2, ['fire_control']],
+  ['workshop', 'Field workshops', 'Systems', 2, ['repair_bay'], 'Workshop parts'],
+  ['ecm', 'ECM', 'Systems', 3, ['radar']],
+  ['cargo_2', 'Better stores', 'Logistics', 1, []],
+  ['repair_bay', 'Repair bays', 'Logistics', 1, []],
+  ['salvage', 'Salvage gear', 'Logistics', 1, []],
+].map(([id, name, branch, tier, needs, later]) => ({ id, name, branch, tier, needs, later: later || '' }));
+// Faction research modifiers (09): Command Point discounts on nodes.
+const TECH_FACTION_CP = { directorate: { guns_heavy: -1 }, lumen: { tier4Energy: 0.7 } };
+// Perks (08 §12): bought with Command Points, active at once.
+const PERKS = [
+  ['veteran_eye', 'Veteran eye', 'Command', 1, '+5% accuracy for all your captains'],
+  ['quick_rotation', 'Quick rotation', 'Command', 2, 'Pull-back and reserve entry times −40%'],
+  ['iron_discipline', 'Iron discipline', 'Command', 2, 'AI captains react 20% faster'],
+  ['wider_command', 'Wider command', 'Command', 3, 'Grand Admiral fleet size +2'],
+  ['second_in_command', 'Second in command', 'Command', 3, 'Admirals’ fleet size +1'],
+  ['deep_holds', 'Deep holds', 'Logistics', 1, 'Cargo capacity +10%'],
+  ['frugal_engines', 'Frugal engines', 'Logistics', 2, 'Map fuel use −10%'],
+  ['scavengers', 'Scavengers', 'Logistics', 2, 'Salvage chance +4%, scrap +20%'],
+  ['quartermaster_corps', 'Quartermaster corps', 'Logistics', 2, 'Convoys +20% speed, +10% cargo'],
+  ['field_engineers', 'Field engineers', 'Engineering', 1, 'Field repair +30%'],
+  ['master_crafters', 'Master crafters', 'Engineering', 2, 'Crafting time −25%'],
+  ['refinery_knowhow', 'Refinery know-how', 'Engineering', 2, 'Refining needs 1 less scrap'],
+  ['merchant_charter', 'Merchant charter', 'Trade', 2, 'Buy prices −8%, sell prices +8%'],
+  ['tax_reform', 'Tax reform', 'Trade', 3, 'Settlement money +15%'],
+].map(([id, name, group, cp, text]) => ({ id, name, group, cp, text }));
+// Officer levels in battle (08 §10): per level above 1.
+const CAPTAIN_ACC_PER_LEVEL = 0.02, CAPTAIN_REACT_PER_LEVEL = 0.03, CAPTAIN_REPAIR_PER_LEVEL = 0.01;
+// Grand Admiral XP (08 §10) besides battles.
+const GA_XP = { capture: { village: 100, fort: 250, city: 300, citadel: 700, metropolis: 800 }, convoy: 20, reverse: 50 };
 // Starting fleets (01 §4.3) until the faction designs of roster batch F arrive.
 const START_FLEETS = [
   { domain: 'land', ships: ['medium', 'light', 'scout'] },

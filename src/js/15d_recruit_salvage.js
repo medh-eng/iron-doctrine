@@ -101,7 +101,9 @@ function salvageRates(ships) {
   for (const sh of ships) for (const c of shipDesign(sh).cells) if (PARTS[c.p].salvage || c.p === 'crane') cranes++;
   cranes = Math.min(SALVAGE.maxCranes, cranes);
   const clan = campaign.faction === 'clans' ? SALVAGE.clans : 1;
-  return { part: (SALVAGE.part + cranes * SALVAGE.crane) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan };
+  // Scavengers (08 §12): +4% part chance, +20% scrap.
+  const sc = perk('scavengers');
+  return { part: (SALVAGE.part + cranes * SALVAGE.crane + (sc ? 0.04 : 0)) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan * (sc ? 1.2 : 1) };
 }
 // wrecks: [{ design, own }] of ships destroyed. Returns { scrap, items }.
 function salvageFrom(wrecks, winners, rng) {

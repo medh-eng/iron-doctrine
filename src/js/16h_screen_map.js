@@ -45,6 +45,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
     r.appendChild(top);
@@ -224,7 +225,7 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
-        row('Fleet size', `${fl.shipIds.length} of ${FLEET_SIZE[Math.min(9, lvl - 1)]}`);
+        row('Fleet size', `${fl.shipIds.length} of ${fleetCap(fl)}`);
       }
       P.appendChild(body);
       return;
@@ -255,7 +256,7 @@ SCREENS.map = {
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
-        const room = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)] - fl.shipIds.length;
+        const room = fleetCap(fl) - fl.shipIds.length;
         for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }

@@ -215,6 +215,7 @@ Only the services that type has are shown (01 §7.1).
   - Each node shows its unlocks, Command Point cost, money and electronics cost, where it can be researched, and research time.
 - **Perk tree:** 3 branches (Command, Logistics, Engineering), plus Trade.
 - **Grand Admiral card:** level, XP, and unspent Command Points.
+- **As built (v0.5.0):** the Research button in the map's top bar opens a card (the clock waits while it's open): Grand Admiral level, XP to the next level and Command Points free of earned; tabs Tech tree and Perks; a Drafting Office button. The tree scrolls both ways with branch and tier labels kept in view; a node shows its state (known, researching, or its CP). Tapping it lists tier, CP, money, electronics, scrap, days, prerequisites and unlocks, with a Research button for each of your cities or metropolises that can do it, or the reason it can't. The campaign Drafting Office palette shows researched parts only, and placing a locked part is refused with the node it needs.
 
 ## 8. Other screens
 

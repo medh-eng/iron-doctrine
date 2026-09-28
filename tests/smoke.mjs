@@ -686,7 +686,17 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         Q(sg.install === '' && sg.installed && sg.defend.side === 0 && sg.defend.empl && sg.defend.squad > 0, 'emplacements or defending wrong');
         Q(sg.held.owner === 'league' && sg.held.walls < 0.9 && sg.held.mended && sg.auto, 'a failed siege should leave mending walls');
         Q(sg.aiTarget && sg.aiSiege, 'the AI did not besiege a weak settlement');
-        E(ec.migrate.ok && ec.migrate.v === 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
+        // Part 5a: research, perks and ranks.
+        const rs = await G(() => window.__GAME__.researchCheck());
+        const RS = (c, what) => check(c, `${what} ${JSON.stringify(rs)}`);
+        RS(rs.cp1 === 0 && rs.noCp !== '' && rs.level === 4 && rs.cp4 === 6, 'Command Points from rank wrong');
+        RS(rs.lockedBefore && rs.craftBefore === 'Not researched.' && rs.heavyBlocked !== '' && rs.start === '' && rs.paid === 400 && rs.cpAfter === 4 && rs.busy !== '', 'starting research wrong');
+        RS(rs.known && rs.unlocked && rs.craftAfter !== 'Not researched.' && /not researched/.test(rs.designerLocked) && rs.designerOk === '', 'research did not unlock crafting and the Drafting Office');
+        RS(rs.treeCp > rs.maxCp * 2, 'the tech tree does not force choices');
+        RS(rs.perk === '' && rs.priceRatio === 0.92 && rs.wider !== '' && rs.gaCap === 4, 'perks or fleet size wrong');
+        RS(rs.acc === 1.08 && rs.react === 0.88 && rs.stopped && rs.captureXp === 300, 'captain skill, lost research or capture XP wrong');
+        steps.push('research and perks');
+        E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
       await wait(200);
@@ -700,6 +710,23 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
       await wait(500);
       await shot('23-world-map');
+      // Research and perks (Part 5a): the tech tree, a node card, the perk list.
+      await tapButton('Research');
+      await wait(200);
+      check((await page.locator('.rs-node').count()) === 45, 'the tech tree does not show 45 nodes');
+      await shot('23b-research');
+      await page.locator('.rs-node[data-node="guns_medium"]').click();
+      await wait(200);
+      check(/Needs 2 Command Points/.test(await page.locator('.card').last().textContent()), 'a node card did not explain the missing Command Points');
+      await shot('23c-research-node');
+      await page.locator('.card').last().getByRole('button', { name: 'Close', exact: true }).click();
+      await wait(150);
+      await tapButton('Perks');
+      await wait(150);
+      check((await page.locator('.rs-perk').count()) === 14, 'the perk list does not show 14 perks');
+      await shot('23d-perks');
+      await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
+      await wait(200);
       // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.
       const spot = await G(() => {
         const S = window.__GAME__.SCREENS.map, C = window.__GAME__.camp, fl = S.selFleet();

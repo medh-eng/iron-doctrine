@@ -238,8 +238,8 @@ function detachShip(fl, ship) {
 
 function pickUp(fl, ship) {
   if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
-  const cap = FLEET_SIZE[Math.min(9, (fleetAdmiral(fl) || { level: 1 }).level - 1)];
-  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships at admiral level ${(fleetAdmiral(fl) || { level: 1 }).level}).`;
+  const cap = fleetCap(fl);
+  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;
   if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
   ship.fleetId = fl.id;

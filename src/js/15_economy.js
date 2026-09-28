@@ -27,8 +27,10 @@ function marketPrice(s, good, faction) {
   if (faction === 'league' && rel === 'own') p *= 0.85;
   return p;
 }
-const buyPrice = (s, good, faction) => (SELL_ONLY[good] ? null : marketPrice(s, good, faction));
-const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : SELL_ONLY[good] ? b : b * SELL_SHARE; };
+// Merchant charter (08 §12): your buy prices −8%, sell prices +8%.
+const charter = (faction, k) => (faction === campaign.faction && perk('merchant_charter') ? k : 1);
+const buyPrice = (s, good, faction) => (SELL_ONLY[good] ? null : marketPrice(s, good, faction) === null ? null : marketPrice(s, good, faction) * charter(faction, 0.92));
+const sellPrice = (s, good, faction) => { const b = marketPrice(s, good, faction); return b === null ? null : (SELL_ONLY[good] ? b : b * SELL_SHARE) * charter(faction, 1.08); };
 
 // Forts and citadels cost upkeep; unpaid, their services stop (01 §8.5).
 const servicesStopped = (s) => campaign.unpaid > 0 && SETTLEMENT_TYPES[s.type].money < 0;
@@ -52,7 +54,9 @@ function shipAmmoFull(ship) {
 function holdCap(fl) {
   let kg = 0;
   for (const s of fleetShips(fl)) for (const c of shipDesign(s).cells) kg += PARTS[c.p].cargo || 0;
-  return kg / 100;
+  // Deep holds +10%; Quartermaster corps +10% for convoys (08 §12).
+  const mine = fl.faction === campaign.faction;
+  return (kg / 100) * (mine && perk('deep_holds') ? 1.1 : 1) * (mine && fl.convoy && perk('quartermaster_corps') ? 1.1 : 1);
 }
 const holdUsed = (fl) => cargoUsed(fl.hold);
 const storeCap = (s) => SETTLEMENT_TYPES[s.type].store;
@@ -149,7 +153,7 @@ function production(s) {
   if (B.scrap) out.scrap = B.scrap;
   return out;
 }
-const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1); };
+const settlementMoney = (s) => { const m = SETTLEMENT_TYPES[s.type].money; return m * (m > 0 && s.coastal ? COASTAL_MONEY : 1) * (m > 0 && s.faction === campaign.faction && perk('tax_reform') ? 1.15 : 1); };
 
 // ---------- upgrades (08 §7)
 const upgradesFor = (s) => UPGRADES.filter((u) => u.from === s.type);
@@ -194,6 +198,7 @@ function dailyEconomy() {
     if (s.keepHp !== undefined && s.keepHp < 1) s.keepHp = Math.min(1, s.keepHp + SIEGE.wallRepair);
     if (s.plunder >= campaign.day && s.faction === campaign.faction) income += plunderValue(s);
   }
+  researchDay(news);
   for (const o of campaign.officers) {
     if (!o.alive || o.faction !== campaign.faction) continue;
     if (o.rank === 'captain') wages += WAGES.captain * o.level;

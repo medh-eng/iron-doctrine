@@ -155,7 +155,7 @@ function captureSettlement(s, faction) {
   s.restart = campaign.day + SIEGE.restartDays;
   s.queue = []; s.yard = []; delete s.upgrade; delete s.offers;
   s.wallHp = Math.max(0.25, s.wallHp || 0); s.keepHp = Math.max(0.25, s.keepHp || 0);
-  if (faction === campaign.faction) s.plunder = campaign.day + SIEGE.plunderDays; else delete s.plunder;
+  if (faction === campaign.faction) { s.plunder = campaign.day + SIEGE.plunderDays; gaXpFor('capture', s.type); } else delete s.plunder;
   // Garrison ships of the old owner that didn't fight here are lost with it.
   const rng = makeRng(campaign.seed + campaign.day * 5 + s.x);
   for (const sh of campaign.ships.filter((q) => q.garrison === s.id)) removeShip(sh, rng);

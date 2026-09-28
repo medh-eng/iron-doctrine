@@ -5,12 +5,14 @@
 // (ships, repairs, refits); only the first job in each queue advances.
 
 // ---------- what can be made where
-// Until the tech tree (Part 5), tier 0–1 parts count as researched; reverse-engineered
-// families (campaign.unlocked) also count.
+// Tier 0 parts are known from the start; the rest need their tech node (Part 5a, 15f) or a
+// reverse-engineered family (campaign.unlocked).
 const partUnlocked = (id) => {
-  if (PARTS[id].tier <= 1) return true;
-  const lib = PART_LIBRARY.parts[id], known = campaign.unlocked || [];
-  return known.includes(id) || (!!lib && known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family));
+  const lib = PART_LIBRARY.parts[id];
+  if (!lib || PARTS[id].tier <= 0) return true;
+  if (lib.unlock && lib.unlock.tech && techKnown(lib.unlock.tech)) return true;
+  const known = campaign.unlocked || [];
+  return known.includes(id) || known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family);
 };
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
 // City: tier 0–2 parts marked for cities; metropolis: everything.
@@ -40,7 +42,7 @@ function withFee(cost) {
   cost.money = (cost.money || 0) + value * CRAFT_FEE;
   return cost;
 }
-const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1); };
+const craftHours = (s, id) => { const P = PARTS[id]; return (1 + P.mass / 250 + ((P.cost && P.cost.elec) || 0) * 0.3) * (s.type === 'metropolis' ? 0.75 : 1) * (perk('master_crafters') ? 0.75 : 1); };
 function costText(c) {
   const parts = GOODS.filter((g) => c[g] > 0.005).map((g) => `${GOOD_NAMES[g].toLowerCase()} ${+c[g].toFixed(1)}`);
   if (c.money > 0.5) parts.push(`money ${Math.ceil(c.money)}`);
@@ -116,7 +118,7 @@ function craft(s, id) {
   (s.queue = s.queue || []).push({ kind: 'part', p: id, hours: q.hours, left: q.hours });
   return '';
 }
-const refineRate = (s) => REFINE[s.type] || null;
+const refineRate = (s) => (REFINE[s.type] ? { scrap: REFINE[s.type].scrap - (perk('refinery_knowhow') ? 1 : 0), hours: REFINE[s.type].hours } : null);
 function refine(s, n) {
   const R = refineRate(s);
   const why = servicesBlock(s) || (!R ? 'No refinery here.' : '');
@@ -251,7 +253,7 @@ function jobName(j) {
 function finishJob(s, j, rng) {
   if (j.kind === 'part') { itemsAt(s.store).push({ p: j.p, cond: 1 }); return `${s.name}: ${PARTS[j.p].name} made.`; }
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
-  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
+  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
     sh.garrison = s.id;
@@ -292,7 +294,7 @@ function repairBays(fl) {
 function fieldRepair(fl, dt) {
   const bays = repairBays(fl);
   if (!bays) return;
-  let hp = FIELD_REPAIR_HP * dt * bays;
+  let hp = FIELD_REPAIR_HP * dt * bays * (fl.faction === campaign.faction && perk('field_engineers') ? 1.3 : 1);
   for (const sh of fleetShips(fl)) {
     if (!sh.hp) continue;
     const cells = shipDesign(sh).cells;

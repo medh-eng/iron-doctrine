@@ -12,6 +12,9 @@ const EDGE_EXIT = 6;              // metres from the rear edge at which a pullin
 const AIR_EXIT_SECS = 3;          // aircraft pulling back fly off after this long
 const ENEMY_PULL_HEALTH = 0.35;   // enemy captains pull back below this share of hit points
 
+// Quick rotation (08 §12): in campaign battles your reserves enter and aircraft leave 40% sooner.
+const quickRotation = (B, side) => (side === 0 && B.contact && perk('quick_rotation') ? 0.6 : 1);
+
 function vehicleHealth(V) {
   let hp = 0;
   for (const p of V.parts) if (p.alive) hp += p.hp;
@@ -84,12 +87,14 @@ function enterFromReserve(B, side, slot) {
     V = makeVehicle(e.design, 0, x, 1, B.T);
     if (V.flier) launchFlier(V, B.T, V.domain === 'heli' ? 18 : V.domain === 'airship' ? AIRSHIP_ALT : 45);
     V.ai = makeAI('squad', B.cfg);
+    applyCaptain(V);
     V.label = String(slot + 1);
     B.units.push(V);
     B.squad[slot] = V;
     if (B.me.destroyed || B.me.withdrawn) takeVehicle(B, V);
   } else {
     V = spawnEnemy(B, e.design, 'attack', x);
+    applyCaptain(V);
     B.enemySlots[slot] = V;
   }
   restoreDamage(V, e);
@@ -127,7 +132,7 @@ function withdraw(B, V) {
   if (B.target === V) B.target = null;
   const slots = side === 0 ? B.squad : B.enemySlots;
   const slot = slots.indexOf(V);
-  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+  if (slot >= 0) B.entering.push({ side, slot, at: B.time + ENTRY_DELAY * quickRotation(B, side) });
   if (V === B.me) {
     const next = B.squad.find((U) => !U.destroyed);
     if (next) takeVehicle(B, next);
@@ -145,7 +150,7 @@ function stepReserves(B, dt) {
       if (!V) continue;
       if (V.destroyed && !V.withdrawn && !V.replaced) {
         V.replaced = true;
-        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY });
+        B.entering.push({ side, slot, at: B.time + ENTRY_DELAY * quickRotation(B, side) });
         continue;
       }
       if (V.destroyed) continue;
@@ -154,7 +159,7 @@ function stepReserves(B, dt) {
       if (!V.pulling) continue;
       V.pullT += dt;
       if (V !== B.me) V.throttle = side === 0 ? -1 : 1;
-      const out = V.flier ? V.pullT > AIR_EXIT_SECS : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
+      const out = V.flier ? V.pullT > AIR_EXIT_SECS * quickRotation(B, side) : side === 0 ? V.body.x < EDGE_EXIT : V.body.x > T.length - EDGE_EXIT;
       if (out) withdraw(B, V);
     }
   }
