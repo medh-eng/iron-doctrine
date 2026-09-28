@@ -1,0 +1,25 @@
+{
+  "id": "drn_scout",
+  "name": "Scout drone",
+  "domain": "drone",
+  "class": "drone_1",
+  "w": 8,
+  "h": 4,
+  "cells": [
+    [
+      "drotor",
+      1,
+      0
+    ],
+    [
+      "dcore",
+      1,
+      1
+    ],
+    [
+      "dcam",
+      2,
+      1
+    ]
+  ]
+}

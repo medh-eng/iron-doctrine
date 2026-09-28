@@ -1,0 +1,38 @@
+{
+  "id": "dcpu2",
+  "name": "Drone computer II",
+  "family": "dcpu2",
+  "variant": "std",
+  "category": "system",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 50,
+    "hp": 15,
+    "armor": 2,
+    "power": -30,
+    "rel": 0.998,
+    "effect": 4
+  },
+  "behaviour": {
+    "droneCpu": "drone_2"
+  },
+  "cost": {
+    "elec": 12
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones_2"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). 4 drones at once; designs up to 10×5, 10 parts."
+}

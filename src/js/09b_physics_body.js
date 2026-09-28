@@ -219,6 +219,7 @@ function rebuildVehicle(V, first) {
   V.flares = V.flares === undefined ? flares : Math.min(V.flares, flares);
   V.flareDecoy = flareDecoy;
   for (const w of weapons) if (w.def.secondary === 'launcher' && w.msl === undefined) armLauncher(V, w);
+  setupCarrier(V);                          // drone hangars and computers (10g)
   V.bounds = { minX, maxX, minY, maxY };
   V.len = maxX - minX;
   V.height = maxY - minY;

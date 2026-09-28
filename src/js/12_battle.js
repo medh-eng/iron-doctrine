@@ -248,6 +248,7 @@ function updateBattle(B, dt) {
   stepSalvos(B, dt);
   stepMissiles(B, dt);
   stepFirePatches(B, dt);
+  stepDrones(B, dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);

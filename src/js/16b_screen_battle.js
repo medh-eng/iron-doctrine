@@ -233,7 +233,7 @@ SCREENS.battle = {
   recenter() { this.cam.follow = true; audio.sfx('tap'); },
 
   // ---------- command wheel (design/02 §3.4): orders for one of your ships
-  openWheel(V) {
+  openWheel(V, sub) {
     const B = this.B;
     if (!B || !V || V.destroyed || V.side !== 0 || B.demo) return;
     this.closeWheel();
@@ -241,7 +241,11 @@ SCREENS.battle = {
     // Two columns of three orders, with a close button above, kept clear of the screen edges.
     r.style.left = `${clamp(view.sx(V.body.x), layout.safe.l + 116, layout.w - layout.safe.r - 116)}px`;
     r.style.top = `${clamp(view.sy(V.body.y + V.height / 2), layout.safe.t + 124, layout.h - layout.safe.b - 80)}px`;
-    const items = [
+    const drone = (order, label) => [label, () => { const why = droneOrder(B, V, order); if (why) this.say(why); else this.orderDone(V, `Drones: ${order}`); }];
+    const items = sub === 'drones' ? [
+      drone('attack', 'Attack'), drone('defend', 'Defend'), drone('scout', 'Scout'), drone('recall', 'Recall'),
+      ['Back', () => this.openWheel(V)],
+    ] : [
       ['Drive', () => this.takeControl(B.squad.indexOf(V))],
       ['Move to', () => this.startPick(V, 'move')],
       ['Fire at', () => this.startPick(V, 'fire')],
@@ -249,17 +253,23 @@ SCREENS.battle = {
       ['Pull back', () => { const why = pullBack(B, V); if (why) this.say(why); else this.orderDone(V, 'Pulling back'); }, !B.rotation],
       ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
     ];
+    // A carrier (Part 5c): drone orders, with how many are aboard and flying.
+    if (!sub && V.hangarCap) items.push([`Drones ${V.dronesAboard}+${dronesFlying(B, V)}`, () => this.openWheel(V, 'drones')]);
+    const rows = Math.ceil(items.length / 2);
     items.forEach(([label, fn, off], i) => {
       const b = button(label, () => { this.closeWheel(); fn(); }, 'btn btn-small cmd-item');
       b.disabled = !!off;
-      b.style.left = `${i < 3 ? -56 : 56}px`;
-      b.style.top = `${((i % 3) - 1) * 50}px`;
+      const col = i < rows ? 0 : 1, row = i < rows ? i : i - rows;
+      b.style.left = `${col ? 56 : -56}px`;
+      b.style.top = `${(row - (rows - 1) / 2) * 50}px`;
       r.appendChild(b);
     });
     const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
     x.setAttribute('aria-label', `Close orders for ${V.name}`);
+    const nm = el('div', 'cmd-name', sub === 'drones' ? `${V.name} · drones` : V.name);
+    if (rows > 3) x.style.top = nm.style.top = `${-98 - (rows - 3) * 25}px`;   // a fourth row: lift the header
     r.appendChild(x);
-    r.appendChild(el('div', 'cmd-name', V.name));
+    r.appendChild(nm);
     uiLayer.appendChild(r);
     this.wheel = r;
     input.releaseAll();

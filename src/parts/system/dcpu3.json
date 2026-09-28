@@ -1,0 +1,39 @@
+{
+  "id": "dcpu3",
+  "name": "Drone computer III",
+  "family": "dcpu3",
+  "variant": "std",
+  "category": "system",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 15,
+    "armor": 2,
+    "power": -45,
+    "rel": 0.998,
+    "effect": 6
+  },
+  "behaviour": {
+    "droneCpu": "drone_3"
+  },
+  "cost": {
+    "elec": 18,
+    "scrap": 10
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones_3"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). 6 drones at once; designs up to 12×6, 16 parts."
+}

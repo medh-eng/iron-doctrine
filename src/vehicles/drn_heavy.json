@@ -1,0 +1,50 @@
+{
+  "id": "drn_heavy",
+  "name": "Heavy gun drone",
+  "domain": "drone",
+  "class": "drone_2",
+  "w": 10,
+  "h": 5,
+  "cells": [
+    [
+      "drotor",
+      0,
+      0
+    ],
+    [
+      "drotor",
+      3,
+      0
+    ],
+    [
+      "drotor",
+      6,
+      0
+    ],
+    [
+      "dcore",
+      4,
+      1
+    ],
+    [
+      "dgun",
+      5,
+      1
+    ],
+    [
+      "dgun",
+      5,
+      2
+    ],
+    [
+      "dcam",
+      3,
+      1
+    ],
+    [
+      "dgun",
+      3,
+      2
+    ]
+  ]
+}

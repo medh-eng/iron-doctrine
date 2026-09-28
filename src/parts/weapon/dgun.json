@@ -1,0 +1,41 @@
+{
+  "id": "dgun",
+  "name": "Drone gun",
+  "family": "dgun",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 20,
+    "hp": 10,
+    "armor": 2,
+    "pen": 12,
+    "dmg": 8,
+    "reload": 0.4,
+    "range": 600,
+    "vel": 150,
+    "spread": 1.2,
+    "cal": 8
+  },
+  "behaviour": {
+    "droneGun": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 8
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab."
+}

@@ -1,0 +1,40 @@
+{
+  "id": "dlaser",
+  "name": "Drone laser",
+  "family": "dlaser",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 10,
+    "armor": 2,
+    "pen": 30,
+    "dmg": 18,
+    "power": -30
+  },
+  "behaviour": {
+    "droneGun": true,
+    "beam": true
+  },
+  "cost": {
+    "elec": 3,
+    "scrap": 2,
+    "money": 20
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lasers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. Planned until step 5d (lasers).",
+  "planned": true
+}
