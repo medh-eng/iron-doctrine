@@ -35,5 +35,32 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.75,
+      0.05
+    ],
+    "intake": [
+      3,
+      0.5
+    ],
+    "exhaust": [
+      0,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.1,
+        0.5
+      ]
+    ]
+  },
+  "moving": {}
 }

@@ -116,8 +116,11 @@ SCREENS.map = {
 
   buildMoveBar() {
     const m = this.moveBar;
-    m.textContent = '';
     const p = this.plan, fl = this.selFleet();
+    // Rebuild only when the plan or its fleet changes, so its buttons stay put while the clock runs.
+    if (p && fl && p === this.movePlan && fl === this.moveFleet && m.childNodes.length) return;
+    this.movePlan = p; this.moveFleet = fl;
+    m.textContent = '';
     if (!p || !fl) { m.hidden = true; return; }
     m.hidden = false;
     if (p.why) { m.appendChild(el('span', 'map-fact', p.why)); m.appendChild(button('OK', () => { this.plan = null; this.refresh(); }, 'btn btn-small')); return; }
@@ -378,7 +381,8 @@ SCREENS.map = {
     const contact = events.find((e) => e.contact);
     if (contact) { if (contact.contact.siege) this.preSiege(contact.contact); else this.preBattle(contact.contact); }
     this.t = (this.t || 0) + dt;
-    if (was !== campaign.running || this.t > 0.25) { this.t = 0; this.refresh(); }
+    // Numbers move only while the clock runs; a stopped map isn't rebuilt under the player's finger.
+    if (was !== campaign.running || (campaign.running && this.t > 0.25)) { this.t = 0; this.refresh(); }
   },
 
   // ---------- gestures

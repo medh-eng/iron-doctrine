@@ -31,5 +31,17 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. Enemies within 40 m of the drone are spotted."
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. Enemies within 40 m of the drone are spotted.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "eye": [
+      0.62,
+      0.62
+    ]
+  }
 }

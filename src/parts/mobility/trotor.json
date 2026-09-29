@@ -31,5 +31,29 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js.",
+  "overhang": {
+    "left": 0.25,
+    "right": 0.25,
+    "top": 0.25,
+    "bottom": 0.25
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.5
+    ],
+    "hub": [
+      0.5,
+      0.5
+    ]
+  },
+  "moving": {
+    "rotor": {
+      "pivot": [
+        0.5,
+        0.5
+      ]
+    }
+  }
 }

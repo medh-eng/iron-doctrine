@@ -37,5 +37,17 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Holds 4 drones of the ship's drone design and launches one every 3 s."
+  "notes": "Part 5c (design/05 §3.4). Holds 4 drones of the ship's drone design and launches one every 3 s.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "launch": [
+      1.5,
+      0.0
+    ]
+  }
 }

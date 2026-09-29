@@ -36,5 +36,17 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c2 (design/05 §3.4). Holds 2 aircraft or helicopters of the ship's air wing design and launches one every 10 s."
+  "notes": "Part 5c2 (design/05 §3.4). Holds 2 aircraft or helicopters of the ship's air wing design and launches one every 10 s.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "launch": [
+      4.8,
+      0.0
+    ]
+  }
 }

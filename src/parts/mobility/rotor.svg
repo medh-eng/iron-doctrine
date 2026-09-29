@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 32" data-part="rotor" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.64" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.48"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="ao" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.42"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.38"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steelX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F565E"/><stop offset="0.25" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="tubeX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.42"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+<clipPath id="rRear"><path d="M104 9.8L11 11.6Q4.6 11.8 3 13.2Q4.6 14.8 11 14.8L104 14.2Z"/></clipPath>
+<clipPath id="rFar"><path d="M118 9.4L157 8.2Q162.4 8.1 164 9.3Q162.6 10.8 157 10.9L118 12Z"/></clipPath>
+<clipPath id="rNear"><path d="M118 12.6L156 13.6Q163.6 13.9 166 15.6Q163.4 17.6 156 17.8L118 16.8Z"/></clipPath>
+<clipPath id="rFarI"><path clip-rule="evenodd" d="M118 9.4L157 8.2Q162.4 8.1 164 9.3Q162.6 10.8 157 10.9L118 12Z M155 0h12v32h-12Z M149 0h3v32h-3Z"/></clipPath><clipPath id="rRearI"><path clip-rule="evenodd" d="M104 9.8L11 11.6Q4.6 11.8 3 13.2Q4.6 14.8 11 14.8L104 14.2Z M0 0h11v32h-11Z M14 0h3.4v32h-3.4Z"/></clipPath><clipPath id="rNearI"><path clip-rule="evenodd" d="M118 12.6L156 13.6Q163.6 13.9 166 15.6Q163.4 17.6 156 17.8L118 16.8Z M155 0h13v32h-13Z M148 0h3.4v32h-3.4Z"/></clipPath>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M100.6 31.6L103.2 25.2Q104 23.6 106 23.6H118Q120 23.6 120.8 25.2L123.4 31.6Z" fill="#FF00FF"/>
+</g>
+<g class="detail">
+<path d="M100.6 31.6L103.2 25.2Q104 23.6 106 23.6H118Q120 23.6 120.8 25.2L123.4 31.6Z" fill="url(#shade)"/>
+<rect x="100" y="28.6" width="24" height="3" fill="url(#grime)"/>
+<path d="M104.2 24.4H119.8" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.8"/>
+<path d="M102.2 28.4H121.8" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.8"/>
+<g fill="#000000" fill-opacity="0.35"><circle cx="104.5" cy="30" r="0.9"/><circle cx="110" cy="30" r="0.9"/><circle cx="114" cy="30" r="0.9"/><circle cx="119.5" cy="30" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="104.2" cy="29.7" r="0.45"/><circle cx="109.7" cy="29.7" r="0.45"/><circle cx="113.7" cy="29.7" r="0.45"/><circle cx="119.2" cy="29.7" r="0.45"/></g>
+<rect x="109.4" y="12" width="5.2" height="12" fill="url(#steelX)" stroke="#14171B" stroke-width="0.6"/>
+<rect x="104" y="18.4" width="16" height="3" rx="1.2" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+<rect x="105.4" y="21.2" width="13.2" height="2.2" rx="0.8" fill="#3A3F45" stroke="#14171B" stroke-width="0.5"/>
+<path d="M106.6 18.4L104.6 12.8M117.4 18.4L119.6 12.8" fill="none" stroke="#14171B" stroke-width="1.6"/>
+<path d="M106.6 18.4L104.6 12.8M117.4 18.4L119.6 12.8" fill="none" stroke="#C4CAD0" stroke-width="0.7"/>
+<circle cx="106.6" cy="19.4" r="0.9" fill="url(#bolt)"/>
+<circle cx="117.4" cy="19.4" r="0.9" fill="url(#bolt)"/>
+<path d="M104.8 19.1H119" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.7"/>
+<path d="M121 23.6Q122.4 22 121.4 20.4" fill="none" stroke="#14171B" stroke-width="1.2"/>
+<path d="M100.6 31.6L103.2 25.2Q104 23.6 106 23.6H118Q120 23.6 120.8 25.2L123.4 31.6Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+</g>
+</g>
+<g id="rotor" data-role="rotor" data-pivot="112 12">
+<g class="paint">
+<g clip-path="url(#rFar)"><rect x="155" y="0" width="12" height="32" fill="#FFFF00"/><rect x="149" y="0" width="3" height="32" fill="#FFFF00"/></g>
+<g clip-path="url(#rRear)"><rect x="0" y="0" width="11" height="32" fill="#FFFF00"/><rect x="14" y="0" width="3.4" height="32" fill="#FFFF00"/></g>
+<path d="M106.4 8.8Q106.8 4.8 112 4.8Q117.2 4.8 117.6 8.8Z" fill="#00FFFF"/>
+<g clip-path="url(#rNear)"><rect x="155" y="0" width="13" height="32" fill="#FFFF00"/><rect x="148" y="0" width="3.4" height="32" fill="#FFFF00"/></g>
+</g>
+<g class="detail">
+<g clip-path="url(#rFarI)"><path d="M118 9.4L157 8.2Q162.4 8.1 164 9.3Q162.6 10.8 157 10.9L118 12Z" fill="#3A3F45"/></g>
+<g clip-path="url(#rFar)"><path d="M118 9.4L157 8.2Q162.4 8.1 164 9.3Q162.6 10.8 157 10.9L118 12Z" fill="url(#tube)"/><path d="M152 8V12M155 8V12" fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="0.7"/></g>
+<path d="M118 9.4L157 8.2Q162.4 8.1 164 9.3Q162.6 10.8 157 10.9L118 12Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<g clip-path="url(#rRearI)"><path d="M104 9.8L11 11.6Q4.6 11.8 3 13.2Q4.6 14.8 11 14.8L104 14.2Z" fill="#3A3F45"/></g>
+<g clip-path="url(#rRear)"><path d="M104 9.8L11 11.6Q4.6 11.8 3 13.2Q4.6 14.8 11 14.8L104 14.2Z" fill="url(#tube)"/><path d="M11 10V16M14 10V16M17.4 10V16" fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="0.7"/><path d="M100 11.2L12 12.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.7"/><path d="M100 13.6L12 14.3" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.8"/><path d="M56 10.8V15M80 10.4V14.8" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="0.7"/><g fill="#000000" fill-opacity="0.35"><circle cx="92" cy="12" r="0.9"/><circle cx="96" cy="12" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="91.7" cy="11.7" r="0.45"/><circle cx="95.7" cy="11.7" r="0.45"/></g></g>
+<path d="M40 11h2.2M66 10.7h1.6M24 11.4h1.4" fill="none" stroke="#C4CAD0" stroke-opacity="0.6" stroke-width="0.7"/>
+<path d="M104 9.8L11 11.6Q4.6 11.8 3 13.2Q4.6 14.8 11 14.8L104 14.2Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+<rect x="97.6" y="9.2" width="8.4" height="5.6" rx="1" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+<g fill="url(#bolt)"><circle cx="99.8" cy="12" r="0.95"/><circle cx="103.4" cy="12" r="0.95"/></g>
+<rect x="104.6" y="8.6" width="14.8" height="6.8" rx="2" fill="url(#steel)" stroke="#14171B" stroke-width="0.7"/>
+<g fill="url(#bolt)"><circle cx="108" cy="12" r="1.05"/><circle cx="112" cy="12" r="1.05"/><circle cx="116" cy="12" r="1.05"/></g>
+<path d="M106.4 8.8Q106.8 4.8 112 4.8Q117.2 4.8 117.6 8.8Z" fill="url(#shade)"/>
+<path d="M108 7.2Q109.4 5.7 112 5.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="0.8"/>
+<path d="M106.4 8.8Q106.8 4.8 112 4.8Q117.2 4.8 117.6 8.8Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<circle cx="112" cy="3.9" r="1" fill="url(#bolt)" stroke="#14171B" stroke-width="0.4"/>
+<g clip-path="url(#rNearI)"><path d="M118 12.6L156 13.6Q163.6 13.9 166 15.6Q163.4 17.6 156 17.8L118 16.8Z" fill="#3A3F45"/></g>
+<g clip-path="url(#rNear)"><path d="M118 12.6L156 13.6Q163.6 13.9 166 15.6Q163.4 17.6 156 17.8L118 16.8Z" fill="url(#tube)"/><path d="M151.4 12V19M155 12V19" fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="0.7"/><path d="M120 13.8L154 14.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="0.7"/><path d="M136 13V17.6" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="0.7"/></g>
+<rect x="116.4" y="11.8" width="7.2" height="5.8" rx="1" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+<g fill="url(#bolt)"><circle cx="118.6" cy="14.7" r="0.95"/><circle cx="121.6" cy="14.8" r="0.95"/></g>
+<path d="M130 13.6h1.8M143 14h1.4" fill="none" stroke="#C4CAD0" stroke-opacity="0.6" stroke-width="0.7"/>
+<path d="M118 12.6L156 13.6Q163.6 13.9 166 15.6Q163.4 17.6 156 17.8L118 16.8Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+</g>
+</g>
+</svg>

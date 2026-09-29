@@ -37,5 +37,29 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab."
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab.",
+  "overhang": {
+    "left": 0,
+    "right": 0.3,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "muzzle": [
+      1.24,
+      0.61875
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.4,
+        0.61875
+      ],
+      "elevation": [
+        -45,
+        20
+      ]
+    }
+  }
 }

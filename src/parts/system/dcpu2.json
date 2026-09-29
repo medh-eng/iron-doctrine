@@ -34,5 +34,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). 4 drones at once; designs up to 10×5, 10 parts."
+  "notes": "Part 5c (design/05 §3.4). 4 drones at once; designs up to 10×5, 10 parts.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

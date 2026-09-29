@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41.6 32" data-part="dgun" data-cell="32">
+<defs>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M4 0.6H22V8H4Z" fill="#FF00FF"/>
+</g>
+<g class="detail">
+<path d="M4 0.6H22V8H4Z" fill="url(#tube)" stroke="#14171B" stroke-width="0.7"/>
+<path d="M11 8V14H15V8" stroke="#3A3F45" stroke-width="2.4" fill="none"/>
+</g>
+</g>
+<g id="barrel" data-role="barrel" data-pivot="12.8 19.8">
+<g class="detail">
+<rect x="6" y="15.6" width="14" height="8.4" rx="1.4" fill="#3A3F45" stroke="#14171B" stroke-width="0.7"/>
+<rect x="6" y="15.6" width="14" height="8.4" rx="1.4" fill="url(#tube)"/>
+<rect x="20" y="18.4" width="18" height="2.8" fill="#8A9199" stroke="#14171B" stroke-width="0.5"/>
+<rect x="36.6" y="17.8" width="3" height="4" rx="0.4" fill="#3A3F45" stroke="#14171B" stroke-width="0.4"/>
+<rect x="8" y="22" width="8" height="5" rx="0.6" fill="#C9A04A" stroke="#14171B" stroke-width="0.4"/>
+</g>
+</g>
+</svg>

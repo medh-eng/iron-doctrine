@@ -818,12 +818,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
           if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(f.x - cx, f.y - cy) < 3)) continue;
           if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < 2.5)) continue;
           if (C.planMove(fl, cx, cy).why) continue;
-          // Put that cell in the clear left part of the screen.
-          const x = Math.round(innerWidth * 0.3), y = Math.round(innerHeight * 0.55);
-          S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
-          // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
-          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
-          return { x, y, x0: fl.x, y0: fl.y };
+          // Put that cell in a clear part of the screen (a few places to try, left first).
+          for (const [fx, fy] of [[0.3, 0.55], [0.45, 0.4], [0.2, 0.35], [0.6, 0.45]]) {
+            const x = Math.round(innerWidth * fx), y = Math.round(innerHeight * fy);
+            S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
+            // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
+            if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
+            return { x, y, x0: fl.x, y0: fl.y };
+          }
         }
         return null;
       });
