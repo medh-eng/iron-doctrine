@@ -874,6 +874,7 @@ function renderBattle(g, B) {
   drawWater(g, B);
   drawShells(g);
   drawMissiles(g);
+  drawDrones(g, B);
   drawFirePatches(g);
   drawParticles(g);
   drawWeather(g, B);

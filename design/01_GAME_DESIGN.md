@@ -340,6 +340,7 @@ Side view, landscape, generated from the location.
 - **Drone orders:** attack a target, defend the carrier, scout.
 - **Losing drones:** drones are lost if their carrier is destroyed or leaves the field. They can be rebuilt in battle by fabricators, or crafted at cities.
 - **Field limit:** drones don't count towards the 3-ship limit.
+- **Numbers (5c):** a drone design needs one core and rotors lifting 1.2 × its weight; speed 16 m/s × √(lift ÷ weight ÷ 2), within 0.5–1.4×. A hangar holds 4 and launches one every 3 s; the best drone computer sets how many fly at once (2/4/6) and the largest drone size it flies (a design too big for it isn't used; the carrier falls back to the gun drone). Orders: attack (targets within 160 m of the carrier; gun drones stand off 14 m and fire within 30 m, strike drones dive in and burst), defend (circle 10 m over the carrier, take on anything within 45 m), scout (70 m ahead; cameras spot within 40 m), recall (land and go back aboard). Enemy carriers launch once your ships come within 160 m. Machine guns shoot the nearest drone in range first.
 
 **Missiles**
 - Missiles fire from racks and VLS launchers.

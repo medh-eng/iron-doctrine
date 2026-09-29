@@ -1,0 +1,38 @@
+{
+  "id": "dcpu1",
+  "name": "Drone computer I",
+  "family": "dcpu1",
+  "variant": "std",
+  "category": "system",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 30,
+    "hp": 10,
+    "armor": 2,
+    "power": -15,
+    "rel": 0.998,
+    "effect": 2
+  },
+  "behaviour": {
+    "droneCpu": "drone_1"
+  },
+  "cost": {
+    "elec": 6
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). 2 drones in the air at once; drone designs up to 8×4, 6 parts."
+}

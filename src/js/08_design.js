@@ -13,6 +13,7 @@ function designFromTemplate(id) {
     mark: 1,
     cells: t.cells.map(([p, x, y]) => ({ p, x, y })),
     missile: t.missile,
+    drone: t.drone,
   };
 }
 

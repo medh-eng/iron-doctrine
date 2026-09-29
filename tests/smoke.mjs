@@ -584,6 +584,24 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await tapButton('Close');
       await G(() => { window.__GAME__.save.designs.missiles.length = 0; });
       steps.push('missile tab');
+      // Part 5c: the Drone tab, on the drone carrier truck.
+      await G(() => { const g = window.__GAME__; g.go('designer', { design: g.designFromTemplate('drone_truck'), base: null, owned: true }); });
+      await wait(300);
+      await tapButton('Drones');
+      await wait(200);
+      check(await page.locator('.card-missile .ms-part').count() === 5, 'Drone tab did not show the gun drone');
+      await hit('.ms-brush[data-part="dcharge"]');
+      await hit('.ms-part[data-part="dgun"]');
+      await hit('.ms-cell[data-x="4"][data-y="2"]');
+      await wait(100);
+      check(await page.locator('.ms-part[data-part="dcharge"]').count() === 1, 'placing a drone part did nothing');
+      await tapButton('Save as new');
+      await tapButton('Use in this ship’s hangars');
+      check(await G(() => /^u/.test(window.__GAME__.SCREENS.designer.st.d.drone || '')), 'the ship did not take the new drone');
+      await shot('16c-drone-tab');
+      await tapButton('Close');
+      await G(() => { window.__GAME__.save.designs.drones.length = 0; });
+      steps.push('drone tab');
     }
 
     // ---------- 9g. Step 2.6: three on the field, command wheel, reserve drawer, Battle Simulator
@@ -740,6 +758,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         MS(ms.before.n === 0 && ms.load === '' && ms.after.n === 4 && ms.stockAfter === 0 && ms.full !== '', 'loading missiles wrong');
         MS(ms.inBattle === 4 && ms.left === 3 && ms.home.n === 3 && ms.emptyRounds === 0 && ms.transfer === '' && ms.inHold === 2, 'missiles in battle or holds wrong');
         steps.push('missile stock');
+        // Part 5c: drones.
+        const dc = await G(() => window.__GAME__.droneCheck());
+        const DC = (c, what) => check(c, `${what} ${JSON.stringify(dc)}`);
+        DC(dc.library.length === 4 && dc.library.every((d) => !d.errors.length) && dc.noCore.length && dc.heavy.length && dc.tooBig.length, 'drone designs or their rules wrong');
+        DC(dc.carrier.cap === 4 && dc.carrier.cpu === 2 && dc.attack.launched === 2 && dc.attack.maxFlying === 2 && dc.attack.shots > 0 && dc.attack.damage > 0, 'gun drones did not launch within the computer limit and attack');
+        DC(dc.recall.aboard === 4 && dc.recall.flying === 0 && dc.lost.up > 0 && dc.lost.after === 0 && dc.lost.lost >= dc.lost.up, 'recall or losing drones with the carrier wrong');
+        DC(dc.strike.hits > 0 && dc.strike.damage > 50 && dc.scout.seen && dc.aa.lost > 0, 'strike, scout or shooting drones down wrong');
+        DC(dc.cpu2.design === 'drn_heavy' && dc.cpu2.maxFlying === 4 && dc.cpu1Heavy === 'drn_gun', 'drone computer size limits wrong');
+        steps.push('drones');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

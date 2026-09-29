@@ -1,0 +1,82 @@
+{
+  "id": "mortar",
+  "name": "Mortar",
+  "family": "mortar",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.8,
+      0.95
+    ],
+    "muzzle": [
+      2.0,
+      0.6875
+    ],
+    "smoke": [
+      [
+        0.5,
+        0.5
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.5,
+        0.6875
+      ],
+      "elevation": [
+        40,
+        85
+      ]
+    }
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 40,
+    "armor": 6,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 20,
+    "reload": 6,
+    "range": 2500,
+    "vel": 90,
+    "spread": 1.5,
+    "heDmg": 90,
+    "heRadius": 4,
+    "dmg": 20,
+    "cal": 81
+  },
+  "behaviour": {
+    "he": true,
+    "indirect": true
+  },
+  "cost": {
+    "metal": 4,
+    "money": 30
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_medium"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.3). Art: short tube on a trunnion cradle over a P1 baseplate. The tube is deliberately mortar-length (1.5 cells from pivot to muzzle), not the 07 gun length; it is drawn level and the game raises it to 40-85 degrees. Repo: added dmg 20 (direct hit) and cal 81, which every gun needs."
+}

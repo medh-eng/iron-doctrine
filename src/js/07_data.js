@@ -80,6 +80,20 @@ const MSL = {
   clusterAt: 30,           // m from the target where a cluster warhead splits
   burnDps: 6,              // napalm: damage per second to parts in the burning patch
 };
+// Drones (Part 5c, design/01 §10.5). Battle numbers.
+const DRN = {
+  speed: 16,               // m/s at a lift-to-weight of 2
+  liftMargin: 1.2,         // rotor lift must be 1.2 × the drone's weight
+  alt: 10,                 // m above the carrier (defend) or target (attack)
+  reach: 160,              // m from the carrier a drone will go after a target
+  defend: 45,              // m from the carrier a defending drone takes on enemies
+  standoff: 14,            // m a gun drone keeps from its target
+  scoutAhead: 70,          // m ahead of the carrier a scout flies
+  camRange: 40,            // m a drone camera spots
+  gunRange: 30,            // m a drone gun fires at
+  hitR: 0.5,               // m: a shell this close to a drone hits it
+  scale: 0.8,              // drones are drawn a little smaller than ship cells
+};
 // Heat (design/v1/05 §7.6): heat units per second. Engines shed ENGINE_COOLING each by themselves;
 // in water or in the airflow of a flier they shed EXTRA_COOLING more. Overheating cuts engine
 // power and automatic fire rate; 20 s above 100% can start a fire.
@@ -104,7 +118,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
-  PARTS[d.id] = Object.assign({ id: d.id, name: d.name, cat: d.category, w: d.footprint.w, h: d.footprint.h, cost: d.cost, tier: d.tier }, d.stats, d.behaviour);
+  PARTS[d.id] = Object.assign({ id: d.id, name: d.name, cat: d.category, w: d.footprint.w, h: d.footprint.h, cost: d.cost, tier: d.tier, domains: d.domains }, d.stats, d.behaviour);
 }
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
@@ -123,10 +137,12 @@ const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 const TEMPLATES = {};
 // Missile designs (Part 5b) live in src/vehicles too, with domain 'missile'; they are kept apart.
 const MISSILE_TEMPLATES = {};
-for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : TEMPLATES)[id] = v;
+// Drone designs (Part 5c) likewise, with domain 'drone'.
+const DRONE_TEMPLATES = {};
+for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : v.domain === 'drone' ? DRONE_TEMPLATES : TEMPLATES)[id] = v;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 

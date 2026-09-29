@@ -1,0 +1,30 @@
+{
+  "id": "drn_charge",
+  "name": "Strike drone",
+  "domain": "drone",
+  "class": "drone_1",
+  "w": 8,
+  "h": 4,
+  "cells": [
+    [
+      "drotor",
+      0,
+      0
+    ],
+    [
+      "drotor",
+      4,
+      0
+    ],
+    [
+      "dcore",
+      2,
+      1
+    ],
+    [
+      "dcharge",
+      3,
+      1
+    ]
+  ]
+}

@@ -5,7 +5,7 @@
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const markName = (d) => `${d.family || d.name} Mk.${ROMAN[d.mark || 1] || d.mark}`;
-const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['lift', 'Lift'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist']];
+const PART_CATS = [['structure', 'Struct'], ['mobility', 'Mobil'], ['lift', 'Lift'], ['weapon', 'Weapon'], ['system', 'System'], ['logistics', 'Logist'], ['special', 'Special']];
 const BLUEPRINT = { bg: '#13466B', grid: '#2A6A92', line: 'rgba(214,238,255,0.85)', valid: '#7FD3FF', invalid: '#FF6B5A' };
 
 // A thumbnail of a design, drawn with the battle part art.
@@ -254,6 +254,7 @@ SCREENS.designer = {
     top.appendChild(this.chips);
     top.appendChild(button('New…', () => this.newMenu(), 'btn btn-small'));
     top.appendChild(button('Missiles', () => openMissileDesigner(this), 'btn btn-small dz-msl'));
+    top.appendChild(button('Drones', () => openDroneDesigner(this), 'btn btn-small dz-msl'));
     r.appendChild(top);
     // Palette.
     const pal = el('div', 'dz-palette');
@@ -301,6 +302,7 @@ SCREENS.designer = {
     for (const t of this.palette.querySelectorAll('.dz-tab')) t.setAttribute('aria-selected', String(t.dataset.cat === this.st.cat));
     for (const P of Object.values(PARTS)) {
       if (P.cat !== this.st.cat || (this.lockParts && !partUnlocked(P.id))) continue;
+      if (P.domains && P.domains.every((q) => q === 'drone')) continue;     // drone parts go in the Drone tab
       const b = el('button', 'dz-part');
       b.type = 'button';
       b.dataset.part = P.id;
@@ -477,6 +479,14 @@ SCREENS.designer = {
       const ms = md && missileStats(md);
       row('Missile carried', ms ? `${ms.name} (${missileClass(ms.cls).name})` : 'none');
       for (const w of rep.weapons.filter((q) => q.secondary === 'launcher')) row(`${w.name} holds`, ms && w.sizes.includes(ms.cls) ? `${Math.floor(w.capacity / ms.units)}` : 'this size won’t fit');
+    }
+    if (s.d.cells.some((c) => PARTS[c.p].hangar)) {
+      const cpus = s.d.cells.map((c) => PARTS[c.p]).filter((P) => P.droneCpu).sort((a, b) => b.effect - a.effect);
+      const dd = droneDesign(s.d.drone || DEFAULT_DRONE), ds = dd && droneStats(dd);
+      const cap = s.d.cells.reduce((a, c) => a + (PARTS[c.p].hangar ? PARTS[c.p].capacity : 0), 0);
+      row('Drones carried', ds ? `${cap} × ${ds.name}` : 'none');
+      row('Drones in the air at once', cpus.length ? `${cpus[0].effect} (${cpus[0].name})` : '0: needs a drone computer');
+      if (ds && cpus.length && droneClassIndex(ds.cls) > droneClassIndex(cpus[0].droneCpu)) row('Drone design', 'too big for the drone computer');
     }
     if (rep.weapons.some((w) => w.secondary === 'sam')) row('SAM lock', `${Math.round(sys.lockSam * 100)}% (vs ECM ${Math.round(sys.lockSam * (1 - LOCK_ECM) * 100)}%)`);
     row('Shells', `${st.shells + 10}`);
@@ -685,6 +695,7 @@ SCREENS.designer = {
       cls: s.cls,
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       missile: s.d.missile || undefined,      // the missile its racks and VLS carry (Part 5b)
+      drone: s.d.drone || undefined,          // the drone its hangars hold (Part 5c)
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),

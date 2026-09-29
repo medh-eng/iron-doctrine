@@ -1,0 +1,35 @@
+{
+  "id": "drn_gun",
+  "name": "Gun drone",
+  "domain": "drone",
+  "class": "drone_1",
+  "w": 8,
+  "h": 4,
+  "cells": [
+    [
+      "drotor",
+      0,
+      0
+    ],
+    [
+      "drotor",
+      4,
+      0
+    ],
+    [
+      "dcore",
+      3,
+      1
+    ],
+    [
+      "dgun",
+      4,
+      1
+    ],
+    [
+      "dcam",
+      2,
+      1
+    ]
+  ]
+}

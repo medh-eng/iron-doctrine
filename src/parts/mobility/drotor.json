@@ -1,0 +1,35 @@
+{
+  "id": "drotor",
+  "name": "Drone rotor",
+  "family": "drotor",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 15,
+    "hp": 8,
+    "armor": 0,
+    "liftForce": 1500
+  },
+  "behaviour": {
+    "droneRotor": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 6
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab."
+}

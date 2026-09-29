@@ -125,4 +125,81 @@ function missileShowcase(id) {
   m.fooled = false; m.split = false; m.vert = 0; m.hot = false;
   return U.body.x;
 }
+// Part 5c: drones. A light tank with a hangar and a drone computer against parked targets.
+function droneCheck() {
+  const out = {};
+  out.library = Object.values(DRONE_TEMPLATES).map((d) => ({ id: d.id, errors: validateDrone(d), speed: droneStats(d).speed }));
+  out.noCore = validateDrone({ class: 'drone_1', cells: [['drotor', 0, 0], ['dgun', 0, 1]] });
+  out.heavy = validateDrone({ class: 'drone_1', cells: [['drotor', 0, 0], ['dcore', 0, 1], ['dcharge', 1, 1], ['dcharge', 3, 1], ['dcharge', 5, 1], ['dcharge', 0, 2]] });
+  out.tooBig = validateDrone({ class: 'drone_1', cells: [['drotor', 0, 0], ['dcore', 7, 3], ['dgun', 8, 0]] });
+  const carrier = (B, drone, cpu = 'dcpu1') => {
+    const d = designFromTemplate('light');
+    d.h += 2; for (const c of d.cells) c.y += 2;
+    d.cells.push({ p: 'hangar_d', x: 4, y: 0 }, { p: cpu, x: 7, y: 1 });
+    d.drone = drone;
+    const V = makeVehicle(d, 0, 100, 1, B.T);
+    V.ai = makeAI('squad', B.cfg);
+    return V;
+  };
+  const run = (B, secs, extra) => { for (let t = 0; t < secs; t += SIM_STEP) { stepDrones(B, SIM_STEP); stepShells(B, SIM_STEP); if (extra) extra(); } };
+  const hpOf = (V) => Math.round(V.parts.reduce((a, p) => a + Math.max(0, p.hp), 0));
+  // Gun drones attack: two in the air with drone computer I, the rest wait; the target takes hits.
+  let B = createBattle(4);
+  let V = carrier(B, 'drn_gun');
+  let T = makeVehicle(designFromTemplate('light'), 1, 200, -1, B.T);
+  T.seen = true;
+  B.units = [V, T]; B.squad = [V]; B.me = V;
+  const hp0 = hpOf(T);
+  out.carrier = { cap: V.hangarCap, cpu: V.droneCpu, aboard: V.dronesAboard, design: V.droneSt && V.droneSt.id };
+  let maxFlying = 0;
+  run(B, 20, () => { maxFlying = Math.max(maxFlying, dronesFlying(B, V)); });
+  out.attack = { launched: B.stats.drones || 0, maxFlying, shots: B.stats.droneShots || 0, damage: hp0 - hpOf(T), aboard: V.dronesAboard };
+  // Recall: they come home to the hangar.
+  droneOrder(B, V, 'recall');
+  run(B, 25);
+  out.recall = { aboard: V.dronesAboard, flying: dronesFlying(B, V) };
+  // A lost carrier loses its drones.
+  droneOrder(B, V, 'attack');
+  run(B, 8);
+  const up = dronesFlying(B, V);
+  V.destroyed = true;
+  run(B, 8);
+  out.lost = { up, after: dronesFlying(B, V), lost: B.stats.dronesLost || 0 };
+  // Strike drones dive into the target.
+  B = createBattle(4);
+  V = carrier(B, 'drn_charge');
+  T = makeVehicle(designFromTemplate('light'), 1, 180, -1, B.T);
+  T.seen = true;
+  B.units = [V, T]; B.squad = [V]; B.me = V;
+  const hp1 = hpOf(T);
+  run(B, 20);
+  out.strike = { hits: B.stats.droneHits || 0, damage: hp1 - hpOf(T) };
+  // Scout: the camera spots a target nobody else can see.
+  B = createBattle(4);
+  V = carrier(B, 'drn_scout');
+  T = makeVehicle(designFromTemplate('light'), 1, 175, -1, B.T);
+  B.units = [V, T]; B.squad = [V]; B.me = V;
+  droneOrder(B, V, 'scout');
+  run(B, 12, () => { T.seen = false; droneSpotting(B); });
+  out.scout = { seen: T.seen };
+  // Machine guns shoot drones down (unarmed scouts sent to attack).
+  B = createBattle(4);
+  V = carrier(B, 'drn_scout');
+  const E = makeVehicle(designFromTemplate('mgcar'), 1, 150, -1, B.T);
+  E.seen = true; E.ai = makeAI('attack', B.cfg);
+  B.units = [V, E]; B.squad = [V]; B.me = V;
+  run(B, 30, () => runWeapons(B, E, SIM_STEP, true));
+  out.aa = { launched: B.stats.drones || 0, lost: B.stats.dronesLost || 0 };
+  // Drone computer II flies four, and a drone design too big for the computer isn't used.
+  B = createBattle(4);
+  V = carrier(B, 'drn_heavy', 'dcpu2');
+  T = makeVehicle(designFromTemplate('light'), 1, 200, -1, B.T); T.seen = true;
+  B.units = [V, T]; B.squad = [V]; B.me = V;
+  let four = 0;
+  run(B, 15, () => { four = Math.max(four, dronesFlying(B, V)); });
+  out.cpu2 = { design: V.droneSt.id, maxFlying: four };
+  const V1 = carrier(createBattle(4), 'drn_heavy', 'dcpu1');
+  out.cpu1Heavy = V1.droneSt && V1.droneSt.id;
+  return out;
+}
 /*TEST:END*/

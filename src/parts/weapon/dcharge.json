@@ -1,0 +1,36 @@
+{
+  "id": "dcharge",
+  "name": "Drone charge",
+  "family": "dcharge",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 40,
+    "hp": 10,
+    "armor": 0,
+    "dmg": 150,
+    "blast": 3
+  },
+  "behaviour": {
+    "droneCharge": true
+  },
+  "cost": {
+    "metal": 1,
+    "money": 10
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. The drone dives into its target and is destroyed."
+}

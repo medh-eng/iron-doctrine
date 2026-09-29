@@ -54,6 +54,7 @@ function updateSpotting(B) {
     V.seen = seen || (V.destroyed && V.seen);
     if (seen) { V.lastSeenX = V.body.x; V.everSeen = true; }
   }
+  droneSpotting(B);                        // drone cameras spot too (10g)
 }
 
 // A submerged vehicle can look out if a live periscope (optics) is above the surface.
@@ -131,9 +132,16 @@ function runWeapons(B, V, dt, aiControlled) {
     if (d.auto) {
       // Machine guns fire by themselves at soft targets (AI guns at anything in range).
       const T = nearestTarget(B, V, weaponRange(d), aiControlled ? (U) => !U.flier || d.aa : (U) => U.soft && (!U.flier || d.aa));
-      if (!T || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
-      aimPoint(B, T, tmp);
-      leadTarget(V, w, T, tmp);
+      // Drones in range come first: they are what machine guns can reach (Part 5c).
+      const dr = B.drones && B.drones.length ? droneInRange(B, V, weaponRange(d)) : null;
+      if ((!T && !dr) || B.cfg.holdFire && V.side === 1) { w.burst = 0; continue; }
+      if (dr) {
+        const lead = Math.hypot(dr.x - V.body.x, dr.y - V.body.y) / d.vel;
+        tmp.x = dr.x + dr.vx * lead; tmp.y = dr.y + dr.vy * lead;
+      } else {
+        aimPoint(B, T, tmp);
+        leadTarget(V, w, T, tmp);
+      }
       aimWeapon(V, w, tmp.x, tmp.y, _aim);
       const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
       if (!_aim.ok || !ready || w.reload > 0) continue;

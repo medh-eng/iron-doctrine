@@ -1,0 +1,78 @@
+{
+  "id": "c57",
+  "name": "Cannon 57 mm",
+  "family": "c57",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 2.5,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      4.5,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.6,
+        0.3
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.8,
+        0.5
+      ],
+      "elevation": [
+        -8,
+        20
+      ]
+    }
+  },
+  "stats": {
+    "mass": 380,
+    "hp": 50,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 70,
+    "dmg": 70,
+    "reload": 3.5,
+    "range": 1800,
+    "vel": 172,
+    "spread": 0.52,
+    "cal": 57,
+    "shells": 34
+  },
+  "cost": {
+    "metal": 5,
+    "money": 40
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_medium"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.3). Art: cast steel mantlet (T1), recoil cylinders, single-baffle muzzle brake. Barrel length 3.7 cells = 2 x 1.25 + 1.2 (07 section 7)."
+}

@@ -463,6 +463,7 @@ function explode(B, x, y, dmg, radius, source) {
       damagePart(B, V, i, dmg * (1 - dd / radius) * armourCut, source);
     });
   }
+  if (B.drones && B.drones.length) blastDrones(B, x, y, dmg, radius);
   // Trees near the blast fall.
   for (const tr of B.T.trees) if (tr.alive && Math.abs(tr.x - x) < radius * 0.7) breakTree(B, tr, tr.x > x ? 1 : -1);
 }
@@ -515,6 +516,8 @@ function stepShells(B, dt) {
       if (Math.hypot(s.px + ex * t - b.x, s.py + ey * t - b.y) > V.radius) continue;
       if (shellVsVehicle(B, s, V)) { s.alive = false; return; }
     }
+    // Drones (Part 5c).
+    if (B.drones && B.drones.length && shellVsDrones(B, s)) { s.alive = false; return; }
     // Water: bullets stop at the surface, high explosive bursts on it, and shells
     // slow sharply and die 1.5 m down (design/01 §7.1 sea layer).
     if (seaAt(T, s.x) && s.y < T.sea) {

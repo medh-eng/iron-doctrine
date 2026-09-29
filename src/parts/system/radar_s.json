@@ -36,5 +36,25 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 1.5,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.0,
+      0.95
+    ]
+  },
+  "moving": {
+    "antenna": {
+      "pivot": [
+        1.0,
+        -0.85
+      ]
+    }
+  }
 }

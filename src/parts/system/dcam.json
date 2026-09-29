@@ -1,0 +1,35 @@
+{
+  "id": "dcam",
+  "name": "Drone camera",
+  "family": "dcam",
+  "variant": "std",
+  "category": "system",
+  "tier": 3,
+  "domains": [
+    "drone"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "stats": {
+    "mass": 5,
+    "hp": 4,
+    "armor": 0,
+    "spot": 1.5
+  },
+  "behaviour": {
+    "droneCam": true
+  },
+  "cost": {
+    "elec": 1,
+    "money": 6
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "drones"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. Enemies within 40 m of the drone are spotted."
+}
