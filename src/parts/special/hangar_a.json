@@ -1,0 +1,40 @@
+{
+  "id": "hangar_a",
+  "name": "Aircraft hangar",
+  "family": "hangar_a",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea"
+  ],
+  "footprint": {
+    "w": 6,
+    "h": 3
+  },
+  "stats": {
+    "mass": 3000,
+    "hp": 150,
+    "armor": 10,
+    "power": -20,
+    "rel": 0.998,
+    "capacity": 2,
+    "rate": 0.1
+  },
+  "behaviour": {
+    "hangar": "aircraft"
+  },
+  "cost": {
+    "metal": 16,
+    "elec": 3,
+    "money": 300
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "carriers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5c2 (design/05 §3.4). Holds 2 aircraft or helicopters of the ship's air wing design and launches one every 10 s."
+}

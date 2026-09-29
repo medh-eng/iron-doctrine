@@ -767,6 +767,17 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         DC(dc.strike.hits > 0 && dc.strike.damage > 50 && dc.scout.seen && dc.aa.lost > 0, 'strike, scout or shooting drones down wrong');
         DC(dc.cpu2.design === 'drn_heavy' && dc.cpu2.maxFlying === 4 && dc.cpu1Heavy === 'drn_gun', 'drone computer size limits wrong');
         steps.push('drones');
+        // Part 5c2: air wings, and drones and aircraft as campaign items.
+        const wc2 = await G(() => window.__GAME__.wingCheck());
+        const WG = (c, what) => check(c, `${what} ${JSON.stringify(wc2)}`);
+        WG(wc2.cap === 2 && wc2.design === 'fighter' && wc2.recall.launched === 2 && wc2.recall.maxUp === 2 && wc2.recall.aboard === 2 && wc2.recall.flying === 0, 'air wing launch or recall wrong');
+        WG(wc2.fight.engaged && wc2.lost.up > 0 && wc2.lost.after === 0 && wc2.lost.lost >= wc2.lost.up && wc2.notInSquad, 'air wing fight or loss with the carrier wrong');
+        const as2 = await G(() => window.__GAME__.airStockCheck());
+        const AS = (c, what) => check(c, `${what} ${JSON.stringify(as2)}`);
+        AS(/metropolis/.test(as2.cityDrones) && as2.drones === '' && as2.made.drones === 4 && as2.made.wings === 1 && as2.space > 10, 'making drones or aircraft wrong');
+        AS(as2.loadD === '' && as2.loadW === '' && as2.carried.drones.n === 4 && as2.carried.wing.n === 1 && as2.inBattle.drones === 4 && as2.inBattle.wing === 1, 'loading drones or aircraft wrong');
+        AS(as2.home.drones === 3 && as2.after.drones.n === 3 && as2.after.wing.n === 1 && as2.empty === 0, 'drones or aircraft coming home wrong');
+        steps.push('air wings and air stock');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

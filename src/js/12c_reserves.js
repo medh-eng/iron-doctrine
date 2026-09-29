@@ -34,6 +34,8 @@ function reserveEntry(design, V) {
     e.health = vehicleHealth(V);
     e.fuel = V.fuel; e.shells = V.shells;
     e.msl = missilesLeft(V);
+    e.drn = V.hangarCap ? V.dronesAboard : null;      // what was flying is lost when the carrier leaves
+    e.wng = V.wingCap ? V.wingAboard : null;
   }
   return e;
 }
@@ -78,6 +80,7 @@ function restoreDamage(V, e) {
   if (e.fuel !== null) V.fuel = e.fuel;
   if (e.shells !== null) V.shells = e.shells;
   if (e.msl !== null && e.msl !== undefined) loadVehicleMissiles(V, e.msl);
+  loadVehicleAir(V, e.drn, e.wng);
 }
 
 function enterFromReserve(B, side, slot) {

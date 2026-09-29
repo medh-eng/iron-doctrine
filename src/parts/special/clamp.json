@@ -1,0 +1,51 @@
+{
+  "id": "clamp",
+  "name": "Release clamp",
+  "family": "clamp",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "release": [
+      0.5,
+      1.0
+    ]
+  },
+  "stats": {
+    "mass": 150,
+    "hp": 40,
+    "armor": 10,
+    "power": 0,
+    "rel": 0.998,
+    "capacity": 2
+  },
+  "cost": {
+    "metal": 2,
+    "elec": 1,
+    "money": 40
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "detachment"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.4). 05 gives no mass, HP or armour for tier 3-4: set by analogy (confirm). Art: hydraulic twin-jaw clamp on a P1 mount, hazard stripes. capacity in tonnes (2 t, from 05). Anchor 'release' = drop point. Planned until step 5e (fabricators and detachable sections).",
+  "planned": true
+}

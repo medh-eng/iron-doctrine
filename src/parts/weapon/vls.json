@@ -44,5 +44,31 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5b (design/05 §3.4). Holds 8 small, 4 medium or 2 large missiles; fires straight up."
+  "notes": "Part 5b (design/05 §3.4). Holds 8 small, 4 medium or 2 large missiles; fires straight up.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "launch": [
+      [
+        0.3,
+        0.0
+      ],
+      [
+        0.75,
+        0.0
+      ],
+      [
+        1.25,
+        0.0
+      ],
+      [
+        1.7,
+        0.0
+      ]
+    ]
+  }
 }

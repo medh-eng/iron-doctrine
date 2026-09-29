@@ -287,7 +287,7 @@ function waterChecks(B, V) {
 // Ships keep to water deep enough for their keel; land vehicles stay out of the sea.
 // Used for AI-driven vehicles only: the player may run aground or drive in.
 function domainGuard(B, V) {
-  if (!V.throttle) return;
+  if (!V.throttle || V.flier) return;          // aircraft and airships fly over anything
   const T = B.T;
   const ahead = V.body.x + Math.sign(V.throttle) * (V.len / 2 + 4);
   if (V.hull) {

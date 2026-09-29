@@ -142,7 +142,7 @@ const DRONE_TEMPLATES = {};
 for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : v.domain === 'drone' ? DRONE_TEMPLATES : TEMPLATES)[id] = v;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck', 'carrier_t3'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 

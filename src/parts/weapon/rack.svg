@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -6.4 73.6 38.4" data-part="rack" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.3"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.65" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.42"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="cyl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.25"/><stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0.5"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M8 31.6V27.4Q8 26 9.4 26H24Q25.4 26 25.4 27.4V31.6Z" fill="#FF00FF"/>
+</g>
+<g class="detail">
+<path d="M13 26L14 20.6H18L19 26Z" fill="#8E9BA8" stroke="#14171B" stroke-width="0.6"/>
+<path d="M8 31.6V27.4Q8 26 9.4 26H24Q25.4 26 25.4 27.4V31.6Z" fill="url(#shade)" stroke="#14171B" stroke-width="0.8"/>
+<g fill="url(#bolt)"><circle cx="11" cy="28.8" r="1.1"/><circle cx="22.4" cy="28.8" r="1.1"/></g>
+</g>
+</g>
+<g id="barrel" data-role="barrel" data-pivot="16 19.2">
+<g class="paint">
+<path d="M6 3.8H58V8.8H6Z" fill="#00FFFF"/>
+<path d="M36 3.8H39V8.8H36Z" fill="#FFFF00"/>
+<path d="M12 11.8H64V16.8H12Z" fill="#00FFFF"/>
+<path d="M42 11.8H45V16.8H42Z" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M58 3.8Q66 6.3 58 8.8Z" fill="#B7C3CF" stroke="#14171B" stroke-width="0.5"/>
+<path d="M6 1.3L14 3.8V8.8L6 11.3Z" fill="#8E9BA8" stroke="#14171B" stroke-width="0.5"/>
+<rect x="6" y="3.8" width="52" height="5" fill="url(#tube)" stroke="#14171B" stroke-width="0.5"/>
+<rect x="6" y="1.3" width="60" height="10" fill="#000000" fill-opacity="0.3"/>
+<path d="M64 11.8Q72 14.3 64 16.8Z" fill="#B7C3CF" stroke="#14171B" stroke-width="0.5"/>
+<path d="M12 9.3L20 11.8V16.8L12 19.3Z" fill="#8E9BA8" stroke="#14171B" stroke-width="0.5"/>
+<rect x="12" y="11.8" width="52" height="5" fill="url(#tube)" stroke="#14171B" stroke-width="0.5"/>
+<rect x="4" y="17" width="56" height="3.2" rx="0.8" fill="#B7C3CF" stroke="#14171B" stroke-width="0.6"/>
+<rect x="4" y="17" width="56" height="3.2" rx="0.8" fill="url(#tube)"/>
+<rect x="4" y="9" width="50" height="2.2" rx="0.6" fill="#8E9BA8" stroke="#14171B" stroke-width="0.5"/>
+<path d="M8 9V17M30 9V17M50 9V17" stroke="#8E9BA8" stroke-width="1.4" fill="none"/>
+<path d="M5 21.2Q10 25 16 22" stroke="#23201E" stroke-width="1" fill="none"/>
+<circle cx="16" cy="19.2" r="2.4" fill="url(#bolt)" stroke="#14171B" stroke-width="0.5"/>
+</g>
+</g>
+</svg>

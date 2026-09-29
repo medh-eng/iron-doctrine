@@ -218,9 +218,11 @@ SCREENS.map = {
         const items = {};
         for (const it of itemsAt(fl.hold)) items[it.p] = (items[it.p] || 0) + 1;
         if (Object.keys(items).length) row('Parts aboard', Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', '));
-        const held = Object.entries(missilesAt(fl.hold));
-        if (held.length) row('Missiles in the hold', held.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
-        for (const sh of fleetShips(fl)) { const m = shipMissiles(sh); if (m) row(`${shipStats(sh).name}: missiles`, `${m.n} of ${m.cap} · ${m.name}`); }
+        for (const kind in STOCK_KINDS) {
+          const held = Object.entries(stockAt(fl.hold, kind));
+          if (held.length) row(`${STOCK_KINDS[kind].noun[0].toUpperCase()}${STOCK_KINDS[kind].noun.slice(1)} in the hold`, held.map(([k, n]) => `${stockName(kind, k)} ×${n}`).join(', '));
+        }
+        for (const sh of fleetShips(fl)) for (const kind in STOCK_KINDS) { const m = shipStock(sh, kind); if (m) row(`${shipStats(sh).name}: ${STOCK_KINDS[kind].noun}`, `${m.n} of ${m.cap} · ${m.name}`); }
       } else if (this.tab === 'route') {
         this.routeTab(fl, body, row);
       } else {
@@ -313,10 +315,11 @@ SCREENS.map = {
         r.appendChild(button(label(rf, 'Refuel', 'Tanks full'), () => done(refuel(fl, s)), 'btn btn-small'));
         r.appendChild(button(label(ra, 'Rearm', 'Magazines full'), () => done(rearm(fl, s)), 'btn btn-small'));
         // Missiles (5b2): fill the launchers from missiles in stock here.
-        const lo = fleetShips(fl).map(shipMissiles).filter(Boolean);
-        if (lo.length) {
-          const have = lo.reduce((a, m) => a + m.n, 0), cap = lo.reduce((a, m) => a + m.cap, 0);
-          r.appendChild(button(have >= cap ? `Missiles ${have}/${cap}` : `Load missiles ${have}/${cap}`, () => done(loadMissiles(fl, s)), 'btn btn-small'));
+        for (const kind in STOCK_KINDS) {
+          const lo = fleetShips(fl).map((sh) => shipStock(sh, kind)).filter(Boolean);
+          if (!lo.length) continue;
+          const have = lo.reduce((a, m) => a + m.n, 0), cap = lo.reduce((a, m) => a + m.cap, 0), noun = STOCK_KINDS[kind].noun;
+          r.appendChild(button(have >= cap ? `${noun[0].toUpperCase()}${noun.slice(1)} ${have}/${cap}` : `Load ${noun} ${have}/${cap}`, () => done(loadStock(fl, s, kind)), 'btn btn-small'));
         }
       }
     } else if (this.tab === 'barracks') {
@@ -352,8 +355,10 @@ SCREENS.map = {
       const items = {};
       for (const it of itemsAt(s.store)) items[it.p] = (items[it.p] || 0) + 1;
       row('Parts', Object.keys(items).length ? Object.entries(items).map(([k, n]) => `${PARTS[k].name} ×${n}`).join(', ') : 'none');
-      const stock = Object.entries(missilesAt(s.store));
-      if (stock.length) row('Missiles', stock.map(([k, n]) => `${(missileDesign(k) || { name: k }).name} ×${n}`).join(', '));
+      for (const kind in STOCK_KINDS) {
+        const stock = Object.entries(stockAt(s.store, kind));
+        if (stock.length) row(`${STOCK_KINDS[kind].noun[0].toUpperCase()}${STOCK_KINDS[kind].noun.slice(1)}`, stock.map(([k, n]) => `${stockName(kind, k)} ×${n}`).join(', '));
+      }
       if (fl) {
         const r = act();
         r.appendChild(button('Load parts', () => done(transferItems(fl, s, 1)), 'btn btn-small'));

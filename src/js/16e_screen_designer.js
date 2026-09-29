@@ -480,7 +480,12 @@ SCREENS.designer = {
       row('Missile carried', ms ? `${ms.name} (${missileClass(ms.cls).name})` : 'none');
       for (const w of rep.weapons.filter((q) => q.secondary === 'launcher')) row(`${w.name} holds`, ms && w.sizes.includes(ms.cls) ? `${Math.floor(w.capacity / ms.units)}` : 'this size won’t fit');
     }
-    if (s.d.cells.some((c) => PARTS[c.p].hangar)) {
+    if (s.d.cells.some((c) => PARTS[c.p].hangar === 'aircraft')) {
+      const wd = wingDesignOf(s.d.wing || DEFAULT_WING);
+      const wcap = s.d.cells.reduce((a, c) => a + (PARTS[c.p].hangar === 'aircraft' ? PARTS[c.p].capacity : 0), 0);
+      row('Air wing', wd ? `${wcap} × ${wd.name}` : 'none');
+    }
+    if (s.d.cells.some((c) => PARTS[c.p].hangar === 'drone')) {
       const cpus = s.d.cells.map((c) => PARTS[c.p]).filter((P) => P.droneCpu).sort((a, b) => b.effect - a.effect);
       const dd = droneDesign(s.d.drone || DEFAULT_DRONE), ds = dd && droneStats(dd);
       const cap = s.d.cells.reduce((a, c) => a + (PARTS[c.p].hangar ? PARTS[c.p].capacity : 0), 0);
@@ -696,6 +701,7 @@ SCREENS.designer = {
       paint: s.d.paint ? Object.assign({}, s.d.paint) : undefined,
       missile: s.d.missile || undefined,      // the missile its racks and VLS carry (Part 5b)
       drone: s.d.drone || undefined,          // the drone its hangars hold (Part 5c)
+      wing: s.d.wing || undefined,            // the aircraft its aircraft hangars hold (5c2)
       parent: fromSaved ? fromSaved.id : s.base.id,
       cost: rep.cost,
       created: Date.now(),

@@ -202,4 +202,31 @@ function droneCheck() {
   out.cpu1Heavy = V1.droneSt && V1.droneSt.id;
   return out;
 }
+// Part 5c2: an escort carrier's air wing at sea: launches up to its hangar, fights, lands on
+// recall, and is lost with its carrier; wings are never objectives.
+function wingCheck() {
+  const B = createBattle(0, { squad: [designFromTemplate('carrier_t3')], cfg: simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 77 }), reserves: true, enemyForce: [designFromTemplate('gunboat')] });
+  const C = B.me;
+  const out = { cap: C.wingCap, aboard: C.wingAboard, design: C.wingDesign && C.wingDesign.id };
+  let maxUp = 0, engaged = false, t = 0;
+  const run = (secs, fn) => { for (let k = 0; k < secs; k += SIM_STEP) { if (B.result) break; updateBattle(B, SIM_STEP); t += SIM_STEP; if (fn && fn()) break; } };
+  // Launch, then recall before any enemy is near: they land back aboard.
+  run(14, () => { maxUp = Math.max(maxUp, wingsFlying(B, C)); return false; });
+  const launched = B.stats.wings || 0;
+  droneOrder(B, C, 'recall');
+  run(60);
+  out.recall = { launched, maxUp, aboard: C.wingAboard, flying: wingsFlying(B, C) };
+  // Attack an enemy brought within reach.
+  droneOrder(B, C, 'attack');
+  for (const U of B.units) if (U.side === 1) { U.body.x = C.body.x + 200; U.ai.hold = U.body.x; }
+  run(30, () => { for (const U of B.units) if (U.wing === C && !U.destroyed && U.ai.target && !U.ai.target.pseudo) engaged = true; return engaged; });
+  out.fight = { engaged, result: B.result || null };
+  // The carrier leaves: its aircraft still flying leave too, and are lost.
+  const up = wingsFlying(B, C);
+  C.withdrawn = true;
+  run(40);
+  out.lost = { up, after: wingsFlying(B, C), lost: B.stats.wingLost || 0 };
+  out.notInSquad = !B.squad.some((V) => V.wing);
+  return out;
+}
 /*TEST:END*/

@@ -165,6 +165,23 @@ function openSmallDesigner(D, K) {
     }
     act.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
     c.appendChild(act);
+    // A ship with an aircraft hangar (5c2): which aircraft or helicopter its air wing flies.
+    if (K === SMALL_KINDS.drone && ship && ship.cells.some((q) => PARTS[q.p].hangar === 'aircraft')) {
+      const wrow = el('div', 'card-row ms-row');
+      wrow.appendChild(el('span', 'ws-fact', 'Air wing'));
+      const sel = document.createElement('select');
+      sel.className = 'ms-pick ms-wing';
+      const ids = ['fighter', 'bomber', 'heli'].concat(save.designs.list.map((x) => x.id)).filter((id, i, a) => a.indexOf(id) === i && wingDesignOf(id));
+      for (const id of ids) {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = wingDesignOf(id).name;
+        if (id === (ship.wing || DEFAULT_WING)) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => { ship.wing = sel.value; audio.sfx('tap'); D.refresh(); });
+      wrow.appendChild(sel);
+      c.appendChild(wrow);
+    }
   };
   draw();
   close = ui.open(c);
