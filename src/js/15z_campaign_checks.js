@@ -521,4 +521,37 @@ function airStockCheck() {
   out.space = +stockUnits('wings', 'fighter').toFixed(1);
   return out;
 }
+// Part 6a: thirty days of the AI factions on their own (your fleets stay out of it).
+function aiCheck(days = 30, as = 'league') {
+  newCampaign(as, 9191);
+  const t0 = performance.now();
+  const ids = aiFactionIds();
+  const snap = () => Object.fromEntries(ids.map((f) => [f, { settlements: settlementsOf(f).length, ships: campaign.ships.filter((s) => s.faction === f).length }]));
+  const before = snap();
+  const neutral0 = world.settlements.filter((s) => !s.faction).length;
+  let messages = 0;
+  for (let d = 0; d < days; d++) {
+    for (const fl of playerFleets()) fl.cooldown = 1e9;         // no contacts with you
+    campaign.running = true;
+    messages += campaignTick(24).filter((e) => e.msg).length;
+  }
+  const after = snap();
+  const convoys = campaign.fleets.filter((f) => f.aiConvoy);
+  const built = Object.fromEntries(ids.map((f) => [f, aiState(f).built]));
+  const dom = (f) => { const c = { land: 0, sea: 0, air: 0 }; for (const s of campaign.ships) if (s.faction === f && !(s.fleetId && byId('fleets', s.fleetId) && byId('fleets', s.fleetId).aiConvoy)) { const d = domainOf(shipDesign(s)); c[airDomain(d) ? 'air' : seaDomain(d) ? 'sea' : 'land']++; } return c; };
+  return {
+    day: campaign.day, ms: Math.round(performance.now() - t0), before, after, built,
+    money: Object.fromEntries(ids.map((f) => [f, Math.round(aiState(f).money)])),
+    tiers: Object.fromEntries(ids.map((f) => [f, aiState(f).tier])),
+    neutral: { before: neutral0, after: world.settlements.filter((s) => !s.faction).length },
+    bought: aiState('league') ? aiState('league').bought : 0,
+    clashes: campaign.aiClashes || 0,
+    convoys: { count: convoys.length, trips: convoys.reduce((a, f) => a + (f.aiConvoy.trips || 0), 0) },
+    leagueDomains: campaign.faction === 'league' ? null : dom('league'),
+    leagueFleets: campaign.faction === 'league' ? null : fleetsOf('league').filter((f) => !f.aiConvoy).map((f) => f.domain),
+    directorateDomains: dom('directorate'), skyreachDomains: dom('skyreach'),
+    builtDomains: Object.fromEntries(ids.map((f) => [f, aiState(f).byDomain])),
+    messages,
+  };
+}
 /*TEST:END*/

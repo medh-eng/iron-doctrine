@@ -39,7 +39,7 @@ All five factions are original. Scheme ids match `src/parts/paints.json`. Every 
   - defends trade
   - runs many convoys
   - prefers naval battles
-  - buys neutral villages instead of taking them by force
+  - buys neutral villages instead of taking them by force (6a: 350 a village within reach; it saves for the next one instead of building)
 - **Music motif:** a bugle over a sea-shanty rhythm.
 
 ## 2. Directorate (`directorate`)

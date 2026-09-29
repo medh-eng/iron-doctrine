@@ -4,7 +4,8 @@
 // arrival and low fuel. AI fleets patrol their faction's settlements; from day 2 they intercept
 // a player fleet they can see and think they can beat (convoys first: raiding); from day 4 a
 // strong land fleet marches on a weakly held settlement of yours and besieges it. AI fleets
-// don't burn map fuel yet, and AI factions don't fight each other on the map yet.
+// don't burn map fuel yet. Part 6a (15h) adds AI economies, building, expansion, convoys,
+// AI-against-AI war, defence of home and personalities.
 
 const TICK_HOURS = 0.25;          // campaign sub-step
 const AI_THINK_HOURS = 3;
@@ -40,22 +41,19 @@ function aiThink(fl) {
   const rng = makeRng(campaign.seed + campaign.day * 131 + Math.floor(campaign.hour) * 7 + fl.id.length * 31 + fl.shipIds.length);
   // AI fleets top up at their own settlements (abstracted until Part 4).
   for (const s of fleetShips(fl)) { s.fuel = shipStats(s).fuelCap; s.ammo = 1; }
-  // Intercept a visible player fleet it can beat, from day 2.
-  if (campaign.day >= 2) {
-    let best = null, bd = 26;
-    for (const P of playerFleets()) {
-      if (!P.shipIds.length || relation(fl.faction, P.faction) !== 'war') continue;
-      const d = Math.hypot(P.x - fl.x, P.y - fl.y) * (P.convoy ? RAID_PULL : 1);   // raiders prefer convoys
-      if (d < bd && fleetStrength(fl) >= fleetStrength(P) * 0.7) {
-        const plan = fleetPath(world, fl.domain, fl.x, fl.y, P.x, P.y);
-        if (plan) { best = { P, plan }; bd = d; }
-      }
-    }
-    if (best) { fl.path = best.plan; fl.ai.target = best.P.id; return; }
-  }
+  // Part 6a (15h): convoys run their route; fleets defend home, then hunt, besiege, expand.
+  if (fl.aiConvoy) { aiConvoyThink(fl); return; }
+  if (fl.ai.expand || fl.ai.siegeAi) { if (fl.path.length) return; }
+  fl.ai.defending = false;
+  if (aiDefend(fl)) return;
+  const calm = aiCalm(fl.faction);
+  // Hunt an enemy fleet it can beat (yours or another faction's), from day 2.
+  if (campaign.day >= 2 && !calm && aiHunt(fl)) return;
   fl.ai.target = null;
   // Besiege a weakly held settlement of yours (01 §11, §13).
-  if (!fl.ai.siege) {
+  if (calm) {
+    // The Lumen and other calm factions stay at home.
+  } else if (!fl.ai.siege) {
     const t = aiSiegeTarget(fl);
     const at = t && portCell(t, 'land');
     const plan = at && fleetPath(world, fl.domain, fl.x, fl.y, at[0], at[1]);
@@ -66,6 +64,9 @@ function aiThink(fl) {
     fl.ai.siege = null;
   }
   if (fl.path.length) return;
+  // Another AI faction's settlement to besiege, or a neutral one to take.
+  if (!calm && aiSiegeAI(fl)) return;
+  if (aiExpand(fl)) return;
   // Patrol: another settlement of its own faction.
   const own = world.settlements.filter((s) => s.faction === fl.faction);
   const s = rng.pick(own);
@@ -114,6 +115,13 @@ function campaignTick(dtReal) {
       if (!P.shipIds.length || P.cooldown > 0) continue;
       const E = campaign.fleets.find((fl) => fl.faction !== campaign.faction && fl.shipIds.length && !(fl.cooldown > 0) && relation(fl.faction, P.faction) === 'war' && Math.hypot(fl.x - P.x, fl.y - P.y) <= CONTACT_CELLS);
       if (E) { events.push({ stop: true, msg: `Contact: ${factionOf(E.faction).name} ${E.domain} fleet.`, contact: { mine: P.id, theirs: E.id } }); break; }
+    }
+    // AI fleets taking neutral settlements, besieging each other, and meeting in battle (6a).
+    if (!events.some((e) => e.contact)) {
+      const news = [];
+      aiArrivals(news);
+      aiClashes(news);
+      for (const m of news) events.push({ msg: m });
     }
     // An AI fleet reaching the settlement it marched on lays siege.
     if (!events.some((e) => e.contact)) for (const fl of campaign.fleets) {

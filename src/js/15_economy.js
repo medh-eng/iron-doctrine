@@ -199,6 +199,7 @@ function dailyEconomy() {
     if (s.plunder >= campaign.day && s.faction === campaign.faction) income += plunderValue(s);
   }
   researchDay(news);
+  aiDay(news);                             // the AI factions' treasuries, building, convoys (6a)
   for (const o of campaign.officers) {
     if (!o.alive || o.faction !== campaign.faction) continue;
     if (o.rank === 'captain') wages += WAGES.captain * o.level;

@@ -795,6 +795,16 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         FC(fc.car && fc.car.onGround && fc.car.canDrive && !fc.car.destroyed, 'released section did not land ready to drive');
         FC(fc.era.laser === 1 && fc.era.light === 0, 'tier 3–4 music layer choice wrong');
         steps.push('fabricators and clamps');
+        // Part 6a: the other factions run their own campaigns (30 days, you as the League, no contacts).
+        const ai = await G(() => window.__GAME__.aiCheck('league'));
+        const AI = (c, what) => check(c, `${what} ${JSON.stringify(ai)}`);
+        AI(ai.day >= 30 && ai.neutral.after < ai.neutral.before - 4, 'the AI factions did not take neutral settlements');
+        AI(Object.values(ai.built).reduce((a, b) => a + b, 0) > 5 && ai.after.directorate.settlements > ai.before.directorate.settlements, 'the AI factions did not build or expand');
+        AI(ai.clashes > 0 && ai.convoys.count > 0 && ai.convoys.trips > 0, 'no AI clashes or AI convoy trips');
+        AI(ai.tiers.lumen > ai.tiers.clans && ai.builtDomains.clans.land > ai.builtDomains.clans.sea + ai.builtDomains.clans.air && ai.builtDomains.directorate.land >= ai.builtDomains.directorate.sea, 'AI personalities (tech pace, domains) not showing');
+        const ai2 = await G(() => window.__GAME__.aiCheck('directorate'));
+        check(ai2.bought > 0 && ai2.builtDomains.league.sea > ai2.builtDomains.league.land + ai2.builtDomains.league.air, `the League AI did not buy villages or prefer the sea ${JSON.stringify(ai2)}`);
+        steps.push('faction AI');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
