@@ -1,0 +1,43 @@
+{
+  "id": "cap",
+  "name": "Capacitor bank",
+  "family": "cap",
+  "variant": "std",
+  "category": "system",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 300,
+    "hp": 30,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.995,
+    "effect": 30
+  },
+  "behaviour": {
+    "capacitor": true
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 8,
+    "scrap": 8,
+    "money": 200
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lasers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 §3.4). Stores 30 MJ: covers the energy weapons' recharge when spare power runs short, and refills from spare power. May burst when destroyed."
+}

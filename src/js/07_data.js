@@ -80,6 +80,21 @@ const MSL = {
   clusterAt: 30,           // m from the target where a cluster warhead splits
   burnDps: 6,              // napalm: damage per second to parts in the burning patch
 };
+// Energy weapons, flamethrowers and damage types (Part 5d, design/01 §7, design/08 §7). Battle numbers.
+// Energy weapons use no ammo: they recharge from spare power (engines' power × heat factor, less
+// what systems draw), a capacitor covers a shortfall, and each shot adds weapon heat; at EN.heatMax
+// they lock until cooled to EN.heatResume. Materials resist damage types (materials.json resist).
+const EN = {
+  beamVel: 1500,           // m/s: a laser 'shell' crosses its range in a frame or two
+  plasmaGravity: 0.3,      // plasma bolts drop at 30% of gravity
+  capKJ: 100,              // kJ stored per unit of capacitor effect (30 → 3000 kJ)
+  heatMax: 100, heatResume: 50,
+  cool: 8,                 // weapon heat shed per second, plus radiators × coolRadiator
+  coolRadiator: 0.25,
+  flameReach: 0.2,         // a flamethrower reaches range × this (60 → 12 m)
+  flameFuel: 1,            // litres per second while it burns
+  igniteChance: 0.35,      // chance per second a flamed part catches fire (× (1 − fire resistance))
+};
 // Drones (Part 5c, design/01 §10.5). Battle numbers.
 const DRN = {
   speed: 16,               // m/s at a lift-to-weight of 2
@@ -115,6 +130,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   if (m.burns) PARTS[id].burns = m.burns;
   if (m.shape === 'slope') PARTS[id].sloped = true;
   if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
+  if (m.resist) PARTS[id].resist = m.resist;         // damage-type resistances (Part 5d)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -142,7 +158,7 @@ const DRONE_TEMPLATES = {};
 for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : v.domain === 'drone' ? DRONE_TEMPLATES : TEMPLATES)[id] = v;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck', 'carrier_t3'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck', 'carrier_t3', 'laser_tank', 'flame_tank'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 

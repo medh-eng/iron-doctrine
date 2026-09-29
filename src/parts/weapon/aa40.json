@@ -45,5 +45,39 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Imported from v1 07_data.js."
+  "notes": "Imported from v1 07_data.js.",
+  "overhang": {
+    "left": 0,
+    "right": 2.45,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.5,
+      1.95
+    ],
+    "muzzle": [
+      5.45,
+      1
+    ],
+    "smoke": [
+      [
+        1.2,
+        0.75
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.1,
+        1
+      ],
+      "elevation": [
+        -5,
+        85
+      ]
+    }
+  }
 }

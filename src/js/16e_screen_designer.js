@@ -419,6 +419,17 @@ SCREENS.designer = {
     row('Centre of mass', `${st.com.x.toFixed(1)}, ${st.com.y.toFixed(1)} m`);
     row('Power', `${st.power} kW made, ${st.drawn} kW drawn`);
     row('Power to weight', `${st.powerToWeight.toFixed(1)} kW/t`);
+    // Energy weapons (Part 5d): what recharging them draws, what's spare, the capacitor and heat.
+    const ew = s.d.cells.map((c) => PARTS[c.p]).filter((P) => P.energy);
+    if (ew.length) {
+      const need = ew.reduce((a, P) => a - P.power, 0);
+      const other = s.d.cells.reduce((a, c) => a + (PARTS[c.p].power < 0 && !PARTS[c.p].energy ? -PARTS[c.p].power : 0), 0);
+      const spare = Math.max(0, st.power - other);
+      const cap = s.d.cells.reduce((a, c) => a + (PARTS[c.p].capacitor ? PARTS[c.p].effect * EN.capKJ : 0), 0);
+      row('Energy weapons recharge', `${need} kW needed, ${Math.round(spare)} kW spare (${Math.round(Math.min(1, spare / need) * 100)}% speed)`);
+      if (cap) row('Capacitor', `${cap} kJ`);
+      row('Weapon heat a volley', `${ew.reduce((a, P) => a + P.heat, 0)} of ${EN.heatMax}; sheds ${EN.cool}/s`);
+    }
     if (naval && st.hull) {
       row('Hull length', `${st.hull.length.toFixed(1)} m`);
       row('Beam', `${st.hull.beam.toFixed(1)} m`);

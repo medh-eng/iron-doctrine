@@ -54,7 +54,8 @@
     "fuelUse": 0.05
   },
   "behaviour": {
-    "fire": true
+    "fire": true,
+    "flame": true
   },
   "cost": {
     "metal": 2,
@@ -66,6 +67,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "New in v2.1 (05 section 3.3). Art: welded slab mount (T2) with a hazard-striped fuel bottle; projector tube with a hose, pilot-light igniter glowing at the nozzle. Projector length 2.2 cells (not the 07 gun length). fuelUse = the 0.05 fuel per second from 05. Planned until step 5d (flamethrowers).",
-  "planned": true
+  "notes": "New in v2.1 (05 section 3.3). Art: welded slab mount (T2) with a hazard-striped fuel bottle; projector tube with a hose, pilot-light igniter glowing at the nozzle. Projector length 2.2 cells (not the 07 gun length). fuelUse = the 0.05 fuel per second from 05. Repo (5d): live; behaviour flame added (fire stays: a destroyed flamethrower may start a fire)."
 }

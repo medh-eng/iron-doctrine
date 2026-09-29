@@ -1,0 +1,49 @@
+{
+  "id": "plance",
+  "name": "Plasma lance",
+  "family": "plance",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 5,
+    "h": 2
+  },
+  "stats": {
+    "mass": 6000,
+    "hp": 160,
+    "armor": 20,
+    "power": -700,
+    "rel": 0.995,
+    "pen": 320,
+    "dmg": 520,
+    "reload": 9,
+    "range": 1400,
+    "vel": 120,
+    "spread": 0.6,
+    "cal": 150,
+    "heat": 110
+  },
+  "behaviour": {
+    "energy": "plasma"
+  },
+  "cost": {
+    "metal": 18,
+    "elec": 22,
+    "scrap": 25,
+    "money": 1100
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "energy_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 §3.4). 700 kW to recharge; 110 weapon heat a shot: one shot, then a long cool-down."
+}

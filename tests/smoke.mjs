@@ -778,6 +778,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         AS(as2.loadD === '' && as2.loadW === '' && as2.carried.drones.n === 4 && as2.carried.wing.n === 1 && as2.inBattle.drones === 4 && as2.inBattle.wing === 1, 'loading drones or aircraft wrong');
         AS(as2.home.drones === 3 && as2.after.drones.n === 3 && as2.after.wing.n === 1 && as2.empty === 0, 'drones or aircraft coming home wrong');
         steps.push('air wings and air stock');
+        // Part 5d: energy weapons, flamethrowers, damage types.
+        const en = await G(() => window.__GAME__.energyCheck());
+        const EN = (c, what) => check(c, `${what} ${JSON.stringify(en)}`);
+        EN(en.heat.shots === 6 && en.heat.locked && en.heat.coolSecs > 3 && en.heat.coolSecs < 12, 'laser heat lockout or cooling wrong (lasers need no shells)');
+        EN(en.power.need > en.power.made && en.power.weak > en.power.reload * 1.2 && en.power.capped < en.power.weak && Math.abs(en.power.strong - en.power.reload) < 0.1, 'energy recharge by spare power or capacitor wrong');
+        EN(en.laser.damage > 20 && en.laser.beam > 0 && en.laser.secs < 0.2 && en.plasma.damage > 50 && en.plasma.secs > 0.3, 'laser beam or plasma bolt wrong');
+        EN(en.flame.damage > 50 && en.flame.fires > 0 && en.flame.fuelUsed > 0 && en.flame.farDamage === 0, 'flamethrower reach, burning or fuel wrong');
+        EN(en.resist.compositeFire === en.resist.plateFire / 2 && en.resist.compositeKinetic === en.resist.plateFire && en.resist.compositePlasma < en.resist.compositeKinetic, 'damage-type resistances wrong');
+        steps.push('energy weapons');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -818,12 +827,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
           if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(f.x - cx, f.y - cy) < 3)) continue;
           if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < 2.5)) continue;
           if (C.planMove(fl, cx, cy).why) continue;
-          // Put that cell in the clear left part of the screen.
-          const x = Math.round(innerWidth * 0.3), y = Math.round(innerHeight * 0.55);
-          S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
-          // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
-          if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
-          return { x, y, x0: fl.x, y0: fl.y };
+          // Put that cell in a clear part of the screen (a few places to try, left first).
+          for (const [fx, fy] of [[0.3, 0.55], [0.45, 0.4], [0.2, 0.35], [0.6, 0.45]]) {
+            const x = Math.round(innerWidth * fx), y = Math.round(innerHeight * fy);
+            S.cam.x = cx - (x - innerWidth / 2) / S.cam.z; S.cam.y = cy - (y - innerHeight / 2) / S.cam.z;
+            // Fleet counters are drawn side by side (drawDx), so check where they actually appear.
+            if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(S.sx(f.x) + (f.drawDx || 0) - x, S.sy(f.y) - y) < 50)) continue;
+            return { x, y, x0: fl.x, y0: fl.y };
+          }
         }
         return null;
       });

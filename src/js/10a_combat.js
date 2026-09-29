@@ -77,13 +77,13 @@ function angleFromElevation(V, elevDeg, face) {
 }
 
 // Low-angle ballistic solution; returns the world angle or NaN when out of reach.
-function ballisticAngle(x, y, tx, ty, v, high) {
+function ballisticAngle(x, y, tx, ty, v, high, gk = 1) {
   const dx = tx - x, dy = ty - y;
   const ax = Math.max(0.01, Math.abs(dx));
-  const v2 = v * v;
-  const disc = v2 * v2 - GRAVITY * (GRAVITY * ax * ax + 2 * dy * v2);
+  const v2 = v * v, G = GRAVITY * gk;
+  const disc = v2 * v2 - G * (G * ax * ax + 2 * dy * v2);
   if (disc < 0) return NaN;
-  const up = Math.atan((v2 + (high ? 1 : -1) * Math.sqrt(disc)) / (GRAVITY * ax));
+  const up = Math.atan((v2 + (high ? 1 : -1) * Math.sqrt(disc)) / (G * ax));
   return dx >= 0 ? up : Math.PI - up;
 }
 
@@ -96,7 +96,8 @@ function aimWeapon(V, w, tx, ty, out) {
   out.ok = false;
   out.reason = '';
   if (!w.turret && !weaponArc(V, w).both && face !== V.dir) { out.reason = 'Out of arc'; out.angle = angleFromElevation(V, 0, V.dir); out.face = V.dir; return out; }
-  let ang = d.auto ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect);
+  // Straight at the target for machine guns, beams and flame; plasma drops at a fraction of gravity.
+  let ang = d.auto || d.beam || d.flame ? Math.atan2(ty - _p.y, tx - _p.x) : ballisticAngle(_p.x, _p.y, tx, ty, d.vel, !!d.indirect, d.energy === 'plasma' ? EN.plasmaGravity : 1);
   if (Number.isNaN(ang)) { ang = angleFromElevation(V, 35, face); out.reason = 'Out of range'; }
   const arc = weaponArc(V, w);
   // Howitzers lob when the high arc fits the mount, otherwise they fire the flat solution.
@@ -117,8 +118,8 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   const d = w.def;
   if (V.empT > 0) return false;            // an EMP burst has the guns dead for a few seconds (10f)
   if (!d.auto) {
-    if (V.shells <= 0) return false;
-    V.shells--;
+    if (d.energy) { if (!energyShot(B, V, w)) return false; }     // lasers and plasma: heat, not shells (10h)
+    else { if (V.shells <= 0) return false; V.shells--; }
   }
   let spread = d.spread / V.fc;
   const moving = Math.abs(V.speed) > 0.4;
@@ -135,13 +136,15 @@ function fireWeapon(B, V, w, ang, spreadMul) {
     my = _p.y + Math.sin(a) * L + Math.cos(ang) * off;
     const s = shells.take();
     s.x = s.px = s.sx = mx; s.y = s.py = s.sy = my;
-    s.vx = Math.cos(a) * d.vel + V.body.vx;
-    s.vy = Math.sin(a) * d.vel + V.body.vy;
+    const vel = d.beam ? EN.beamVel : d.vel;
+    s.vx = Math.cos(a) * vel + V.body.vx;
+    s.vy = Math.sin(a) * vel + V.body.vy;
     s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
     s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false; s.wet = false;
   }
-  // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3).
-  if (!d.auto) {
+  if (d.beam) laserBeam(B, V, mx, my, a, d);
+  // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3). Energy weapons have none.
+  if (!d.auto && !d.energy) {
     const J = d.cal * d.cal * 0.9 * (d.twin ? 2 : 1);
     const jx = -Math.cos(a) * J, jy = -Math.sin(a) * J;
     const b = V.body;
@@ -154,6 +157,8 @@ function fireWeapon(B, V, w, ang, spreadMul) {
   const pan = B.panOf ? B.panOf(mx) : 0;
   if (d.auto) {
     if ((w.burst & 1) === 0) audio.sfx('tick', pan, 1.2);
+  } else if (d.energy) {
+    if (d.energy === 'plasma') { audio.sfx('plasma', pan, d.cal / 90); const f = spawnParticle(FX_FLASH, mx, my, 0, 0, 0.1, 1 + d.cal / 90); if (f) f.shade = a; }
   } else {
     audio.sfx('cannon', pan, d.cal / 75);
     fxMuzzle(B, mx, my, a, d.cal);
@@ -254,13 +259,13 @@ function shellVsVehicle(B, s, V) {
       if (d.skirt && s.def.heat) pen *= 0.5;          // spaced skirt: the shaped charge spends itself
       if (!penetrated) { penetrated = true; hitName = d.name; }
       if (d.floods && V.hull && !s.mg) addHole(V, idx, cx, cy);
-      damagePart(B, V, idx, dmg, s.shooter);
+      damagePart(B, V, idx, dmg, s.shooter, s.def.energy);
       dmg *= 0.65;
       if (dmg < 4 || pen <= 1) { used = true; return true; }
       return false;
     }
     // Stopped by armour.
-    damagePart(B, V, idx, dmg * (s.mg ? 0.02 : 0.08), s.shooter);
+    damagePart(B, V, idx, dmg * (s.mg ? 0.02 : 0.08), s.shooter, s.def.energy);
     if (!penetrated && !s.mg) {
       stoppedAt(B, V, cx, cy, s);
     }
@@ -335,9 +340,10 @@ function stoppedAt(B, V, cx, cy, s) {
 }
 
 // ---------- damage
-function damagePart(B, V, idx, dmg, source) {
+function damagePart(B, V, idx, dmg, source, type) {
   const p = V.parts[idx];
   if (!p.alive || dmg <= 0) return;
+  if (type && p.def.resist) dmg *= 1 - resistOf(p.def, type);    // damage types (Part 5d)
   p.hp -= dmg;
   p.scorch = Math.min(1, p.scorch + dmg / p.def.hp);
   if (source) V.lastHitBy = source;
@@ -444,7 +450,7 @@ function detonate(B, V, source) {
 }
 
 // High-explosive burst: damage falls off with distance; heavy armour shrugs most of it off.
-function explode(B, x, y, dmg, radius, source) {
+function explode(B, x, y, dmg, radius, source, type) {
   fxExplosion(B, x, y, radius / 3);
   audio.sfx('boom', B.panOf(x), 0.7 + radius / 8);
   const gy = B.T.height(x);
@@ -460,7 +466,7 @@ function explode(B, x, y, dmg, radius, source) {
       if (dd >= radius) return;
       const arm = p.def.armor * (p.corrode === undefined ? 1 : p.corrode);
       const armourCut = arm > 20 ? 20 / arm : 1;
-      damagePart(B, V, i, dmg * (1 - dd / radius) * armourCut, source);
+      damagePart(B, V, i, dmg * (1 - dd / radius) * armourCut, source, type);
     });
   }
   if (B.drones && B.drones.length) blastDrones(B, x, y, dmg, radius);
@@ -495,13 +501,13 @@ function stepShells(B, dt) {
   shells.forEachAlive((s) => {
     s.px = s.x; s.py = s.y;
     s.t += dt;
-    if (!s.mg) s.vy -= GRAVITY * dt;
+    if (!s.mg && !s.def.beam) s.vy -= GRAVITY * dt * (s.def.energy === 'plasma' ? EN.plasmaGravity : 1);
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     if (s.ignoreT > 0) { s.ignoreT -= dt; if (s.ignoreT <= 0) s.ignore = null; }
     // Incoming artillery whistles for its last second and a half.
     if ((s.def.indirect || s.def.secondary === 'bomb') && !s.whistled && s.vy < 0 && (s.y - T.height(s.x)) / -s.vy < 1.5) { s.whistled = true; audio.sfx('whistle', B.panOf(s.x)); }
-    const maxT = s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
+    const maxT = s.def.beam ? (weaponRange(s.def) / EN.beamVel) * 1.2 : s.mg ? weaponRange(s.def) * MG_RANGE_BONUS / s.def.vel * 1.3 : 8;
     if (s.def.flak && (flakCheck(B, s) || s.t > maxT)) { if (s.t > maxT) flakBurst(B, s.x, s.y, s.shooter); s.alive = false; return; }
     if (s.t > maxT || s.x < 0 || s.x > T.length || s.y < -50) { s.alive = false; return; }
     // Vehicles.
@@ -524,7 +530,7 @@ function stepShells(B, dt) {
       if (!s.wet) {
         s.wet = true;
         fxSplash(B, s.x, T.sea, s.mg ? 0.3 : s.he ? 1.6 : 1);
-        if (s.mg) { s.alive = false; return; }
+        if (s.mg || s.def.beam) { s.alive = false; return; }
         if (s.he) { s.alive = false; explode(B, s.x, T.sea, s.def.heDmg || s.dmg, s.def.heRadius || 3, s.shooter); return; }
         audio.sfx('splash', B.panOf(s.x), 0.7);
         s.vx *= 0.2; s.vy *= 0.2;

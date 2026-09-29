@@ -667,6 +667,8 @@ function drawTrees(g, B) {
 function drawShells(g) {
   g.lineCap = 'round';
   shells.forEachAlive((s) => {
+    if (s.def.beam) return;                                      // lasers: drawn as beams (10h)
+    if (s.def.energy === 'plasma') { drawPlasmaBolt(g, s); return; }
     const bx = view.sx(s.x), by = view.sy(s.y);
     if (s.def.secondary === 'bomb') {
       // A falling bomb: body along its path, fins at the back.
@@ -873,6 +875,7 @@ function renderBattle(g, B) {
   drawUnderwater(g);
   drawWater(g, B);
   drawShells(g);
+  drawBeams(g);
   drawMissiles(g);
   drawDrones(g, B);
   drawFirePatches(g);

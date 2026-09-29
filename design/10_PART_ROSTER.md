@@ -65,17 +65,17 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 
 | # | id | Name | Folder | Cells | Status |
 |---|---|---|---|---|---|
-| C1 | wing | Wing section | structure | 2×1 | todo |
-| C2 | tail | Tail unit | structure | 2×2 | todo |
-| C3 | aero | Aero piston engine | mobility | 2×1 | todo |
-| C4 | jet | Jet engine | mobility | 3×1 | todo |
-| C5 | turb | Gas turbine | mobility | 3×2 | todo |
+| C1 | wing | Wing section | structure | 2×1 | integrated (batch C1) |
+| C2 | tail | Tail unit | structure | 2×2 | integrated (batch C1) |
+| C3 | aero | Aero piston engine | mobility | 2×1 | integrated (batch C1) |
+| C4 | jet | Jet engine | mobility | 3×1 | integrated (batch C2) |
+| C5 | turb | Gas turbine | mobility | 3×2 | integrated (batch C2) |
 | C6 | aprop | Air propeller | mobility | 1×2 | integrated (batch A) |
-| C7 | rotor | Rotor | mobility | 4×1 | todo |
-| C8 | trotor | Tail rotor | mobility | 1×1 | todo |
-| C9 | ac20 | Autocannon 20 mm | weapon | 2×1 | todo |
-| C10 | aa40 | AA gun 40 mm | weapon | 3×2 | todo |
-| C11 | bomb | Bomb rack | weapon | 2×1 | todo |
+| C7 | rotor | Rotor | mobility | 4×1 | integrated (batch C1) |
+| C8 | trotor | Tail rotor | mobility | 1×1 | integrated (batch C1) |
+| C9 | ac20 | Autocannon 20 mm | weapon | 2×1 | integrated (batch C2) |
+| C10 | aa40 | AA gun 40 mm | weapon | 3×2 | integrated (batch C2) |
+| C11 | bomb | Bomb rack | weapon | 2×1 | integrated (batch C1) |
 
 ## Batch D: new tier 0 parts (JSON + art; roadmap step 2.8)
 
@@ -125,7 +125,7 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
 - **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b (art todo; missiles in flight are drawn in code).
-- **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts (dcore, drotor, dgun, dcharge, dcam; dlaser planned). JSON added in steps 5c and 5c2 (art todo; drones are drawn from their parts' code drawings).
+- **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts (dcore, drotor, dgun, dcharge, dcam; dlaser planned). JSON added in steps 5c and 5c2. **Batch H2 integrated:** art for `hangar_a`, `hangar_d`, `dcpu1`–`dcpu3`, `dcore`, `dcam`, `dgun` (the repo's stats kept). Not taken: `drotor`, `dcharge`, `dlaser` (the zip draws them 1×1; the game's parts are 2×1): waiting for the producer's choice of footprint.
 - **Other:** fab, clamp, ecm, c203.
 - **Integrated (batch H1):** art for `rack`, `vls`, `mag` and `ecm` (the repo's stats kept; the zip proposed heavier, better-armoured versions: rack 300 kg, VLS 1600 kg, magazine 400 kg holding 4, ECM 200 kg); new `c203` in the game (Super-heavy guns); `fab` and `clamp` added as planned until step 5e.
 - **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.

@@ -1,0 +1,50 @@
+{
+  "id": "laser",
+  "name": "Pulse laser",
+  "family": "laser",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "stats": {
+    "mass": 400,
+    "hp": 40,
+    "armor": 5,
+    "power": -120,
+    "rel": 0.995,
+    "pen": 60,
+    "dmg": 40,
+    "reload": 1.2,
+    "range": 2500,
+    "spread": 0.2,
+    "cal": 20,
+    "heat": 18
+  },
+  "behaviour": {
+    "energy": "laser",
+    "beam": true
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 6,
+    "scrap": 6,
+    "money": 220
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lasers"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 §3.4). Beam: hits almost at once. No ammo; recharges from spare power; each shot adds 18 weapon heat."
+}

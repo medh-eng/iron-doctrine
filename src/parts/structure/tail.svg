@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" data-part="tail" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.64" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.48"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="ao" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.42"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.38"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<clipPath id="tconeClip"><path clip-rule="evenodd" d="M63.5 32.8V63.2L14 55.6Q5.4 54.2 5 48.6Q5.4 43 14 41.4Z M40.4 47.6Q40.4 45 36.6 44.6L16 44.2L5 46.2Q2.8 46.7 2.8 47.8Q2.8 48.9 5 49.3L16 51.2L37.4 50.8Q40.4 50.4 40.4 47.6Z"/></clipPath>
+<clipPath id="tfinClip"><path d="M57 34L30.2 5.6Q29.2 3.6 27 3.6H18L16.6 41.2Z"/></clipPath>
+<clipPath id="trudClip"><path d="M18 3.6H11Q6.6 3.6 6.2 8.4L5.4 36.4Q5.4 41.6 10 42.2L16.6 41.2Z"/></clipPath>
+<clipPath id="tstabClip"><path d="M40.4 47.6Q40.4 45 36.6 44.6L16 44.2L5 46.2Q2.8 46.7 2.8 47.8Q2.8 48.9 5 49.3L16 51.2L37.4 50.8Q40.4 50.4 40.4 47.6Z"/></clipPath>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M63.5 32.8V63.2L14 55.6Q5.4 54.2 5 48.6Q5.4 43 14 41.4Z" fill="#FF00FF"/>
+<path d="M57 34L30.2 5.6Q29.2 3.6 27 3.6H18L16.6 41.2Z" fill="#FF00FF"/>
+<path d="M18 3.6H11Q6.6 3.6 6.2 8.4L5.4 36.4Q5.4 41.6 10 42.2L16.6 41.2Z" fill="#00FFFF"/>
+<g clip-path="url(#tfinClip)"><path d="M0 15H64V20.4H0Z" fill="#FFFF00"/><path d="M0 22.6H64V24.4H0Z" fill="#FFFF00"/></g>
+<path d="M40.4 47.6Q40.4 45 36.6 44.6L16 44.2V51.2L37.4 50.8Q40.4 50.4 40.4 47.6Z" fill="#FF00FF"/>
+<path d="M16 44.2L5 46.2Q2.8 46.7 2.8 47.8Q2.8 48.9 5 49.3L16 51.2Z" fill="#00FFFF"/>
+</g>
+<g class="detail">
+<g clip-path="url(#tconeClip)"><path d="M63.5 32.8V63.2L14 55.6Q5.4 54.2 5 48.6Q5.4 43 14 41.4Z" fill="url(#shade)"/>
+<rect x="0" y="50" width="64" height="14" fill="url(#grime)"/>
+<rect x="0" y="32" width="64" height="12" fill="#000000" fill-opacity="0"/>
+<path d="M16 40.8L57 34V38L16 45Z" fill="#000000" fill-opacity="0.18"/>
+<path d="M26 30V64" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.8"/>
+<path d="M26.9 37V60" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.7"/>
+<path d="M40 30V64" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.8"/>
+<path d="M40.9 37V60" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.7"/>
+<path d="M52 30V64" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.8"/>
+<path d="M52.9 37V60" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.7"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="24.4" cy="42.5" r="0.9"/><circle cx="24.4" cy="53.5" r="0.9"/><circle cx="24.4" cy="58.5" r="0.9"/><circle cx="38.4" cy="40.5" r="0.9"/><circle cx="38.4" cy="53.5" r="0.9"/><circle cx="38.4" cy="58.8" r="0.9"/><circle cx="50.4" cy="38.8" r="0.9"/><circle cx="50.4" cy="45" r="0.9"/><circle cx="50.4" cy="53.5" r="0.9"/><circle cx="50.4" cy="60" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="24.1" cy="42.2" r="0.45"/><circle cx="24.1" cy="53.2" r="0.45"/><circle cx="24.1" cy="58.2" r="0.45"/><circle cx="38.1" cy="40.2" r="0.45"/><circle cx="38.1" cy="53.2" r="0.45"/><circle cx="38.1" cy="58.5" r="0.45"/><circle cx="50.1" cy="38.5" r="0.45"/><circle cx="50.1" cy="44.7" r="0.45"/><circle cx="50.1" cy="53.2" r="0.45"/><circle cx="50.1" cy="59.7" r="0.45"/></g>
+<rect x="43" y="52.4" width="8.4" height="6.2" rx="1.4" fill="none" stroke="#000000" stroke-width="0.8" opacity="0.4"/>
+<path d="M44 53.3H50.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.7"/>
+<rect x="45.6" y="55" width="3.2" height="1.1" rx="0.5" fill="#000000" fill-opacity="0.4"/>
+<path d="M16 51.2L37.4 50.8L37 53.6L16 54.4Z" fill="#000000" fill-opacity="0.22"/>
+<g fill="#000000" fill-opacity="0.2"><circle cx="22" cy="48" r="0.5"/><circle cx="33" cy="45" r="0.5"/><circle cx="45" cy="48" r="0.5"/><circle cx="57" cy="44" r="0.5"/><circle cx="30" cy="57" r="0.5"/><circle cx="57" cy="58" r="0.5"/></g>
+<g fill="#FFFFFF" fill-opacity="0.18"><circle cx="20" cy="42.5" r="0.45"/><circle cx="46" cy="38.2" r="0.45"/><circle cx="58" cy="36" r="0.45"/></g>
+<path d="M16 41.9L57.5 35" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.8"/></g>
+<rect x="59.4" y="33" width="4" height="30" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+<g fill="url(#bolt)"><circle cx="61.4" cy="36.5" r="1.05"/><circle cx="61.4" cy="42.5" r="1.05"/><circle cx="61.4" cy="48" r="1.05"/><circle cx="61.4" cy="53.5" r="1.05"/><circle cx="61.4" cy="59.5" r="1.05"/></g>
+<path d="M59.9 33.6V62.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.7"/>
+<g clip-path="url(#tfinClip)"><path d="M57 34L30.2 5.6Q29.2 3.6 27 3.6H18L16.6 41.2Z" fill="url(#shade)"/>
+<path d="M27 3.6H18L17.6 12H28Z" fill="#FFFFFF" fill-opacity="0.06"/>
+<path d="M52.4 34.8L27.2 7" fill="none" stroke="#000000" stroke-opacity="0.28" stroke-width="0.8"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="52.4" cy="34.8" r="0.9"/><circle cx="49.54" cy="31.73" r="0.9"/><circle cx="46.69" cy="28.67" r="0.9"/><circle cx="43.83" cy="25.6" r="0.9"/><circle cx="40.98" cy="22.54" r="0.9"/><circle cx="38.12" cy="19.47" r="0.9"/><circle cx="35.26" cy="16.4" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="52.1" cy="34.5" r="0.45"/><circle cx="49.24" cy="31.43" r="0.45"/><circle cx="46.39" cy="28.37" r="0.45"/><circle cx="43.53" cy="25.3" r="0.45"/><circle cx="40.68" cy="22.24" r="0.45"/><circle cx="37.82" cy="19.17" r="0.45"/><circle cx="34.96" cy="16.1" r="0.45"/></g>
+<path d="M17.6 12H38M17.4 28.4H50.6" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="0.7"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="21" cy="12.9" r="0.9"/><circle cx="26" cy="12.9" r="0.9"/><circle cx="31" cy="12.9" r="0.9"/><circle cx="21" cy="29.3" r="0.9"/><circle cx="27" cy="29.3" r="0.9"/><circle cx="33" cy="29.3" r="0.9"/><circle cx="39" cy="29.3" r="0.9"/><circle cx="45" cy="29.3" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="20.7" cy="12.6" r="0.45"/><circle cx="25.7" cy="12.6" r="0.45"/><circle cx="30.7" cy="12.6" r="0.45"/><circle cx="20.7" cy="29" r="0.45"/><circle cx="26.7" cy="29" r="0.45"/><circle cx="32.7" cy="29" r="0.45"/><circle cx="38.7" cy="29" r="0.45"/><circle cx="44.7" cy="29" r="0.45"/></g>
+<path d="M17.2 36L56 36.5V40L17 41.4Z" fill="#000000" fill-opacity="0.12"/></g>
+<path d="M56.3 33.2L29.6 5.2Q28.8 4 27 4.1H19" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="0.9"/>
+<path d="M47.5 23.5l1.2 1.3M40 15.4l0.9 1M33.6 8.6l0.8 0.9M22 4.2h2" fill="none" stroke="#C4CAD0" stroke-opacity="0.6" stroke-width="0.7"/>
+<g clip-path="url(#trudClip)"><path d="M18 3.6H11Q6.6 3.6 6.2 8.4L5.4 36.4Q5.4 41.6 10 42.2L16.6 41.2Z" fill="url(#shade)"/>
+<path d="M5 9H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 9.8H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<path d="M5 15H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 15.8H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<path d="M5 21H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 21.8H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<path d="M5 27H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 27.8H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<path d="M5 33H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 33.8H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<path d="M5 38.5H17" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="0.8"/>
+<path d="M5 39.3H17" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="0.7"/>
+<rect x="5" y="30.4" width="5.2" height="7.2" fill="none" stroke="#000000" stroke-width="0.7" opacity="0.45"/>
+<rect x="0" y="34" width="20" height="10" fill="url(#grime)"/></g>
+<path d="M18 3.9L16.6 41" fill="none" stroke="#000000" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="15.7" y="8.2" width="2.8" height="2.6" rx="0.5" fill="url(#steel)" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="17.1" cy="9.5" r="0.9" fill="#4F565E" stroke="#14171B" stroke-width="0.3"/>
+<rect x="15.7" y="20.7" width="2.8" height="2.6" rx="0.5" fill="url(#steel)" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="17.1" cy="22" r="0.9" fill="#4F565E" stroke="#14171B" stroke-width="0.3"/>
+<rect x="15.7" y="33.2" width="2.8" height="2.6" rx="0.5" fill="url(#steel)" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="17.1" cy="34.5" r="0.9" fill="#4F565E" stroke="#14171B" stroke-width="0.3"/>
+<path d="M17 4.1H11Q7.2 4.2 6.8 8.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.34" stroke-width="0.8"/>
+<rect x="4.4" y="38" width="3.4" height="4.2" rx="1.2" fill="#14171B"/>
+<rect x="5.1" y="38.7" width="2" height="2.8" rx="0.8" fill="#D8F0F7"/>
+<circle cx="5.7" cy="39.4" r="0.5" fill="#FFFFFF"/>
+<g clip-path="url(#tstabClip)"><path d="M40.4 47.6Q40.4 45 36.6 44.6L16 44.2L5 46.2Q2.8 46.7 2.8 47.8Q2.8 48.9 5 49.3L16 51.2L37.4 50.8Q40.4 50.4 40.4 47.6Z" fill="url(#shade)"/>
+<path d="M16 44.6V50.8" fill="none" stroke="#000000" stroke-opacity="0.55" stroke-width="1"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="21" cy="46.2" r="0.9"/><circle cx="27" cy="46.2" r="0.9"/><circle cx="33" cy="46.2" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="20.7" cy="45.9" r="0.45"/><circle cx="26.7" cy="45.9" r="0.45"/><circle cx="32.7" cy="45.9" r="0.45"/></g>
+<path d="M5 47.8H15" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="0.7"/>
+<rect x="0" y="49" width="44" height="3" fill="url(#grime)"/></g>
+<path d="M38.5 45.1L16.2 44.7L5.4 46.7Q3.6 47.1 3.4 47.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.8"/>
+<rect x="14.6" y="45.6" width="2.8" height="4" rx="0.5" fill="url(#steel)" stroke="#14171B" stroke-width="0.4"/>
+<path d="M27.6 4L31.4 0.9" fill="none" stroke="#2E3339" stroke-width="1.3"/>
+<rect x="30.6" y="0.2" width="2.6" height="1.8" rx="0.6" fill="#C9A04A" stroke="#14171B" stroke-width="0.4"/>
+<path d="M24 55.6L16.5 61.4" fill="none" stroke="#14171B" stroke-width="2.6"/>
+<path d="M24 55.6L16.5 61.4" fill="none" stroke="#8A9199" stroke-width="1.4"/>
+<path d="M19.8 57.2l1.6 2M21.2 56.3l1.6 2M22.6 55.4l1.6 2" fill="none" stroke="#3A3F45" stroke-width="0.9"/>
+<rect x="11.4" y="60.6" width="7.6" height="2.6" rx="1.2" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+<path d="M18 62.8Q19.8 63.4 21 62.8" fill="none" stroke="#1B1712" stroke-opacity="0.45" stroke-width="1"/>
+<path d="M63.5 32.8V63.2L14 55.6Q5.4 54.2 5 48.6Q5.4 43 14 41.4Z" fill="none" stroke="#14171B" stroke-width="1"/>
+<path d="M57 34L30.2 5.6Q29.2 3.6 27 3.6H18L16.6 41.2Z" fill="none" stroke="#14171B" stroke-width="1"/>
+<path d="M18 3.6H11Q6.6 3.6 6.2 8.4L5.4 36.4Q5.4 41.6 10 42.2L16.6 41.2Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+<path d="M40.4 47.6Q40.4 45 36.6 44.6L16 44.2L5 46.2Q2.8 46.7 2.8 47.8Q2.8 48.9 5 49.3L16 51.2L37.4 50.8Q40.4 50.4 40.4 47.6Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+</g>
+</g>
+</svg>

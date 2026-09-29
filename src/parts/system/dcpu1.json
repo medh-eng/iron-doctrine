@@ -34,5 +34,11 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). 2 drones in the air at once; drone designs up to 8×4, 6 parts."
+  "notes": "Part 5c (design/05 §3.4). 2 drones in the air at once; drone designs up to 8×4, 6 parts.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  }
 }

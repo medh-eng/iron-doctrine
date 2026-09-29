@@ -237,6 +237,7 @@ Upgrades need wood, metal, electronics and money delivered to that settlement's 
 
 - **Fuel:** for map travel and in battle.
 - **Ammo:** for guns. Flamethrowers burn fuel. Missiles and drones are items. Lasers and plasma use power and produce heat instead of ammo.
+  - **In numbers (5d):** an energy weapon recharges at (spare power ÷ its draw), capped at full speed; spare power = engine power × heat factor − systems' draw. A capacitor bank stores 100 kJ per effect point (30 → 3000 kJ), pays any shortfall, and refills from the surplus. Each shot adds the weapon's heat to a 0–100 gauge that sheds 8 a second (+0.25 per point of radiator cooling); at 100 energy weapons lock until 50. Flamethrowers reach range × 0.2 (60 → 12 m), burn 1 L/s, deal their dmg per second to the two nearest parts and may set them alight (35% a second, less fire resistance). Damage types: kinetic (guns), fire, laser, plasma, acid, EMP; a material's `resist` cuts that share of the damage.
 - **Wood, metal and electronics:** for field repairs.
 - **Replacement parts:** needed when a part is destroyed.
 - **Money:** officers' wages and settlement upkeep, paid daily.

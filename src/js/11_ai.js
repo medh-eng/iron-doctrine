@@ -82,7 +82,7 @@ function nearestTarget(B, V, maxRange, filter) {
 
 function mainWeapon(V) {
   let best = null;
-  for (const w of V.weapons) if (!w.def.auto && !w.def.secondary && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
+  for (const w of V.weapons) if (!w.def.auto && !w.def.secondary && !w.def.flame && V.parts[w.part].alive && (!best || w.def.pen > best.def.pen)) best = w;
   return best;
 }
 
@@ -121,7 +121,8 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
-    if (w.reload > 0) w.reload -= dt;
+    if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyFactor : 1);     // energy weapons recharge from spare power (10h)
+    if (d.flame) { stepFlame(B, V, w, dt, aiControlled); continue; }
     if (d.secondary) {
       if (d.secondary === 'launcher') refillLauncher(V, w);
       if (d.secondary === 'sam') autoSam(B, V, w);
@@ -158,7 +159,7 @@ function runWeapons(B, V, dt, aiControlled) {
     aimWeapon(V, w, tmp.x, tmp.y, _aim);
     const ready = trainWeapon(V, w, _aim.angle, _aim.face, dt);
     if (B.cfg.holdFire && V.side === 1) continue;
-    if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || V.shells <= 0) continue;
+    if (!_aim.ok || !ready || w.reload > 0 || V.ai.react > 0 || (!d.energy && V.shells <= 0) || (d.energy && V.wheatLock)) continue;
     if (Math.abs(tgt.body.x - V.body.x) > weaponRange(d)) continue;
     if (fireWeapon(B, V, w, w.angle, 1 / V.ai.accuracy)) {
       w.reload = d.reload * (d.cal >= 75 ? loaderPenalty : 1);

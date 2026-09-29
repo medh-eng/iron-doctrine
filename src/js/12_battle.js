@@ -225,7 +225,7 @@ function updateBattle(B, dt) {
         V.parts.forEach((p, k) => {
           if (!p.alive) return;
           const cx = (p.x + p.def.w / 2) * CELL, cy = (V.design.h - p.y - p.def.h / 2) * CELL;
-          if (Math.hypot(cx - f.gx, cy - f.gy) < 1.3) damagePart(B, V, k, 7 * dt, null);
+          if (Math.hypot(cx - f.gx, cy - f.gy) < 1.3) damagePart(B, V, k, 7 * dt, null, 'fire');
         });
         if (B.rng.next() < dt * 8) {
           const o = { x: 0, y: 0 };
@@ -250,6 +250,7 @@ function updateBattle(B, dt) {
   stepMissiles(B, dt);
   stepFirePatches(B, dt);
   stepDrones(B, dt);
+  stepBeams(dt);
   stepDebris(B.T, dt);
   stepEffects(B, dt);
   B.trauma = Math.max(0, B.trauma - dt * 0.9);
@@ -324,12 +325,13 @@ function playerFire(B, tx, ty, manual) {
   if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
   if (gunUnderWater(B, V, w)) return 'Gun under water';
-  if (V.shells <= 0) return 'Out of shells';
+  if (w.def.energy && V.wheatLock) return 'Overheated';
+  if (!w.def.energy && V.shells <= 0) return 'Out of shells';
   aimWeapon(V, w, tx, ty, _aim);
   if (!_aim.ok) return _aim.reason || 'Out of arc';
   if (w.face !== _aim.face) { trainWeapon(V, w, _aim.angle, _aim.face, 0); return 'Turret turning'; }
   w.angle = _aim.angle;
-  if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return 'Out of shells';
+  if (!fireWeapon(B, V, w, _aim.angle, manual ? 0.6 : 1)) return w.def.energy ? 'Overheated' : 'Out of shells';
   w.reload = w.def.reload * (V.loaderShort && w.def.cal >= 75 ? 1.6 : 1);
   B.stats.shots++;
   B.heat = Math.min(3, B.heat + 0.2);

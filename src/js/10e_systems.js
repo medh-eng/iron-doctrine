@@ -138,6 +138,7 @@ function autoSam(B, V, w) {
 function stepSystems(B, V, dt) {
   if (V.destroyed || V.gone) return;
   stepWarheadEffects(B, V, dt);
+  stepEnergy(B, V, dt);
   // Heat: engines only run hot while driving (fliers always).
   const running = V.flier || V.throttle !== 0;
   const ter = B.T.terrainAt(V.body.x);

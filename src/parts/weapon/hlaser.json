@@ -1,0 +1,49 @@
+{
+  "id": "hlaser",
+  "name": "Heavy laser",
+  "family": "hlaser",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 1
+  },
+  "stats": {
+    "mass": 1200,
+    "hp": 80,
+    "armor": 10,
+    "power": -400,
+    "rel": 0.995,
+    "pen": 140,
+    "dmg": 120,
+    "reload": 3,
+    "range": 4000,
+    "spread": 0.2,
+    "cal": 40,
+    "heat": 45
+  },
+  "behaviour": {
+    "energy": "laser",
+    "beam": true
+  },
+  "cost": {
+    "metal": 8,
+    "elec": 14,
+    "scrap": 12,
+    "money": 520
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "energy_heavy"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 §3.4). Beam; 400 kW to recharge; 45 weapon heat a shot."
+}
