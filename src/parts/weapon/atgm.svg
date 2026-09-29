@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76.8 32" data-part="atgm" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.64" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.48"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="ao" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.42"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.38"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steelX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F565E"/><stop offset="0.25" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="tubeX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.42"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+</defs>
+<g id="barrel" data-role="barrel" data-pivot="12 18">
+<g class="paint">
+<path d="M60 9.2Q67 9.2 70 12.6Q67 16 60 16Z" fill="#00FFFF"/>
+<rect x="16" y="9.2" width="2.4" height="6.8" fill="#FFFF00"/>
+<path d="M6 16H46V19.2H6Z" fill="#FF00FF"/>
+<path d="M14 0.8H28Q29.6 0.8 29.6 2.4V5.6Q29.6 7.2 28 7.2H14Q12.4 7.2 12.4 5.6V2.4Q12.4 0.8 14 0.8Z" fill="#00FFFF"/>
+<rect x="48" y="9.2" width="2.4" height="6.8" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M8 9.2L10 5.8L13.6 5.8L15.4 9.2Z" fill="#3A3F45" stroke="#14171B" stroke-width="0.6"/>
+<path d="M8 9.2H60V16H8Z" fill="#4A4E55"/>
+<path d="M8 9.2H60V16H8Z" fill="url(#tube)"/>
+<path d="M60 9.2Q67 9.2 70 12.6Q67 16 60 16Z" fill="url(#tube)"/>
+<path d="M8 9.2H60V16H8Z" fill="none" stroke="#14171B" stroke-width="0.7"/>
+<path d="M60 9.2Q67 9.2 70 12.6Q67 16 60 16Z" fill="none" stroke="#14171B" stroke-width="0.7"/>
+<path d="M9 9.9H60" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.7"/>
+<path d="M24 9.2V16" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="0.7"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="28" cy="12.6" r="0.7"/><circle cx="34" cy="12.6" r="0.7"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="27.7" cy="12.3" r="0.35"/><circle cx="33.7" cy="12.3" r="0.35"/></g>
+<path d="M8 12.6H4.8Q3 12.6 3 14.2" fill="none" stroke="#B8733F" stroke-width="0.9"/>
+<circle cx="6" cy="12.6" r="3.6" fill="#3A3F45" stroke="#14171B" stroke-width="0.6"/>
+<circle cx="6" cy="12.6" r="2.2" fill="#8A9199"/>
+<circle cx="6" cy="12.6" r="0.9" fill="#14171B"/>
+<path d="M6 16H46V19.2H6Z" fill="url(#shade)"/>
+<path d="M6 16H46V19.2H6Z" fill="none" stroke="#14171B" stroke-width="0.7"/>
+<g fill="url(#bolt)"><circle cx="16" cy="17.6" r="0.7"/><circle cx="30" cy="17.6" r="0.7"/><circle cx="42" cy="17.6" r="0.7"/></g>
+<rect x="34" y="14.2" width="2.6" height="3.2" fill="url(#steelX)" stroke="#14171B" stroke-width="0.4"/>
+<path d="M14 0.8H28Q29.6 0.8 29.6 2.4V5.6Q29.6 7.2 28 7.2H14Q12.4 7.2 12.4 5.6V2.4Q12.4 0.8 14 0.8Z" fill="url(#shade)"/>
+<path d="M14 0.8H28Q29.6 0.8 29.6 2.4V5.6Q29.6 7.2 28 7.2H14Q12.4 7.2 12.4 5.6V2.4Q12.4 0.8 14 0.8Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<path d="M20 7.2V10.4" fill="none" stroke="#14171B" stroke-width="1.6"/>
+<circle cx="29.8" cy="4" r="2.6" fill="#14171B"/>
+<circle cx="29.8" cy="4" r="1.8" fill="#7FB7C9"/>
+<circle cx="29.4" cy="3.5" r="0.6" fill="#D8F0F7"/>
+<rect x="14" y="2.4" width="8" height="2.8" rx="0.8" fill="none" stroke="#000000" stroke-width="0.7" opacity="0.35"/>
+<path d="M14 1.6H28" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.7"/>
+<circle cx="12" cy="18" r="2.6" fill="url(#steel)" stroke="#14171B" stroke-width="0.6"/>
+</g>
+</g>
+<g id="body">
+<g class="paint">
+<path d="M2 25H42Q44 25 44 27V30Q44 31.4 42.6 31.4H3.4Q2 31.4 2 30Z" fill="#FF00FF"/>
+<path d="M6 25L8 20Q9 17 12 17Q15 17 16 20L18 25Z" fill="#FF00FF"/>
+<path d="M44 20H62Q63.4 20 63.4 21.4V30Q63.4 31.4 62 31.4H44Z" fill="#00FFFF"/>
+<rect x="3" y="26.4" width="40" height="2" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M2 25H42Q44 25 44 27V30Q44 31.4 42.6 31.4H3.4Q2 31.4 2 30Z" fill="url(#shade)"/>
+<rect x="2" y="28" width="42" height="3.4" fill="url(#grime)"/>
+<g fill="url(#bolt)"><circle cx="6" cy="29.8" r="0.8"/><circle cx="26" cy="29.8" r="0.8"/><circle cx="40" cy="29.8" r="0.8"/></g>
+<path d="M2 25H42Q44 25 44 27V30Q44 31.4 42.6 31.4H3.4Q2 31.4 2 30Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<path d="M6 25L8 20Q9 17 12 17Q15 17 16 20L18 25Z" fill="url(#shade)"/>
+<path d="M6 25L8 20Q9 17 12 17Q15 17 16 20L18 25Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<circle cx="12" cy="18" r="3.6" fill="url(#steel)" stroke="#14171B" stroke-width="0.7"/>
+<g fill="url(#bolt)"><circle cx="12" cy="18" r="0.9"/></g>
+<path d="M44 20H62Q63.4 20 63.4 21.4V30Q63.4 31.4 62 31.4H44Z" fill="url(#shade)"/>
+<rect x="44" y="20" width="2.4" height="11.4" fill="url(#ao)"/>
+<rect x="46" y="21.6" width="12.2" height="3.6" fill="#4A4E55"/>
+<path d="M58.2 21.6 Q60.6 21.6 61.6 23.4 Q60.6 25.2 58.2 25.2 Z" fill="#4F565E"/>
+<rect x="46" y="21.6" width="15" height="3.6" fill="url(#tube)"/>
+<rect x="49" y="21.6" width="1.4" height="3.6" fill="#C9A04A"/>
+<rect x="46" y="26.4" width="12.2" height="3.6" fill="#4A4E55"/>
+<path d="M58.2 26.4 Q60.6 26.4 61.6 28.2 Q60.6 30 58.2 30 Z" fill="#4F565E"/>
+<rect x="46" y="26.4" width="15" height="3.6" fill="url(#tube)"/>
+<rect x="49" y="26.4" width="1.4" height="3.6" fill="#C9A04A"/>
+<path d="M44 24.8H61" fill="none" stroke="#14171B" stroke-opacity="0.5" stroke-width="0.7"/>
+<path d="M45 20.8H62" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.7"/>
+<path d="M44 20H62Q63.4 20 63.4 21.4V30Q63.4 31.4 62 31.4H44Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<g fill="#000000" fill-opacity="0.3"><circle cx="46" cy="22" r="0.7"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="45.7" cy="21.7" r="0.35"/></g>
+<path d="M6 25.4h2M50 20.4h2" fill="none" stroke="#C4CAD0" stroke-opacity="0.6" stroke-width="0.7"/>
+<g fill="#000000" fill-opacity="0.2"><circle cx="20" cy="30" r="0.5"/><circle cx="54" cy="30" r="0.5"/></g>
+<g fill="#FFFFFF" fill-opacity="0.18"><circle cx="30" cy="25.6" r="0.45"/></g>
+</g>
+</g>
+</svg>

@@ -36,5 +36,18 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Large missiles only: splits into 4 small HE missiles near the target."
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Large missiles only: splits into 4 small HE missiles near the target.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "burst": [
+      2,
+      1
+    ]
+  },
+  "moving": {}
 }

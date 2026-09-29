@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32" data-part="mw_emp" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.64" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.48"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="ao" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.42"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.38"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steelX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F565E"/><stop offset="0.25" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="tubeX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.42"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M0 6H64V26H0Z" fill="#00FFFF"/>
+<rect x="6" y="6" width="3" height="20" fill="#FFFF00"/>
+<rect x="55" y="6" width="3" height="20" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M0 6H64V26H0Z" fill="url(#tube)"/>
+<rect x="0" y="22" width="64" height="4" fill="url(#grime)"/>
+<path d="M0.4 6.8H63.6" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.7"/>
+<rect x="18" y="6" width="28" height="20" fill="#2B3440"/>
+<g stroke="#B8733F" stroke-width="1.2"><path d="M19.4 7V25"/><path d="M21.2 7V25"/><path d="M23 7V25"/><path d="M24.8 7V25"/><path d="M26.6 7V25"/><path d="M28.4 7V25"/><path d="M30.2 7V25"/><path d="M32 7V25"/><path d="M33.8 7V25"/><path d="M35.6 7V25"/><path d="M37.4 7V25"/><path d="M39.2 7V25"/><path d="M41 7V25"/><path d="M42.8 7V25"/><path d="M44.6 7V25"/></g>
+<rect x="18" y="6" width="28" height="20" fill="url(#tube)"/>
+<path d="M18 6.6V25.4M46 6.6V25.4" fill="none" stroke="#B784FF" stroke-width="1.4"/>
+<path d="M18 6.6V25.4M46 6.6V25.4" fill="none" stroke="#FFE08A" stroke-opacity="0.5" stroke-width="0.7"/>
+<path d="M2 16H17M47 16H62" fill="none" stroke="#B784FF" stroke-opacity="0.55" stroke-width="0.8"/>
+<path d="M12 6.8Q14 6.9 15 8" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="0.7"/>
+<rect x="0" y="5.2" width="2" height="21.6" rx="0.6" fill="url(#steelX)" stroke="#14171B" stroke-width="0.6"/>
+<path d="M0 6H64M0 26H64" fill="none" stroke="#14171B" stroke-width="1"/>
+<path d="M0 6H64V26H0Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+</g>
+</g>
+</svg>
