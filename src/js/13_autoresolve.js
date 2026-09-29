@@ -53,6 +53,8 @@ function battleDesign(ship) {
     ammo: ship.ammo,
     // Your ships take in only the missiles they carry (5b2); other factions' are full for now.
     missiles: ship.faction === campaign.faction && missileLoadout(d) ? shipMissiles(ship).n : null,
+    drones: ship.faction === campaign.faction && droneLoadout(d) ? shipStock(ship, 'drones').n : null,
+    wing: ship.faction === campaign.faction && wingLoadout(d) ? shipStock(ship, 'wings').n : null,
   };
   return d;
 }
@@ -69,6 +71,7 @@ function applyShipState(V) {
   if (V.fuelMax) V.fuel = V.fuelMax * clamp(s.fuel, 0, 1);
   if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
   if (s.missiles !== null && s.missiles !== undefined) loadVehicleMissiles(V, s.missiles);
+  loadVehicleAir(V, s.drones, s.wing);
 }
 
 function createCampaignBattle(contact, headless) {
@@ -106,9 +109,9 @@ function applyBattleOutcome(B) {
   const win = B.result === 'win';
   const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
   const rec = new Map();
-  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V) });
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V), drn: dronesHome(B, V), wng: wingsHome(B, V) });
   for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
-    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl });
+    if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl, drn: e.drn === undefined ? null : e.drn, wng: e.wng === undefined ? null : e.wng });
   }
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
@@ -130,6 +133,8 @@ function applyBattleOutcome(B) {
     if (r.fuel !== null) ship.fuel = st.fuelCap * r.fuel;
     if (r.ammo !== null) ship.ammo = r.ammo;
     if (r.msl !== null && r.msl !== undefined && ship.faction === campaign.faction) ship.missiles = { id: missileLoadout(d).id, n: r.msl };
+    if (r.drn !== null && r.drn !== undefined && ship.faction === campaign.faction && droneLoadout(d)) ship.drones = { id: droneLoadout(d).id, n: r.drn };
+    if (r.wng !== null && r.wng !== undefined && ship.faction === campaign.faction && wingLoadout(d)) ship.air = { id: wingLoadout(d).id, n: r.wng };
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
   }
   if (!win) gaXp /= 2;

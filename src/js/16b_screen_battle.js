@@ -241,7 +241,7 @@ SCREENS.battle = {
     // Two columns of three orders, with a close button above, kept clear of the screen edges.
     r.style.left = `${clamp(view.sx(V.body.x), layout.safe.l + 116, layout.w - layout.safe.r - 116)}px`;
     r.style.top = `${clamp(view.sy(V.body.y + V.height / 2), layout.safe.t + 124, layout.h - layout.safe.b - 80)}px`;
-    const drone = (order, label) => [label, () => { const why = droneOrder(B, V, order); if (why) this.say(why); else this.orderDone(V, `Drones: ${order}`); }];
+    const drone = (order, label) => [label, () => { const why = droneOrder(B, V, order); if (why) this.say(why); else this.orderDone(V, `${V.wingCap ? 'Air' : 'Drones'}: ${order}`); }];
     const items = sub === 'drones' ? [
       drone('attack', 'Attack'), drone('defend', 'Defend'), drone('scout', 'Scout'), drone('recall', 'Recall'),
       ['Back', () => this.openWheel(V)],
@@ -254,7 +254,10 @@ SCREENS.battle = {
       ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
     ];
     // A carrier (Part 5c): drone orders, with how many are aboard and flying.
-    if (!sub && V.hangarCap) items.push([`Drones ${V.dronesAboard}+${dronesFlying(B, V)}`, () => this.openWheel(V, 'drones')]);
+    if (!sub && (V.hangarCap || V.wingCap)) {
+      const aboard = (V.dronesAboard || 0) + (V.wingAboard || 0), up = dronesFlying(B, V) + wingsFlying(B, V);
+      items.push([`${V.wingCap ? 'Air' : 'Drones'} ${aboard}+${up}`, () => this.openWheel(V, 'drones')]);
+    }
     const rows = Math.ceil(items.length / 2);
     items.forEach(([label, fn, off], i) => {
       const b = button(label, () => { this.closeWheel(); fn(); }, 'btn btn-small cmd-item');
@@ -266,7 +269,7 @@ SCREENS.battle = {
     });
     const x = button('✕', () => this.closeWheel(), 'btn btn-small cmd-close', 'back');
     x.setAttribute('aria-label', `Close orders for ${V.name}`);
-    const nm = el('div', 'cmd-name', sub === 'drones' ? `${V.name} · drones` : V.name);
+    const nm = el('div', 'cmd-name', sub === 'drones' ? `${V.name} · ${V.wingCap ? 'air' : 'drones'}` : V.name);
     if (rows > 3) x.style.top = nm.style.top = `${-98 - (rows - 3) * 25}px`;   // a fourth row: lift the header
     r.appendChild(x);
     r.appendChild(nm);

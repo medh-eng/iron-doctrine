@@ -14,6 +14,7 @@ function designFromTemplate(id) {
     cells: t.cells.map(([p, x, y]) => ({ p, x, y })),
     missile: t.missile,
     drone: t.drone,
+    wing: t.wing,
   };
 }
 

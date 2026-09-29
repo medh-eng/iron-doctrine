@@ -8,7 +8,8 @@ function airThink(B, V, dt) {
   const b = V.body;
   const T = B.T;
   const bomber = V.weapons.some((w) => w.def.secondary === 'bomb' && w.rounds > 0 && V.parts[w.part].alive);
-  const tgt = nearestTarget(B, V, 500, bomber ? (U) => !U.flier : null);
+  const tgt = V.wing ? wingTarget(B, V, bomber) : nearestTarget(B, V, 500, bomber ? (U) => !U.flier : null);
+  if (V.gone) return;
   if (tgt !== ai.target) { ai.target = tgt; ai.react = ai.reaction; }
   if (ai.react > 0) ai.react -= dt;
   const ground = Math.max(T.height(b.x), seaAt(T, b.x) ? T.sea : -Infinity);

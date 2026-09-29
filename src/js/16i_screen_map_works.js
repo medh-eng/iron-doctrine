@@ -54,24 +54,8 @@ Object.assign(SCREENS.map, {
       g.appendChild(r);
       body.appendChild(g);
     }
-    // Missiles (5b2): crafted from their parts' goods at a metropolis; they go to the warehouse.
-    if (s.type === 'metropolis') {
-      const list = missileDesigns().filter((md) => !validateMissile(md).length && missileCells(md).every((c) => partUnlocked(c.p)));
-      if (list.length) body.appendChild(el('div', 'ws-label', 'Craft missiles'));
-      for (const md of list) {
-        const q = missileQuote(s, md, 1), n = missilesOnHand(s, md.id);
-        const g = el('div', 'map-good');
-        g.appendChild(el('span', '', `${md.name}${n ? ` (${n} in stock)` : ''}`));
-        g.appendChild(el('small', '', `each: ${costText(q.cost)} · ${hoursText(q.hours)}`));
-        const r = el('div', 'map-row');
-        r.appendChild(button('×1', () => done(craftMissiles(s, md.id, 1)), 'btn btn-small'));
-        r.appendChild(button('×4', () => done(craftMissiles(s, md.id, 4)), 'btn btn-small'));
-        g.appendChild(r);
-        body.appendChild(g);
-      }
-      const locked = missileDesigns().length - list.length;
-      if (locked) body.appendChild(el('p', 'card-text map-note', `${locked} missile designs need research.`));
-    }
+    // Missiles (5b2) and drones (5c2): made from their parts' goods at a metropolis; they go to the warehouse.
+    if (s.type === 'metropolis') for (const [kind, label, list] of [['missiles', 'Craft missiles', missileDesigns()], ['drones', 'Craft drones', droneDesigns()]]) this.stockList(s, body, done, kind, label, list);
     // Reverse-engineering (08 §4): salvaged enemy parts studied at a metropolis.
     if (s.type === 'metropolis') {
       const spots = [s.store].concat(dockedHere(s).map((fl) => fl.hold));
@@ -91,6 +75,23 @@ Object.assign(SCREENS.map, {
     }
     const locked = Object.keys(PART_LIBRARY.parts).filter((id) => PARTS[id] && craftableAt(s, id) && !partUnlocked(id)).length;
     if (locked) body.appendChild(el('p', 'card-text map-note', `${locked} more parts need research.`));
+  },
+
+  // A list of designs to make as stock items: those whose parts are researched, ×1 or ×4.
+  stockList(s, body, done, kind, label, list) {
+    const ok = list.filter((d) => { const why = stockBlock(s, kind, d); return !why || /Services/.test(why); });
+    if (ok.length) body.appendChild(el('div', 'ws-label', label));
+    for (const d of ok) {
+      const q = stockQuote(s, kind, d, 1), n = stockOnHand(s, kind, d.id);
+      const g = el('div', 'map-good');
+      g.appendChild(el('span', '', `${d.name}${n ? ` (${n} in stock)` : ''}`));
+      g.appendChild(el('small', '', `each: ${costText(q.cost)} · ${hoursText(q.hours)}`));
+      const r = el('div', 'map-row');
+      for (const k of kind === 'wings' ? [1] : [1, 4]) r.appendChild(button(`×${k}`, () => done(makeStock(s, kind, d.id, k)), 'btn btn-small'));
+      g.appendChild(r);
+      body.appendChild(g);
+    }
+    if (list.length > ok.length) body.appendChild(el('p', 'card-text map-note', `${list.length - ok.length} ${STOCK_KINDS[kind].noun} designs need research.`));
   },
 
   yardTab(s, body, row, act, done) {
@@ -151,6 +152,9 @@ Object.assign(SCREENS.map, {
       g.appendChild(r);
       body.appendChild(g);
     }
+    // Aircraft for carriers' air wings (5c2): they go to the warehouse, to be loaded onto carriers.
+    const air = ['fighter', 'bomber', 'heli'].concat(save.designs.list.map((x) => x.id)).filter((id, i, a) => a.indexOf(id) === i).map(wingDesignOf).filter(Boolean);
+    this.stockList(s, body, done, 'wings', 'Build aircraft for air wings', air);
   },
 });
 

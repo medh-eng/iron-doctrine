@@ -69,13 +69,15 @@ function droneStats(d) {
 
 // ---------- carriers: set up when a vehicle is built (from rebuildVehicle)
 function setupCarrier(V) {
-  let cap = 0, cpu = 0, cpuCls = null, rate = 0;
+  let cap = 0, cpu = 0, cpuCls = null, rate = 0, wcap = 0, wrate = 0;
   for (const p of V.parts) {
     if (!p.alive) continue;
     if (p.def.hangar === 'drone') { cap += p.def.capacity; rate += p.def.rate; }
+    if (p.def.hangar === 'aircraft') { wcap += p.def.capacity; wrate += p.def.rate; }
     if (p.def.droneCpu && p.def.effect > cpu) { cpu = p.def.effect; cpuCls = p.def.droneCpu; }
   }
   V.hangarCap = cap; V.droneCpu = cpu; V.launchRate = rate;
+  setupWing(V, wcap, wrate);
   if (!cap) return;
   if (V.dronesAboard === undefined) {
     V.dronesAboard = cap;                     // outside the campaign hangars start full
@@ -95,9 +97,10 @@ function dronesFlying(B, V) { let n = 0; for (const d of B.drones || []) if (d.a
 
 // Set a carrier's drone order ('attack', 'defend', 'scout' or 'recall').
 function droneOrder(B, V, order) {
-  if (!V.hangarCap) return 'No drone hangar';
-  if (!V.droneCpu) return 'No drone computer';
-  if (!V.droneSt) return 'No drone design fits the drone computer';
+  if (!V.hangarCap && !V.wingCap) return 'No hangar';
+  if (!V.wingCap && !V.droneCpu) return 'No drone computer';
+  if (!V.wingCap && !V.droneSt) return 'No drone design fits the drone computer';
+  V.wingT = Math.min(V.wingT || 0, 0.3);
   V.droneOrder = order;
   V.launchT = Math.min(V.launchT || 0, 0.3);
   return '';
@@ -141,6 +144,7 @@ function enemyDroneNear(B, side, x, y, r) {
 
 // Every step: carriers launch, drones fly their order, fight, return or fall.
 function stepDrones(B, dt) {
+  stepWings(B, dt);
   for (const V of B.units) {
     if (!V.hangarCap || V.destroyed || V.gone || V.withdrawn || !V.droneSt || V.empT > 0) continue;
     V.launchT -= dt;
@@ -291,6 +295,98 @@ function droneSpotting(B) {
     if (!dr.st.spot) continue;
     for (const U of B.units) if (U.side !== dr.side && !U.destroyed && Math.abs(U.body.x - dr.x) < DRN.camRange * dr.st.spot / 1.5 && !U.submerged) { U.seen = true; U.lastSeenX = U.body.x; U.everSeen = true; }
   }
+}
+
+// ---------- air wings (Part 5c2; design/01 §5): aircraft and helicopters from an aircraft hangar.
+// They are ordinary aircraft in the fight, flown by the air AI toward what the carrier's order
+// allows, but they don't count towards the three on the field or the win; a wing whose carrier is
+// destroyed or leaves heads for its own edge of the field and is lost (no airfield in battle yet).
+function wingDesignOf(id) {
+  const d = TEMPLATES[id] ? designFromTemplate(id) : (save.designs.list.find((x) => x.id === id) ? JSON.parse(JSON.stringify(save.designs.list.find((x) => x.id === id))) : null);
+  if (!d) return null;
+  const dom = domainOf(d);
+  return (dom === 'air' || dom === 'heli') && validateDesign(d).ok ? d : null;
+}
+function setupWing(V, cap, rate) {
+  V.wingCap = cap; V.wingRate = rate;
+  if (!cap) return;
+  if (V.wingAboard === undefined) {
+    V.wingAboard = cap;                         // outside the campaign hangars start full
+    V.droneOrder = V.droneOrder || 'attack';
+    V.wingT = 2;
+    V.wingDesign = wingDesignOf(V.design.wing || DEFAULT_WING) || wingDesignOf(DEFAULT_WING);
+  }
+  V.wingAboard = Math.min(V.wingAboard, cap);
+}
+const DEFAULT_WING = 'fighter';
+function wingsFlying(B, V) { let n = 0; for (const U of B.units) if (U.wing === V && !U.destroyed) n++; return n; }
+
+function launchWing(B, V) {
+  const d = JSON.parse(JSON.stringify(V.wingDesign));
+  const U = makeVehicle(d, V.side, V.body.x + V.dir * 3, V.dir, B.T);
+  launchFlier(U, B.T, U.domain === 'heli' ? 12 : 30);
+  U.body.y = Math.max(U.body.y, V.body.y + V.height + 6);
+  U.ai = makeAI(V.side === 0 ? 'squad' : 'attack', B.cfg);
+  U.wing = V;
+  U.name = d.name;
+  U.template = d.id;
+  U.seen = V.side === 0 || V.seen;
+  B.units.push(U);
+  V.wingAboard--;
+  B.stats.wings = (B.stats.wings || 0) + 1;
+  const s = spawnParticle(FX_SMOKE, U.body.x, U.body.y, 0, 1, 1, 1.2);
+  if (s) { s.grow = 1.2; s.shade = 0.8; }
+  audio.sfx('clunk', B.panOf(U.body.x));
+  if (V.side === 0) floatText(`${d.name} launched`, U.body.x, U.body.y + 3, false);
+}
+
+function stepWings(B, dt) {
+  for (const V of B.units) {
+    if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) continue;
+    V.wingT -= dt;
+    if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) continue;
+    if (V.side === 1 && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) continue;
+    if (B.cfg && B.cfg.holdFire && V.side === 1) continue;
+    launchWing(B, V);
+    V.wingT = 1 / Math.max(0.02, V.wingRate);
+  }
+}
+
+// What an air-wing aircraft flies at (from airThink): a real enemy its order allows, or a point.
+function wingTarget(B, V, bomber) {
+  const C = V.wing, T = B.T;
+  const pt = V._pt || (V._pt = { body: { x: 0, y: 0, vx: 0, vy: 0 }, height: 0, flier: true, pseudo: true, destroyed: false, seen: false });
+  const at = (x) => { pt.body.x = x; pt.body.y = Math.max(T.height(clamp(x, 0, T.length)), T.sea || -1e9) + 40; return pt; };
+  if (C.destroyed || C.gone || C.withdrawn) {
+    // No carrier: the wing leaves by its own edge and is lost.
+    if (!V.leaving) { V.leaving = true; if (V.side === 0) floatText('Air wing lost with its carrier', V.body.x, V.body.y + 3, false); }
+    const edge = V.side === 0 ? -80 : T.length + 80;
+    if (V.side === 0 ? V.body.x < 30 : V.body.x > T.length - 30) wingGone(B, V, false);   // off its own edge (the edge guard turns aircraft back at the very edge)
+    return at(edge);
+  }
+  const order = C.droneOrder;
+  if (order === 'recall') {
+    if (Math.abs(V.body.x - C.body.x) < 10) wingGone(B, V, true);
+    return at(C.body.x);
+  }
+  const bomb = (U) => !bomber || !U.flier;
+  if (order === 'scout') {
+    const foe = B.units.find((U) => U.side !== V.side && !U.destroyed);
+    return at(C.body.x + (foe ? Math.sign(foe.body.x - C.body.x) || C.dir : C.dir) * DRN.scoutAhead * 1.5);
+  }
+  const reach = order === 'defend' ? DRN.defend * 2 : DRN.reach * 1.5;
+  const tgt = nearestTarget(B, V, 500, (U) => bomb(U) && Math.abs(U.body.x - C.body.x) < reach);
+  return tgt || at(C.body.x);
+}
+
+// An aircraft of the wing leaves the fight: landed back aboard, or lost.
+function wingGone(B, V, landed) {
+  if (V.gone) return;
+  V.gone = true; V.destroyed = true; V.withdrawn = true;
+  const i = B.units.indexOf(V);
+  if (i >= 0) B.units.splice(i, 1);
+  if (landed) V.wing.wingAboard++;
+  else B.stats.wingLost = (B.stats.wingLost || 0) + 1;
 }
 
 // ---------- drawing: each drone design is drawn once per side into a small sprite.

@@ -474,4 +474,51 @@ function missileStockCheck() {
   save.designs.list.splice(save.designs.list.indexOf(d), 1);
   return out;
 }
+// Part 5c2: drones and air-wing aircraft as items: made, stocked, loaded, carried, coming home.
+function airStockCheck() {
+  newCampaign('league', 8383);
+  const out = {};
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  const run = (h) => { for (let t = 0; t < h; t += 0.5) stepWorks(0.5); };
+  out.cityDrones = makeStock(home, 'drones', 'drn_gun', 4);
+  techState().known = TECH.map((n) => n.id);
+  out.cityWing = makeStock(home, 'wings', 'fighter', 1);
+  home.type = 'metropolis';
+  for (const g of GOODS) home.store[g] = 300;
+  campaign.treasury += 20000;
+  out.drones = makeStock(home, 'drones', 'drn_gun', 4);
+  const hq = stockQuote(home, 'drones', droneDesign('drn_gun'), 4).hours + stockQuote(home, 'wings', wingDesignOf('fighter'), 1).hours;
+  run(hq + 2);
+  out.made = { drones: stockAt(home.store, 'drones').drn_gun || 0, wings: stockAt(home.store, 'wings').fighter || 0 };
+  // A drone truck and an escort carrier, docked at home, load them.
+  const land = makeFleet('league', 'land', home.x + 0.5, home.y + 0.5, ['drone_truck'], makeRng(3));
+  const sea = makeFleet('league', 'sea', home.x + 0.5, home.y + 0.5, ['carrier_t3'], makeRng(4));
+  land.docked = sea.docked = home.id;
+  const truck = fleetShips(land)[0], carrier = fleetShips(sea)[0];
+  out.loadD = loadStock(land, home, 'drones');
+  out.loadW = loadStock(sea, home, 'wings');
+  out.carried = { drones: shipStock(truck, 'drones'), wing: shipStock(carrier, 'wings') };
+  // Battle: they start with what they carry; flying ones that survive come home.
+  const B = createBattle(4);
+  const V = makeVehicle(battleDesign(truck), 0, 100, 1, B.T);
+  applyShipState(V);
+  const C = makeVehicle(battleDesign(carrier), 0, 60, 1, B.T);
+  applyShipState(C);
+  out.inBattle = { drones: V.dronesAboard, wing: C.wingAboard };
+  B.units = [V, C];
+  launchDrone(B, V); launchDrone(B, V);
+  B.drones[0].alive = false;                  // one shot down
+  launchWing(B, C);
+  out.home = { drones: dronesHome(B, V), wing: wingsHome(B, C) };
+  Object.assign(B, { result: 'win', reserve: [[], []], sides: { myFleets: [], theirFleets: [] } });
+  applyBattleOutcome(B);
+  out.after = { drones: truck.drones, wing: carrier.air };
+  // An empty carrier takes none in.
+  truck.drones = { id: 'drn_gun', n: 0 };
+  const V2 = makeVehicle(battleDesign(truck), 0, 100, 1, B.T);
+  applyShipState(V2);
+  out.empty = V2.dronesAboard;
+  out.space = +stockUnits('wings', 'fighter').toFixed(1);
+  return out;
+}
 /*TEST:END*/
