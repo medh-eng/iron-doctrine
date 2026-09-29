@@ -366,10 +366,13 @@ Side view, landscape, generated from the location.
 **Fabricators**
 - Fabricators build missiles, drones or ammo **during battle**, using the ship's own metal and electronics.
 
+**Numbers (5e):** a fabricator adds 0.02 work units a second (× spare-power share when short, at least 20%); a drone takes 2 units, a missile its size (small 1, medium 2, large 4), 10 shells 1; each uses the goods of its parts (shells: 1 metal). It makes lost drones first, then missiles, then shells. Goods: the fleet's hold in the campaign (split between its fabricator ships; used goods leave the hold), 20 metal and 10 electronics otherwise.
+
 **Release clamps**
 - These hold a detachable section: a drone, a bomb, or a whole module.
 - When released, the section becomes its own unit, guided by its drone computer if it has one; otherwise it falls free.
 - This makes missile barges, parasite fighters and drop-ship designs possible.
+- **Numbers (5e):** each clamp holds 2 t; a section is a group of parts that touches the ship only through clamps. Release (command wheel) lets every section go at once if their total mass is within the clamps' hold; the section keeps its speed, becomes its own unit under the squad or enemy AI, and doesn't count towards the three on the field or the win.
 
 ### 10.6 Damage and aftermath
 

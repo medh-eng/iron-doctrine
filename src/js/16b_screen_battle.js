@@ -57,6 +57,7 @@ SCREENS.battle = {
     this.buildControls();
     this.layout();
     audio.setIntensity(0);
+    audio.setEra(battleEra(B));
     audio.playTheme('battle');
     this.showHowTo();
     if (B.loaned) ui.toast(`Sea battle: a fleet is lent to you (${B.squad.map((V) => V.name).join(', ')}).`, 4000);
@@ -253,6 +254,8 @@ SCREENS.battle = {
       ['Pull back', () => { const why = pullBack(B, V); if (why) this.say(why); else this.orderDone(V, 'Pulling back'); }, !B.rotation],
       ['Smoke', () => { const why = playerSmoke(B, V); if (why) this.say(why); else this.orderDone(V, 'Smoke'); }],
     ];
+    // Release clamps (Part 5e): let go of the sections they hold.
+    if (!sub && clampSections(V).length) items.push(['Release', () => { const why = releaseSections(B, V); if (why) this.say(why); else this.orderDone(V, 'Released'); }]);
     // A carrier (Part 5c): drone orders, with how many are aboard and flying.
     if (!sub && (V.hangarCap || V.wingCap)) {
       const aboard = (V.dronesAboard || 0) + (V.wingAboard || 0), up = dronesFlying(B, V) + wingsFlying(B, V);

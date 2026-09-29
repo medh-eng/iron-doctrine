@@ -42,6 +42,15 @@ function campaignBattleConfig(place) {
   return c;
 }
 
+// A fabricator ship's share of its fleet's hold (metal and electronics), split between the
+// fleet's fabricator ships; a ship in no fleet (a garrison) has none.
+function fabShare(ship) {
+  const fl = byId('fleets', ship.fleetId);
+  if (!fl) return { metal: 0, elec: 0 };
+  const n = fleetShips(fl).filter((sh) => shipDesign(sh).cells.some((c) => c.p === 'fab')).length || 1;
+  return { metal: (fl.hold.metal || 0) / n, elec: (fl.hold.elec || 0) / n };
+}
+
 // A ship's design for battle, carrying its damage, fuel and ammo.
 function battleDesign(ship) {
   const d = shipDesign(ship);
@@ -55,6 +64,7 @@ function battleDesign(ship) {
     missiles: ship.faction === campaign.faction && missileLoadout(d) ? shipMissiles(ship).n : null,
     drones: ship.faction === campaign.faction && droneLoadout(d) ? shipStock(ship, 'drones').n : null,
     wing: ship.faction === campaign.faction && wingLoadout(d) ? shipStock(ship, 'wings').n : null,
+    fabGoods: ship.faction === campaign.faction && d.cells.some((c) => c.p === 'fab') ? fabShare(ship) : null,
   };
   return d;
 }
@@ -72,6 +82,7 @@ function applyShipState(V) {
   if (V.shellsMax) V.shells = Math.round(V.shellsMax * clamp(s.ammo, 0, 1));
   if (s.missiles !== null && s.missiles !== undefined) loadVehicleMissiles(V, s.missiles);
   loadVehicleAir(V, s.drones, s.wing);
+  if (s.fabGoods && V.fabRate) V.fabGoods = Object.assign({}, s.fabGoods);
 }
 
 function createCampaignBattle(contact, headless) {
@@ -109,7 +120,7 @@ function applyBattleOutcome(B) {
   const win = B.result === 'win';
   const rng = makeRng((campaign.seed ^ (campaign.day * 7919 + Math.floor(campaign.hour * 60))) >>> 0);
   const rec = new Map();
-  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V), drn: dronesHome(B, V), wng: wingsHome(B, V) });
+  for (const V of B.units) if (V.design._shipId) rec.set(V.design._shipId, { lost: V.destroyed && !V.withdrawn, hp: V.parts.map((p) => (p.alive ? p.hp : 0)), fuel: V.fuelMax ? V.fuel / V.fuelMax : null, ammo: V.shellsMax ? V.shells / V.shellsMax : null, msl: missilesLeft(V), drn: dronesHome(B, V), wng: wingsHome(B, V), fab: V.fabUsed || null });
   for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
     if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl, drn: e.drn === undefined ? null : e.drn, wng: e.wng === undefined ? null : e.wng });
   }
@@ -135,6 +146,9 @@ function applyBattleOutcome(B) {
     if (r.msl !== null && r.msl !== undefined && ship.faction === campaign.faction) ship.missiles = { id: missileLoadout(d).id, n: r.msl };
     if (r.drn !== null && r.drn !== undefined && ship.faction === campaign.faction && droneLoadout(d)) ship.drones = { id: droneLoadout(d).id, n: r.drn };
     if (r.wng !== null && r.wng !== undefined && ship.faction === campaign.faction && wingLoadout(d)) ship.air = { id: wingLoadout(d).id, n: r.wng };
+    // What the fabricators used comes out of the fleet's hold (5e).
+    const hfl = r.fab && ship.faction === campaign.faction && byId('fleets', ship.fleetId);
+    if (hfl) for (const g of ['metal', 'elec']) hfl.hold[g] = Math.max(0, (hfl.hold[g] || 0) - r.fab[g]);
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
   }
   if (!win) gaXp /= 2;

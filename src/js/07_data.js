@@ -95,6 +95,8 @@ const EN = {
   flameFuel: 1,            // litres per second while it burns
   igniteChance: 0.35,      // chance per second a flamed part catches fire (× (1 − fire resistance))
 };
+// Fabricators (Part 5e): goods a ship carries for them outside the campaign, and the work items take.
+const FAB = { kit: { metal: 20, elec: 10 }, droneUnits: 2, shells: 10, shellMetal: 1 };
 // Drones (Part 5c, design/01 §10.5). Battle numbers.
 const DRN = {
   speed: 16,               // m/s at a lift-to-weight of 2
@@ -158,7 +160,7 @@ const DRONE_TEMPLATES = {};
 for (const [id, v] of Object.entries(PART_LIBRARY.vehicles)) (v.domain === 'missile' ? MISSILE_TEMPLATES : v.domain === 'drone' ? DRONE_TEMPLATES : TEMPLATES)[id] = v;
 
 // Templates offered in the Workshop and the Drafting Office (design/01 §8.3).
-const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck', 'carrier_t3', 'laser_tank', 'flame_tank'];
+const STARTING_TEMPLATES = ['medium', 'light', 'scout', 'assault', 'truck', 'gunboat', 'destroyer', 'sub', 'fighter', 'bomber', 'heli', 'gunship_t0', 'gunship_t2', 'drone_truck', 'carrier_t3', 'laser_tank', 'flame_tank', 'dropship'];
 // Fleet lent to the player on sea levels when the squad has no ships.
 const LOAN_FLEET = ['destroyer', 'gunboat', 'destroyer'];
 

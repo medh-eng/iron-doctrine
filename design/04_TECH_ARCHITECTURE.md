@@ -43,6 +43,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 15g_missile_stock.js   missiles, drones and air-wing aircraft as campaign items (5b2, 5c2): making, stock, loading, battle in and out
 16m_screen_missiles.js the Drafting Office's Missile and Drone tabs (one shared card)
 10h_energy.js          energy weapons (5d): power and capacitors, weapon heat, laser beams, plasma, flamethrowers, damage types
+10i_fab_clamps.js      fabricators, release clamps and detachable sections, the battle's music era (5e)
 10g_drones.js          drones (5c): drone stats and rules, carriers, launching, orders, flight, hits, spotting, drawing
 12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
 16g_screen_simulator.js the Battle Simulator screen (01 §15)

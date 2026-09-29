@@ -127,7 +127,7 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 - **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b (art todo; missiles in flight are drawn in code).
 - **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts (dcore, drotor, dgun, dcharge, dcam; dlaser planned). JSON added in steps 5c and 5c2. **Batch H2 integrated:** art for `hangar_a`, `hangar_d`, `dcpu1`–`dcpu3`, `dcore`, `dcam`, `dgun` (the repo's stats kept). Not taken: `drotor`, `dcharge`, `dlaser` (the zip draws them 1×1; the game's parts are 2×1): waiting for the producer's choice of footprint.
 - **Other:** fab, clamp, ecm, c203.
-- **Integrated (batch H1):** art for `rack`, `vls`, `mag` and `ecm` (the repo's stats kept; the zip proposed heavier, better-armoured versions: rack 300 kg, VLS 1600 kg, magazine 400 kg holding 4, ECM 200 kg); new `c203` in the game (Super-heavy guns); `fab` and `clamp` added as planned until step 5e.
+- **Integrated (batch H1):** art for `rack`, `vls`, `mag` and `ecm` (the repo's stats kept; the zip proposed heavier, better-armoured versions: rack 300 kg, VLS 1600 kg, magazine 400 kg holding 4, ECM 200 kg); new `c203` in the game (Super-heavy guns); `fab` and `clamp` added as planned until step 5e, now live (5e).
 - **Energy:** laser, hlaser, plasma, plance, cap, reactor, levitator.
 
 ## Batch I: later

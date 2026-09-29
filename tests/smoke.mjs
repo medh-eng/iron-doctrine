@@ -787,6 +787,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         EN(en.flame.damage > 50 && en.flame.fires > 0 && en.flame.fuelUsed > 0 && en.flame.farDamage === 0, 'flamethrower reach, burning or fuel wrong');
         EN(en.resist.compositeFire === en.resist.plateFire / 2 && en.resist.compositeKinetic === en.resist.plateFire && en.resist.compositePlasma < en.resist.compositeKinetic, 'damage-type resistances wrong');
         steps.push('energy weapons');
+        // Part 5e: fabricators, release clamps, the tier 3–4 music layer.
+        const fc = await G(() => window.__GAME__.fabClampCheck());
+        const FC = (c, what) => check(c, `${what} ${JSON.stringify(fc)}`);
+        FC(fc.drones.aboard === 3 && fc.after.aboard === 4 && fc.after.rounds === 3 && fc.after.made === 3 && fc.after.metalUsed > 0 && fc.noGoods === 2, 'fabricator order, rate or goods wrong');
+        FC(fc.sections.length === 1 && fc.release === '' && fc.released.units === 2 && fc.released.lighter > 2000 && fc.released.again !== '' && /Too heavy/.test(fc.oneClamp), 'release clamps wrong');
+        FC(fc.car && fc.car.onGround && fc.car.canDrive && !fc.car.destroyed, 'released section did not land ready to drive');
+        FC(fc.era.laser === 1 && fc.era.light === 0, 'tier 3–4 music layer choice wrong');
+        steps.push('fabricators and clamps');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

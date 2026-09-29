@@ -108,7 +108,7 @@ function createBattle(level, opts = {}) {
   if (cfg.goal.type === 'destroy' && B.goalTotal === 0) B.goalTotal = 0;
 
   B.onDestroyed = (V, source) => {
-    if (V.wing) { if (V.side === 1) B.stats.kills++; return; }   // air wings aren't objectives (5c2)
+    if (V.wing || V.detached) { if (V.side === 1) B.stats.kills++; return; }   // air wings and released sections aren't objectives (5c2, 5e)
     if (V.side === 1) {
       B.goalDone++;
       B.stats.kills++;
