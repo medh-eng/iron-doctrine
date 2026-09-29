@@ -1,0 +1,78 @@
+{
+  "id": "c203",
+  "name": "Heavy gun 203 mm",
+  "family": "c203",
+  "variant": "std",
+  "category": "weapon",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "wall"
+  ],
+  "footprint": {
+    "w": 6,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 3.8,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      2.5,
+      1.95
+    ],
+    "muzzle": [
+      9.8,
+      1.0
+    ],
+    "smoke": [
+      [
+        2.0,
+        0.6
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.1,
+        1.0
+      ],
+      "elevation": [
+        -5,
+        35
+      ]
+    }
+  },
+  "stats": {
+    "mass": 9000,
+    "hp": 180,
+    "armor": 30,
+    "power": 0,
+    "rel": 0.998,
+    "pen": 260,
+    "dmg": 420,
+    "reload": 14,
+    "range": 9000,
+    "vel": 140,
+    "spread": 0.45,
+    "cal": 203,
+    "shells": 10
+  },
+  "cost": {
+    "metal": 45,
+    "elec": 2,
+    "money": 400
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "guns_super"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.4). 05 gives no mass, HP or armour for tier 3-4: set by analogy (confirm). Art: slab gunhouse (T3 clean welded panels, P2 roof, P3 band) with sight glass and cable looms; huge barrel with a fume extractor. Pivot 1.1 cells (07 maximum); barrel length 8.7 cells = 6 x 1.25 + 1.2. shells = 10 (05 gives none)."
+}

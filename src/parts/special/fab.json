@@ -1,0 +1,51 @@
+{
+  "id": "fab",
+  "name": "Fabricator",
+  "family": "fab",
+  "variant": "std",
+  "category": "special",
+  "tier": 3,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "exhaust": [
+      1.8,
+      0.1
+    ]
+  },
+  "stats": {
+    "mass": 1200,
+    "hp": 60,
+    "armor": 10,
+    "power": -60,
+    "rel": 0.998,
+    "rate": 0.02,
+    "heat": 15
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 6,
+    "money": 220
+  },
+  "craftAt": "city",
+  "unlock": {
+    "tech": "fabricators"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "New in v2.1 (05 section 3.4). 05 gives no mass, HP or armour for tier 3-4: set by analogy (confirm). Art: enclosed fabricator (T3): alloy casing, sensor-glass window onto a robot arm and a glowing deposition head, status lamps, cable loom, heat vent. Planned until step 5e (fabricators and detachable sections).",
+  "planned": true
+}

@@ -37,5 +37,19 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5b (design/05 §3.4). Reserve missiles: 8 small, 4 medium or 2 large; refills empty launchers."
+  "notes": "Part 5b (design/05 §3.4). Reserve missiles: 8 small, 4 medium or 2 large; refills empty launchers.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        1.0,
+        0.5
+      ]
+    ]
+  }
 }
