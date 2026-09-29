@@ -201,7 +201,7 @@ function rebuildVehicle(V, first) {
     const d = p.def;
     if (d.radarAir) { radarAir = Math.max(radarAir, d.radarAir * BATTLE_DISTANCE_SCALE); radarGround = Math.max(radarGround, d.radarGround * BATTLE_DISTANCE_SCALE); radarLock = Math.max(radarLock, d.lock); }
     if (d.ecm) ecm = true;
-    if (d.heat > 0) { if (d.power > 0 || d.jet) heatEngines += d.heat; else heatOther += d.heat; }
+    if (d.heat > 0 && !d.energy) { if (d.power > 0 || d.jet) heatEngines += d.heat; else heatOther += d.heat; }
     if (d.heat < 0) radiators -= d.heat;
     if (d.power > 0 || d.jet) engineCount++;
     if (d.repair) repair += d.repair;
@@ -220,6 +220,7 @@ function rebuildVehicle(V, first) {
   V.flareDecoy = flareDecoy;
   for (const w of weapons) if (w.def.secondary === 'launcher' && w.msl === undefined) armLauncher(V, w);
   setupCarrier(V);                          // drone hangars and computers (10g)
+  setupEnergy(V);                           // power, capacitors, weapon heat (10h)
   V.bounds = { minX, maxX, minY, maxY };
   V.len = maxX - minX;
   V.height = maxY - minY;

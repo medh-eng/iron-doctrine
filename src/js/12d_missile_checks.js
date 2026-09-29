@@ -229,4 +229,75 @@ function wingCheck() {
   out.notInSquad = !B.squad.some((V) => V.wing);
   return out;
 }
+// Part 5d: energy weapons, flamethrowers and damage types.
+function energyCheck() {
+  const out = {};
+  const B = createBattle(4);
+  const make = (extra, x, dir, side, base = 'light') => {
+    const d = designFromTemplate(base);
+    d.h += 2; for (const c of d.cells) c.y += 2;
+    d.cells.push(...extra.map(([p, cx, cy]) => ({ p, x: cx, y: cy })));
+    const V = makeVehicle(d, side, x, dir, B.T);
+    V.ai = makeAI(side ? 'attack' : 'squad', B.cfg);
+    return V;
+  };
+  const hpOf = (V) => V.parts.reduce((a, p) => a + Math.max(0, p.hp), 0);
+  const run = (secs, fn) => { for (let t = 0; t < secs; t += SIM_STEP) fn(); };
+  // Lasers need no shells; each shot adds heat; a full gauge locks them until half cooled.
+  const S = make([['laser', 4, 1]], 100, 1, 0);
+  const T = make([], 160, -1, 1);
+  B.units = [S, T]; B.squad = [S]; B.me = S; T.seen = true;
+  const w = S.weapons.find((q) => q.def.id === 'laser');
+  S.shells = 0;
+  let shots = 0;
+  while (shots < 20 && fireWeapon(B, S, w, 0, 1)) shots++;
+  out.heat = { shots, locked: S.wheatLock, heat: Math.round(S.wheat) };
+  let cool = 0;
+  while (S.wheatLock && cool < 30) { stepEnergy(B, S, SIM_STEP); cool += SIM_STEP; }
+  out.heat.coolSecs = +cool.toFixed(1);
+  shells.forEachAlive((q) => { q.alive = false; });
+  // Recharge: limited by spare power; a capacitor covers the shortfall.
+  const recharge = (V) => { const x = V.weapons.find((q) => q.def.energy); x.reload = x.def.reload; let t = 0; while (x.reload > 0 && t < 30) { stepEnergy(B, V, SIM_STEP); x.reload -= SIM_STEP * V.energyFactor; t += SIM_STEP; } return +t.toFixed(2); };
+  const weak = make([['hlaser', 0, 1]], 100, 1, 0);
+  const capped = make([['hlaser', 0, 1], ['cap', 5, 1]], 100, 1, 0);
+  const strong = make([['hlaser', 0, 1], ['reactor', 5, 0]], 100, 1, 0);
+  out.power = { made: weak.powerMade, need: weak.energyNeed, weak: recharge(weak), capped: recharge(capped), strong: recharge(strong), reload: PARTS.hlaser.reload };
+  // A laser beam hits at once and shows a beam; a plasma bolt barely drops and hits hard.
+  const fireAt = (V, id, target) => {
+    const x = V.weapons.find((q) => q.def.id === id);
+    V.wheat = 0; V.wheatLock = false;
+    aimWeapon(V, x, target.body.x, target.body.y + target.height * 0.4, _aim);
+    x.angle = _aim.angle;
+    const h0 = hpOf(target);
+    let beam = 0;
+    fireWeapon(B, V, x, _aim.angle, 0.01);
+    beams.forEachAlive(() => beam++);
+    let t = 0;
+    for (; t < 3; t += SIM_STEP) { stepShells(B, SIM_STEP); let live = 0; shells.forEachAlive(() => live++); if (!live) break; }
+    return { damage: Math.round(h0 - hpOf(target)), beam, secs: +t.toFixed(2) };
+  };
+  const P = make([['laser', 4, 1], ['plasma', 0, 0]], 100, 1, 0);
+  B.units = [P, T];
+  out.laser = fireAt(P, 'laser', T);
+  out.plasma = fireAt(P, 'plasma', T);
+  // Flamethrower: burns and ignites within reach, burns fuel; nothing beyond it.
+  const F = make([['flame', 4, 1]], 100, 1, 0);
+  const near = make([], 110, -1, 1), far = make([], 140, -1, 1);
+  near.seen = far.seen = true;
+  B.units = [F, near]; B.squad = [F]; B.me = F;
+  const fw = F.weapons.find((q) => q.def.id === 'flame');
+  const fuel0 = F.fuel, n0 = hpOf(near);
+  run(4, () => stepFlame(B, F, fw, SIM_STEP, false));
+  out.flame = { damage: Math.round(n0 - hpOf(near)), fires: (near.fires || []).length, fuelUsed: +(fuel0 - F.fuel).toFixed(1) };
+  B.units = [F, far];
+  const f0 = hpOf(far);
+  run(4, () => stepFlame(B, F, fw, SIM_STEP, false));
+  out.flame.farDamage = Math.round(f0 - hpOf(far));
+  // Damage types: composite armour takes half the fire damage plate takes; kinetic is the same.
+  const R = make([['composite', 0, 0], ['plate', 1, 0]], 200, 1, 1);
+  const ci = R.parts.findIndex((p) => p.def.id === 'composite'), pi = R.parts.findIndex((p) => p.def.id === 'plate');
+  const lose = (i, type) => { const h = R.parts[i].hp; damagePart(B, R, i, 20, null, type); const d = h - R.parts[i].hp; R.parts[i].hp = h; return +d.toFixed(1); };
+  out.resist = { compositeFire: lose(ci, 'fire'), plateFire: lose(pi, 'fire'), compositeKinetic: lose(ci, null), compositePlasma: lose(ci, 'plasma') };
+  return out;
+}
 /*TEST:END*/

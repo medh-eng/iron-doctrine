@@ -477,6 +477,37 @@ const SFX = {
     f.frequency.exponentialRampToValueAtTime(2600, t + 0.5);
     a.noiseSrc(t, t + 0.8, f);
   },
+  // Laser zap: a short pure tone with a noise edge (design/03).
+  laser(a, t, pan, w) {
+    const out = a.voice(a.sfxBus, t, 0.3, 0.5, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.002, 0.35, 0.18);
+    const o = a.osc('sine', 1800 / Math.max(0.6, w || 1), t, t + 0.2, g);
+    o.frequency.exponentialRampToValueAtTime(700, t + 0.18);
+    const n = a.gain(out);
+    a.env(n.gain, t, 0.001, 0.15, 0.05);
+    a.noiseSrc(t, t + 0.06, a.filter('highpass', 4000, 0, n));
+  },
+  // Plasma: a thump and a whoosh.
+  plasma(a, t, pan, k) {
+    const out = a.voice(a.sfxBus, t, 0.7, 0.7, pan);
+    const b = a.gain(out);
+    a.env(b.gain, t, 0.004, 0.7, 0.3);
+    const o = a.osc('sine', 70 / clamp(k || 1, 0.6, 2), t, t + 0.4, b);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+    const w = a.gain(out);
+    a.env(w.gain, t, 0.05, 0.3, 0.45);
+    const f = a.filter('bandpass', 900, 0.8, w);
+    f.frequency.exponentialRampToValueAtTime(300, t + 0.45);
+    a.noiseSrc(t, t + 0.5, f);
+  },
+  // Flamethrower roar: low filtered noise.
+  flame(a, t, pan) {
+    const out = a.voice(a.sfxBus, t, 0.55, 0.5, pan);
+    const g = a.gain(out);
+    a.env(g.gain, t, 0.05, 0.4, 0.4);
+    a.noiseSrc(t, t + 0.55, a.filter('lowpass', 700, 0.5, g));
+  },
   smoke(a, t, pan) {
     const out = a.voice(a.sfxBus, t, 0.6, 0.4, pan);
     const g = a.gain(out);

@@ -1,0 +1,40 @@
+{
+  "id": "reactor",
+  "name": "Precursor reactor",
+  "family": "reactor",
+  "variant": "std",
+  "category": "mobility",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 3
+  },
+  "stats": {
+    "mass": 4000,
+    "hp": 200,
+    "armor": 20,
+    "power": 1600,
+    "rel": 0.975,
+    "heat": 90,
+    "fuelUse": 0
+  },
+  "behaviour": {},
+  "cost": {
+    "metal": 10,
+    "elec": 12,
+    "scrap": 20,
+    "money": 600
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "prop_reactor"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Part 5d (design/05 §3.4). 1600 kW and no fuel; runs hot."
+}

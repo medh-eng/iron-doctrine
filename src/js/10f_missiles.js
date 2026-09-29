@@ -214,7 +214,7 @@ function warheadBurst(B, m, x, y, hit) {
   const src = m.shooter;
   switch (M.warhead) {
     case 'napalm': {
-      explode(B, x, y, M.dmg, M.blast, src);
+      explode(B, x, y, M.dmg, M.blast, src, 'fire');
       if (hit) igniteNear(B, hit, x, y, 2);
       const gy = B.T.height(x);
       if (y - gy < 4 || !hit) {
@@ -228,7 +228,7 @@ function warheadBurst(B, m, x, y, hit) {
       break;
     }
     case 'acid': {
-      explode(B, x, y, M.dmg, M.blast, src);
+      explode(B, x, y, M.dmg, M.blast, src, 'acid');
       for (const V of B.units) {
         if (V.gone || Math.hypot(V.body.x - x, V.body.y - y) > M.blast * 1.5 + V.radius) continue;
         let n = 0;
@@ -250,7 +250,7 @@ function warheadBurst(B, m, x, y, hit) {
       break;
     }
     case 'emp': {
-      explode(B, x, y, M.dmg, 1.5, src);
+      explode(B, x, y, M.dmg, 1.5, src, 'emp');
       for (const V of B.units) {
         if (V.gone || V.destroyed || Math.hypot(V.body.x - x, V.body.y - y) > M.blast + V.radius * 0.5) continue;
         V.empT = Math.max(V.empT || 0, M.stun);
@@ -365,7 +365,7 @@ function stepFirePatches(B, dt) {
       if (V.gone || V.destroyed || Math.abs(V.body.x - f.x) > f.r + V.len * 0.5 || V.body.y - f.y > 3) continue;
       V.parts.forEach((p, i) => {
         if (!p.alive || p.y + p.def.h < V.design.h - 2) return;      // the lowest two rows burn
-        damagePart(B, V, i, MSL.burnDps * f.acc * (p.def.armor > 20 ? 20 / p.def.armor : 1), f.src);
+        damagePart(B, V, i, MSL.burnDps * f.acc * (p.def.armor > 20 ? 20 / p.def.armor : 1), f.src, 'fire');
       });
     }
     f.acc = 0;
