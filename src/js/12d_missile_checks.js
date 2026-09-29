@@ -300,4 +300,47 @@ function energyCheck() {
   out.resist = { compositeFire: lose(ci, 'fire'), plateFire: lose(pi, 'fire'), compositeKinetic: lose(ci, null), compositePlasma: lose(ci, 'plasma') };
   return out;
 }
+// Part 5e: fabricators rebuild lost drones, then missiles, then shells, from goods aboard;
+// clamps release a section that becomes its own unit.
+function fabClampCheck() {
+  const out = {};
+  const B = createBattle(4);
+  const run = (V, secs) => { for (let t = 0; t < secs; t += SIM_STEP) stepFab(B, V, SIM_STEP); };
+  const d = designFromTemplate('drone_truck');
+  d.h += 2; for (const c of d.cells) c.y += 2;
+  d.cells.push({ p: 'fab', x: 0, y: 0 }, { p: 'rack', x: 2, y: 1 });
+  const V = makeVehicle(d, 0, 100, 1, B.T);
+  B.units = [V]; B.squad = [V]; B.me = V;
+  const rack = V.weapons.find((w) => w.def.id === 'rack');
+  V.dronesAboard = 2; rack.rounds = 2; V.shells = V.shellsMax - 20;
+  const g0 = Object.assign({}, V.fabGoods);
+  run(V, 120);
+  out.drones = { aboard: V.dronesAboard, rate: V.fabRate };
+  run(V, 150);
+  out.after = { aboard: V.dronesAboard, rounds: rack.rounds, shells: V.shellsMax - V.shells, made: B.stats.fabricated || 0, metalUsed: +(g0.metal - V.fabGoods.metal).toFixed(1), elecUsed: +(g0.elec - V.fabGoods.elec).toFixed(1) };
+  // No goods aboard: nothing is made.
+  const V2 = makeVehicle(d, 0, 100, 1, B.T);
+  V2.dronesAboard = 2; V2.fabGoods = { metal: 0, elec: 0 };
+  run(V2, 120);
+  out.noGoods = V2.dronesAboard;
+  // Clamps: the drop-ship lets its armoured car go; it lands and can drive.
+  const D = makeVehicle(designFromTemplate('dropship'), 0, 100, 1, B.T);
+  launchFlier(D, B.T, 30);
+  B.units = [D]; B.squad = [D]; B.me = D;
+  const m0 = D.body.m;
+  out.sections = clampSections(D).map((q) => q.mass);
+  out.release = releaseSections(B, D);
+  const U = B.units.find((q) => q.detached);
+  out.released = { units: B.units.length, lighter: +(m0 - D.body.m).toFixed(0), again: releaseSections(B, D) };
+  for (let t = 0; t < 10; t += SIM_STEP) { for (const q of B.units) { if (q.flier) flightControl(q, B.T, SIM_STEP); stepVehicle(q, B.T, SIM_STEP); } }
+  out.car = U ? { onGround: U.body.y - B.T.height(U.body.x) < 3, canDrive: U.canDrive, destroyed: U.destroyed, crew: U.crew } : null;
+  // One clamp holds 2 t: too little for the 2.5 t car.
+  const one = designFromTemplate('dropship');
+  one.cells = one.cells.filter((c, i, a) => !(c.p === 'clamp' && a.findIndex((q) => q.p === 'clamp') !== i));
+  const D1 = makeVehicle(one, 0, 100, 1, B.T);
+  out.oneClamp = releaseSections(B, D1);
+  // Music era: tier 3–4 parts on the field bring in the synth bass.
+  out.era = { laser: battleEra({ units: [makeVehicle(designFromTemplate('laser_tank'), 0, 100, 1, B.T)], reserve: [[], []] }), light: battleEra({ units: [makeVehicle(designFromTemplate('light'), 0, 100, 1, B.T)], reserve: [[], []] }) };
+  return out;
+}
 /*TEST:END*/

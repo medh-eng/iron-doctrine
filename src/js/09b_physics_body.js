@@ -221,6 +221,7 @@ function rebuildVehicle(V, first) {
   for (const w of weapons) if (w.def.secondary === 'launcher' && w.msl === undefined) armLauncher(V, w);
   setupCarrier(V);                          // drone hangars and computers (10g)
   setupEnergy(V);                           // power, capacitors, weapon heat (10h)
+  setupFab(V);                              // fabricators (10i)
   V.bounds = { minX, maxX, minY, maxY };
   V.len = maxX - minX;
   V.height = maxY - minY;

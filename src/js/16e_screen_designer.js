@@ -419,6 +419,16 @@ SCREENS.designer = {
     row('Centre of mass', `${st.com.x.toFixed(1)}, ${st.com.y.toFixed(1)} m`);
     row('Power', `${st.power} kW made, ${st.drawn} kW drawn`);
     row('Power to weight', `${st.powerToWeight.toFixed(1)} kW/t`);
+    // Fabricators and release clamps (Part 5e).
+    const fabs = s.d.cells.filter((c) => c.p === 'fab').length;
+    if (fabs) row('Fabricators', `${(fabs * PARTS.fab.rate * 60).toFixed(1)} units a minute (drone 2, missile 1–4, 10 shells 1), from metal and electronics aboard`);
+    const clamps = s.d.cells.filter((c) => c.p === 'clamp').length;
+    if (clamps) {
+      const Vt = { design: s.d, parts: s.d.cells.map((c) => ({ def: PARTS[c.p], x: c.x, y: c.y, alive: true })), alive: new Uint8Array(s.d.cells.length).fill(1) };
+      const secs = clampSections(Vt);
+      const m = secs.reduce((a, q) => a + q.mass, 0);
+      row('Release clamps', secs.length ? `${secs.length} section${secs.length > 1 ? 's' : ''}, ${(m / 1000).toFixed(1)} t on ${(clamps * PARTS.clamp.capacity).toFixed(1)} t${m > clamps * PARTS.clamp.capacity * 1000 ? ': too heavy to release' : ''}` : 'nothing held (a section must touch the ship only through clamps)');
+    }
     // Energy weapons (Part 5d): what recharging them draws, what's spare, the capacitor and heat.
     const ew = s.d.cells.map((c) => PARTS[c.p]).filter((P) => P.energy);
     if (ew.length) {

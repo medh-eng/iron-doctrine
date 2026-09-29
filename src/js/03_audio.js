@@ -183,6 +183,17 @@ const audio = {
     o.frequency.exponentialRampToValueAtTime(45, t + 0.25);
   },
 
+  // Pulsing synth bass (design/03: T3–T4 battles): a filtered saw with a quick pluck.
+  synthBass(bus, t, hz, dur, vel) {
+    const out = this.voice(bus, t, dur + 0.1, vel);
+    const g = this.gain(out);
+    this.env(g.gain, t, 0.004, vel * 0.5, dur * 0.8);
+    const f = this.filter('lowpass', 900, 6, g);
+    f.frequency.setValueAtTime(900, t);
+    f.frequency.exponentialRampToValueAtTime(160, t + dur * 0.9);
+    this.osc('sawtooth', hz, t, t + dur + 0.05, f);
+  },
+
   brass(bus, t, hz, dur, vel) {
     const c = this.ctx;
     const out = this.voice(bus, t, dur + 0.2, vel);
@@ -289,6 +300,9 @@ const audio = {
   // Battle music intensity 0..3 (design/03 §6.3).
   intensity: 0,
   setIntensity(n) { this.intensity = clamp(n, 0, 3); },
+  // Tech era of the battle (design/03 §8): 1 when tier 3–4 parts are on the field.
+  era: 0,
+  setEra(n) { this.era = n ? 1 : 0; },
 
   // ---------- sound effects (design/03 §7)
   quiet: false,      // behind the title only menu sounds play
@@ -331,6 +345,8 @@ const THEMES = {
         a.strings(bus, t, midiToHz(root), sd * 16, 0.9);
         a.strings(bus, t, midiToHz(root + 7), sd * 16, 0.7);
       }
+      // T3–T4 battles: a pulsing synth bass on the 8ths under the orchestra.
+      if (a.era && s % 2 === 0) a.synthBass(bus, t, midiToHz(root - 12 + (s % 8 === 6 ? 7 : 0)), sd * 1.7, 0.5 + lvl * 0.08);
       if (lvl >= 1) {
         if (s === 0 || s === 8 || (s === 11 && rng.next() < 0.5)) a.kick(bus, t, 0.7);
         if (s % 2 === 0) {
