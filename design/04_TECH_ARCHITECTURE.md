@@ -42,6 +42,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 12d_missile_checks.js  test-only checks of designed missiles
 15g_missile_stock.js   missiles, drones and air-wing aircraft as campaign items (5b2, 5c2): making, stock, loading, battle in and out
 15h_faction_ai.js      faction strategic AI (6a): treasuries, building, convoys, expansion, defence, raids, AI-vs-AI clashes and sieges
+15i_ai_designs.js      AI designs that evolve (6b): the tally of what you field, weekly reviews, part-for-part refits (campaign.intel, campaign.aiDesigns)
 16m_screen_missiles.js the Drafting Office's Missile and Drone tabs (one shared card)
 10h_energy.js          energy weapons (5d): power and capacitors, weapon heat, laser beams, plasma, flamethrowers, damage types
 10i_fab_clamps.js      fabricators, release clamps and detachable sections, the battle's music era (5e)

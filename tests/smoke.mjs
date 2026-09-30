@@ -808,6 +808,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         const fp = await G(() => window.__GAME__.factionPartCheck());
         check(!fp.lumenBefore && fp.lumenAfter && !fp.leagueLaser && !fp.leagueHoldBefore && fp.leagueHold && !fp.leagueBoiler && fp.study === 'laser_prism' && fp.leagueStudied, `faction signature part unlocks wrong ${JSON.stringify(fp)}`);
         steps.push('signature parts');
+        // Part 6b: AI designs evolve against what you field.
+        const ev = await G(() => window.__GAME__.evolveCheck());
+        const EV = (c, what) => check(c, `${what} ${JSON.stringify(ev)}`);
+        EV(ev.traits.armour === 1 && ev.seen === 5 && ev.counters.join() === 'armour,air', 'what you field was not tallied or read right');
+        EV(ev.refits > 3 && ev.penUp.length > 2 && ev.aaAdded.length > 2 && ev.valid && /refit \d+ designs? with/.test(ev.news), 'AI refits wrong or invalid');
+        EV(ev.builtRefit && ev.later.length === 0, 'AI does not build its refit, or keeps a faded counter');
+        steps.push('evolving AI designs');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

@@ -428,7 +428,11 @@ Full tree and perks: 08 §11–12.
   - Fleets: up to 5 ships; 3 fleets plus 1 per 3 settlements, extra ships garrison.
   - Convoys: 1 per faction (League 2) between two of its settlements, 60 a delivery.
   - Fights away from you: resolved by strength; each side loses up to 40% of its ships, weighted by the other side's share.
-- **Later (Part 5):** AI factions adapt their designs to counter what you field most.
+- **AI designs evolve (6b):** AI factions adapt their designs to counter what you field most.
+  - After each campaign battle your ships' traits are tallied: domain, submarine, heavy armour (best plating ≥ 40 mm), missiles, drones, energy weapons or flamethrowers. The tally fades 3% a day.
+  - Each faction reviews every 7 days. A trait at ≥ 35% of what you field (after at least 4 vehicles) calls for its counter, dropped again below 17.5%.
+  - Counters are part-for-part refits of the same size within the faction's tier: heavy armour → the most penetrating gun; aircraft and drones → an anti-aircraft gun in place of the weakest weapon; submarines → a depth-charge rack; missiles → flares; energy and fire → composite armour. An aircraft may not get more than 5% heavier.
+  - The refit is a new mark of the design, and what the faction builds from then on. The journal states which faction refit how many designs with what.
 
 ## 14. Winning and losing
 

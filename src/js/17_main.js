@@ -161,6 +161,7 @@ window.__GAME__ = {
   fabClampCheck: () => fabClampCheck(),
   aiCheck: (as) => aiCheck(30, as),
   factionPartCheck: () => factionPartCheck(),
+  evolveCheck: () => evolveCheck(),
   missileShowcase: (id) => missileShowcase(id),
   systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope

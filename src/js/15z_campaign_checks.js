@@ -542,6 +542,42 @@ function factionPartCheck() {
   out.leagueStudied = partUnlocked('laser_prism');
   return out;
 }
+// AI designs that evolve (6b): a heavily armoured, air-heavy player; the Directorate refits.
+function evolveCheck() {
+  newCampaign('league', 5151);
+  const out = {};
+  const armoured = designFromTemplate('light');
+  armoured.cells.forEach((c) => { if (PARTS[c.p].cat === 'structure') c.p = 'arm40'; });
+  out.traits = designTraits(armoured);
+  noteFielded([armoured, armoured, armoured, designFromTemplate('gunship_t0'), designFromTemplate('gunship_t0')]);
+  out.seen = Math.round(intelState().n);
+  campaign.day = 28;                                        // tier 2
+  const news = [];
+  aiReview('directorate', news);
+  const st = aiState('directorate');
+  out.counters = st.counters.slice();
+  out.refits = Object.keys(st.refit).length;
+  out.news = news[0] || '';
+  const pen = (d) => Math.max(0, ...d.cells.map((c) => (PARTS[c.p].cat === 'weapon' && !PARTS[c.p].auto ? PARTS[c.p].pen || 0 : 0)));
+  const pairs = Object.entries(st.refit).map(([b, r]) => ({ b, r, base: designFromTemplate(b), d: campaign.aiDesigns[r] }));
+  out.penUp = pairs.filter((p) => pen(p.d) > pen(p.base)).map((p) => p.b);
+  out.aaAdded = pairs.filter((p) => p.d.cells.some((c) => PARTS[c.p].aa) && !p.base.cells.some((c) => PARTS[c.p].aa)).map((p) => p.b);
+  out.valid = pairs.every((p) => !validateDesign(p.d).length);
+  out.names = pairs.map((p) => p.d.name).slice(0, 3);
+  // It builds the refit.
+  const pick = pairs[0];
+  st.money = 1e6; st.next = { dom: mapDomain(domainOf(pick.base)), id: pick.b };
+  const n0 = campaign.ships.length;
+  aiBuild('directorate', aiRng(1));
+  const ship = campaign.ships[n0];
+  out.builtRefit = !!ship && ship.design === pick.r && shipDesign(ship).cells.length === pick.d.cells.length && shipStats(ship).cost > 0;
+  // The threat fades: counters are dropped at the next review.
+  for (let d = 0; d < 60; d++) intelDay();
+  noteFielded([designFromTemplate('gunboat'), designFromTemplate('gunboat'), designFromTemplate('gunboat'), designFromTemplate('gunboat')]);
+  aiReview('directorate', []);
+  out.later = st.counters.slice();
+  return out;
+}
 function aiCheck(days = 30, as = 'league') {
   newCampaign(as, 9191);
   const t0 = performance.now();

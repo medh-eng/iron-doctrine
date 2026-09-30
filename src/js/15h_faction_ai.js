@@ -22,10 +22,12 @@ const aiRng = (salt) => makeRng((campaign.seed ^ (campaign.day * 7919 + Math.flo
 const nearestOwn = (fid, x, y) => settlementsOf(fid).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] || null;
 
 // A design's price to an AI faction (money only: its goods are abstracted).
-function aiPrice(id) { return costOf(designFromTemplate(id)) * 3; }
+function aiPrice(id) { const d = aiDesignOf(id); return d ? costOf(d) * 3 : Infinity; }
 
 // ---------- once a day (from dailyEconomy)
 function aiDay(news) {
+  intelDay();
+  aiFactionIds().forEach((fid, k) => { if ((campaign.day + k) % INTEL.reviewDays === 0 && settlementsOf(fid).length) aiReview(fid, news); });
   for (const fid of aiFactionIds()) {
     const own = settlementsOf(fid);
     if (!own.length) continue;
@@ -66,7 +68,8 @@ function aiBuild(fid, rng) {
     if (!id) return;
     st.next = { dom, id };
   }
-  const { dom, id } = st.next;
+  const { dom } = st.next;
+  const id = aiBuildId(fid, st.next.id);                     // its latest refit of that design (6b)
   if (st.money < aiPrice(id)) return;
   st.next = null;
   const yard = rng.pick(yards.filter((s) => dom !== 'sea' || portCell(s, 'sea')));
