@@ -16,6 +16,20 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        1,
+        0.5
+      ]
+    ]
+  },
   "stats": {
     "mass": 300,
     "hp": 30,
@@ -39,5 +53,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5d (design/05 §3.4). Stores 30 MJ: covers the energy weapons' recharge when spare power runs short, and refills from spare power. May burst when destroyed."
+  "notes": "Part 5d (design/05 \u00a73.4). Stores 30 MJ: covers the energy weapons' recharge when spare power runs short, and refills from spare power. May burst when destroyed."
 }

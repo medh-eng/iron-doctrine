@@ -12,6 +12,19 @@
     "w": 4,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      2,
+      0.95
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 3000,
     "hp": 120,
@@ -31,5 +44,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Id bridge_l (the command bridge in structure/ is bridge)."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Id bridge_l (the command bridge in structure/ is bridge). Art: bridge layer: a P1 carrier cradle with P3 stripes, a folded box-girder bridge (X-braced bare steel, P3 walkway edges, P2 hinge blocks) on three rollers, and a hydraulic launching ram. Ends are hinge blocks, so it reads as a bridge ready to unfold."
 }

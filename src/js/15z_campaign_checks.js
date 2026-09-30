@@ -522,6 +522,26 @@ function airStockCheck() {
   return out;
 }
 // Part 6a: thirty days of the AI factions on their own (your fleets stay out of it).
+// Faction signature parts (design/09): own faction once the family is researched, others only by
+// reverse-engineering that part.
+function factionPartCheck() {
+  const out = {};
+  newCampaign('lumen', 4242);
+  out.lumenBefore = partUnlocked('laser_prism');
+  techState().known.push('lasers');
+  out.lumenAfter = partUnlocked('laser_prism') && partUnlocked('cap_spine');
+  newCampaign('league', 4242);
+  techState().known.push('lasers');
+  out.leagueLaser = partUnlocked('laser_prism');
+  out.leagueHoldBefore = partUnlocked('hold_convoy');
+  techState().known.push(PART_LIBRARY.parts.hold.unlock.tech);
+  out.leagueHold = partUnlocked('hold_convoy');
+  out.leagueBoiler = partUnlocked('steam_foundry');
+  out.study = studyTarget('laser_prism');
+  campaign.unlocked.push('laser_prism');
+  out.leagueStudied = partUnlocked('laser_prism');
+  return out;
+}
 function aiCheck(days = 30, as = 'league') {
   newCampaign(as, 9191);
   const t0 = performance.now();

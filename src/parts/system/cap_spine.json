@@ -1,0 +1,66 @@
+{
+  "id": "cap_spine",
+  "name": "Capacitor spine",
+  "family": "cap",
+  "variant": "spine",
+  "category": "system",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        2,
+        0.5
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 700,
+    "hp": 45,
+    "armor": 5,
+    "power": 0,
+    "rel": 0.995,
+    "effect": 90,
+    "detonate": 0.2
+  },
+  "behaviour": {
+    "capacitor": true
+  },
+  "cost": {
+    "metal": 5,
+    "elec": 16,
+    "scrap": 14,
+    "money": 380
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "faction": "lumen"
+  },
+  "pros": [
+    "Stores 90 MJ (+200%)",
+    "HP 45 (+50%)"
+  ],
+  "cons": [
+    "20% chance to blow the vehicle apart when destroyed",
+    "Mass 700 kg (+133%)",
+    "Footprint 4×1 (+100% cells)",
+    "Cost index 1112 (+94%)"
+  ],
+  "balanceNote": "Lumen Collective signature part (09 §5): an energy buffer, and explosive when hit. The detonation risk (the game's existing detonate stat) is the price of the extra storage.",
+  "notes": "Faction signature part (design/09). Art: a long vertebral spine: Precursor conduit with a glow channel through seven capacitor discs with charge rings, armoured P1 terminals, P2 cradle feet, P3 warning chevrons, red lamp."
+}

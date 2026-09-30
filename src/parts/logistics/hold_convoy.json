@@ -1,0 +1,59 @@
+{
+  "id": "hold_convoy",
+  "name": "Convoy hold",
+  "family": "hold",
+  "variant": "convoy",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 4,
+    "h": 3
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "smoke": [
+      [
+        2,
+        2
+      ]
+    ]
+  },
+  "stats": {
+    "mass": 540,
+    "hp": 60,
+    "armor": 2,
+    "power": 0,
+    "rel": 0.998,
+    "cargo": 9000
+  },
+  "cost": {
+    "metal": 4,
+    "wood": 3,
+    "money": 30
+  },
+  "craftAt": "city",
+  "unlock": {
+    "faction": "league"
+  },
+  "pros": [
+    "Cargo 9000 kg (+80%)",
+    "Cost index 82 (\u22124%)"
+  ],
+  "cons": [
+    "HP 60 (\u221233%)",
+    "Armour 2 (\u221267%)",
+    "Footprint 4\u00d73 (+33% cells)"
+  ],
+  "balanceNote": "Harbour League signature part (09 \u00a71): large capacity, fragile. Deliberately above the variant band on cargo; paid for in HP, armour and size.",
+  "notes": "Faction signature part (design/09). Art: open lattice frame with cross-bracing, two decks: League cargo containers under a tarp above, barrels, sacks and crates below, overhead hoist rail, brass lamp, P3 pennant stripe."
+}

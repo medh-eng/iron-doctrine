@@ -12,6 +12,19 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.9,
+      1.9
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 400,
     "hp": 60,
@@ -31,5 +44,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Art: landing ramp: the bow door shown raised, a P1 plate with P3 hazard stripes in a P2 frame, on a heavy foot hinge with latch dogs; lifting chains run to a winch drum on the left and a steel deck toe sits under the door."
 }

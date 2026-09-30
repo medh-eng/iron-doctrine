@@ -15,6 +15,40 @@
     "w": 5,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 3.375,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      2.5,
+      1.9
+    ],
+    "muzzle": [
+      8.3,
+      1.0
+    ],
+    "smoke": [
+      [
+        0.45,
+        0.5
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.1,
+        1.0
+      ],
+      "elevation": [
+        -3,
+        20
+      ]
+    }
+  },
   "stats": {
     "mass": 6000,
     "hp": 160,
@@ -45,5 +79,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5d (design/05 §3.4). 700 kW to recharge; 110 weapon heat a shot: one shot, then a long cool-down."
+  "notes": "Part 5d (design/05 \u00a73.4). 700 kW to recharge; 110 weapon heat a shot: one shot, then a long cool-down."
 }

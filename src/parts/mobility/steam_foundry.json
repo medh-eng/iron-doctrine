@@ -1,0 +1,81 @@
+{
+  "id": "steam_foundry",
+  "name": "Foundry boiler",
+  "family": "steam",
+  "variant": "foundry",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 3
+  },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0.75,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.5,
+      2.9
+    ],
+    "exhaust": [
+      0.5,
+      -0.72
+    ],
+    "smoke": [
+      [
+        0.9,
+        2
+      ],
+      [
+        2.3,
+        1.2
+      ]
+    ]
+  },
+  "moving": {
+    "flywheel": {
+      "pivot": [
+        2.34375,
+        2.0
+      ]
+    }
+  },
+  "stats": {
+    "mass": 2800,
+    "hp": 150,
+    "armor": 12,
+    "power": 360,
+    "rel": 0.985,
+    "heat": 55,
+    "fuelUse": 130
+  },
+  "cost": {
+    "wood": 2,
+    "metal": 6
+  },
+  "craftAt": "city",
+  "unlock": {
+    "faction": "directorate"
+  },
+  "pros": [
+    "Power 360 kW (+200%)",
+    "HP 150 (+67%)",
+    "Armour 12 (+140%)"
+  ],
+  "cons": [
+    "Mass 2800 kg (+100%)",
+    "Fuel use 130 L/h (+117%)",
+    "Heat 55 (+83%)",
+    "Footprint 3\u00d73 (+50% cells)"
+  ],
+  "balanceNote": "Directorate signature part (09 \u00a72): a cheap, heavy, strong engine. Same price as the steam engine; deliberately above the variant band on power, paid for in mass, fuel and heat.",
+  "notes": "Faction signature part (design/09). Art: slab-jacketed upright boiler, twin smokestacks, open twin-cylinder engine with crossheads, heavy flywheel (moving rotor), firebox grate glow, heavy rivets, P3 hazard chevrons."
+}

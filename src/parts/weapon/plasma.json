@@ -15,6 +15,40 @@
     "w": 3,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 2.625,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.4,
+      1.9
+    ],
+    "muzzle": [
+      5.6,
+      1.0
+    ],
+    "smoke": [
+      [
+        0.4,
+        0.7
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1.1,
+        1.0
+      ],
+      "elevation": [
+        -5,
+        30
+      ]
+    }
+  },
   "stats": {
     "mass": 2500,
     "hp": 100,
@@ -45,5 +79,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5d (design/05 §3.4). Slow violet bolts that barely drop. No ammo; 60 weapon heat a shot."
+  "notes": "Part 5d (design/05 \u00a73.4). Slow violet bolts that barely drop. No ammo; 60 weapon heat a shot."
 }

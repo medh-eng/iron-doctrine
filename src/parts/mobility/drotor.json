@@ -12,6 +12,26 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.92
+    ]
+  },
+  "moving": {
+    "rotor": {
+      "pivot": [
+        1,
+        0.3
+      ]
+    }
+  },
   "stats": {
     "mass": 15,
     "hp": 8,
@@ -31,5 +51,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab."
+  "notes": "Part 5c (design/05 \u00a73.4). Drone part: placed in the Drone tab. Art: drone rotor pod: a P1 motor pod on a bolted spar with a P2 hub cap and a two-blade rotor with P3 tips (moving group 'rotor', pivot at the hub), shown with a faint disc blur. Landing legs, status lamps and a service hatch."
 }

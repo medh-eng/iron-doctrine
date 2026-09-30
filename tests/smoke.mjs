@@ -805,6 +805,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         const ai2 = await G(() => window.__GAME__.aiCheck('directorate'));
         check(ai2.bought > 0 && ai2.builtDomains.league.sea > ai2.builtDomains.league.land + ai2.builtDomains.league.air, `the League AI did not buy villages or prefer the sea ${JSON.stringify(ai2)}`);
         steps.push('faction AI');
+        const fp = await G(() => window.__GAME__.factionPartCheck());
+        check(!fp.lumenBefore && fp.lumenAfter && !fp.leagueLaser && !fp.leagueHoldBefore && fp.leagueHold && !fp.leagueBoiler && fp.study === 'laser_prism' && fp.leagueStudied, `faction signature part unlocks wrong ${JSON.stringify(fp)}`);
+        steps.push('signature parts');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

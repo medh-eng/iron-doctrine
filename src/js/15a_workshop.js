@@ -9,11 +9,21 @@
 // reverse-engineered family (campaign.unlocked).
 const partUnlocked = (id) => {
   const lib = PART_LIBRARY.parts[id];
-  if (!lib || PARTS[id].tier <= 0) return true;
-  if (lib.unlock && lib.unlock.tech && techKnown(lib.unlock.tech)) return true;
+  if (!lib) return true;
   const known = campaign.unlocked || [];
+  // A faction's signature part (design/09): its own faction has it once the family's research is
+  // done; anyone else only by reverse-engineering that part itself.
+  if (lib.unlock && lib.unlock.faction) return known.includes(id) || (lib.unlock.faction === campaign.faction && familyTechKnown(lib.family));
+  if (PARTS[id].tier <= 0) return true;
+  if (lib.unlock && lib.unlock.tech && techKnown(lib.unlock.tech)) return true;
   return known.includes(id) || known.some((k) => PART_LIBRARY.parts[k] && PART_LIBRARY.parts[k].family === lib.family);
 };
+// The research a part family needs (none for families with a tier 0 member or no research).
+function familyTechKnown(family) {
+  const kin = Object.values(PART_LIBRARY.parts).filter((p) => p.family === family && !(p.unlock && p.unlock.faction));
+  if (!kin.length || kin.some((p) => PARTS[p.id] && PARTS[p.id].tier <= 0)) return true;
+  return kin.some((p) => p.unlock && p.unlock.tech && techKnown(p.unlock.tech));
+}
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
 // City: tier 0–2 parts marked for cities; metropolis: everything.
 function craftableAt(s, id) {

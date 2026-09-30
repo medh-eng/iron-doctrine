@@ -16,6 +16,40 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 2.25,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      4.2,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.3,
+        0.35
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.75,
+        0.5
+      ],
+      "elevation": [
+        -10,
+        60
+      ]
+    }
+  },
   "stats": {
     "mass": 400,
     "hp": 40,
@@ -46,5 +80,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5d (design/05 §3.4). Beam: hits almost at once. No ammo; recharges from spare power; each shot adds 18 weapon heat."
+  "notes": "Part 5d (design/05 \u00a73.4). Beam: hits almost at once. No ammo; recharges from spare power; each shot adds 18 weapon heat."
 }
