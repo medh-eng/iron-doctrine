@@ -124,6 +124,8 @@ function applyBattleOutcome(B) {
   for (const side of [0, 1]) for (const e of B.reserve[side]) if (e.design._shipId && (!rec.has(e.design._shipId) || !rec.get(e.design._shipId).lost)) {
     if (e.hp) rec.set(e.design._shipId, { lost: false, hp: e.hp, fuel: null, ammo: null, msl: e.msl === undefined ? null : e.msl, drn: e.drn === undefined ? null : e.drn, wng: e.wng === undefined ? null : e.wng });
   }
+  // What you fielded, for the AI factions' design reviews (6b).
+  noteFielded([...rec.keys()].map((id) => byId('ships', id)).filter((s) => s && s.faction === campaign.faction).map(shipDesign));
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
   for (const [id, r] of rec) {

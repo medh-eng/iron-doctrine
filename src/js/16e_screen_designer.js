@@ -87,7 +87,7 @@ SCREENS.designer = {
   // Why a part can't go at (x, y), or '' if it can. ignore = index of a part being moved.
   placeCheck(id, x, y, ignore = -1) {
     const d = this.st.d, P = PARTS[id];
-    if (this.lockParts && !partUnlocked(id)) { const t = PART_LIBRARY.parts[id] && PART_LIBRARY.parts[id].unlock; return `${P.name} is not researched${t && t.tech && TECH_BY_ID[t.tech] ? ` (${TECH_BY_ID[t.tech].name})` : ''}.`; }
+    if (this.lockParts && !partUnlocked(id)) { const t = PART_LIBRARY.parts[id] && PART_LIBRARY.parts[id].unlock; if (t && t.faction && t.faction !== campaign.faction) return `${P.name} is a ${factionOf(t.faction).name} part: reverse-engineer a salvaged one.`; return `${P.name} is not researched${t && t.tech && TECH_BY_ID[t.tech] ? ` (${TECH_BY_ID[t.tech].name})` : ''}.`; }
     if (x < 0 || y < 0 || x + P.w > d.w || y + P.h > d.h) return 'Outside the grid.';
     // The class part limit (structure cells don't count).
     const cls = classById(this.st.cls);

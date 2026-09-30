@@ -141,8 +141,8 @@ function fireWeapon(B, V, w, ang, spreadMul) {
     s.vy = Math.sin(a) * vel + V.body.vy;
     s.t = 0; s.side = V.side; s.shooter = V; s.def = d;
     s.dmg = d.dmg; s.mg = !!d.auto; s.he = !!d.he; s.ignore = V; s.ignoreT = 0.25; s.whistled = false; s.wet = false;
+    if (d.beam) laserBeam(B, V, mx, my, a, d);   // one glowing line per beam (the prism laser has two)
   }
-  if (d.beam) laserBeam(B, V, mx, my, a, d);
   // Recoil: impulse cal² × 0.9 N·s at the barrel base (design/05 §3). Energy weapons have none.
   if (!d.auto && !d.energy) {
     const J = d.cal * d.cal * 0.9 * (d.twin ? 2 : 1);

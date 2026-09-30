@@ -171,7 +171,7 @@ function stepSalvage(dt) {
 // ---------- reverse-engineering (08 §4): a salvaged enemy item studied at a metropolis
 function studyTarget(id) {
   const lib = PART_LIBRARY.parts[id];
-  if (!lib) return id;
+  if (!lib || (lib.unlock && lib.unlock.faction)) return id;   // a signature part is studied as itself
   const std = Object.values(PART_LIBRARY.parts).find((p) => p.family === lib.family && p.variant === 'std');
   return std ? std.id : id;
 }

@@ -566,6 +566,15 @@ const AI_PERSONA = {
   clans: { domains: { land: 2, sea: 1, air: 1 }, raid: 1.5, prey: 1.5, edge: 1.4, siegeFrom: 5, calmUntil: 0, tierDays: 16, convoys: 1, buyVillages: false, intercept: 0.7 },
   lumen: { domains: { land: 1, sea: 1, air: 1 }, raid: 1, prey: 0, edge: 1.6, siegeFrom: 12, calmUntil: 20, tierDays: 10, convoys: 1, buyVillages: false, intercept: 1.0 },
 };
+// AI designs that evolve (6b): what you field is tallied after each battle and fades each day; a
+// faction refits when a trait makes up a share of it (see 15i).
+const INTEL = {
+  heavyArmour: 40,           // mm: a design whose best plating is this thick counts as heavily armoured
+  fade: 0.97,                // the tally kept each day
+  minSeen: 4,                // vehicles seen before any refit
+  share: 0.35,               // share of what you field that calls for a counter (dropped below half)
+  reviewDays: 7,             // each faction reviews its designs this often
+};
 // What an AI faction builds by tech tier and domain (its own tier 0 designs first).
 const AI_DESIGNS = {
   1: { land: ['light', 'scout'], sea: ['gunboat'], air: ['gunship_t0'] },

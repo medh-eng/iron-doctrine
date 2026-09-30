@@ -15,6 +15,40 @@
     "w": 4,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 3,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.9
+    ],
+    "muzzle": [
+      6.95,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.4,
+        0.3
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        1,
+        0.5
+      ],
+      "elevation": [
+        -6,
+        35
+      ]
+    }
+  },
   "stats": {
     "mass": 1200,
     "hp": 80,
@@ -45,5 +79,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5d (design/05 §3.4). Beam; 400 kW to recharge; 45 weapon heat a shot."
+  "notes": "Part 5d (design/05 \u00a73.4). Beam; 400 kW to recharge; 45 weapon heat a shot."
 }

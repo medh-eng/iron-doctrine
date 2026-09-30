@@ -12,6 +12,19 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.1,
+      0.55
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 700,
     "hp": 90,
@@ -31,5 +44,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Art: dozer blade: a bolted mounting plate and P1 push frame with P3 stripes, a hydraulic ram with a steel rod, and a curved bare-steel moldboard with a bright cutting edge, rivets, wear and a rust drip. Faces right."
 }

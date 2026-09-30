@@ -12,6 +12,23 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.7,
+      0.2
+    ],
+    "burst": [
+      1.9,
+      0.5
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 40,
     "hp": 10,
@@ -32,5 +49,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. The drone dives into its target and is destroyed."
+  "notes": "Part 5c (design/05 \u00a73.4). Drone part: placed in the Drone tab. The drone dives into its target and is destroyed. Art: drone shaped charge: a P2 warhead casing with two P3 bands, a brass fuze block and proximity probe on the nose, a red arming lamp, P1 stabilising fins and a release shackle on top."
 }

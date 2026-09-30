@@ -12,6 +12,40 @@
     "w": 2,
     "h": 1
   },
+  "overhang": {
+    "left": 0,
+    "right": 0.3,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.05
+    ],
+    "muzzle": [
+      2.24,
+      0.62
+    ],
+    "smoke": [
+      [
+        0.4,
+        0.5
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.4,
+        0.62
+      ],
+      "elevation": [
+        -45,
+        20
+      ]
+    }
+  },
   "stats": {
     "mass": 30,
     "hp": 10,
@@ -35,6 +69,6 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5c (design/05 §3.4). Drone part: placed in the Drone tab. Planned until step 5d (lasers).",
+  "notes": "Part 5c (design/05 \u00a73.4). Drone part: placed in the Drone tab. Planned until step 5d (lasers). Art: drone laser (planned part): the barrel group is a P1 emitter housing with a P2 capacitor block, a finned tube with a P3 band and a violet focusing lens; the body is a hanging plate and cradle, like the drone gun.",
   "planned": true
 }

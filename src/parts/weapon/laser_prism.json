@@ -1,0 +1,93 @@
+{
+  "id": "laser_prism",
+  "name": "Prism laser",
+  "family": "laser",
+  "variant": "prism",
+  "category": "weapon",
+  "tier": 4,
+  "domains": [
+    "land",
+    "sea",
+    "airship",
+    "wall",
+    "aircraft"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 1
+  },
+  "overhang": {
+    "left": 0,
+    "right": 1.4375,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      0.5
+    ],
+    "muzzle": [
+      3.4,
+      0.5
+    ],
+    "smoke": [
+      [
+        0.3,
+        0.35
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.75,
+        0.5
+      ],
+      "elevation": [
+        -10,
+        60
+      ]
+    }
+  },
+  "stats": {
+    "mass": 440,
+    "hp": 40,
+    "armor": 5,
+    "power": -150,
+    "rel": 0.995,
+    "pen": 45,
+    "dmg": 26,
+    "reload": 1.2,
+    "range": 1600,
+    "spread": 0.3,
+    "cal": 20,
+    "heat": 24
+  },
+  "behaviour": {
+    "energy": "laser",
+    "beam": true,
+    "twin": true
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 7,
+    "scrap": 6,
+    "money": 220
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "faction": "lumen"
+  },
+  "pros": [
+    "Two beams per shot: 52 damage in total (+30%)"
+  ],
+  "cons": [
+    "Range 1600 m (−36%)",
+    "Penetration 45 (−25%)",
+    "Needs 150 kW (+25%)",
+    "Heat 24 a shot (+33%)"
+  ],
+  "balanceNote": "Lumen Collective signature part (09 §5): split beam, short range. Uses the existing twin-mount flag, so both beams fire from one trigger. The index counts one beam; with both beams (52 damage) it lands near P 1.0.",
+  "notes": "Faction signature part (design/09). Art: teardrop alloy housing with Precursor line pattern, short emitter sleeve into a caged crystal prism that splits into two emitter prongs, 0.4 cells above and below the centre line (matches TWIN_GAP)."
+}

@@ -14,6 +14,19 @@
     "w": 2,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1,
+      1.95
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 250,
     "hp": 50,
@@ -33,5 +46,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Art: troop compartment: a bolted P1 shell with a P3 stripe cut away to show a P2 interior with three seated infantry, a rifle rack, a lamp, a bench, gun ports and a steel side door on the right."
 }

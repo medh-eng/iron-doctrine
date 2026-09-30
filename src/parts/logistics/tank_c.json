@@ -14,6 +14,19 @@
     "w": 3,
     "h": 2
   },
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.5,
+      1.95
+    ]
+  },
+  "moving": {},
   "stats": {
     "mass": 400,
     "hp": 60,
@@ -34,5 +47,5 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d. Art: fuel cargo tank: a horizontal P1 cylinder with two P3 bands on bare steel straps, a P2 saddle frame, filler dome, breather, pressure gauge, sight glass, drain valve and a red fuel diamond."
 }

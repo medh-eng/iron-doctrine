@@ -1,6 +1,6 @@
 # Iron Doctrine: factions
 
-All five factions are original. Scheme ids match `src/parts/paints.json`. Every bonus is paired with a real weakness (08 §14). Signature parts are made in batch G of the roster, with `unlock: {"faction": id}`.
+All five factions are original. Scheme ids match `src/parts/paints.json`. Every bonus is paired with a real weakness (08 §14). Signature parts are made in batch G of the roster, with `unlock: {"faction": id}`. A faction has its own signature parts once it has researched that part family (none needed if the family has a tier 0 part); other factions only by reverse-engineering a salvaged one (the part itself, not its family).
 
 ## Map layout
 

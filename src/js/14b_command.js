@@ -68,6 +68,7 @@ function officerName(rng) { return `${rng.pick(NAME_FIRST)} ${rng.pick(NAME_LAST
 const _shipStats = {};
 function shipDesign(ship) {
   if (TEMPLATES[ship.design]) return Object.assign(designFromTemplate(ship.design), { family: TEMPLATES[ship.design].name });
+  if (campaign.aiDesigns && campaign.aiDesigns[ship.design]) return JSON.parse(JSON.stringify(campaign.aiDesigns[ship.design]));   // an AI refit (6b)
   const d = save.designs.list.find((x) => x.id === ship.design);
   return d ? JSON.parse(JSON.stringify(d)) : designFromTemplate('light');
 }
