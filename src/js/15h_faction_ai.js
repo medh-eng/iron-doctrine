@@ -26,6 +26,7 @@ function aiPrice(id) { const d = aiDesignOf(id); return d ? costOf(d) * 3 : Infi
 
 // ---------- once a day (from dailyEconomy)
 function aiDay(news) {
+  relationsDay(news);
   intelDay();
   aiFactionIds().forEach((fid, k) => { if ((campaign.day + k) % INTEL.reviewDays === 0 && settlementsOf(fid).length) aiReview(fid, news); });
   for (const fid of aiFactionIds()) {

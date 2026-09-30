@@ -152,6 +152,7 @@ function newCampaign(factionId, seed) {
   for (const a of others) for (const b of others) if (a !== b) rel(a.id, b.id, 'war');
   const pair = [rng.pick(others), rng.pick(others)];
   if (pair[0] !== pair[1]) rel(pair[0].id, pair[1].id, 'truce');
+  relState();                                   // reputation starts from these relations (6c)
   initWeather(rng);
   // The Grand Admiral commands the land fleet from the flagship.
   const ga = { id: newId('o'), name: officerName(rng), rank: 'grand', faction: factionId, level: 1, xp: 0, alive: true };

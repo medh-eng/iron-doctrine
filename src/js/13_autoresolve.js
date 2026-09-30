@@ -159,6 +159,7 @@ function applyBattleOutcome(B) {
   campaign.treasury += win ? bounty : 0;
   // Fleets that fought: emptied ones are gone; the losing side falls back; nobody meets again at once.
   const sides = B.sides;
+  relationsAfterBattle(sides.theirFleets, win);          // reputation (6c)
   for (const fl of [...sides.myFleets, ...sides.theirFleets]) {
     fl.cooldown = CONTACT_COOLDOWN;
     if (!fl.shipIds.length) { fleetLost(fl); continue; }

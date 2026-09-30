@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.2';
+const GAME_VERSION = '0.6.3';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -2966,6 +2966,26 @@ const AI_PERSONA = {
   skyreach: { domains: { air: 3, land: 1, sea: 1 }, raid: 2, prey: 0.5, edge: 2.2, siegeFrom: 8, calmUntil: 0, tierDays: 14, convoys: 1, buyVillages: false, intercept: 0.9 },
   clans: { domains: { land: 2, sea: 1, air: 1 }, raid: 1.5, prey: 1.5, edge: 1.4, siegeFrom: 5, calmUntil: 0, tierDays: 16, convoys: 1, buyVillages: false, intercept: 0.7 },
   lumen: { domains: { land: 1, sea: 1, air: 1 }, raid: 1, prey: 0, edge: 1.6, siegeFrom: 12, calmUntil: 20, tierDays: 10, convoys: 1, buyVillages: false, intercept: 1.0 },
+};
+// Relations (6c, design/09): reputation −100…100 with each faction.
+const REL = {
+  startWar: -20, startTruce: 20,
+  drift: 0.5,                // a day, back towards 0
+  battleWon: -4,             // you beat their fleet
+  convoyRaided: -10,         // ...and it was a trade convoy
+  enemyBeaten: 2,            // with each faction at war with the one you beat
+  captured: -25,             // you took their settlement
+  charterRep: -8,            // with each faction within charterReach of a village you buy
+  charterReach: 15, charterPrice: 500,
+  truceRep: -30,             // they talk at this reputation or more
+  quietDays: 5,              // days since you last fought them
+  tribute: 300, tributePerSettlement: 40,
+  truceMade: 10, warDeclared: -20,
+  offerRep: 30,              // at war, they offer a truce at this reputation
+  breakRep: -50,             // in truce, they break it at this reputation
+  borderCells: 8,            // settlements this close make a contested border
+  tensionDays: 20, tensionFade: 0.5,
+  aiDays: 10, aiTruce: 0.08, aiTruceBorder: 0.03, aiBreak: 0.5,
 };
 // AI designs that evolve (6b): what you field is tallied after each battle and fades each day; a
 // faction refits when a trait makes up a share of it (see 15i).
@@ -9265,6 +9285,7 @@ function applyBattleOutcome(B) {
   campaign.treasury += win ? bounty : 0;
   // Fleets that fought: emptied ones are gone; the losing side falls back; nobody meets again at once.
   const sides = B.sides;
+  relationsAfterBattle(sides.theirFleets, win);          // reputation (6c)
   for (const fl of [...sides.myFleets, ...sides.theirFleets]) {
     fl.cooldown = CONTACT_COOLDOWN;
     if (!fl.shipIds.length) { fleetLost(fl); continue; }
@@ -9535,6 +9556,7 @@ function applySiege(B, win) {
 function captureSettlement(s, faction) {
   const was = s.faction;
   s.faction = faction;
+  relationsAfterCapture(was, faction);
   s.restart = campaign.day + SIEGE.restartDays;
   s.queue = []; s.yard = []; delete s.upgrade; delete s.offers;
   s.wallHp = Math.max(0.25, s.wallHp || 0); s.keepHp = Math.max(0.25, s.keepHp || 0);
@@ -10024,6 +10046,7 @@ function newCampaign(factionId, seed) {
   for (const a of others) for (const b of others) if (a !== b) rel(a.id, b.id, 'war');
   const pair = [rng.pick(others), rng.pick(others)];
   if (pair[0] !== pair[1]) rel(pair[0].id, pair[1].id, 'truce');
+  relState();                                   // reputation starts from these relations (6c)
   initWeather(rng);
   // The Grand Admiral commands the land fleet from the flagship.
   const ga = { id: newId('o'), name: officerName(rng), rank: 'grand', faction: factionId, level: 1, xp: 0, alive: true };
@@ -11599,6 +11622,7 @@ function aiPrice(id) { const d = aiDesignOf(id); return d ? costOf(d) * 3 : Infi
 
 // ---------- once a day (from dailyEconomy)
 function aiDay(news) {
+  relationsDay(news);
   intelDay();
   aiFactionIds().forEach((fid, k) => { if ((campaign.day + k) % INTEL.reviewDays === 0 && settlementsOf(fid).length) aiReview(fid, news); });
   for (const fid of aiFactionIds()) {
@@ -12015,6 +12039,158 @@ function aiReview(fid, news) {
 }
 // The design a faction actually builds for a base design id.
 const aiBuildId = (fid, id) => (aiState(fid).refit && aiState(fid).refit[id]) || id;
+
+/* ---------- 15j_relations.js ---------- */
+/* ==== 15j RELATIONS: REPUTATION, TRUCES, WAR, CHARTERS ==== */
+// Part 6c (design/09 Relations, 01 §7.2). Your reputation with each faction is a number from
+// −100 to 100 that moves with what you do to them and drifts back towards 0. A truce allows
+// trade but no attacks. You can offer a truce (paying tribute) or declare war; a faction breaks a
+// truce when your borders stay contested or your reputation falls too far, and offers one when it
+// rises high enough. AI factions make and break truces among themselves on the same borders.
+// Neutral villages can be bought with a charter: money, and reputation with nearby factions.
+
+const relKey = (a, b) => [a, b].sort().join('|');
+function setRelation(a, b, r) { campaign.relations[relKey(a, b)] = r; }
+function relState() {
+  if (!campaign.rep) {
+    campaign.rep = {};
+    for (const F of FACTIONS) if (F.id !== campaign.faction) campaign.rep[F.id] = relation(F.id, campaign.faction) === 'truce' ? REL.startTruce : REL.startWar;
+  }
+  campaign.tension = campaign.tension || {};      // days of contested border, by pair key
+  campaign.lastFought = campaign.lastFought || {}; // day you last fought each faction
+  return campaign.rep;
+}
+const repOf = (fid) => Math.round(relState()[fid] || 0);
+function addRep(fid, n) {
+  if (!fid || fid === campaign.faction) return;
+  const R = relState();
+  R[fid] = clamp((R[fid] || 0) + n, -100, 100);
+}
+
+// ---------- what moves reputation
+// After a battle with you (applyBattleOutcome).
+function relationsAfterBattle(theirFleets, win) {
+  const who = new Set(theirFleets.map((fl) => fl.faction));
+  for (const fid of who) {
+    relState();
+    campaign.lastFought[fid] = campaign.day;
+    if (!win) continue;
+    const convoy = theirFleets.some((fl) => fl.faction === fid && fl.aiConvoy);
+    addRep(fid, convoy ? REL.convoyRaided : REL.battleWon);
+    // Their enemies think a little better of you.
+    for (const F of FACTIONS) if (F.id !== fid && F.id !== campaign.faction && relation(F.id, fid) === 'war') addRep(F.id, REL.enemyBeaten);
+  }
+}
+// From captureSettlement: you took one of theirs.
+function relationsAfterCapture(was, faction) {
+  if (faction === campaign.faction && was && was !== campaign.faction) addRep(was, REL.captured);
+}
+
+// ---------- your moves
+function truceTribute(fid) { return REL.tribute + REL.tributePerSettlement * settlementsOf(fid).length; }
+function truceBlock(fid) {
+  if (relation(fid, campaign.faction) !== 'war') return 'Not at war.';
+  if (repOf(fid) < REL.truceRep) return `Reputation ${repOf(fid)}; they talk at ${REL.truceRep} or more.`;
+  relState();
+  const last = campaign.lastFought[fid];
+  const since = last === undefined ? Infinity : campaign.day - last;
+  if (since < REL.quietDays) return `You fought them ${since === 0 ? 'today' : `${since} day${since > 1 ? 's' : ''} ago`}; they talk after ${REL.quietDays} quiet days.`;
+  if (campaign.treasury < truceTribute(fid)) return `Tribute ${truceTribute(fid)}; you have ${Math.floor(campaign.treasury)}.`;
+  return '';
+}
+function proposeTruce(fid) {
+  const why = truceBlock(fid);
+  if (why) return why;
+  campaign.treasury -= truceTribute(fid);
+  makeTruce(campaign.faction, fid);
+  addRep(fid, REL.truceMade);
+  campaign.journal.push(`Day ${campaign.day}: truce with the ${factionOf(fid).name} (tribute ${truceTribute(fid)}).`);
+  return '';
+}
+function declareWar(fid) {
+  if (relation(fid, campaign.faction) !== 'truce') return 'Not in truce.';
+  setRelation(campaign.faction, fid, 'war');
+  addRep(fid, REL.warDeclared);
+  campaign.journal.push(`Day ${campaign.day}: you declared war on the ${factionOf(fid).name}.`);
+  return '';
+}
+function makeTruce(a, b) {
+  setRelation(a, b, 'truce');
+  relState();
+  campaign.tension[relKey(a, b)] = 0;
+  // Fleets of the two stop what they were doing to each other.
+  for (const fl of campaign.fleets) if (fl.ai && (fl.faction === a || fl.faction === b)) { fl.ai.siegeAi = null; fl.ai.siege = null; fl.ai.target = null; }
+}
+
+// ---------- charters (neutral villages)
+function charterFactions(s) {
+  return FACTIONS.filter((F) => F.id !== campaign.faction && settlementsOf(F.id).some((o) => Math.hypot(o.x - s.x, o.y - s.y) <= REL.charterReach)).map((F) => F.id);
+}
+function charterBlock(s) {
+  if (s.faction || s.type !== 'village') return 'Only neutral villages sell charters.';
+  if (!playerFleets().some((fl) => fl.docked === s.id && fl.shipIds.length)) return 'A fleet of yours must be docked here.';
+  if (campaign.treasury < REL.charterPrice) return `Charter ${REL.charterPrice}; you have ${Math.floor(campaign.treasury)}.`;
+  return '';
+}
+function buyCharter(s) {
+  const why = charterBlock(s);
+  if (why) return why;
+  campaign.treasury -= REL.charterPrice;
+  for (const fid of charterFactions(s)) addRep(fid, REL.charterRep);
+  captureSettlement(s, campaign.faction);
+  delete s.plunder;                                    // bought, not taken
+  campaign.journal.push(`Day ${campaign.day}: bought the charter of ${s.name}.`);
+  return '';
+}
+
+// ---------- once a day (from aiDay)
+// Two factions' borders are contested while a settlement of each lies within REL.borderCells.
+function contested(a, b) {
+  const A = settlementsOf(a), B = settlementsOf(b);
+  return A.some((s) => B.some((t) => Math.hypot(s.x - t.x, s.y - t.y) <= REL.borderCells));
+}
+function relationsDay(news) {
+  const R = relState();
+  const me = campaign.faction;
+  for (const fid of Object.keys(R)) {
+    // Drift back towards 0.
+    R[fid] += R[fid] > 0 ? -Math.min(R[fid], REL.drift) : Math.min(-R[fid], REL.drift);
+    if (!settlementsOf(fid).length) continue;
+    const key = relKey(me, fid), rel = relation(me, fid);
+    if (rel === 'truce') {
+      const t = campaign.tension[key] = contested(me, fid) ? (campaign.tension[key] || 0) + 1 : Math.max(0, (campaign.tension[key] || 0) - REL.tensionFade);
+      if (R[fid] <= REL.breakRep || (t >= REL.tensionDays && R[fid] < 0)) {
+        setRelation(me, fid, 'war');
+        const msg = `The ${factionOf(fid).name} ended the truce (reputation ${repOf(fid)}, ${Math.round(t)} days of contested border).`;
+        campaign.journal.push(`Day ${campaign.day}: ${msg}`);
+        news.push(msg);
+      }
+    } else if (rel === 'war' && R[fid] >= REL.offerRep) {
+      makeTruce(me, fid);
+      const msg = `The ${factionOf(fid).name} offered a truce, and it holds (reputation ${repOf(fid)}).`;
+      campaign.journal.push(`Day ${campaign.day}: ${msg}`);
+      news.push(msg);
+    }
+  }
+  // AI factions among themselves, every REL.aiDays.
+  if (campaign.day % REL.aiDays) return;
+  const ids = aiFactionIds().filter((f) => settlementsOf(f).length);
+  const rng = aiRng(4242);
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const a = ids[i], b = ids[j], key = relKey(a, b);
+    const border = contested(a, b);
+    if (relation(a, b) === 'truce') {
+      campaign.tension[key] = border ? (campaign.tension[key] || 0) + REL.aiDays : 0;
+      if (campaign.tension[key] >= REL.tensionDays && rng.next() < REL.aiBreak) {
+        setRelation(a, b, 'war');
+        campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} are at war.`);
+      }
+    } else if (rng.next() < (border ? REL.aiTruceBorder : REL.aiTruce)) {
+      makeTruce(a, b);
+      campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} made a truce.`);
+    }
+  }
+}
 
 /* ---------- 15z_campaign_checks.js ---------- */
 /* ==== 15z CAMPAIGN CHECKS ==== */
@@ -14563,6 +14739,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('Relations', () => openRelations(), 'btn btn-small map-research'));
     top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
@@ -14777,6 +14954,15 @@ SCREENS.map = {
       row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
       row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
       row('Terrain', MAP_TERRAIN[s.biome].name);
+      if (s.faction && !own) row('Reputation', `${repOf(s.faction) > 0 ? '+' : ''}${repOf(s.faction)}`);
+      // A neutral village sells its charter (6c): money, and reputation with factions nearby.
+      if (!s.faction && s.type === 'village') {
+        const near = charterFactions(s);
+        row('Charter', `${REL.charterPrice}${near.length ? `; reputation ${REL.charterRep} with ${near.map((f) => factionOf(f).name).join(', ')}` : ''}`);
+        const why = charterBlock(s);
+        if (why) body.appendChild(el('p', 'card-text map-note', why));
+        else act().appendChild(button(`Buy charter: ${REL.charterPrice}`, () => done(buyCharter(s)), 'btn btn-small btn-primary'));
+      }
       if (own) row('Money per day', Math.round(settlementMoney(s)));
       if (own && servicesStopped(s)) row('Services', 'Stopped: upkeep unpaid');
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
@@ -15852,6 +16038,68 @@ function openSmallDesigner(D, K) {
   };
   draw();
   close = ui.open(c);
+}
+
+/* ---------- 16n_screen_relations.js ---------- */
+/* ==== 16n RELATIONS CARD ==== */
+// Part 6c (design/02 map panels, 09 Relations): each faction's relation with you, your reputation
+// with it, contested-border days, and the truce and war buttons. Facts and numbers only.
+
+function openRelations() {
+  const wasRunning = campaign.running;
+  campaign.running = false;                    // the clock waits while you choose
+  const c = ui.card('', 'card-research');
+  let close = null, confirm = null;
+  const draw = () => {
+    c.textContent = '';
+    const head = el('div', 'rs-head');
+    head.appendChild(el('h2', 'card-title', 'Relations'));
+    head.appendChild(el('span', 'ws-fact', `Money ${Math.floor(campaign.treasury)}`));
+    c.appendChild(head);
+    const top = el('div', 'card-row rs-tabs');
+    top.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
+    c.appendChild(top);
+    const box = el('div', 'rel-list');
+    relState();
+    for (const F of FACTIONS) {
+      if (F.id === campaign.faction) continue;
+      const rel = relation(F.id, campaign.faction);
+      const alive = settlementsOf(F.id).length > 0;
+      const row = el('div', 'rel-row');
+      row.appendChild(el('div', 'rel-name', F.name));
+      const facts = [
+        alive ? (rel === 'war' ? 'At war' : 'Truce') : 'No settlements left',
+        `Reputation ${repOf(F.id) > 0 ? '+' : ''}${repOf(F.id)}`,
+        `Settlements ${settlementsOf(F.id).length}`,
+      ];
+      if (rel === 'truce') facts.push(`Contested border ${Math.round(campaign.tension[relKey(campaign.faction, F.id)] || 0)} of ${REL.tensionDays} days`);
+      const last = campaign.lastFought[F.id];
+      if (last !== undefined) facts.push(`Last battle day ${last}`);
+      row.appendChild(el('div', 'card-text map-note', facts.join(' · ')));
+      if (alive && rel === 'war') {
+        const why = truceBlock(F.id);
+        if (why) row.appendChild(el('div', 'card-text map-note', why));
+        else row.appendChild(button(`Offer truce: tribute ${truceTribute(F.id)}`, () => { const w = proposeTruce(F.id); ui.toast(w || `Truce with the ${F.name}.`); audio.sfx('order'); draw(); }, 'btn btn-small btn-primary'));
+      } else if (alive && rel === 'truce') {
+        if (confirm === F.id) {
+          const r = el('div', 'map-row');
+          r.appendChild(button(`Confirm: war with the ${F.name}`, () => { confirm = null; declareWar(F.id); ui.toast(`War with the ${F.name}.`); draw(); }, 'btn btn-small btn-primary'));
+          r.appendChild(button('Cancel', () => { confirm = null; draw(); }, 'btn btn-small'));
+          row.appendChild(r);
+        } else row.appendChild(button('Declare war', () => { confirm = F.id; draw(); }, 'btn btn-small'));
+      }
+      box.appendChild(row);
+    }
+    // Between the other factions.
+    const ids = FACTIONS.map((F) => F.id).filter((f) => f !== campaign.faction && settlementsOf(f).length);
+    const truces = [];
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) if (relation(ids[i], ids[j]) === 'truce') truces.push(`${factionOf(ids[i]).name} and ${factionOf(ids[j]).name}`);
+    box.appendChild(el('div', 'ws-label', 'Between the others'));
+    box.appendChild(el('div', 'card-text map-note', truces.length ? `In truce: ${truces.join('; ')}. All others at war.` : 'All at war with each other.'));
+    c.appendChild(box);
+  };
+  draw();
+  close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
 }
 
 /* ---------- 17_main.js ---------- */
