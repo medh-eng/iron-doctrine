@@ -159,6 +159,7 @@ window.__GAME__ = {
   wingCheck: () => wingCheck(),
   energyCheck: () => energyCheck(),
   fabClampCheck: () => fabClampCheck(),
+  aiCheck: (as) => aiCheck(30, as),
   missileShowcase: (id) => missileShowcase(id),
   systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope

@@ -537,6 +537,43 @@ const AI_FLEETS = [
   { domain: 'sea', ships: ['gunboat', 'gunboat'] },
   { domain: 'air', ships: ['gunship_t0', 'gunship_t0'] },
 ];
+// Faction strategic AI (Part 6a; design/01 §13, design/09). AI factions keep an abstract treasury:
+// their settlements' money each day, less upkeep per ship; they build ships from their own
+// designs within their tech tier (which rises with the days), take neutral villages, run trade
+// convoys, fight each other, besiege, and defend home.
+const AI = {
+  startMoney: 400,
+  upkeep: 4,                 // money a day per ship
+  fleetMax: 5,               // ships per AI fleet
+  fleetsBase: 3, fleetsPerSettlements: 3,   // fleets allowed: base + settlements ÷ this
+  tierDays: 14,              // a tech tier every this many days (to 4)
+  buildEvery: 1,             // days between builds
+  expandReach: 24,           // cells a fleet goes for a neutral village
+  villagePrice: 350,         // what a trading faction pays to take a neutral village over
+  convoyIncome: 60,          // money a convoy brings home per delivery
+  defendReach: 9,            // cells from its settlements an enemy fleet draws defenders
+  clashCooldown: 12,         // hours after an AI-vs-AI clash before the same fleets meet again
+  clashLoss: 0.4,            // each ship's chance of being lost ∝ enemy's share of strength
+};
+// Personalities (09). domains: build weights; raid: how much closer convoys and stranded fleets
+// look; prey: weight on damaged fleets; edge: strength needed over a settlement's defence to
+// besiege it; siegeFrom: first day of sieges; calmUntil: no attacks before this day unless tier ≥ 3;
+// tierDays: tech pace; convoys: trade convoys run; buyVillages: buys neutral villages.
+const AI_PERSONA = {
+  league: { domains: { sea: 3, land: 1, air: 1 }, raid: 1, prey: 0, edge: 1.5, siegeFrom: 6, calmUntil: 0, tierDays: 14, convoys: 2, buyVillages: true, intercept: 0.8 },
+  directorate: { domains: { land: 3, sea: 1, air: 1 }, raid: 1, prey: 0, edge: 1.1, siegeFrom: 3, calmUntil: 0, tierDays: 14, convoys: 1, buyVillages: false, intercept: 0.6 },
+  skyreach: { domains: { air: 3, land: 1, sea: 1 }, raid: 2, prey: 0.5, edge: 2.2, siegeFrom: 8, calmUntil: 0, tierDays: 14, convoys: 1, buyVillages: false, intercept: 0.9 },
+  clans: { domains: { land: 2, sea: 1, air: 1 }, raid: 1.5, prey: 1.5, edge: 1.4, siegeFrom: 5, calmUntil: 0, tierDays: 16, convoys: 1, buyVillages: false, intercept: 0.7 },
+  lumen: { domains: { land: 1, sea: 1, air: 1 }, raid: 1, prey: 0, edge: 1.6, siegeFrom: 12, calmUntil: 20, tierDays: 10, convoys: 1, buyVillages: false, intercept: 1.0 },
+};
+// What an AI faction builds by tech tier and domain (its own tier 0 designs first).
+const AI_DESIGNS = {
+  1: { land: ['light', 'scout'], sea: ['gunboat'], air: ['gunship_t0'] },
+  2: { land: ['medium', 'assault'], sea: ['destroyer', 'gunboat'], air: ['gunship_t2'] },
+  3: { land: ['assault', 'drone_truck'], sea: ['destroyer', 'sub'], air: ['gunship_t2', 'dropship'] },
+  4: { land: ['laser_tank', 'assault'], sea: ['carrier_t3', 'destroyer'], air: ['dropship'] },
+};
+const AI_CONVOY = { land: ['truck', 'truck'], sea: ['gunboat'], air: ['gunship_t0'] };
 // Name parts for officers and settlements (fictional).
 const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
 const NAME_LAST = ['Aldren', 'Brask', 'Corvel', 'Dunmore', 'Eskar', 'Falk', 'Garrow', 'Holt', 'Ivers', 'Jansk', 'Kestrel', 'Larkin', 'Morrow', 'Nettle', 'Orrin', 'Pell', 'Quarry', 'Rook', 'Sallow', 'Thorne', 'Vesk', 'Wick'];

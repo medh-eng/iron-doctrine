@@ -31,5 +31,18 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab."
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "burst": [
+      1,
+      0.5
+    ]
+  },
+  "moving": {}
 }

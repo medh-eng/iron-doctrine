@@ -43,5 +43,39 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d."
+  "notes": "Part 2d (v1 07_data.js), brought across in step 2.5d.",
+  "overhang": {
+    "left": 0,
+    "right": 0.7,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1,
+      1.95
+    ],
+    "muzzle": [
+      2.55,
+      1.1
+    ],
+    "smoke": [
+      [
+        0.4,
+        1.1
+      ]
+    ]
+  },
+  "moving": {
+    "barrel": {
+      "pivot": [
+        0.75,
+        1.125
+      ],
+      "elevation": [
+        0,
+        85
+      ]
+    }
+  }
 }

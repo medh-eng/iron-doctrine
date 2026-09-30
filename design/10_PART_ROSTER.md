@@ -86,7 +86,7 @@ Parts in the Light and Medium tanks come first: they appear in almost every batt
 | D3 | swivel | Swivel gun 20 mm | weapon | 1×1 | integrated (batch A; longer barrel from batch D) |
 | D4 | whull | Wooden hull section | structure | 2×2 | integrated (batch D) |
 | D5 | wbow | Wooden bow section | structure | 2×2 | integrated (batch D) |
-| D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | todo |
+| D6 | (looks) | Check the auto-tile looks of `plank` and `ironwood` in materials.json, and tune them if needed | — | — | integrated (batch D6: both show bare wood, not faction paint) |
 | D7 | bridge | Command bridge | structure | 2×2 | integrated (batch A, extra) |
 | D8 | cabin | Crew cabin | structure | 2×1 | integrated (batch A, extra) |
 
@@ -124,7 +124,7 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 
 ## Batch H: tier 3–4 (JSON + art; 05 §3.4; Part 5 of the roadmap)
 
-- **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b (art todo; missiles in flight are drawn in code).
+- **Missiles:** rack, vls, mag, and the missile parts (mw_he, mw_napalm, mw_acid, mw_emp, mw_cluster, mmotor, mfuel, mfins, mseek_radar, mseek_heat). JSON added in step 5b; **art integrated (batch H3** for the missile parts; missiles in flight are still drawn in code).
 - **Carriers:** hangar_d, hangar_a, dcpu1–3, the drone parts (dcore, drotor, dgun, dcharge, dcam; dlaser planned). JSON added in steps 5c and 5c2. **Batch H2 integrated:** art for `hangar_a`, `hangar_d`, `dcpu1`–`dcpu3`, `dcore`, `dcam`, `dgun` (the repo's stats kept). Not taken: `drotor`, `dcharge`, `dlaser` (the zip draws them 1×1; the game's parts are 2×1): waiting for the producer's choice of footprint.
 - **Other:** fab, clamp, ecm, c203.
 - **Integrated (batch H1):** art for `rack`, `vls`, `mag` and `ecm` (the repo's stats kept; the zip proposed heavier, better-armoured versions: rack 300 kg, VLS 1600 kg, magazine 400 kg holding 4, ECM 200 kg); new `c203` in the game (Super-heavy guns); `fab` and `clamp` added as planned until step 5e, now live (5e).
@@ -136,3 +136,7 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 - Wall and keep pieces for sieges.
 - Faction standard designs for recruitment (small, medium, large and extra-large, per domain).
 - Variants: 2 per family, where they make sense.
+
+## Batch J: art for the Part 2d parts
+
+- **J1 integrated:** `gen`, `skirt`, `cradio`, `radar_n`, `atgm`, `sam` (art only; matched the game exactly).

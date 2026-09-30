@@ -30,5 +30,18 @@
   },
   "pros": [],
   "cons": [],
-  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Lock helped by the launcher's fire control and radar; cut by ECM; flares rarely fool it."
+  "notes": "Part 5b (design/05 §3.4). Missile part: placed in the Missile tab. Lock helped by the launcher's fire control and radar; cut by ECM; flares rarely fool it.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+  },
+  "anchors": {
+    "sensor": [
+      0.98,
+      0.5
+    ]
+  },
+  "moving": {}
 }

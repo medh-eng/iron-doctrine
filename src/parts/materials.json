@@ -48,7 +48,7 @@
   "look": {
    "kind": "wood",
    "color": "#A8743F",
-   "paintable": true,
+   "paintable": false,
    "paint": "p1",
    "rivets": false,
    "seam": 3
@@ -68,7 +68,7 @@
   "look": {
    "kind": "wood",
    "color": "#8E6035",
-   "paintable": true,
+   "paintable": false,
    "paint": "p1",
    "rivets": true,
    "seam": 2

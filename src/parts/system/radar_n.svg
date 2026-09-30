@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" data-part="radar_n" data-cell="32">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.64" stop-color="#000000" stop-opacity="0.08"/><stop offset="1" stop-color="#000000" stop-opacity="0.48"/></linearGradient>
+<linearGradient id="tube" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.46"/><stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.52"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F565E"/><stop offset="0.22" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="ao" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.42"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<linearGradient id="grime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1712" stop-opacity="0"/><stop offset="1" stop-color="#1B1712" stop-opacity="0.38"/></linearGradient>
+<radialGradient id="bolt" cx="0.38" cy="0.34" r="0.7"><stop offset="0" stop-color="#C4CAD0"/><stop offset="0.55" stop-color="#8A9199"/><stop offset="1" stop-color="#2E3339"/></radialGradient>
+<linearGradient id="steelX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F565E"/><stop offset="0.25" stop-color="#C4CAD0"/><stop offset="0.5" stop-color="#8A9199"/><stop offset="0.82" stop-color="#4F565E"/><stop offset="1" stop-color="#2E3339"/></linearGradient>
+<linearGradient id="tubeX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="0.2" stop-color="#FFFFFF" stop-opacity="0.42"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.72" stop-color="#000000" stop-opacity="0.2"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/></linearGradient>
+</defs>
+<g id="body">
+<g class="paint">
+<path d="M6 46H58Q60 46 60 48V62Q60 64 58 64H6Q4 64 4 62V48Q4 46 6 46Z" fill="#FF00FF"/>
+<path d="M24 46L27 32H37L40 46Z" fill="#00FFFF"/>
+<rect x="4" y="57" width="56" height="2.6" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M6 46H58Q60 46 60 48V62Q60 64 58 64H6Q4 64 4 62V48Q4 46 6 46Z" fill="url(#shade)"/>
+<rect x="4" y="58" width="56" height="6" fill="url(#grime)"/>
+<rect x="4" y="46" width="8" height="18" fill="url(#ao)"/>
+<path d="M6 46.9H58" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.8"/>
+<path d="M20 47V63M44 47V63" fill="none" stroke="#000000" stroke-opacity="0.26" stroke-width="0.8"/>
+<g fill="#000000" fill-opacity="0.34"><circle cx="8" cy="50" r="0.9"/><circle cx="56" cy="50" r="0.9"/><circle cx="8" cy="60" r="0.9"/><circle cx="56" cy="60" r="0.9"/></g>
+<g fill="#FFFFFF" fill-opacity="0.34"><circle cx="7.7" cy="49.7" r="0.45"/><circle cx="55.7" cy="49.7" r="0.45"/><circle cx="7.7" cy="59.7" r="0.45"/><circle cx="55.7" cy="59.7" r="0.45"/></g>
+<rect x="9" y="50" width="14" height="6" rx="1.2" fill="#14171B"/>
+<path d="M11 53.8Q13 50.8 15 53.4T19 52.6T21.4 53" fill="none" stroke="#7BC47F" stroke-width="0.9"/>
+<circle cx="48" cy="52.4" r="1.6" fill="#7BC47F" stroke="#14171B" stroke-width="0.4"/>
+<circle cx="53" cy="52.4" r="1.6" fill="#FFB23E" stroke="#14171B" stroke-width="0.4"/>
+<path d="M30 46V44H36V46" fill="none" stroke="#14171B" stroke-width="1.2"/>
+<g fill="url(#bolt)"><circle cx="8" cy="48.2" r="1"/><circle cx="56" cy="48.2" r="1"/></g>
+<path d="M24 46L27 32H37L40 46Z" fill="url(#shade)"/>
+<path d="M31 33V45M33 33V45" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="0.7"/>
+<path d="M24 46L27 32H37L40 46Z" fill="none" stroke="#14171B" stroke-width="0.8"/>
+<rect x="28" y="29.6" width="8" height="3.6" rx="0.8" fill="url(#steelX)" stroke="#14171B" stroke-width="0.6"/>
+<g fill="url(#bolt)"><circle cx="30.4" cy="31.4" r="0.8"/><circle cx="33.6" cy="31.4" r="0.8"/></g>
+<path d="M8 46.4h2M44 46.4h1.6M59.6 52v2" fill="none" stroke="#C4CAD0" stroke-opacity="0.6" stroke-width="0.7"/>
+<g fill="#000000" fill-opacity="0.2"><circle cx="14" cy="60" r="0.5"/><circle cx="38" cy="58" r="0.5"/><circle cx="52" cy="62" r="0.5"/></g>
+<g fill="#FFFFFF" fill-opacity="0.18"><circle cx="16" cy="47.6" r="0.45"/><circle cx="46" cy="47.6" r="0.45"/></g>
+<path d="M6 46H58Q60 46 60 48V62Q60 64 58 64H6Q4 64 4 62V48Q4 46 6 46Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+</g>
+</g>
+<g id="antenna" data-role="radar" data-pivot="32 14">
+<g class="paint">
+<rect x="27" y="19" width="10" height="3.6" fill="#FFFF00"/>
+</g>
+<g class="detail">
+<path d="M32 22 V30" fill="none" stroke="#14171B" stroke-width="3.4"/>
+<path d="M32 22 V30" fill="none" stroke="url(#steelX)" stroke-width="2"/>
+<rect x="27.6" y="29.6" width="8.8" height="3.6" rx="0.8" fill="url(#steelX)" stroke="#14171B" stroke-width="0.6"/>
+<path d="M4 8 H60 Q62 8 62 10 V18 Q62 20 60 20 H4 Q2 20 2 18 V10 Q2 8 4 8 Z" fill="#4F565E"/>
+<path d="M4 8 H60 Q62 8 62 10 V18 Q62 20 60 20 H4 Q2 20 2 18 V10 Q2 8 4 8 Z" fill="url(#tube)"/>
+<rect x="5" y="10.6" width="54" height="6.8" rx="1.6" fill="#14171B" opacity="0.85"/>
+<path d="M7 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M7.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M12 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M12.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M17 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M17.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M22 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M22.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M27 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M27.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M32 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M32.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M37 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M37.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M42 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M42.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M47 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M47.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M52 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M52.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M57 10.6V17.4" fill="none" stroke="#8A9199" stroke-width="1"/>
+<path d="M57.9 10.8V17.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M5 14 H59" fill="none" stroke="#8A9199" stroke-width="0.8"/>
+<path d="M4 8 H60 Q62 8 62 10 V18 Q62 20 60 20 H4 Q2 20 2 18 V10 Q2 8 4 8 Z" fill="none" stroke="#14171B" stroke-width="0.9"/>
+<rect x="29.4" y="5.6" width="5.2" height="3.4" rx="0.6" fill="url(#steelX)" stroke="#14171B" stroke-width="0.5"/>
+<rect x="31" y="3" width="2" height="3" fill="#3A3F45"/>
+<circle cx="32" cy="2.4" r="1.2" fill="#E0533D" stroke="#14171B" stroke-width="0.4"/>
+<rect x="27" y="19" width="10" height="3.6" fill="url(#shade)" stroke="#14171B" stroke-width="0.5"/>
+<circle cx="6" cy="14" r="1.1" fill="url(#bolt)"/>
+<circle cx="58" cy="14" r="1.1" fill="url(#bolt)"/>
+<path d="M4.5 8.8 H59.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="0.7"/>
+</g>
+</g>
+</svg>

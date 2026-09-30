@@ -422,6 +422,12 @@ Full tree and perks: 08 §11–12.
   - besiege where they are strong
   - build ships from their own faction designs within their tech level
 - Personalities per faction are in 09.
+- **Numbers (6a):**
+  - Treasury: starts at 400; each day adds its settlements' income and takes 4 per ship.
+  - Building: one ship a day at most, at a city, metropolis or capital. The domain is drawn by personality weight and saved up for. The design is the faction's own starting design, or (75%) a shared design of its tech tier. Tech tier rises every 14 days (Clans 16, Lumen 10) up to 4.
+  - Fleets: up to 5 ships; 3 fleets plus 1 per 3 settlements, extra ships garrison.
+  - Convoys: 1 per faction (League 2) between two of its settlements, 60 a delivery.
+  - Fights away from you: resolved by strength; each side loses up to 40% of its ships, weighted by the other side's share.
 - **Later (Part 5):** AI factions adapt their designs to counter what you field most.
 
 ## 14. Winning and losing
