@@ -45,6 +45,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
+    top.appendChild(button('Relations', () => openRelations(), 'btn btn-small map-research'));
     top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
@@ -259,6 +260,15 @@ SCREENS.map = {
       row('Owner', s.faction ? factionOf(s.faction).name : 'Neutral');
       row('Relation', { own: 'Yours', war: 'At war', truce: 'Truce', neutral: 'Neutral' }[rel]);
       row('Terrain', MAP_TERRAIN[s.biome].name);
+      if (s.faction && !own) row('Reputation', `${repOf(s.faction) > 0 ? '+' : ''}${repOf(s.faction)}`);
+      // A neutral village sells its charter (6c): money, and reputation with factions nearby.
+      if (!s.faction && s.type === 'village') {
+        const near = charterFactions(s);
+        row('Charter', `${REL.charterPrice}${near.length ? `; reputation ${REL.charterRep} with ${near.map((f) => factionOf(f).name).join(', ')}` : ''}`);
+        const why = charterBlock(s);
+        if (why) body.appendChild(el('p', 'card-text map-note', why));
+        else act().appendChild(button(`Buy charter: ${REL.charterPrice}`, () => done(buyCharter(s)), 'btn btn-small btn-primary'));
+      }
       if (own) row('Money per day', Math.round(settlementMoney(s)));
       if (own && servicesStopped(s)) row('Services', 'Stopped: upkeep unpaid');
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);

@@ -566,6 +566,26 @@ const AI_PERSONA = {
   clans: { domains: { land: 2, sea: 1, air: 1 }, raid: 1.5, prey: 1.5, edge: 1.4, siegeFrom: 5, calmUntil: 0, tierDays: 16, convoys: 1, buyVillages: false, intercept: 0.7 },
   lumen: { domains: { land: 1, sea: 1, air: 1 }, raid: 1, prey: 0, edge: 1.6, siegeFrom: 12, calmUntil: 20, tierDays: 10, convoys: 1, buyVillages: false, intercept: 1.0 },
 };
+// Relations (6c, design/09): reputation −100…100 with each faction.
+const REL = {
+  startWar: -20, startTruce: 20,
+  drift: 0.5,                // a day, back towards 0
+  battleWon: -4,             // you beat their fleet
+  convoyRaided: -10,         // ...and it was a trade convoy
+  enemyBeaten: 2,            // with each faction at war with the one you beat
+  captured: -25,             // you took their settlement
+  charterRep: -8,            // with each faction within charterReach of a village you buy
+  charterReach: 15, charterPrice: 500,
+  truceRep: -30,             // they talk at this reputation or more
+  quietDays: 5,              // days since you last fought them
+  tribute: 300, tributePerSettlement: 40,
+  truceMade: 10, warDeclared: -20,
+  offerRep: 30,              // at war, they offer a truce at this reputation
+  breakRep: -50,             // in truce, they break it at this reputation
+  borderCells: 8,            // settlements this close make a contested border
+  tensionDays: 20, tensionFade: 0.5,
+  aiDays: 10, aiTruce: 0.08, aiTruceBorder: 0.03, aiBreak: 0.5,
+};
 // AI designs that evolve (6b): what you field is tallied after each battle and fades each day; a
 // faction refits when a trait makes up a share of it (see 15i).
 const INTEL = {

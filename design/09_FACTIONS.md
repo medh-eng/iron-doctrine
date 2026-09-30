@@ -149,7 +149,13 @@ All five factions are original. Scheme ids match `src/parts/paints.json`. Every 
 - **The player** starts at war with the two nearest factions and in **truce** with the other two. A truce allows trade but no attacks.
 - **AI factions** start at war with each other, except one seeded pair in truce.
 - Truces can break when territory is contested for long (Part 5).
+- **As built (6c, numbers in `REL`, 07_data):**
+  - Reputation runs −100 to 100: −20 with factions at war, +20 in truce at the start, drifting 0.5 a day back towards 0.
+  - Beating a faction's fleet: −4 (−10 if it was a trade convoy), and +2 with every faction at war with it. Capturing its settlement: −25. A charter: −8 with each faction with a settlement within 15 cells.
+  - Offer a truce at reputation −30 or more, 5 days after your last battle with them, for a tribute of 300 + 40 per settlement they hold (+10 reputation). Declaring war: −20.
+  - They offer you a truce at +30. They break a truce at −50, or after 20 days of contested border (a settlement of each within 8 cells) while your reputation is below 0; the count falls 0.5 a day when the border is quiet.
+  - AI factions every 10 days: a truce with a contested border for 20 days breaks with 50% chance; a pair at war makes a truce with 8% chance (3% if their border is contested).
 - **Reputation** with each faction moves with:
-  - charters bought near their land
+  - charters bought near their land (a charter costs 500)
   - convoys raided
   - settlements captured

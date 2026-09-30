@@ -218,6 +218,7 @@ Only the services that type has are shown (01 §7.1).
 - **Perk tree:** 3 branches (Command, Logistics, Engineering), plus Trade.
 - **Grand Admiral card:** level, XP, and unspent Command Points.
 - **As built (v0.5.0):** the Research button in the map's top bar opens a card (the clock waits while it's open): Grand Admiral level, XP to the next level and Command Points free of earned; tabs Tech tree and Perks; a Drafting Office button. The tree scrolls both ways with branch and tier labels kept in view; a node shows its state (known, researching, or its CP). Tapping it lists tier, CP, money, electronics, scrap, days, prerequisites and unlocks, with a Research button for each of your cities or metropolises that can do it, or the reason it can't. The campaign Drafting Office palette shows researched parts only, and placing a locked part is refused with the node it needs.
+- **As built (v0.6.3):** the Relations button beside Research opens a card (the clock waits): for each other faction, at war or truce, your reputation, its settlements, contested-border days (in truce) and the day of your last battle with it; at war an Offer truce button with the tribute, or the reason they won't talk; in truce Declare war, which asks to confirm. Below, which other factions are in truce. A neutral village's Info tab shows its charter price and the reputation it costs with nearby factions, and a Buy charter button when a fleet of yours is docked there. Another faction's settlement shows your reputation with it.
 
 ## 8. Other screens
 

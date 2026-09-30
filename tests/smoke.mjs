@@ -815,6 +815,15 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         EV(ev.refits > 3 && ev.penUp.length > 2 && ev.aaAdded.length > 2 && ev.valid && /refit \d+ designs? with/.test(ev.news), 'AI refits wrong or invalid');
         EV(ev.builtRefit && ev.later.length === 0, 'AI does not build its refit, or keeps a faded counter');
         steps.push('evolving AI designs');
+        // Part 6c: reputation, truces, war, charters.
+        const rl = await G(() => window.__GAME__.relationsCheck());
+        const RL = (c, what) => check(c, `${what} ${JSON.stringify(rl)}`);
+        RL(rl.start.war.every((r) => r === -20) && rl.start.truce.every((r) => r === 20), 'starting reputation wrong');
+        RL(rl.offer === '' && rl.afterOffer.rel === 'truce' && rl.afterOffer.money === 5000 - rl.tribute, 'truce offer did not work or cost the tribute');
+        RL(rl.battle.rep === -24 && /quiet days/.test(rl.battle.block) && rl.capture === -25, 'reputation after battle or capture wrong');
+        RL(/docked/.test(rl.charterNoFleet) && rl.charter === '' && rl.charterOwner === 'league' && rl.charterPaid === 500 && rl.charterRep.length > 0 && rl.charterRep.every((d) => d === -8), 'charter wrong');
+        RL(rl.broke === 'war' && rl.offered === 'truce' && rl.news === 2 && rl.declared.rel === 'war' && rl.aiChanges > 0 && rl.drift === 0, 'truce breaking, offers, war or AI truces wrong');
+        steps.push('relations');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -844,6 +853,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(150);
       check((await page.locator('.rs-perk').count()) === 14, 'the perk list does not show 14 perks');
       await shot('23d-perks');
+      await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
+      await wait(200);
+      // Relations (Part 6c): one row per other faction.
+      await tapButton('Relations');
+      await wait(200);
+      check((await page.locator('.rel-row').count()) === 4, 'the Relations card does not list 4 factions');
+      await shot('23e-relations');
       await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
       await wait(200);
       // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.

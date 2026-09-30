@@ -578,6 +578,57 @@ function evolveCheck() {
   out.later = st.counters.slice();
   return out;
 }
+// Relations (6c): reputation, truces, war, charters, AI truces.
+function relationsCheck() {
+  newCampaign('league', 6161);
+  const out = {};
+  const others = FACTIONS.map((F) => F.id).filter((f) => f !== 'league');
+  const war = others.filter((f) => relation(f, 'league') === 'war'), truce = others.filter((f) => relation(f, 'league') === 'truce');
+  out.start = { war: war.map(repOf), truce: truce.map(repOf) };
+  campaign.treasury = 5000;
+  const a = war[0], b = war[1];
+  out.tribute = truceTribute(a);
+  out.offer = proposeTruce(a);
+  out.afterOffer = { rel: relation(a, 'league'), money: campaign.treasury, rep: repOf(a) };
+  // A battle won against b: reputation falls; b won't talk for a few days.
+  const fb = campaign.fleets.find((fl) => fl.faction === b && fl.shipIds.length);
+  relationsAfterBattle([fb], true);
+  out.battle = { rep: repOf(b), block: truceBlock(b) };
+  // You take one of b's settlements.
+  const sb = settlementsOf(b).find((s) => !s.capital);
+  const r0 = repOf(b);
+  captureSettlement(sb, 'league');
+  out.capture = repOf(b) - r0;
+  // A charter: a docked fleet at a neutral village.
+  const vs = world.settlements.filter((s) => !s.faction && s.type === 'village');
+  const v = vs.find((s) => charterFactions(s).length) || vs[0];
+  const fl = playerFleets()[0];
+  out.charterNoFleet = charterBlock(v);
+  fl.docked = v.id;
+  const near = charterFactions(v), before = near.map(repOf), m0 = campaign.treasury;
+  out.charter = buyCharter(v);
+  out.charterOwner = v.faction;
+  out.charterRep = near.map((f, i) => repOf(f) - before[i]);
+  out.charterPaid = m0 - campaign.treasury;
+  // In truce: they break it when reputation falls too far; at war: they offer one when it's high.
+  const t = truce[0];
+  campaign.rep[t] = -60;
+  campaign.rep[b] = 45;
+  const news = [];
+  relationsDay(news);
+  out.broke = relation(t, 'league');
+  out.offered = relation(b, 'league');
+  out.news = news.length;
+  // Declare war on a truce partner.
+  out.declare = declareWar(a);
+  out.declared = { rel: relation(a, 'league'), rep: repOf(a) };
+  // AI factions among themselves over 200 days.
+  const j0 = campaign.journal.length;
+  for (let d = 1; d <= 200; d++) { campaign.day = d; relationsDay([]); }
+  out.aiChanges = campaign.journal.slice(j0).filter((m) => /made a truce|are at war/.test(m)).length;
+  out.drift = repOf(b);
+  return out;
+}
 function aiCheck(days = 30, as = 'league') {
   newCampaign(as, 9191);
   const t0 = performance.now();

@@ -152,6 +152,7 @@ function applySiege(B, win) {
 function captureSettlement(s, faction) {
   const was = s.faction;
   s.faction = faction;
+  relationsAfterCapture(was, faction);
   s.restart = campaign.day + SIEGE.restartDays;
   s.queue = []; s.yard = []; delete s.upgrade; delete s.offers;
   s.wallHp = Math.max(0.25, s.wallHp || 0); s.keepHp = Math.max(0.25, s.keepHp || 0);
