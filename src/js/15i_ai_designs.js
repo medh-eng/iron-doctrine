@@ -89,7 +89,7 @@ function refitDesign(base, counters, fid, tier) {
     if (was === id) return false;
     d.cells[i].p = id;
     const mass = d.cells.reduce((a, c) => a + PARTS[c.p].mass, 0);
-    if (validateDesign(d).length || (airDomain(dom) && mass > mass0 * 1.05)) { d.cells[i].p = was; return false; }
+    if (!validateDesign(d).ok || (airDomain(dom) && mass > mass0 * 1.05)) { d.cells[i].p = was; return false; }
     changed = true;
     return true;
   };

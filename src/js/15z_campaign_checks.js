@@ -196,7 +196,8 @@ function recruitCheck() {
   const kg = d.cells.reduce((a, q) => a + PARTS[q.p].mass, 0) * 200;
   out.salvage = { partRate: +(loot.items.length / parts).toFixed(3), scrap: +(loot.scrap / (kg / 100)).toFixed(3), cond: loot.items.every((it) => it.cond >= 0.25 && it.cond <= 0.6) };
   // Wreck sites: what doesn't fit stays for a day, and can be collected.
-  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const flag = playerFleets().find((fl) => fl.domain === 'land');
+  const land = makeFleet('league', 'land', flag.x, flag.y, ['light'], makeRng(2));   // no hold: salvage is left on the field
   const got = takeSalvage({ scrap: 12, items: [{ p: 'mg', cond: 0.4, salvaged: true }] }, [land], land.x, land.y);
   out.wreck = { left: got.leftScrap, sites: campaign.wrecks.length };
   const trucks = makeFleet('league', 'land', land.x, land.y, ['truck'], makeRng(1));
@@ -562,7 +563,7 @@ function evolveCheck() {
   const pairs = Object.entries(st.refit).map(([b, r]) => ({ b, r, base: designFromTemplate(b), d: campaign.aiDesigns[r] }));
   out.penUp = pairs.filter((p) => pen(p.d) > pen(p.base)).map((p) => p.b);
   out.aaAdded = pairs.filter((p) => p.d.cells.some((c) => PARTS[c.p].aa) && !p.base.cells.some((c) => PARTS[c.p].aa)).map((p) => p.b);
-  out.valid = pairs.every((p) => !validateDesign(p.d).length);
+  out.valid = pairs.every((p) => validateDesign(p.d).ok);
   out.names = pairs.map((p) => p.d.name).slice(0, 3);
   // It builds the refit.
   const pick = pairs[0];
@@ -627,6 +628,30 @@ function relationsCheck() {
   for (let d = 1; d <= 200; d++) { campaign.day = d; relationsDay([]); }
   out.aiChanges = campaign.journal.slice(j0).filter((m) => /made a truce|are at war/.test(m)).length;
   out.drift = repOf(b);
+  return out;
+}
+// Starting fleets (v0.6.4): each has a support vehicle with fuel in its hold that doesn't count
+// towards the fleet size; base designs and recruits' ships use researched parts only; ships
+// have their hull bunkers and cruise economically.
+function startFleetCheck() {
+  newCampaign('league', 7171);
+  const out = { fleets: playerFleets().map((fl) => ({ domain: fl.domain, ships: fl.shipIds.length, count: fleetCount(fl), cap: fleetCap(fl), fuel: fl.hold.fuel, support: fleetShips(fl).filter(isSupport).map((s) => s.design) })) };
+  out.valid = Object.values(START_SUPPORT).every((id) => validateDesign(designFromTemplate(id)).ok && designResearched(designFromTemplate(id)));
+  out.base = campaignBaseDesigns();
+  out.baseOk = out.base.every((id) => designResearched(designFromTemplate(id))) && !out.base.includes('medium');
+  // The support vehicles in battle: the wagon drives, the tender floats, the airship flies.
+  const run = (id, field) => {
+    const B = createBattle(0, { squad: [designFromTemplate(id)], cfg: simulatorConfig({ field, weather: 'clear', light: 'day', seed: 77 }), reserves: true, enemyForce: [] });
+    const V = B.me, x0 = V.body.x;
+    V.throttle = 1;
+    for (let t = 0; t < 15; t += SIM_STEP) { V.throttle = 1; updateBattle(B, SIM_STEP); }
+    return { moved: Math.round(Math.abs(V.body.x - x0)), up: Math.round(V.body.y - Math.max(B.T.height(V.body.x), B.T.sea || -1e9)), ok: !V.destroyed };
+  };
+  out.wagon = run('supply_wagon', 'inland');
+  out.tender = run('fuel_tender', 'sea');
+  out.airship = run('supply_airship', 'inland');
+  const sea = playerFleets().find((fl) => fl.domain === 'sea');
+  out.seaRange = sea ? Math.round(fleetFuel(sea).fuel / fleetBurn(sea) * fleetSpeed(sea) / WORLD_KM) : 0;
   return out;
 }
 function aiCheck(days = 30, as = 'league') {

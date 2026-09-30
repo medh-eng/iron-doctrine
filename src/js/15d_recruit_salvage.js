@@ -16,11 +16,11 @@ function makeOffers(s) {
   const rng = makeRng(campaign.seed + campaign.day * 17 + s.x * 131 + s.y);
   const pool = Object.keys(TEMPLATES).filter((id) => {
     const d = designFromTemplate(id), cls = classFor(d);
-    if (!cls || cls.captain < R.cls[0] || cls.captain > R.cls[1]) return false;
+    if (!cls || cls.captain < R.cls[0] || cls.captain > R.cls[1] || !designResearched(d) || isSupport({ design: id })) return false;
     return !seaDomain(domainOf(d)) || s.coastal;
   });
   // Citadels with no large designs to offer fall back to the medium ones.
-  const designs = pool.length ? pool : Object.keys(TEMPLATES).filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
+  const designs = pool.length ? pool : campaignBaseDesigns().filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && !isSupport({ design: id }) && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
   for (let k = 0; k < 3 && designs.length; k++) s.offers.push({ kind: 'captain', level: rng.int(R.cap[0], R.cap[1]), design: rng.pick(designs), name: officerName(rng) });
   s.offers.push({ kind: 'admiral', level: rng.int(R.adm[0], R.adm[1]), name: officerName(rng) });
   s.offersDay = campaign.day;

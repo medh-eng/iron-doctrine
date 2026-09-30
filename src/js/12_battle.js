@@ -320,7 +320,7 @@ function takeVehicle(B, V) {
 // Returns a short reason when it can't.
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
-  if (V.flier) return fireForward(B, V);
+  if (V.flier) return fireForward(B, V, tx, ty);
   const w = mainWeapon(V);
   if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
@@ -608,6 +608,7 @@ function campaignCheck() {
   for (let k = 0; k < 8 && campaign.running; k++) ev = ev.concat(campaignTick(1));
   out.burn = { before: +f0.toFixed(2), after: +fleetFuel(land).fuel.toFixed(2), moved: land.path.length < plan.path.length };
   for (const s of fleetShips(air)) s.fuel = 0;
+  air.hold.fuel = 0;                     // the support vehicle's reserve too
   const far = planMove(air, air.x + 20, air.y);
   out.strandWarn = far.strands;
   orderMove(air, far);

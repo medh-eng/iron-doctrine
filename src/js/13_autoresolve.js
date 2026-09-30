@@ -262,10 +262,14 @@ function detachShip(fl, ship) {
   return '';
 }
 
+// Support vehicles (no weapons, a cargo hold: supply wagons, tenders) don't count towards the
+// fleet's size limit (producer's play test, v0.6.4).
+const isSupport = (ship) => { const d = shipDesign(ship); return !d.cells.some((c) => PARTS[c.p].cat === 'weapon') && d.cells.some((c) => PARTS[c.p].cargo); };
+const fleetCount = (fl) => fleetShips(fl).filter((s) => !isSupport(s)).length;
 function pickUp(fl, ship) {
   if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
   const cap = fleetCap(fl);
-  if (fl.shipIds.length >= cap) return `The fleet is full (${cap} ships).`;
+  if (!isSupport(ship) && fleetCount(fl) >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;
   if (ship.outpost) { const id = ship.outpost; delete ship.outpost; if (!campaign.ships.some((s) => s.outpost === id)) campaign.outposts = campaign.outposts.filter((o) => o.id !== id); }
   ship.fleetId = fl.id;

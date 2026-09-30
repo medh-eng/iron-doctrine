@@ -687,7 +687,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       // ---------- 9j. Part 3: the campaign (world map, fleets, fuel, markets, contact, results)
       if (!vp.mobile) {
         const cc = await G(() => window.__GAME__.campaignCheck());
-        for (const [f, st] of Object.entries(cc.starts)) check(st.home === 'city,fort,village,village' && st.capCoastal && st.fleets === 'land:3,sea:3,air:3' && st.ga, `campaign start wrong for ${f}: ${JSON.stringify(st)}`);
+        for (const [f, st] of Object.entries(cc.starts)) check(st.home === 'city,fort,village,village' && st.capCoastal && st.fleets === 'land:4,sea:4,air:4' && st.ga, `campaign start wrong for ${f}: ${JSON.stringify(st)}`);
         check(cc.rules.landToSea && cc.rules.seaToLand && cc.rules.airAnywhere, `domain movement rules wrong ${JSON.stringify(cc.rules)}`);
         check(cc.burn.after < cc.burn.before && cc.burn.moved, `moving did not burn fuel ${JSON.stringify(cc.burn)}`);
         check(cc.strandWarn && cc.airStranded.stranded && !cc.airStranded.moved, `stranding wrong ${JSON.stringify([cc.strandWarn, cc.airStranded])}`);
@@ -778,6 +778,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         AS(as2.loadD === '' && as2.loadW === '' && as2.carried.drones.n === 4 && as2.carried.wing.n === 1 && as2.inBattle.drones === 4 && as2.inBattle.wing === 1, 'loading drones or aircraft wrong');
         AS(as2.home.drones === 3 && as2.after.drones.n === 3 && as2.after.wing.n === 1 && as2.empty === 0, 'drones or aircraft coming home wrong');
         steps.push('air wings and air stock');
+        const aa = await G(() => window.__GAME__.airAimCheck());
+        check(['gunship_t0', 'heli'].every((k) => aa[k].said === '' && aa[k].shots > 0 && aa[k].err <= 3 && aa[k].down && aa[k].behind === 'Out of arc'), `airship or helicopter guns don't aim at the target within their arc ${JSON.stringify(aa)}`);
+        steps.push('air aiming');
         // Part 5d: energy weapons, flamethrowers, damage types.
         const en = await G(() => window.__GAME__.energyCheck());
         const EN = (c, what) => check(c, `${what} ${JSON.stringify(en)}`);
@@ -824,6 +827,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         RL(/docked/.test(rl.charterNoFleet) && rl.charter === '' && rl.charterOwner === 'league' && rl.charterPaid === 500 && rl.charterRep.length > 0 && rl.charterRep.every((d) => d === -8), 'charter wrong');
         RL(rl.broke === 'war' && rl.offered === 'truce' && rl.news === 2 && rl.declared.rel === 'war' && rl.aiChanges > 0 && rl.drift === 0, 'truce breaking, offers, war or AI truces wrong');
         steps.push('relations');
+        // v0.6.4: support vehicles in the starting fleets, researched-only base designs, ship range.
+        const sf = await G(() => window.__GAME__.startFleetCheck());
+        const SF = (c, what) => check(c, `${what} ${JSON.stringify(sf)}`);
+        SF(sf.fleets.length === 3 && sf.fleets.every((f) => f.support.length === 1 && f.count === 3 && f.ships === 4 && f.fuel > 0), 'starting fleets lack a support vehicle with fuel, or it counts towards the size');
+        SF(sf.valid && sf.baseOk && sf.wagon.ok && sf.wagon.moved > 20 && sf.tender.ok && sf.tender.moved > 20 && sf.tender.up >= 0 && sf.airship.ok && sf.airship.up > 5, 'support vehicles broken or unresearched base designs offered');
+        SF(sf.seaRange > 60, 'the starting sea fleet has too little range');
+        steps.push('starting fleets');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

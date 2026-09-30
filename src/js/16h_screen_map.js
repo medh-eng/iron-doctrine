@@ -234,7 +234,7 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
-        row('Fleet size', `${fl.shipIds.length} of ${fleetCap(fl)}`);
+        { const sup = fl.shipIds.length - fleetCount(fl); row('Fleet size', `${fleetCount(fl)} of ${fleetCap(fl)}${sup ? ` + ${sup} support` : ''}`); }
       }
       P.appendChild(body);
       return;
@@ -274,7 +274,7 @@ SCREENS.map = {
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
-        const room = fleetCap(fl) - fl.shipIds.length;
+        const room = fleetCap(fl) - fleetCount(fl);
         for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
@@ -401,8 +401,24 @@ SCREENS.map = {
       const S = SCREENS.map;
       const cx = S.toCellX(x), cy = S.toCellY(y);
       const r = 1.2 * Math.max(1, 12 / S.cam.z);
-      const fl = campaign.fleets.find((f) => f.shipIds.length && (f.faction === campaign.faction || f.seen) && Math.abs(S.sx(f.x) + (f.drawDx || 0) - x) < 16 && Math.abs(S.sy(f.y) - y) < 14);
-      const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < r);
+      // What's under the finger: the nearest fleet and the nearest settlement (by screen distance).
+      let fl = null, fd = 1e9, s = null, sd = 1e9;
+      for (const f of campaign.fleets) {
+        if (!f.shipIds.length || !(f.faction === campaign.faction || f.seen)) continue;
+        const dx = S.sx(f.x) + (f.drawDx || 0) - x, dy = S.sy(f.y) - y;
+        if (Math.abs(dx) < 16 && Math.abs(dy) < 14 && Math.hypot(dx, dy) < fd) { fl = f; fd = Math.hypot(dx, dy); }
+      }
+      for (const q of world.settlements) {
+        const d = Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy);
+        if (d < r && d * S.cam.z < sd) { s = q; sd = d * S.cam.z; }
+      }
+      // Both under the finger: the closer one, and a second tap on the same spot switches between them.
+      if (fl && s) {
+        const cur = S.sel;
+        if (cur && cur.kind === 'fleet' && cur.id === fl.id && !(S.plan && S.plan.target === s.id)) { S.plan = null; S.select('settlement', s.id); return; }
+        const onSettlement = cur && cur.kind === 'settlement' && cur.id === s.id;
+        if (!onSettlement && sd <= fd) fl = null;
+      }
       const mine = S.selFleet();
       // With one of your fleets selected, a tap elsewhere plans a move there (a settlement: dock at it).
       if (mine && mine.faction === campaign.faction && !(fl && fl.faction === campaign.faction)) {

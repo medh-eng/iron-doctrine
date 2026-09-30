@@ -22,22 +22,32 @@ function leadTarget(V, w, U, out) {
   return out;
 }
 
-// The player's Fire on an aircraft: every gun fixed along the nose fires straight ahead.
-function fireForward(B, V) {
-  let fired = false, loading = false, any = false;
-  const ang = angleFromElevation(V, 0, V.dir);
+// The player's Fire on a flier. An aeroplane's guns are fixed along the nose and fire straight
+// ahead; a helicopter's and an airship's swing within their arcs, so they aim at the target
+// (tx, ty) and a gun that can't reach it holds fire.
+function fireForward(B, V, tx, ty) {
+  let fired = false, loading = false, any = false, arc = false;
+  const ahead = angleFromElevation(V, 0, V.dir);
+  const swings = V.domain === 'heli' || V.domain === 'airship';
   for (const w of V.weapons) {
-    if (w.def.secondary || w.turret || !V.parts[w.part].alive) continue;
+    if (w.def.secondary || (w.turret && !swings) || !V.parts[w.part].alive) continue;
     any = true;
     if (w.reload > 0) { loading = true; continue; }
     if (!w.def.auto && !w.def.energy && V.shells <= 0) continue;
+    let ang = ahead;
+    if (swings && tx !== undefined) {
+      aimWeapon(V, w, tx, ty, _aim);
+      if (!_aim.ok) { arc = true; continue; }
+      ang = _aim.angle;
+      w.face = _aim.face;
+    }
     w.angle = ang;
     fireWeapon(B, V, w, ang, 1);
     w.reload = w.def.auto ? (60 / w.def.rpm) * 3 : w.def.reload;
     fired = true;
   }
   if (fired) { B.stats.shots++; return ''; }
-  return !any ? (V.weapons.some((w) => w.def.secondary) ? playerSecondary(B) : 'No gun') : loading ? 'Reloading' : 'Out of shells';
+  return !any ? (V.weapons.some((w) => w.def.secondary) ? playerSecondary(B) : 'No gun') : arc ? 'Out of arc' : loading ? 'Reloading' : 'Out of shells';
 }
 
 // Release one bomb from rack w, falling with the aircraft's speed.

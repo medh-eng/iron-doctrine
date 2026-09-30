@@ -656,7 +656,8 @@ SCREENS.designer = {
     const c = ui.card('New design');
     const col = el('div', 'card-col');
     let close = null;
-    for (const id of STARTING_TEMPLATES) {
+    // In the campaign, only base designs whose parts you have researched.
+    for (const id of this.lockParts ? campaignBaseDesigns() : STARTING_TEMPLATES) {
       col.appendChild(button(`Template: ${TEMPLATES[id].name} Mk.I`, () => { close(); this.load(designFromTemplate(id), null, true); this.build(); }));
     }
     for (const cls of Object.keys(CLASSES)) col.appendChild(button(`Randomise (${CLASSES[cls].name.toLowerCase()})`, () => { close(); this.randomise(cls); }));
@@ -672,7 +673,10 @@ SCREENS.designer = {
 
   randomise(cls) {
     this.seed = (this.seed || 1000) + 1;
-    const d = randomDesign(this.seed * 104729, cls);
+    let d = randomDesign(this.seed * 104729, cls);
+    // In the campaign a random design may only use researched parts: try other seeds.
+    for (let k = 0; this.lockParts && !designResearched(d) && k < 40; k++) { this.seed++; d = randomDesign(this.seed * 104729, cls); }
+    if (this.lockParts && !designResearched(d)) { ui.toast('No random design of that kind from researched parts yet.'); return; }
     d.name = d.family = { heavy: 'Heavy design', ship: 'Ship design', sub: 'Submarine design', air: 'Aircraft design', heli: 'Helicopter design', airship: 'Airship design' }[cls] || 'Light design';
     this.load(d, null, false);
     this.build();

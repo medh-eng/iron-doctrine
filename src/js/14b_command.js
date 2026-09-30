@@ -76,12 +76,12 @@ function shipStats(ship) {
   if (!_shipStats[ship.design]) {
     const d = shipDesign(ship);
     const rep = designReport(d);
-    let burn = 0;
-    for (const c of d.cells) { const P = PARTS[c.p]; if (P.fuelUse && (P.power > 0 || P.liftForce)) burn += P.fuelUse; }
+    let burn = 0, bunker = 0;
+    for (const c of d.cells) { const P = PARTS[c.p]; if (P.fuelUse && (P.power > 0 || P.liftForce)) burn += P.fuelUse; if (P.floods && P.cat === 'structure' && P.w === 2) bunker += HULL_BUNKER; }
     const cls = classFor(d);
     _shipStats[ship.design] = {
       name: markName(d), domain: mapDomain(rep.domain), speed: Math.max(5, rep.topSpeed || 0),
-      fuelCap: Math.max(0.5, rep.st.fuel / 100), burn: (burn * 0.25) / 100, cost: rep.cost,
+      fuelCap: Math.max(0.5, rep.st.fuel / 100) + (seaDomain(rep.domain) ? bunker : 0), burn: (burn * 0.25) / 100, cost: rep.cost,
       cls: cls ? cls.id : null, clsName: cls ? cls.name : 'Outside class limits', captain: cls ? cls.captain : 99,
     };
   }
@@ -168,10 +168,12 @@ function newCampaign(factionId, seed) {
       const at = portCell(base, spec.domain) || [base.x + 0.5, base.y + 0.5];
       const own = `${F.id}_${START_DESIGN_KIND[spec.domain]}_t0`;
       const ships = TEMPLATES[own] ? spec.ships.map(() => own) : spec.ships;
+      if (player && START_SUPPORT[spec.domain]) ships.push(START_SUPPORT[spec.domain]);
       const fl = makeFleet(F.id, spec.domain, at[0], at[1], ships, rng, player && spec.domain === 'land' ? ga : null);
       if (player && spec.domain === 'land') { ga.fleetId = fl.id; fl.name = 'Flag fleet'; }
       else if (player) fl.name = spec.domain === 'sea' ? 'Sea fleet' : 'Air fleet';
       fl.docked = base.id;
+      if (player) fl.hold.fuel = Math.min(holdCap(fl), START_HOLD_FUEL);
     }
   }
   campaignStore.save();
@@ -199,6 +201,7 @@ function fleetBurn(fl) {
   let b = 0;
   for (const s of fleetShips(fl)) b += shipStats(s).burn;
   if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
+  if (fl.domain === 'sea') b *= SEA_MAP_FUEL;
   if (fl.faction === campaign.faction && perk('frugal_engines')) b *= 0.9;
   return b;
 }

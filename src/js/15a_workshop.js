@@ -24,6 +24,14 @@ function familyTechKnown(family) {
   if (!kin.length || kin.some((p) => PARTS[p.id] && PARTS[p.id].tier <= 0)) return true;
   return kin.some((p) => p.unlock && p.unlock.tech && techKnown(p.unlock.tech));
 }
+// Every part of a design is known (researched, a starting part, or reverse-engineered).
+const designResearched = (d) => d.cells.every((c) => partUnlocked(c.p));
+// Base designs you may start from in the campaign: your faction's own starting designs, the
+// support vehicles, and the templates whose parts you have all researched.
+function campaignBaseDesigns() {
+  const ids = Object.values(START_DESIGN_KIND).map((k) => `${campaign.faction}_${k}_t0`).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
+  return ids.filter((id, i) => TEMPLATES[id] && ids.indexOf(id) === i && designResearched(designFromTemplate(id)));
+}
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
 // City: tier 0–2 parts marked for cities; metropolis: everything.
 function craftableAt(s, id) {
