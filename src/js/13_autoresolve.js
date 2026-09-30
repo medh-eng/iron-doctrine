@@ -28,7 +28,8 @@ function battleSides(mine, theirs) {
   const near = (fl, at) => fl.shipIds.length && Math.hypot(fl.x - at.x, fl.y - at.y) <= REINFORCE_CELLS;
   const myFleets = [mine, ...playerFleets().filter((fl) => fl !== mine && near(fl, mine))];
   const theirFleets = [theirs, ...campaign.fleets.filter((fl) => fl !== theirs && fl.faction !== campaign.faction && relation(fl.faction, campaign.faction) === 'war' && near(fl, theirs))];
-  const ships = (fleets) => fleets.filter((fl) => ok.includes(fl.domain)).flatMap((fl) => fleetShips(fl));
+  // Flagships first (v0.6.5); each ship by its own domain (combined-arms fleets mix them, 15l).
+  const ships = (fleets) => fleets.flatMap((fl) => battleOrder(fl)).filter((sh) => ok.includes(shipStats(sh).domain));
   return { place, myFleets, theirFleets, mine: ships(myFleets), theirs: ships(theirFleets) };
 }
 
@@ -56,6 +57,7 @@ function battleDesign(ship) {
   const d = shipDesign(ship);
   d._shipId = ship.id;
   d.paint = d.paint || { scheme: ship.faction };            // each faction's own colours (09)
+  if (isFlagship(ship)) { const a = fleetAdmiral(byId('fleets', ship.fleetId)); d._flag = { name: a.name, grand: a.id === campaign.ga, level: commandLevel(a) }; }
   d._state = {
     hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
     fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
@@ -93,7 +95,7 @@ function createCampaignBattle(contact, headless) {
     cfg: campaignBattleConfig(sides.place), reserves: true, demo: !!headless,
     squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
   });
-  for (const V of B.units) applyShipState(V);
+  for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   B.contact = contact;
   B.sides = sides;
   return B;
@@ -126,6 +128,7 @@ function applyBattleOutcome(B) {
   }
   // What you fielded, for the AI factions' design reviews (6b).
   noteFielded([...rec.keys()].map((id) => byId('ships', id)).filter((s) => s && s.faction === campaign.faction).map(shipDesign));
+  const flagsBefore = [...B.sides.myFleets, ...B.sides.theirFleets].map((fl) => [fl, flagshipOf(fl) ? fl.flagshipId : null]);
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
   for (const [id, r] of rec) {
@@ -174,7 +177,9 @@ function applyBattleOutcome(B) {
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
   const siegeNote = B.siege ? applySiege(B, win) : '';
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
+  const flagNews = [];
+  flagshipsAfterBattle(flagsBefore, flagNews);
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaign.journal.push(`Day ${campaign.day}: ${summary}`);
   campaignStore.save();
   return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
@@ -183,7 +188,8 @@ function applyBattleOutcome(B) {
 function gainXp(o, xp) {
   o.xp += xp;
   const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
-  if (o.rank !== 'grand') o.level = levelFromXp(o.xp, table);
+  // Your captains and admirals level up by hand on their officer card (15l); others by themselves.
+  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) o.level = levelFromXp(o.xp, table); }
   else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
 }
 
@@ -210,7 +216,7 @@ function fleetLost(fl) {
     if (own) o.garrisonedAt = own.id; else o.alive = false;
   }
   if (fl.faction === campaign.faction && fl.admiralId === campaign.ga) {
-    campaign.treasury *= 0.8;
+    gaEscapePenalty();
     campaign.journal.push(`Day ${campaign.day}: the flag fleet was lost; the Grand Admiral escaped to ${own ? own.name : 'the wilds'}.`);
   }
 }
@@ -245,6 +251,7 @@ function retreat(mine, theirs, esc) {
 
 // ---------- garrisons and field outposts (01 §4.1): captains never move alone
 function detachShip(fl, ship) {
+  if (fl.admiralId && flagshipOf(fl) === ship) return 'The admiral is aboard: fly the flag on another ship first.';
   const s = fl.docked ? byId('settlements', fl.docked) : null;
   if (s && s.faction === fl.faction) {
     const gar = campaign.ships.filter((sh) => sh.garrison === s.id).length;
@@ -267,7 +274,7 @@ function detachShip(fl, ship) {
 const isSupport = (ship) => { const d = shipDesign(ship); return !d.cells.some((c) => PARTS[c.p].cat === 'weapon') && d.cells.some((c) => PARTS[c.p].cargo); };
 const fleetCount = (fl) => fleetShips(fl).filter((s) => !isSupport(s)).length;
 function pickUp(fl, ship) {
-  if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
+  if (!fleetAccepts(fl, mapDomain(designReport(shipDesign(ship)).domain))) return 'Only ships of the fleet’s domain can join it (a combined-arms doctrine lets aircraft join).';
   const cap = fleetCap(fl);
   if (!isSupport(ship) && fleetCount(fl) >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;

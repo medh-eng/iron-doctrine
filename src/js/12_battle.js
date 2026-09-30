@@ -652,11 +652,11 @@ function campaignCheck() {
   const sea2 = playerFleets().find((fl) => fl.domain === 'sea');
   const homeS = world.settlements.find((q) => q.faction === 'league' && q.capital);
   sea2.docked = homeS.id;
-  const g1 = fleetShips(sea2)[0];
+  const g1 = fleetShips(sea2).find((sh) => sh !== flagshipOf(sea2));
   const w1 = detachShip(sea2, g1);
   const inGarrison = g1.garrison === homeS.id && byId('officers', g1.captainId).garrisonedAt === homeS.id && !g1.fleetId;
   sea2.docked = null; sea2.x += 0; 
-  const g2 = fleetShips(sea2)[0];
+  const g2 = fleetShips(sea2).find((sh) => sh !== flagshipOf(sea2));
   detachShip(sea2, g2);
   const outpost = !!g2.outpost && campaign.outposts.some((o) => o.id === g2.outpost);
   const back = pickUp(sea2, g2) === '' && sea2.shipIds.includes(g2.id) && !campaign.outposts.length;

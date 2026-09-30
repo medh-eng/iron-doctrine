@@ -121,7 +121,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
-    if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyFactor : 1);     // energy weapons recharge from spare power (10h)
+    if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyFactor : 1) * (V.reloadRate || 1);     // energy weapons recharge from spare power (10h); fast loaders (15l)
     if (d.flame) { stepFlame(B, V, w, dt, aiControlled); continue; }
     if (d.secondary) {
       if (d.secondary === 'launcher') refillLauncher(V, w);

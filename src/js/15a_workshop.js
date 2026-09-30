@@ -250,7 +250,7 @@ function refitQuote(s, ship, designId) {
 function refitShip(s, fl, ship, designId) {
   const to = shipDesign({ design: designId });
   const why = servicesBlock(s) || yardBlock(s, to) || (fl.docked !== s.id ? 'The fleet is not docked here.' : '') ||
-    (mapDomain(designReport(to).domain) !== fl.domain ? 'A refit keeps the ship in its domain.' : '') ||
+    (mapDomain(designReport(to).domain) !== shipStats(ship).domain ? 'A refit keeps the ship in its domain.' : '') ||
     (ship.hp && ship.hp.some((v) => v < 1) ? 'Repair the ship first.' : '') || ((s.yard || []).some((j) => j.ship === ship.id) ? 'Already in the yard.' : '');
   if (why) return why;
   const q = refitQuote(s, ship, designId);

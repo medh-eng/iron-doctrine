@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.4';
+const GAME_VERSION = '0.6.5';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -2845,6 +2845,29 @@ const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0
 // XP (08 §10).
 const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
 const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Officer upgrades (producer's play test, v0.6.5). You level your captains and admirals up by
+// hand once they have the XP, choosing one upgrade each time. Captains' are skills for their own
+// ship (each up to 3 times); admirals' are doctrines for their fleet (each once). The Grand
+// Admiral chooses a doctrine each time their command level rises. Recruits may come with some.
+const OFFICER_TRAITS = {
+  captain: [
+    { id: 'gunnery', name: 'Gunnery drill', text: 'accuracy +6%', acc: 0.06 },
+    { id: 'loaders', name: 'Fast loaders', text: 'reload 8% faster', reload: 0.08 },
+    { id: 'nerves', name: 'Steady nerves', text: 'reaction time −12%', react: 0.12 },
+    { id: 'thrift', name: 'Fuel discipline', text: 'this ship burns 10% less fuel on the map', burn: 0.1 },
+  ],
+  admiral: [
+    { id: 'land_air', name: 'Combined arms: land and air', text: 'aircraft and airships can join this land fleet', mix: 'land' },
+    { id: 'sea_air', name: 'Combined arms: sea and air', text: 'aircraft and airships can join this sea fleet', mix: 'sea' },
+    { id: 'wide', name: 'Wide command', text: 'fleet size +1', cap: 1 },
+    { id: 'march', name: 'Forced march', text: 'march speed +10%', speed: 0.1 },
+    { id: 'logistics', name: 'Fuel doctrine', text: 'the fleet burns 10% less fuel', burn: 0.1 },
+    { id: 'veterans', name: 'Veteran crews', text: 'every ship in the fleet: accuracy +3%', acc: 0.03 },
+  ],
+};
+const TRAIT_STACK = { captain: 3, admiral: 1 };
+const RECRUIT_GIFTED = 0.3;          // chance a recruit brings one upgrade more than their level gives
+const RECRUIT_TRAIT_PRICE = 0.2;     // each upgrade a recruit brings adds this share to the price
 
 // ---------- the tech tree and perks (design/08 §11–12, Part 5a)
 // Research costs per tier: Command Points, money (treasury), electronics and scrap (from the
@@ -7481,7 +7504,7 @@ function runWeapons(B, V, dt, aiControlled) {
     if (!V.parts[w.part].alive) continue;
     const d = w.def;
     if (w.kick) w.kick = Math.max(0, w.kick - dt * 6);
-    if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyFactor : 1);     // energy weapons recharge from spare power (10h)
+    if (w.reload > 0) w.reload -= dt * (d.energy ? V.energyFactor : 1) * (V.reloadRate || 1);     // energy weapons recharge from spare power (10h); fast loaders (15l)
     if (d.flame) { stepFlame(B, V, w, dt, aiControlled); continue; }
     if (d.secondary) {
       if (d.secondary === 'launcher') refillLauncher(V, w);
@@ -8861,6 +8884,14 @@ function drawMarkers(g, B) {
     flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
   }
   if (B.depot) flag(B.depot, PAL.league);
+  // Flagships fly a pennant (v0.6.5): amber for yours, red for theirs.
+  for (const V of B.units) {
+    if (!V.flagship || V.destroyed || V.gone || (V.side === 1 && !V.seen)) continue;
+    const sx = view.sx(V.body.x), sy = view.sy(V.body.y + V.height) - 6;
+    g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 18, 2, 18);
+    g.fillStyle = V.side === 0 ? PAL.amber : PAL.danger;
+    g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill();
+  }
   g.setLineDash([5, 4]);
   g.lineWidth = 2;
   for (const w of B.warnings) {
@@ -9172,7 +9203,8 @@ function battleSides(mine, theirs) {
   const near = (fl, at) => fl.shipIds.length && Math.hypot(fl.x - at.x, fl.y - at.y) <= REINFORCE_CELLS;
   const myFleets = [mine, ...playerFleets().filter((fl) => fl !== mine && near(fl, mine))];
   const theirFleets = [theirs, ...campaign.fleets.filter((fl) => fl !== theirs && fl.faction !== campaign.faction && relation(fl.faction, campaign.faction) === 'war' && near(fl, theirs))];
-  const ships = (fleets) => fleets.filter((fl) => ok.includes(fl.domain)).flatMap((fl) => fleetShips(fl));
+  // Flagships first (v0.6.5); each ship by its own domain (combined-arms fleets mix them, 15l).
+  const ships = (fleets) => fleets.flatMap((fl) => battleOrder(fl)).filter((sh) => ok.includes(shipStats(sh).domain));
   return { place, myFleets, theirFleets, mine: ships(myFleets), theirs: ships(theirFleets) };
 }
 
@@ -9200,6 +9232,7 @@ function battleDesign(ship) {
   const d = shipDesign(ship);
   d._shipId = ship.id;
   d.paint = d.paint || { scheme: ship.faction };            // each faction's own colours (09)
+  if (isFlagship(ship)) { const a = fleetAdmiral(byId('fleets', ship.fleetId)); d._flag = { name: a.name, grand: a.id === campaign.ga, level: commandLevel(a) }; }
   d._state = {
     hp: ship.hp ? ship.hp.map((f, i) => f * PARTS[d.cells[i].p].hp) : null,
     fuel: ship.fuel / Math.max(0.01, shipStats(ship).fuelCap),
@@ -9237,7 +9270,7 @@ function createCampaignBattle(contact, headless) {
     cfg: campaignBattleConfig(sides.place), reserves: true, demo: !!headless,
     squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
   });
-  for (const V of B.units) applyShipState(V);
+  for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   B.contact = contact;
   B.sides = sides;
   return B;
@@ -9270,6 +9303,7 @@ function applyBattleOutcome(B) {
   }
   // What you fielded, for the AI factions' design reviews (6b).
   noteFielded([...rec.keys()].map((id) => byId('ships', id)).filter((s) => s && s.faction === campaign.faction).map(shipDesign));
+  const flagsBefore = [...B.sides.myFleets, ...B.sides.theirFleets].map((fl) => [fl, flagshipOf(fl) ? fl.flagshipId : null]);
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
   const wrecks = [];
   for (const [id, r] of rec) {
@@ -9318,7 +9352,9 @@ function applyBattleOutcome(B) {
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
   const siegeNote = B.siege ? applySiege(B, win) : '';
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
+  const flagNews = [];
+  flagshipsAfterBattle(flagsBefore, flagNews);
+  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaign.journal.push(`Day ${campaign.day}: ${summary}`);
   campaignStore.save();
   return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
@@ -9327,7 +9363,8 @@ function applyBattleOutcome(B) {
 function gainXp(o, xp) {
   o.xp += xp;
   const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
-  if (o.rank !== 'grand') o.level = levelFromXp(o.xp, table);
+  // Your captains and admirals level up by hand on their officer card (15l); others by themselves.
+  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) o.level = levelFromXp(o.xp, table); }
   else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
 }
 
@@ -9354,7 +9391,7 @@ function fleetLost(fl) {
     if (own) o.garrisonedAt = own.id; else o.alive = false;
   }
   if (fl.faction === campaign.faction && fl.admiralId === campaign.ga) {
-    campaign.treasury *= 0.8;
+    gaEscapePenalty();
     campaign.journal.push(`Day ${campaign.day}: the flag fleet was lost; the Grand Admiral escaped to ${own ? own.name : 'the wilds'}.`);
   }
 }
@@ -9389,6 +9426,7 @@ function retreat(mine, theirs, esc) {
 
 // ---------- garrisons and field outposts (01 §4.1): captains never move alone
 function detachShip(fl, ship) {
+  if (fl.admiralId && flagshipOf(fl) === ship) return 'The admiral is aboard: fly the flag on another ship first.';
   const s = fl.docked ? byId('settlements', fl.docked) : null;
   if (s && s.faction === fl.faction) {
     const gar = campaign.ships.filter((sh) => sh.garrison === s.id).length;
@@ -9411,7 +9449,7 @@ function detachShip(fl, ship) {
 const isSupport = (ship) => { const d = shipDesign(ship); return !d.cells.some((c) => PARTS[c.p].cat === 'weapon') && d.cells.some((c) => PARTS[c.p].cargo); };
 const fleetCount = (fl) => fleetShips(fl).filter((s) => !isSupport(s)).length;
 function pickUp(fl, ship) {
-  if (mapDomain(designReport(shipDesign(ship)).domain) !== fl.domain) return 'Only ships of the fleet’s domain can join it.';
+  if (!fleetAccepts(fl, mapDomain(designReport(shipDesign(ship)).domain))) return 'Only ships of the fleet’s domain can join it (a combined-arms doctrine lets aircraft join).';
   const cap = fleetCap(fl);
   if (!isSupport(ship) && fleetCount(fl) >= cap) return `The fleet is full (${cap} ships).`;
   delete ship.garrison;
@@ -9541,7 +9579,7 @@ function createSiegeBattle(contact, headless) {
   cfg.name = `Siege of ${s.name} · ${cfg.name}`;
   cfg.how = playerDefends ? 'Hold the walls: the enemy wins by destroying your keep or every defender.' : 'Destroy the keep, or every defender, to take the settlement.';
   const B = createBattle(0, { cfg, reserves: true, demo: !!headless, squad: playerDefends ? def : atk, enemyForce: playerDefends ? atk : def });
-  for (const V of B.units) applyShipState(V);
+  for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   buildDefences(B, s, playerDefends ? 0 : 1);
   B.contact = contact;
   // applyBattleOutcome's fleet bookkeeping: your fleets and theirs.
@@ -10110,16 +10148,18 @@ function fleetSpeed(fl) {
   v *= MARCH;
   if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
   if (fl.convoy && fl.faction === campaign.faction && perk('quartermaster_corps')) v *= 1.2;
-  return v;
+  return v * (1 + fleetDoctrine(fl, 'speed'));             // Forced march (15l)
 }
-// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
+// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%);
+// sea × 0.35. Each ship by its own domain (a combined-arms fleet mixes them, 15l).
 function fleetBurn(fl) {
   let b = 0;
-  for (const s of fleetShips(fl)) b += shipStats(s).burn;
-  if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
-  if (fl.domain === 'sea') b *= SEA_MAP_FUEL;
+  for (const s of fleetShips(fl)) {
+    const dom = shipStats(s).domain;
+    b += shipStats(s).burn * shipBurnMul(s) * (dom === 'air' ? AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1) : dom === 'sea' ? SEA_MAP_FUEL : 1);
+  }
   if (fl.faction === campaign.faction && perk('frugal_engines')) b *= 0.9;
-  return b;
+  return b * (1 - fleetDoctrine(fl, 'burn'));
 }
 function fleetFuel(fl) {
   let f = fl.hold.fuel || 0, cap = 0;
@@ -10710,7 +10750,7 @@ function refitQuote(s, ship, designId) {
 function refitShip(s, fl, ship, designId) {
   const to = shipDesign({ design: designId });
   const why = servicesBlock(s) || yardBlock(s, to) || (fl.docked !== s.id ? 'The fleet is not docked here.' : '') ||
-    (mapDomain(designReport(to).domain) !== fl.domain ? 'A refit keeps the ship in its domain.' : '') ||
+    (mapDomain(designReport(to).domain) !== shipStats(ship).domain ? 'A refit keeps the ship in its domain.' : '') ||
     (ship.hp && ship.hp.some((v) => v < 1) ? 'Repair the ship first.' : '') || ((s.yard || []).some((j) => j.ship === ship.id) ? 'Already in the yard.' : '');
   if (why) return why;
   const q = refitQuote(s, ship, designId);
@@ -10972,8 +11012,13 @@ function makeOffers(s) {
   });
   // Citadels with no large designs to offer fall back to the medium ones.
   const designs = pool.length ? pool : campaignBaseDesigns().filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && !isSupport({ design: id }) && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
-  for (let k = 0; k < 3 && designs.length; k++) s.offers.push({ kind: 'captain', level: rng.int(R.cap[0], R.cap[1]), design: rng.pick(designs), name: officerName(rng) });
-  s.offers.push({ kind: 'admiral', level: rng.int(R.adm[0], R.adm[1]), name: officerName(rng) });
+  // Recruits come with the upgrades of their level, and sometimes one more (15l).
+  for (let k = 0; k < 3 && designs.length; k++) {
+    const level = rng.int(R.cap[0], R.cap[1]);
+    s.offers.push({ kind: 'captain', level, design: rng.pick(designs), name: officerName(rng), traits: recruitTraits('captain', level, rng) });
+  }
+  const al = rng.int(R.adm[0], R.adm[1]);
+  s.offers.push({ kind: 'admiral', level: al, name: officerName(rng), traits: recruitTraits('admiral', al, rng) });
   s.offersDay = campaign.day;
 }
 function offersAt(s) {
@@ -10987,8 +11032,9 @@ function offersAt(s) {
   return list;
 }
 function offerPrice(o) {
-  if (o.kind === 'captain') return RECRUIT.captain * o.level * o.level + designCostIndex(shipDesign({ design: o.design })) * RECRUIT.listPrice;
-  if (o.kind === 'admiral') return RECRUIT.admiral * o.level;
+  const gifted = 1 + RECRUIT_TRAIT_PRICE * Math.max(0, (o.traits || []).length - (o.level - 1));   // an upgrade beyond their level costs extra
+  if (o.kind === 'captain') return RECRUIT.captain * o.level * o.level * gifted + designCostIndex(shipDesign({ design: o.design })) * RECRUIT.listPrice;
+  if (o.kind === 'admiral') return RECRUIT.admiral * o.level * gifted;
   return RECRUIT.quartermaster;
 }
 // Hire: captains arrive with their ship in the garrison; admirals and quartermasters wait there.
@@ -11005,9 +11051,9 @@ function hire(s, o) {
   if (o.kind === 'captain') {
     const sh = makeShip(o.design, campaign.faction, rng);
     const cap = byId('officers', sh.captainId);
-    Object.assign(cap, { name: o.name, level: o.level, xp: CAPTAIN_XP[o.level - 1] || 0, garrisonedAt: s.id });
+    Object.assign(cap, { name: o.name, level: o.level, xp: CAPTAIN_XP[o.level - 1] || 0, garrisonedAt: s.id, traits: (o.traits || []).slice() });
     sh.garrison = s.id;
-  } else campaign.officers.push({ id: newId('o'), name: o.name, rank: o.kind, faction: campaign.faction, level: o.level, xp: 0, alive: true, garrisonedAt: s.id });
+  } else campaign.officers.push({ id: newId('o'), name: o.name, rank: o.kind, faction: campaign.faction, level: o.level, xp: o.kind === 'admiral' ? (CAPTAIN_XP[o.level - 1] || 0) * 2 : 0, alive: true, garrisonedAt: s.id, traits: (o.traits || []).slice() });
   if (s.offers) s.offers = s.offers.filter((x) => x !== o);
   return '';
 }
@@ -11041,7 +11087,7 @@ function promote(s, fl, ship) {
   if (fl.docked !== s.id || s.faction !== campaign.faction) return 'Dock at your own settlement to promote.';
   const price = RECRUIT.promote * o.level;
   if (!spend(price)) return noMoney(price);
-  o.rank = 'admiral'; o.level = 1; o.xp = 0; o.shipId = null; o.fleetId = null; o.garrisonedAt = s.id;
+  o.rank = 'admiral'; o.level = 1; o.xp = 0; o.traits = []; o.shipId = null; o.fleetId = null; o.garrisonedAt = s.id;   // a new admiral starts their doctrines afresh
   ship.captainId = null;
   return '';
 }
@@ -11409,7 +11455,7 @@ function fleetCap(fl) {
     if (o.rank === 'grand' && perk('wider_command')) cap += 2;
     if (o.rank === 'admiral' && perk('second_in_command')) cap += 1;
   }
-  return cap;
+  return cap + fleetDoctrine(fl, 'cap');                    // Wide command (15l)
 }
 
 // Captain skill in battle (08 §10): +2% accuracy and −3% reaction time per level above 1, and
@@ -11419,10 +11465,13 @@ function applyCaptain(V) {
   if (!id || !campaign || !V.ai) return;
   const ship = byId('ships', id);
   const cap = ship && byId('officers', ship.captainId);
-  const L = cap ? cap.level : 1;
+  let L = cap ? cap.level : 1;
+  // The flagship's crew fights at the admiral's command level when that's higher (v0.6.5).
+  if (V.design._flag) { L = Math.max(L, V.design._flag.level); V.flagship = V.design._flag; }
   V.ai.accuracy *= 1 + CAPTAIN_ACC_PER_LEVEL * (L - 1) + (ship && ship.faction === campaign.faction && perk('veteran_eye') ? 0.05 : 0);
   V.ai.reaction *= Math.max(0.4, 1 - CAPTAIN_REACT_PER_LEVEL * (L - 1)) * (ship && ship.faction === campaign.faction && perk('iron_discipline') ? 0.8 : 1);
   V.captainLevel = L;
+  applyTraits(V, ship);                  // the captain's upgrades and the admiral's doctrines (15l)
 }
 
 // Grand Admiral XP from outside battle (08 §10): captures, convoy deliveries, reverse-engineering.
@@ -12223,6 +12272,161 @@ function relationsDay(news) {
       campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} made a truce.`);
     }
   }
+}
+
+/* ---------- 15k_flagships.js ---------- */
+/* ==== 15k FLAGSHIPS ==== */
+// Every fleet's admiral (your Grand Admiral too) rides in one of its ships: the flagship
+// (design/01 §4.2; producer's play test, v0.6.5). It goes onto the field first and flies a
+// pennant; you start a battle driving your Grand Admiral's. Its crew fights at the admiral's
+// command level when that's above its captain's. The admiral picks the flagship among the classes
+// their level allows (your choice on the fleet panel). When a flagship is destroyed the admiral
+// escapes to another ship of the fleet; the Grand Admiral's escape costs 20% of the treasury and
+// 10% of the XP towards the next level (01 §14).
+
+function flagshipAllowed(fl, ship) {
+  const c = classById(shipStats(ship).cls);
+  return !isSupport(ship) && (!c || c.captain <= commandLevel(fleetAdmiral(fl)));
+}
+function bestFlagship(fl) {
+  const ships = fleetShips(fl).filter((s) => !isSupport(s));
+  const ok = ships.filter((s) => flagshipAllowed(fl, s));
+  return (ok.length ? ok : ships).sort((a, b) => shipStats(b).cost - shipStats(a).cost)[0] || fleetShips(fl)[0] || null;
+}
+// The fleet's flagship (chosen when there is none, e.g. in an older save).
+function flagshipOf(fl) {
+  if (!fl || !fl.admiralId || !fl.shipIds.length) return null;
+  if (fl.flagshipId && fl.shipIds.includes(fl.flagshipId)) return byId('ships', fl.flagshipId);
+  const pick = bestFlagship(fl);
+  fl.flagshipId = pick ? pick.id : null;
+  return pick;
+}
+const isFlagship = (ship) => { const fl = ship && ship.fleetId && byId('fleets', ship.fleetId); return !!fl && flagshipOf(fl) === ship; };
+function setFlagship(fl, ship) {
+  if (!fl.shipIds.includes(ship.id)) return 'Not in this fleet.';
+  if (isSupport(ship)) return 'A support vehicle can’t carry the flag.';
+  if (!flagshipAllowed(fl, ship)) return `${shipStats(ship).clsName} is above what the admiral's level commands.`;
+  fl.flagshipId = ship.id;
+  return '';
+}
+// A fleet's ships in battle order: the flagship first, support vehicles last.
+function battleOrder(fl) {
+  const f = flagshipOf(fl);
+  const ships = fleetShips(fl);
+  const rank = (s) => (s === f ? 0 : isSupport(s) ? 2 : 1);
+  return ships.map((s, i) => [s, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((e) => e[0]);
+}
+
+// The Grand Admiral escaping a lost flagship or fleet (01 §14): 20% of the treasury, 10% of the XP
+// towards the next level.
+function gaEscapePenalty() {
+  campaign.treasury *= 0.8;
+  const ga = grandAdmiral();
+  if (!ga) return;
+  // XP made since the current level was reached (the level itself is kept).
+  const prev = ga.level > 1 ? Math.round(150 * Math.pow(ga.level - 1, 1.7)) : 0;
+  ga.xp -= 0.1 * Math.max(0, ga.xp - prev);
+}
+
+// After a battle (applyBattleOutcome): fleets whose flagship went down but that still have ships.
+function flagshipsAfterBattle(before, news) {
+  for (const [fl, id] of before) {
+    if (!id || !fl.shipIds.length || fl.shipIds.includes(id)) continue;
+    fl.flagshipId = null;
+    const next = flagshipOf(fl);
+    const adm = fleetAdmiral(fl);
+    if (!adm || !next) continue;
+    if (fl.faction === campaign.faction) {
+      const grand = adm.id === campaign.ga;
+      if (grand) gaEscapePenalty();
+      const msg = `${grand ? 'The Grand Admiral' : `Adm. ${adm.name}`} escaped the lost flagship to the ${shipStats(next).name}${grand ? ' (treasury −20%, XP −10% to the next level)' : ''}.`;
+      campaign.journal.push(`Day ${campaign.day}: ${msg}`);
+      news.push(msg);
+    }
+  }
+}
+
+/* ---------- 15l_officers.js ---------- */
+/* ==== 15l OFFICERS: LEVELS, UPGRADES, DOCTRINES ==== */
+// Producer's play test (v0.6.5). Your captains and admirals gain XP as before, but you level them
+// up by hand on their officer card once they have enough, choosing an upgrade each time (07_data
+// OFFICER_TRAITS). Captains' upgrades act on their own ship in battle and on the map; admirals'
+// doctrines act on their whole fleet, and the combined-arms doctrines let aircraft and airships
+// join a land or a sea fleet. The Grand Admiral's level still rises by itself (it sets Command
+// Points); they choose a doctrine each time their command level rises. Other factions' officers
+// level up by themselves.
+
+const traitKind = (o) => (o.rank === 'captain' ? 'captain' : 'admiral');
+const traitById = (kind, id) => OFFICER_TRAITS[kind].find((t) => t.id === id) || null;
+const traitsOf = (o) => (o && o.traits ? o.traits.map((id) => traitById(traitKind(o), id)).filter(Boolean) : []);
+// Sum of one effect over an officer's upgrades.
+const traitSum = (o, key) => traitsOf(o).reduce((a, t) => a + (t[key] || 0), 0);
+
+// XP needed for the next level (captains and admirals; admirals need twice a captain's).
+function nextLevelXp(o) {
+  if (o.rank === 'grand') return Math.round(150 * Math.pow(o.level, 1.7));
+  const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
+  return o.level < table.length ? table[o.level] : null;
+}
+const canLevelUp = (o) => o.rank !== 'grand' && nextLevelXp(o) !== null && o.xp >= nextLevelXp(o);
+// Upgrades still to choose: one per level above 1 (the Grand Admiral: per command level above 1).
+function picksOwed(o) {
+  const lv = o.rank === 'grand' ? commandLevel(o) : o.level;
+  return Math.max(0, lv - 1 - (o.traits ? o.traits.length : 0));
+}
+// The upgrades an officer may still take.
+function traitChoices(o) {
+  const kind = traitKind(o), have = o.traits || [];
+  return OFFICER_TRAITS[kind].filter((t) => have.filter((x) => x === t.id).length < TRAIT_STACK[kind]);
+}
+function takeTrait(o, id) {
+  if (!traitChoices(o).some((t) => t.id === id)) return 'Not available.';
+  (o.traits = o.traits || []).push(id);
+  return '';
+}
+// Level up by hand: the next level and an upgrade.
+function levelUp(o, traitId) {
+  if (!canLevelUp(o)) return o.rank === 'grand' ? 'The Grand Admiral rises by XP alone.' : `Needs ${nextLevelXp(o) === null ? 'nothing: top level' : `${nextLevelXp(o)} XP`}.`;
+  if (picksOwed(o) > 0) return 'Choose the upgrades already owed first.';
+  const choices = traitChoices(o);
+  if (choices.length && !choices.some((t) => t.id === traitId)) return 'Choose an upgrade.';
+  o.level++;
+  if (choices.length) (o.traits = o.traits || []).push(traitId);
+  campaign.journal.push(`Day ${campaign.day}: ${o.rank === 'admiral' ? 'Adm.' : 'Capt.'} ${o.name} reached level ${o.level}${choices.length ? ` (${traitById(traitKind(o), traitId).name})` : ''}.`);
+  return '';
+}
+
+// ---------- effects
+// Doctrine effects of a fleet's commander.
+const fleetDoctrine = (fl, key) => traitSum(fleetAdmiral(fl), key);
+// Which domains a fleet takes: its own, and air with a combined-arms doctrine.
+function fleetAccepts(fl, domain) {
+  if (domain === fl.domain) return true;
+  return domain === 'air' && traitsOf(fleetAdmiral(fl)).some((t) => t.mix === fl.domain);
+}
+// A captain's effect on their ship in battle (from applyCaptain).
+function applyTraits(V, ship) {
+  const cap = ship && byId('officers', ship.captainId);
+  const fl = ship && ship.fleetId && byId('fleets', ship.fleetId);
+  const acc = traitSum(cap, 'acc') + (fl ? fleetDoctrine(fl, 'acc') : 0);
+  V.ai.accuracy *= 1 + acc;
+  V.ai.reaction *= Math.max(0.4, 1 - traitSum(cap, 'react'));
+  V.reloadRate = 1 + traitSum(cap, 'reload');
+}
+// A ship's map burn multiplier from its captain.
+const shipBurnMul = (ship) => 1 - traitSum(byId('officers', ship.captainId), 'burn');
+
+// ---------- recruits with upgrades already
+// The upgrades a recruit brings: one per level above 1, and sometimes one more.
+function recruitTraits(kind, level, rng) {
+  const o = { rank: kind, level, traits: [] };
+  const n = level - 1 + (rng.next() < RECRUIT_GIFTED ? 1 : 0);
+  for (let k = 0; k < n; k++) {
+    const c = traitChoices(o);
+    if (!c.length) break;
+    o.traits.push(rng.pick(c).id);
+  }
+  return o.traits;
 }
 
 /* ---------- 15z_campaign_checks.js ---------- */
@@ -14910,13 +15114,16 @@ SCREENS.map = {
       P.appendChild(tabs);
       const adm = fleetAdmiral(fl);
       if (this.tab === 'ships') {
-        for (const sh of fleetShips(fl)) {
+        const flag = flagshipOf(fl);
+        for (const sh of battleOrder(fl)) {
           const st = shipStats(sh), cap = byId('officers', sh.captainId);
           const r = el('div', 'map-ship');
-          r.appendChild(el('b', '', st.name));
+          r.appendChild(el('b', '', sh === flag ? `⚑ ${st.name} (flagship: ${adm && adm.id === campaign.ga ? 'Grand Admiral' : 'Adm.'} ${adm ? adm.name : ''})` : isSupport(sh) ? `${st.name} (support)` : st.name));
           r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
           const btns = el('div', 'map-row');
-          btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          if (cap) btns.appendChild(button(`${canLevelUp(cap) || picksOwed(cap) > 0 ? '★ ' : ''}Capt. ${cap.name.split(' ')[1] || cap.name}`, () => openOfficer(cap, fl), 'btn btn-small'));
+          if (sh !== flag && !isSupport(sh) && adm) btns.appendChild(button('Fly the flag here', () => { const why = setFlagship(fl, sh); ui.toast(why || `The flag moves to the ${st.name}.`); this.refresh(); }, 'btn btn-small'));
+          if (sh !== flag) btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
           if (!cap) for (const o of campaign.officers.filter((q) => q.alive && q.fleetId === fl.id && q.rank === 'captain' && !q.shipId)) {
             btns.appendChild(button(`Give command to ${o.name}`, () => { const why = assignCaptain(fl, sh, o); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
           }
@@ -14933,7 +15140,12 @@ SCREENS.map = {
           for (const sh of campaign.ships.filter((s) => s.outpost === o.id)) body.appendChild(button(`Take ${shipStats(sh).name} from the outpost`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
         const spare = campaign.officers.filter((o) => o.alive && o.fleetId === fl.id && o.rank === 'captain' && !o.shipId);
-        if (spare.length) row('Captains without a ship', spare.map((o) => o.name).join(', '));
+        if (spare.length) {
+          row('Captains without a ship', spare.map((o) => o.name).join(', '));
+          const r = el('div', 'map-row');
+          for (const o of spare) r.appendChild(button(`Capt. ${o.name.split(' ')[1] || o.name}`, () => openOfficer(o, fl), 'btn btn-small'));
+          body.appendChild(r);
+        }
       } else if (this.tab === 'cargo') {
         const f = fleetFuel(fl);
         row('Fuel in tanks and hold', `${f.fuel.toFixed(1)} of ${f.cap.toFixed(1)} units`);
@@ -14965,7 +15177,15 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
+        { const f = flagshipOf(fl); row('Flagship', f ? `${shipStats(f).name} (${shipStats(f).clsName})` : '—'); }
         { const sup = fl.shipIds.length - fleetCount(fl); row('Fleet size', `${fleetCount(fl)} of ${fleetCap(fl)}${sup ? ` + ${sup} support` : ''}`); }
+        if (adm) {
+          const docs = traitsOf(adm);
+          row('Doctrines', docs.length ? docs.map((t) => t.name).join(', ') : 'none');
+          const mixed = fleetShips(fl).filter((s) => shipStats(s).domain !== fl.domain).length;
+          if (mixed) row('Combined arms', `${mixed} aircraft with the ${fl.domain} ships`);
+          body.appendChild(button(`${canLevelUp(adm) || picksOwed(adm) > 0 ? '★ ' : ''}Open the ${adm.rank === 'grand' ? 'Grand Admiral' : 'admiral'}'s card`, () => openOfficer(adm, fl), 'btn btn-small btn-primary'));
+        }
       }
       P.appendChild(body);
       return;
@@ -15006,7 +15226,7 @@ SCREENS.map = {
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
         const room = fleetCap(fl) - fleetCount(fl);
-        for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
+        for (const sh of gar.filter((g) => fleetAccepts(fl, mapDomain(designReport(shipDesign(g)).domain)))) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
       }
@@ -15539,7 +15759,7 @@ Object.assign(SCREENS.map, {
         if (this.refitShip !== sh.id) continue;
         for (const id of yardDesigns(s)) {
           const d = shipDesign({ design: id });
-          if (id === sh.design || mapDomain(designReport(d).domain) !== fl.domain) continue;
+          if (id === sh.design || mapDomain(designReport(d).domain) !== shipStats(sh).domain) continue;
           const rq = refitQuote(s, sh, id);
           const o = el('div', 'map-good');
           o.appendChild(el('span', '', `→ ${markName(d)}`));
@@ -15583,6 +15803,7 @@ Object.assign(SCREENS.map, {
       const what = o.kind === 'captain' ? `Capt. ${o.name} L${o.level} with a ${markName(shipDesign({ design: o.design }))}` : o.kind === 'admiral' ? `Adm. ${o.name} L${o.level}` : `Quartermaster ${o.name}`;
       g.appendChild(el('span', '', what));
       g.appendChild(el('small', '', `money ${Math.ceil(offerPrice(o))} · wages ${o.kind === 'quartermaster' ? WAGES.quartermaster : WAGES[o.kind] * o.level}/day`));
+      if (o.traits && o.traits.length) g.appendChild(el('small', '', `Upgrades: ${o.traits.map((id) => traitById(o.kind, id).name).join(', ')}`));
       const r = el('div', 'map-row');
       r.appendChild(button('Hire', () => done(hire(s, o)), 'btn btn-small'));
       g.appendChild(r);
@@ -16149,6 +16370,81 @@ function openRelations() {
     for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) if (relation(ids[i], ids[j]) === 'truce') truces.push(`${factionOf(ids[i]).name} and ${factionOf(ids[j]).name}`);
     box.appendChild(el('div', 'ws-label', 'Between the others'));
     box.appendChild(el('div', 'card-text map-note', truces.length ? `In truce: ${truces.join('; ')}. All others at war.` : 'All at war with each other.'));
+    c.appendChild(box);
+  };
+  draw();
+  close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
+}
+
+/* ---------- 16o_screen_officers.js ---------- */
+/* ==== 16o OFFICER CARD ==== */
+// Producer's play test (v0.6.5): tap a captain or an admiral in the fleet panel. The card shows
+// level, XP and upgrades; levels up by hand with a choice of upgrade; and, for a captain, their
+// ship: open its design in the Drafting Office, or refit it at the yard where the fleet is docked.
+
+function openOfficer(o, fl) {
+  const wasRunning = campaign.running;
+  campaign.running = false;                    // the clock waits while you choose
+  const c = ui.card('', 'card-research');
+  let close = null, choosing = false;
+  const draw = () => {
+    c.textContent = '';
+    const head = el('div', 'rs-head');
+    const title = o.rank === 'grand' ? 'Grand Admiral' : o.rank === 'admiral' ? 'Admiral' : 'Captain';
+    head.appendChild(el('h2', 'card-title', `${title} ${o.name}`));
+    head.appendChild(el('span', 'ws-fact', `Level ${o.level}`));
+    const next = nextLevelXp(o);
+    head.appendChild(el('span', 'ws-fact', `XP ${Math.round(o.xp)}${next !== null ? ` / ${next}` : ''}`));
+    c.appendChild(head);
+    const top = el('div', 'card-row rs-tabs');
+    top.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
+    c.appendChild(top);
+    const box = el('div', 'rel-list');
+    const line = (t) => box.appendChild(el('div', 'card-text map-note', t));
+    const kind = traitKind(o);
+    const have = traitsOf(o);
+    box.appendChild(el('div', 'ws-label', kind === 'captain' ? 'Upgrades' : 'Doctrines'));
+    if (have.length) {
+      const counts = {};
+      for (const t of have) counts[t.id] = (counts[t.id] || 0) + 1;
+      for (const id in counts) { const t = traitById(kind, id); line(`${t.name}${counts[id] > 1 ? ` ×${counts[id]}` : ''}: ${t.text}.`); }
+    } else line('None yet.');
+    // Choosing: upgrades owed (older saves, the Grand Admiral's command levels) or a level-up.
+    const owed = picksOwed(o);
+    const pick = (label, act) => {
+      box.appendChild(el('div', 'ws-label', label));
+      for (const t of traitChoices(o)) {
+        const r = el('div', 'rel-row');
+        r.appendChild(el('div', 'rel-name', t.name));
+        r.appendChild(el('div', 'card-text map-note', t.text));
+        r.appendChild(button('Choose', () => { const why = act(t.id); if (why) ui.toast(why); else audio.sfx('order'); choosing = false; draw(); }, 'btn btn-small btn-primary'));
+        box.appendChild(r);
+      }
+    };
+    if (owed > 0 && traitChoices(o).length) pick(`Choose ${owed > 1 ? `${owed} upgrades` : 'an upgrade'} (owed for levels already reached)`, (id) => takeTrait(o, id));
+    else if (canLevelUp(o)) {
+      if (!choosing) box.appendChild(button(`Level up to ${o.level + 1}`, () => { choosing = true; if (!traitChoices(o).length) { levelUp(o, null); choosing = false; } draw(); }, 'btn btn-small btn-primary'));
+      else pick(`Level ${o.level + 1}: choose an upgrade`, (id) => levelUp(o, id));
+    } else if (o.rank === 'grand') line(`Level rises by XP alone; a doctrine is chosen each time the command level rises (now ${commandLevel(o)}).`);
+    else if (next !== null) line(`${next - Math.round(o.xp)} XP to the next level.`);
+    else line('Top level.');
+    if (o.rank === 'admiral' || o.rank === 'grand') line(`Command level ${commandLevel(o)}: fleet of ${fl ? fleetCap(fl) : FLEET_SIZE[Math.min(9, commandLevel(o) - 1)]}.`);
+    // A captain's ship: its design and a refit.
+    const sh = o.rank === 'captain' ? byId('ships', o.shipId) : fl ? flagshipOf(fl) : null;
+    if (sh) {
+      const st = shipStats(sh), d = shipDesign(sh);
+      box.appendChild(el('div', 'ws-label', o.rank === 'captain' ? 'Ship' : 'Flagship'));
+      line(`${st.name} · ${st.clsName} · hull ${Math.round(shipHealth(sh) * 100)}%`);
+      box.appendChild(button('Edit its design in the Drafting Office', () => {
+        close();
+        SCREENS.designer.returnTo = 'map'; SCREENS.designer.campaignParts = true;
+        screens.go('designer', { design: d, base: d, owned: !TEMPLATES[sh.design] });
+      }, 'btn btn-small'));
+      const s = fl && fl.docked ? byId('settlements', fl.docked) : null;
+      if (s && s.faction === campaign.faction && hasWorkshop(s)) {
+        box.appendChild(button(`Refit at ${s.name}'s yard`, () => { close(); const M = SCREENS.map; M.select('settlement', s.id); M.tab = 'yard'; M.refitShip = sh.id; M.panelOpen = true; M.refresh(); }, 'btn btn-small'));
+      } else line('Dock the fleet at one of your cities or metropolises to refit this ship to a saved design.');
+    }
     c.appendChild(box);
   };
   draw();

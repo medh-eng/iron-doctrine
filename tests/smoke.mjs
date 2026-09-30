@@ -834,6 +834,18 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         SF(sf.valid && sf.baseOk && sf.wagon.ok && sf.wagon.moved > 20 && sf.tender.ok && sf.tender.moved > 20 && sf.tender.up >= 0 && sf.airship.ok && sf.airship.up > 5, 'support vehicles broken or unresearched base designs offered');
         SF(sf.seaRange > 60, 'the starting sea fleet has too little range');
         steps.push('starting fleets');
+        const fs = await G(() => window.__GAME__.flagshipCheck());
+        const FS = (c, what) => check(c, `${what} ${JSON.stringify(fs)}`);
+        FS(!fs.flag.support && fs.flag.first && fs.flag.lastSupport && /support/.test(fs.supportFlag) && /flag/.test(fs.detach), 'flagship choice, order or rules wrong');
+        FS(fs.battle.me && fs.battle.pennant && fs.battle.enemyFlag, 'flagship not driven first or no pennant in battle');
+        FS(fs.lost.newFlag && fs.lost.money === 0.8 && fs.lost.xp === 90 && fs.lost.news === 1 && fs.move, 'losing or moving the flag wrong');
+        steps.push('flagships');
+        const oc = await G(() => window.__GAME__.officersCheck());
+        const OC = (c, what) => check(c, `${what} ${JSON.stringify(oc)}`);
+        OC(oc.auto === 1 && oc.can && /Choose/.test(oc.noPick) && oc.up === '' && oc.after.level === 2 && oc.after.traits[0] === 'loaders' && oc.reload === 1.08, 'levelling by hand or captain upgrades wrong');
+        OC(oc.gaOwed === 1 && oc.mixBefore !== '' && oc.take === '' && oc.mix === '' && oc.mixed && oc.deploys, 'combined-arms doctrine wrong');
+        OC(oc.doctrine.cap === 1 && oc.doctrine.speed === 1.1 && oc.doctrine.burnDrop && oc.recruitsOk && oc.recruits.length > 0 && oc.oldOwed === 2, 'doctrines, recruits or owed upgrades wrong');
+        steps.push('officers');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -870,6 +882,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(200);
       check((await page.locator('.rel-row').count()) === 4, 'the Relations card does not list 4 factions');
       await shot('23e-relations');
+      await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
+      await wait(200);
+      // Officer card (v0.6.5): a captain of the flag fleet.
+      await G(() => window.__GAME__.evalIn("const fl = playerFleets()[0]; const sh = fleetShips(fl).find((q) => byId('officers', q.captainId)); openOfficer(byId('officers', sh.captainId), fl)"));
+      await wait(200);
+      check(/Captain/.test(await page.locator('.card-research .card-title').textContent()), 'the officer card did not open');
+      await shot('23f-officer');
       await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
       await wait(200);
       // Moving with real taps (a finger on phones, the mouse on desktop): tap a reachable spot, Move, Start.

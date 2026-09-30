@@ -654,6 +654,82 @@ function startFleetCheck() {
   out.seaRange = sea ? Math.round(fleetFuel(sea).fuel / fleetBurn(sea) * fleetSpeed(sea) / WORLD_KM) : 0;
   return out;
 }
+// Flagships (v0.6.5): the admiral's ship goes first, is the one you drive, flies a pennant;
+// when it's lost the admiral moves to another ship (the Grand Admiral at a cost).
+// Officers (v0.6.5): levelling by hand with an upgrade; captains' upgrades in battle; admirals'
+// doctrines (combined arms, size, march, fuel); recruits with upgrades; upgrades owed.
+function officersCheck() {
+  newCampaign('league', 9292);
+  const out = {};
+  const land = playerFleets().find((fl) => fl.domain === 'land'), air = playerFleets().find((fl) => fl.domain === 'air');
+  const sh = fleetShips(land).find((s) => byId('officers', s.captainId)), cap = byId('officers', sh.captainId);
+  gainXp(cap, 150);
+  out.auto = cap.level;                                   // stays 1 until levelled by hand
+  out.can = canLevelUp(cap);
+  out.noPick = levelUp(cap, null);
+  out.up = levelUp(cap, 'loaders');
+  out.after = { level: cap.level, traits: cap.traits.slice(), can: canLevelUp(cap) };
+  // In battle: faster reload for that ship.
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  const B = createCampaignBattle({ mine: land.id, theirs: en.id }, true);
+  const V = B.units.find((u) => u.design._shipId === sh.id);
+  out.reload = V ? +(V.reloadRate || 1).toFixed(2) : 'reserve';
+  // The Grand Admiral's doctrine: combined arms land and air.
+  const ga = grandAdmiral();
+  gainXp(ga, Math.round(150 * Math.pow(3, 1.7)) + 1);    // level 4: command level 2
+  out.gaOwed = picksOwed(ga);
+  const cap0 = fleetCap(land), sp0 = fleetSpeed(land), b0 = fleetBurn(land);
+  out.mixBefore = pickUp(land, fleetShips(air).find((s) => !isSupport(s) && s !== flagshipOf(air)));
+  out.take = takeTrait(ga, 'land_air');
+  const gs = fleetShips(air).find((s) => !isSupport(s) && s !== flagshipOf(air));
+  air.shipIds = air.shipIds.filter((id) => id !== gs.id);
+  out.mix = pickUp(land, gs);
+  out.mixed = fleetShips(land).some((s) => shipStats(s).domain === 'air');
+  const place = world.settlements.find((q) => !q.coastal && battlePlace(q.x, q.y).field === 'inland');
+  const was = [land.x, land.y, en.x, en.y];
+  land.x = place.x + 0.5; land.y = place.y + 0.5; en.x = land.x + 0.5; en.y = land.y;
+  out.deploys = battleSides(land, en).mine.some((s) => s === gs);
+  [land.x, land.y, en.x, en.y] = was;
+  // Doctrines that change numbers (a level-3 admiral given three by hand).
+  ga.traits.push('wide', 'march', 'logistics');
+  out.doctrine = { cap: fleetCap(land) - cap0, speed: +(fleetSpeed(land) / sp0).toFixed(2), burnDrop: fleetBurn(land) < b0 * 1.5 };
+  // Recruits bring upgrades.
+  const fort = world.settlements.find((q) => q.faction === 'league' && q.type === 'fort');
+  makeOffers(fort);
+  out.recruits = fort.offers.filter((o) => o.kind !== 'quartermaster').map((o) => ({ kind: o.kind, level: o.level, traits: o.traits.length }));
+  out.recruitsOk = fort.offers.every((o) => o.traits.length >= o.level - 1 && o.traits.length <= o.level);
+  // An officer from an older save: level 3, no upgrades → 2 owed.
+  const old = { rank: 'captain', level: 3, xp: 300 };
+  out.oldOwed = picksOwed(old);
+  return out;
+}
+function flagshipCheck() {
+  newCampaign('league', 8181);
+  const out = {};
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const f = flagshipOf(land);
+  out.flag = { id: f && f.design, support: isSupport(f), first: battleOrder(land)[0] === f, lastSupport: isSupport(battleOrder(land).slice(-1)[0]) };
+  out.supportFlag = setFlagship(land, fleetShips(land).find(isSupport));
+  out.detach = detachShip(land, f);
+  // In battle: the flagship is the vehicle you drive, with the admiral's pennant.
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  en.x = land.x + 1; en.y = land.y;
+  const B = createCampaignBattle({ mine: land.id, theirs: en.id }, true);
+  out.battle = { me: B.me.design._shipId === f.id, pennant: !!B.me.flagship && B.me.flagship.grand, enemyFlag: B.units.some((V) => V.side === 1 && V.flagship) || B.reserve[1].some((e) => e.design._flag) };
+  // The flagship is lost; the Grand Admiral escapes to another ship.
+  const other = fleetShips(land).find((s) => s !== f && !isSupport(s));
+  const t0 = campaign.treasury, ga = grandAdmiral();
+  ga.xp = 100;
+  const before = [[land, land.flagshipId]];
+  removeShip(f, makeRng(1));
+  const news = [];
+  flagshipsAfterBattle(before, news);
+  out.lost = { newFlag: flagshipOf(land) === other, money: +(campaign.treasury / t0).toFixed(2), xp: Math.round(ga.xp), news: news.length };
+  // Move the flag by hand.
+  const third = fleetShips(land).find((s) => s !== other && !isSupport(s));
+  out.move = third ? setFlagship(land, third) === '' && flagshipOf(land) === third : null;
+  return out;
+}
 function aiCheck(days = 30, as = 'league') {
   newCampaign(as, 9191);
   const t0 = performance.now();

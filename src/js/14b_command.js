@@ -194,16 +194,18 @@ function fleetSpeed(fl) {
   v *= MARCH;
   if (fl.domain === 'sea' && fl.faction === 'league') v *= 1.1;
   if (fl.convoy && fl.faction === campaign.faction && perk('quartermaster_corps')) v *= 1.2;
-  return v;
+  return v * (1 + fleetDoctrine(fl, 'speed'));             // Forced march (15l)
 }
-// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%).
+// Fuel units per hour on the map (08 §8): Σ engines × 0.25 ÷ 100; air × 1.3 (Skyreach −15%);
+// sea × 0.35. Each ship by its own domain (a combined-arms fleet mixes them, 15l).
 function fleetBurn(fl) {
   let b = 0;
-  for (const s of fleetShips(fl)) b += shipStats(s).burn;
-  if (fl.domain === 'air') b *= AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1);
-  if (fl.domain === 'sea') b *= SEA_MAP_FUEL;
+  for (const s of fleetShips(fl)) {
+    const dom = shipStats(s).domain;
+    b += shipStats(s).burn * shipBurnMul(s) * (dom === 'air' ? AIR_MAP_FUEL * (fl.faction === 'skyreach' ? 0.85 : 1) : dom === 'sea' ? SEA_MAP_FUEL : 1);
+  }
   if (fl.faction === campaign.faction && perk('frugal_engines')) b *= 0.9;
-  return b;
+  return b * (1 - fleetDoctrine(fl, 'burn'));
 }
 function fleetFuel(fl) {
   let f = fl.hold.fuel || 0, cap = 0;

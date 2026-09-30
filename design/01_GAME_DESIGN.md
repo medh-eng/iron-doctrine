@@ -397,6 +397,13 @@ Side view, landscape, generated from the location.
 
 - **Captains:** levels 1–10. Level unlocks class access at 1, 3, 5 and 8, and improves AI accuracy and reactions.
 - **Admirals:** levels 1–10. Level sets fleet size (3 → 11) and flagship class.
+- **As built (v0.6.5), producer's play test:**
+  - **Flagships.** Every fleet's admiral (the Grand Admiral too) rides one of its ships, the largest the admiral's level commands (you can move the flag on the fleet panel; support vehicles can't carry it, and the flagship can't be detached). It goes onto the field first, flies a pennant (amber yours, red theirs), is the one you drive at the start, and fights at the admiral's command level if that's above its captain's. When it's destroyed the admiral escapes to another ship of the fleet; for the Grand Admiral that costs 20% of the treasury and 10% of the XP made towards the next level (also when the whole flag fleet is lost).
+  - **Levelling by hand.** Your captains and admirals collect XP as before; on their officer card (the captain's button on the fleet's Ships tab, or the Admiral tab) a Level up button appears when they have it, and each level-up takes one upgrade. The Grand Admiral's level still rises by XP; they choose a doctrine each time their command level rises. Officers from older saves are owed an upgrade for each level already reached.
+  - **Captain upgrades** (each up to 3 times): Gunnery drill (accuracy +6%), Fast loaders (reload 8% faster), Steady nerves (reaction −12%), Fuel discipline (the ship burns 10% less on the map).
+  - **Admiral doctrines** (each once): Combined arms land and air, Combined arms sea and air (aircraft and airships can join that land or sea fleet; each ship fights where its own domain can deploy), Wide command (fleet size +1), Forced march (+10% speed), Fuel doctrine (−10% fuel), Veteran crews (every ship +3% accuracy).
+  - **Recruits** come with the upgrades of their level, and 30% of them bring one more (price +20%).
+  - **The officer card** also shows the captain's ship (or the admiral's flagship): open its design in the Drafting Office, or refit it at the yard where the fleet is docked.
 - **Grand Admiral:**
   - levels 1–30
   - each level gives Command Points
