@@ -61,6 +61,7 @@ function proposeTruce(fid) {
   campaign.treasury -= truceTribute(fid);
   makeTruce(campaign.faction, fid);
   addRep(fid, REL.truceMade);
+  warCount('truces');
   campaign.journal.push(`Day ${campaign.day}: truce with the ${factionOf(fid).name} (tribute ${truceTribute(fid)}).`);
   return '';
 }
@@ -96,6 +97,7 @@ function buyCharter(s) {
   for (const fid of charterFactions(s)) addRep(fid, REL.charterRep);
   captureSettlement(s, campaign.faction);
   delete s.plunder;                                    // bought, not taken
+  warCount('charters');
   campaign.journal.push(`Day ${campaign.day}: bought the charter of ${s.name}.`);
   return '';
 }

@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.5';
+const GAME_VERSION = '0.6.6';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -68,6 +68,10 @@ const DEFAULT_PROFILE = {
   requisition: 150,        // earned from score, spent in the Workshop (v2); new players start with 150
   squad: [],               // design ids fielded in the ladder (v2)
   stats: { battles: 0, kills: 0, cleared: 0 },            // (v2)
+  // Campaign record and captures for the gallery (6d; older saves get these defaults).
+  campaigns: { won: 0, lost: 0 },
+  captured: [],            // enemy designs destroyed in the campaign: { id, name, faction, day, design? }
+  studied: [],             // part ids reverse-engineered in the campaign
   // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
   sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [], scheme: 'league' },
 };
@@ -2696,6 +2700,22 @@ const MEDALS = [
   { id: 'boss', name: 'Boss destroyed', how: 'Destroy a boss.' },
   { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Gauntlet.' },
 ];
+
+// Campaign medals (6d, design/01 §16): feats from the war record (campaign.stats). Facts only.
+const CAMPAIGN_MEDALS = [
+  { id: 'c_first', name: 'First victory', how: 'Win a campaign battle.', stat: 'won', n: 1 },
+  { id: 'c_ten', name: 'Ten victories', how: 'Win 10 campaign battles.', stat: 'won', n: 10 },
+  { id: 'c_wrecks', name: 'Twenty-five wrecks', how: 'Destroy 25 enemy vehicles in the campaign.', stat: 'destroyed', n: 25 },
+  { id: 'c_raider', name: 'Convoy raider', how: 'Beat 5 trade convoys.', stat: 'convoys', n: 5 },
+  { id: 'c_flags', name: 'Flag hunter', how: 'Sink 3 enemy flagships.', stat: 'flagships', n: 3 },
+  { id: 'c_conquest', name: 'Five settlements taken', how: 'Capture 5 settlements by siege.', stat: 'captures', n: 5 },
+  { id: 'c_capital', name: 'A capital taken', how: 'Capture a rival capital.', stat: 'capitals', n: 1 },
+  { id: 'c_charters', name: 'Three charters', how: 'Buy 3 village charters.', stat: 'charters', n: 3 },
+  { id: 'c_truces', name: 'Two truces', how: 'Make 2 truces.', stat: 'truces', n: 2 },
+  { id: 'c_study', name: 'Three studies', how: 'Reverse-engineer 3 part families.', stat: 'studied', n: 3 },
+];
+const WIN_SHARE = 0.6;              // hold this share of all settlements to win (01 §14)
+const JOURNAL_MAX = 400;            // journal entries kept
 
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
@@ -9305,6 +9325,7 @@ function applyBattleOutcome(B) {
   noteFielded([...rec.keys()].map((id) => byId('ships', id)).filter((s) => s && s.faction === campaign.faction).map(shipDesign));
   const flagsBefore = [...B.sides.myFleets, ...B.sides.theirFleets].map((fl) => [fl, flagshipOf(fl) ? fl.flagshipId : null]);
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
+  const destroyedTheirs = [];
   const wrecks = [];
   for (const [id, r] of rec) {
     const ship = byId('ships', id);
@@ -9316,7 +9337,8 @@ function applyBattleOutcome(B) {
     if (r.lost) {
       wrecks.push({ design: d, own: ship.faction === campaign.faction });
       if (ship.faction === campaign.faction) lostMine++;
-      else { lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
+      else {
+        destroyedTheirs.push(ship); lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
       removeShip(ship, rng);
       continue;
     }
@@ -9354,8 +9376,14 @@ function applyBattleOutcome(B) {
   const siegeNote = B.siege ? applySiege(B, win) : '';
   const flagNews = [];
   flagshipsAfterBattle(flagsBefore, flagNews);
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
-  campaign.journal.push(`Day ${campaign.day}: ${summary}`);
+  // The war record, medals and the end of the war (6d).
+  const sunk = flagsBefore.filter(([fl, id]) => id && fl.faction !== campaign.faction && !byId('ships', id)).length;
+  warAfterBattle(win, destroyedTheirs, sides.theirFleets, sunk, lostMine);
+  awardMedals(flagNews);
+  checkWarEnd(flagNews);
+  const base = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
+  campaign.journal.push(`Day ${campaign.day}: ${base}`);       // flagship, medal and war-end news journal themselves
+  const summary = `${base}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaignStore.save();
   return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
 }
@@ -9376,7 +9404,10 @@ function removeShip(ship, rng) {
   const cap = byId('officers', ship.captainId);
   if (cap && cap.rank === 'captain') {
     if (rng.next() < CAPTAIN_SURVIVES) { cap.shipId = null; cap.fleetId = fl ? fl.id : null; }
-    else cap.alive = false;
+    else {
+      cap.alive = false;
+      if (cap.faction === campaign.faction) campaign.journal.push(`Day ${campaign.day}: Capt. ${cap.name} (level ${cap.level}) was lost with the ${shipStats(ship).name}.`);
+    }
   }
 }
 
@@ -9609,6 +9640,10 @@ function applySiege(B, win) {
   s.keepHp = B.siege.keep ? share([B.siege.keep]) : 1;
   const defenderWon = (B.siege.defender === 0) === win;
   if (defenderWon) return ` ${s.name} holds; walls at ${Math.round(s.wallHp * 100)}%.`;
+  if (B.contact.faction === campaign.faction) {           // the war record (6d)
+    warCount('captures');
+    if (s.capital && (s.capitalOf || s.faction) !== campaign.faction) warCount('capitals');
+  }
   return ' ' + captureSettlement(s, B.contact.faction);
 }
 
@@ -9847,6 +9882,7 @@ function placeSettlements(w, seed, playerFaction) {
     if (!capAt) capAt = find(cx, cy, 0, 100, 4, null);
     const cap = add(capAt[0], capAt[1], capType, F.id, F.capital);
     cap.capital = true;
+    cap.capitalOf = F.id;                    // whose capital it was, after any capture (6d)
     // AI factions get a coastal city too; the player's home city is already on the coast (01 §4.3).
     const coast = player ? null : find(cx, cy, 6, 24, 7, (x, y) => isCoastal(w, x, y));
     if (coast) add(coast[0], coast[1], 'city', F.id);
@@ -10130,6 +10166,7 @@ function newCampaign(factionId, seed) {
       if (player) fl.hold.fuel = Math.min(holdCap(fl), START_HOLD_FUEL);
     }
   }
+  campaign.journal.push(`Day 1: the war begins. You command the ${factionOf(factionId).name} from ${world.settlements.find((q) => q.faction === factionId && q.capital).name}.`);
   campaignStore.save();
   return campaign;
 }
@@ -10778,7 +10815,7 @@ function finishJob(s, j, rng) {
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
   if (j.kind === 'stock') return finishStock(s, j);
   if (j.kind === 'missile') { missilesAt(s.store)[j.m] = (missilesAt(s.store)[j.m] || 0) + j.n; return `${s.name}: ${jobName(j)} made.`; }
-  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
+  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); warCount('studied'); galleryPart(j.p); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
     sh.garrison = s.id;
@@ -10980,7 +11017,12 @@ function campaignTick(dtReal) {
       const { income, wages, news } = dailyEconomy();
       campaign.journal.push(`Day ${campaign.day}: income ${Math.round(income)}, wages ${Math.round(wages)}.`);
       for (const n of news) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
-      if (campaign.journal.length > 60) campaign.journal.shift();
+      // Medals and the end of the war (6d); these write their own journal entries.
+      const late = [];
+      awardMedals(late);
+      if (checkWarEnd(late)) events.push({ stop: true, over: true });
+      for (const n of late) events.push({ msg: n });
+      while (campaign.journal.length > JOURNAL_MAX) campaign.journal.shift();
       campaignStore.save();
     }
     if (events.some((e) => e.stop)) campaign.running = false;
@@ -12186,6 +12228,7 @@ function proposeTruce(fid) {
   campaign.treasury -= truceTribute(fid);
   makeTruce(campaign.faction, fid);
   addRep(fid, REL.truceMade);
+  warCount('truces');
   campaign.journal.push(`Day ${campaign.day}: truce with the ${factionOf(fid).name} (tribute ${truceTribute(fid)}).`);
   return '';
 }
@@ -12221,6 +12264,7 @@ function buyCharter(s) {
   for (const fid of charterFactions(s)) addRep(fid, REL.charterRep);
   captureSettlement(s, campaign.faction);
   delete s.plunder;                                    // bought, not taken
+  warCount('charters');
   campaign.journal.push(`Day ${campaign.day}: bought the charter of ${s.name}.`);
   return '';
 }
@@ -12427,6 +12471,97 @@ function recruitTraits(kind, level, rng) {
     o.traits.push(rng.pick(c).id);
   }
   return o.traits;
+}
+
+/* ---------- 15m_war_record.js ---------- */
+/* ==== 15m WAR RECORD: MEDALS, CAPTURES, WINNING AND LOSING ==== */
+// Part 6d (design/01 §14, §16; 02 §8). The campaign keeps a war record (campaign.stats) of
+// battles, wrecks, convoys, flagships, captures, charters, truces and studies; campaign medals are
+// feats from it (07_data CAMPAIGN_MEDALS). Enemy designs you destroy and parts you reverse-
+// engineer go to the blueprint gallery (save.profile, kept across campaigns). Each day the game
+// checks the end of the war: you win by taking every rival capital or holding 60% of all
+// settlements, and lose with no settlements and no fleets. Facts only.
+
+function warStats() {
+  campaign.stats = campaign.stats || {};
+  for (const m of CAMPAIGN_MEDALS) if (campaign.stats[m.stat] === undefined) campaign.stats[m.stat] = 0;
+  if (campaign.stats.lost === undefined) campaign.stats.lost = 0;
+  return campaign.stats;
+}
+function warCount(stat, n = 1) { warStats()[stat] += n; }
+
+// New medals from the record; their names go into the news and the journal.
+function awardMedals(news) {
+  const st = warStats();
+  campaign.medals = campaign.medals || [];
+  for (const m of CAMPAIGN_MEDALS) {
+    if (campaign.medals.includes(m.id) || st[m.stat] < m.n) continue;
+    campaign.medals.push(m.id);
+    const msg = `Medal: ${m.name}.`;
+    campaign.journal.push(`Day ${campaign.day}: ${msg}`);
+    if (news) news.push(msg);
+  }
+}
+
+// ---------- the gallery (save.profile)
+function galleryDesign(ship, faction) {
+  const p = save.profile;
+  const id = ship.design;
+  if (p.captured.some((c) => c.id === id)) return;
+  const d = shipDesign(ship);
+  const entry = { id, name: markName(Object.assign({ family: d.family || d.name }, d)), faction, day: campaign.day };
+  if (!TEMPLATES[id]) entry.design = d;                 // an AI refit: kept whole
+  p.captured.push(entry);
+  if (p.captured.length > 80) p.captured.shift();
+  save.touch('profile');
+}
+function galleryPart(partId) {
+  const p = save.profile;
+  if (!p.studied.includes(partId)) { p.studied.push(partId); save.touch('profile'); }
+}
+
+// ---------- after a battle (applyBattleOutcome)
+// destroyed: enemy ships lost (the ship objects, read before removal); flagsSunk: enemy flagships.
+function warAfterBattle(win, destroyed, theirFleets, flagsSunk, lostMine) {
+  const st = warStats();
+  if (win) st.won++; else st.lost++;
+  st.destroyed += destroyed.length;
+  st.flagships += flagsSunk;
+  if (win && theirFleets.some((fl) => fl.aiConvoy)) st.convoys++;
+  st.lostShips = (st.lostShips || 0) + lostMine;
+  for (const sh of destroyed) galleryDesign(sh, sh.faction);
+}
+
+// ---------- the end of the war (checked each day and after captures)
+// Capitals of the rivals (older saves: the capital's present owner, if it isn't you).
+const rivalCapitals = () => world.settlements.filter((s) => s.capital && (s.capitalOf || s.faction) !== campaign.faction);
+function victoryProgress() {
+  const all = world.settlements.length;
+  const mine = world.settlements.filter((s) => s.faction === campaign.faction).length;
+  const caps = rivalCapitals();
+  return {
+    capitals: caps.filter((s) => s.faction === campaign.faction).length, capitalsAll: caps.length,
+    held: mine, all, share: all ? mine / all : 0, need: Math.ceil(all * WIN_SHARE),
+    fleets: playerFleets().filter((fl) => fl.shipIds.length).length,
+  };
+}
+function checkWarEnd(news) {
+  if (campaign.over) return null;
+  const v = victoryProgress();
+  let res = null;
+  if (v.capitalsAll && v.capitals === v.capitalsAll) res = { result: 'win', how: `every rival capital taken (${v.capitals})` };
+  else if (v.held >= v.need) res = { result: 'win', how: `${v.held} of ${v.all} settlements held` };
+  else if (!v.held && !v.fleets) res = { result: 'lost', how: 'no settlements and no fleets left' };
+  if (!res) return null;
+  campaign.over = Object.assign(res, { day: campaign.day });
+  campaign.running = false;
+  const msg = `${res.result === 'win' ? 'Victory' : 'Defeat'} on day ${campaign.day}: ${res.how}.`;
+  campaign.journal.push(`Day ${campaign.day}: ${msg}`);
+  if (news) news.push(msg);
+  const p = save.profile;
+  p.campaigns[res.result === 'win' ? 'won' : 'lost']++;
+  save.touch('profile');
+  return campaign.over;
 }
 
 /* ---------- 15z_campaign_checks.js ---------- */
@@ -14762,6 +14897,25 @@ SCREENS.blueprints = {
       list.appendChild(card);
     }
     body.appendChild(list);
+    // Campaign captures (6d): enemy designs you destroyed and parts you reverse-engineered.
+    body.appendChild(el('div', 'ws-label', `Campaign captures · ${p.captured.length} designs · campaigns won ${p.campaigns.won}, lost ${p.campaigns.lost}`));
+    const cap = el('div', 'ws-lib bp-list');
+    if (!p.captured.length) cap.appendChild(el('p', 'bp-empty', 'None yet. Every enemy design you destroy in a campaign battle is kept here.'));
+    for (const b of p.captured.slice().reverse()) {
+      const d = b.design ? JSON.parse(JSON.stringify(b.design)) : TEMPLATES[b.id] ? Object.assign(designFromTemplate(b.id), { family: TEMPLATES[b.id].name, mark: 1 }) : null;
+      if (!d) continue;
+      d.paint = d.paint || { scheme: b.faction };
+      const st = statsOf(d);
+      const card = el('div', 'ws-card ws-libcard bp-card');
+      card.appendChild(designThumb(d, 150, 54));
+      card.appendChild(el('b', '', b.name));
+      card.appendChild(el('small', '', `${factionOf(b.faction) ? factionOf(b.faction).name : b.faction} · destroyed on day ${b.day}`));
+      card.appendChild(el('small', '', `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t`));
+      card.appendChild(button('Open in Workshop', () => { SCREENS.designer.returnTo = 'blueprints'; screens.go('designer', { design: d, base: d, owned: true }); }, 'btn btn-small'));
+      cap.appendChild(card);
+    }
+    body.appendChild(cap);
+    if (p.studied.length) body.appendChild(el('p', 'bp-empty', `Reverse-engineered: ${p.studied.map((id) => (PARTS[id] ? PARTS[id].name : id)).join(', ')}`));
     body.appendChild(el('div', 'ws-label', `Medals · ${p.medals.length} of ${MEDALS.length}`));
     const medals = el('div', 'bp-medals');
     for (const m of MEDALS) {
@@ -14980,7 +15134,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
-    top.appendChild(button('Relations', () => openRelations(), 'btn btn-small map-research'));
+    top.appendChild(button('War room', () => openRelations(), 'btn btn-small map-research'));
     top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
@@ -15034,6 +15188,7 @@ SCREENS.map = {
 
   refresh() {
     if (!this.root) return;
+    if (campaign.over && !campaign.overSeen) openWarEnd();      // the end of the war (6d), once
     const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
     this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;
@@ -16315,11 +16470,12 @@ function openSmallDesigner(D, K) {
 }
 
 /* ---------- 16n_screen_relations.js ---------- */
-/* ==== 16n RELATIONS CARD ==== */
+/* ==== 16n WAR ROOM CARD ==== */
 // Part 6c (design/02 map panels, 09 Relations): each faction's relation with you, your reputation
-// with it, contested-border days, and the truce and war buttons. Facts and numbers only.
+// with it, contested-border days, and the truce and war buttons. Part 6d (02 §8): the war journal,
+// campaign medals, and how far you are from winning. Facts and numbers only.
 
-function openRelations() {
+function openRelations(tab = 'relations') {
   const wasRunning = campaign.running;
   campaign.running = false;                    // the clock waits while you choose
   const c = ui.card('', 'card-research');
@@ -16327,12 +16483,15 @@ function openRelations() {
   const draw = () => {
     c.textContent = '';
     const head = el('div', 'rs-head');
-    head.appendChild(el('h2', 'card-title', 'Relations'));
+    head.appendChild(el('h2', 'card-title', 'War room'));
+    head.appendChild(el('span', 'ws-fact', `Day ${campaign.day}`));
     head.appendChild(el('span', 'ws-fact', `Money ${Math.floor(campaign.treasury)}`));
     c.appendChild(head);
     const top = el('div', 'card-row rs-tabs');
+    for (const [id, label] of [['relations', 'Relations'], ['journal', 'Journal'], ['medals', 'Medals'], ['victory', 'Victory']]) top.appendChild(button(label, () => { tab = id; draw(); }, 'btn btn-small map-tab' + (tab === id ? ' on' : '')));
     top.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
     c.appendChild(top);
+    if (tab !== 'relations') { c.appendChild(warRoomTab(tab)); return; }
     const box = el('div', 'rel-list');
     relState();
     for (const F of FACTIONS) {
@@ -16375,6 +16534,65 @@ function openRelations() {
   draw();
   close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
 }
+
+// The other War room tabs.
+function warRoomTab(tab) {
+  const box = el('div', 'rel-list');
+  const line = (t, cls = 'card-text map-note') => box.appendChild(el('div', cls, t));
+  if (tab === 'journal') {
+    // Newest first; the daily income lines can be hidden.
+    const list = campaign.journal.slice().reverse().filter((j) => SCREENS.map.journalAll || !/: income \d/.test(j));
+    box.appendChild(button(SCREENS.map.journalAll ? 'Hide daily income' : 'Show daily income', () => { SCREENS.map.journalAll = !SCREENS.map.journalAll; const n = warRoomTab('journal'); box.replaceWith(n); }, 'btn btn-small'));
+    if (!list.length) line('Nothing yet.');
+    for (const j of list) line(j, 'card-text rel-journal');
+  } else if (tab === 'medals') {
+    const got = campaign.medals || [];
+    line(`${got.length} of ${CAMPAIGN_MEDALS.length}`, 'ws-label');
+    const st = warStats();
+    for (const m of CAMPAIGN_MEDALS) {
+      const r = el('div', 'bp-medal' + (got.includes(m.id) ? ' got' : ''));
+      r.appendChild(el('span', 'bp-dot', got.includes(m.id) ? '★' : '·'));
+      const t = el('span', 'bp-medal-txt');
+      t.appendChild(el('b', '', m.name));
+      t.appendChild(el('small', '', `${m.how} (${Math.min(st[m.stat], m.n)} of ${m.n})`));
+      r.appendChild(t);
+      box.appendChild(r);
+    }
+    line('War record', 'ws-label');
+    line(`Battles won ${st.won} · lost ${st.lost} · enemy vehicles destroyed ${st.destroyed} · yours lost ${st.lostShips || 0} · convoys beaten ${st.convoys} · enemy flagships sunk ${st.flagships}`);
+    line(`Settlements captured ${st.captures} (capitals ${st.capitals}) · charters ${st.charters} · truces ${st.truces} · families reverse-engineered ${st.studied}`);
+  } else {
+    const v = victoryProgress();
+    if (campaign.over) line(`${campaign.over.result === 'win' ? 'Victory' : 'Defeat'} on day ${campaign.over.day}: ${campaign.over.how}.`, 'ws-label');
+    line('You win by taking every rival capital, or by holding 60% of all settlements. You lose with no settlements and no fleets left.');
+    line(`Rival capitals taken: ${v.capitals} of ${v.capitalsAll}`);
+    line(`Settlements held: ${v.held} of ${v.all} (${Math.round(v.share * 100)}%; ${v.need} needed)`);
+    line(`Fleets: ${v.fleets}`);
+    for (const F of FACTIONS) line(`${F.name}: ${settlementsOf(F.id).length} settlements${F.id === campaign.faction ? ' (you)' : ''}`);
+    line(`Neutral: ${world.settlements.filter((s) => !s.faction).length}`);
+  }
+  return box;
+}
+
+// The end of the war (6d): shown once, from the map. A victory can be played on.
+function openWarEnd() {
+  const o = campaign.over;
+  if (!o) return;
+  campaign.overSeen = true;
+  const c = ui.card(o.result === 'win' ? 'Victory' : 'Defeat');
+  const st = warStats();
+  c.appendChild(el('p', 'card-text', `Day ${o.day}: ${o.how}.`));
+  c.appendChild(el('p', 'card-text', `Battles won ${st.won}, lost ${st.lost}. Enemy vehicles destroyed ${st.destroyed}. Settlements captured ${st.captures}. Medals ${(campaign.medals || []).length} of ${CAMPAIGN_MEDALS.length}.`));
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('War room', () => { close(); openRelations('victory'); }, 'btn'));
+  if (o.result === 'win') row.appendChild(button('Keep playing', () => close(), 'btn btn-primary'));
+  row.appendChild(button('Title', () => { close(); campaignStore.save(); screens.go('title'); }, o.result === 'win' ? 'btn' : 'btn btn-primary'));
+  c.appendChild(row);
+  close = ui.open(c);
+  audio.sfx(o.result === 'win' ? 'fanfare' : 'lifeLost');
+}
+
 
 /* ---------- 16o_screen_officers.js ---------- */
 /* ==== 16o OFFICER CARD ==== */

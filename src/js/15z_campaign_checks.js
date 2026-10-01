@@ -658,6 +658,49 @@ function startFleetCheck() {
 // when it's lost the admiral moves to another ship (the Grand Admiral at a cost).
 // Officers (v0.6.5): levelling by hand with an upgrade; captains' upgrades in battle; admirals'
 // doctrines (combined arms, size, march, fuel); recruits with upgrades; upgrades owed.
+// The war record (6d): battles counted, medals, the gallery, winning and losing.
+function warCheck() {
+  newCampaign('league', 3131);
+  const out = {};
+  const p = save.profile, cap0 = p.captured.length, won0 = p.campaigns.won, lost0 = p.campaigns.lost;
+  out.capitals = world.settlements.filter((s) => s.capital).every((s) => s.capitalOf === s.faction);
+  // A battle: counted, enemy designs to the gallery.
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  en.x = land.x + 1; en.y = land.y;
+  const res = autoResolve(land, en);
+  const st = warStats();
+  out.battle = { counted: st.won + st.lost === 1, destroyed: st.destroyed === res.lostTheirs, gallery: p.captured.length - cap0 >= (res.lostTheirs ? 1 : 0) };
+  // Medals.
+  st.won = Math.max(st.won, 1);
+  const news = [];
+  awardMedals(news);
+  out.medal = (campaign.medals || []).includes('c_first') && campaign.journal.some((j) => /Medal: First victory/.test(j));
+  awardMedals(news);
+  out.once = campaign.journal.filter((j) => /Medal: First victory/.test(j)).length === 1;
+  // Not over yet; 60% of settlements wins.
+  out.notYet = checkWarEnd([]) === null;
+  const v = victoryProgress();
+  const others = world.settlements.filter((s) => s.faction !== 'league' && !s.capital);
+  for (const s of others.slice(0, Math.max(0, v.need - v.held))) s.faction = 'league';
+  out.share = checkWarEnd([]);
+  out.shareWin = !!out.share && out.share.result === 'win' && /settlements held/.test(out.share.how) && !campaign.running && p.campaigns.won === won0 + 1;
+  // Every rival capital wins.
+  newCampaign('league', 3132);
+  for (const s of rivalCapitals()) s.faction = 'league';
+  const c = checkWarEnd([]);
+  out.capitalWin = !!c && c.result === 'win' && /capital/.test(c.how);
+  // No settlements and no fleets loses.
+  newCampaign('league', 3133);
+  for (const s of world.settlements) if (s.faction === 'league') s.faction = null;
+  for (const fl of playerFleets()) fl.shipIds = [];
+  const l = checkWarEnd([]);
+  out.lose = !!l && l.result === 'lost' && p.campaigns.lost === lost0 + 1;
+  // Reverse-engineered parts.
+  galleryPart('c105');
+  out.studied = p.studied.includes('c105');
+  return out;
+}
 function officersCheck() {
   newCampaign('league', 9292);
   const out = {};

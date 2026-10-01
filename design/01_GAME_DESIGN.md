@@ -446,6 +446,7 @@ Full tree and perks: 08 §11–12.
 - **Win:** take every rival capital, or hold 60% of all settlements.
 - **Grand Admiral's flagship destroyed:** you escape to your nearest settlement, losing 20% of your money and 10% of your XP towards the next level.
 - **Lose:** when you have no settlements and no fleets left.
+- **As built (6d):** checked each day and after every battle. The end card states the day, how, and the war record (battles, wrecks, captures, medals); after a victory you can keep playing. Captured capitals count wherever they were the rival's capital at the start. Your record of campaigns won and lost is kept across campaigns.
 
 ## 15. Battle Simulator
 
@@ -465,3 +466,4 @@ It is also the test range for the Drafting Office.
 - **Captured-settlement ceremony:** the flag changes and a fanfare plays.
 - **Captured blueprints:** recovered enemy parts can be reverse-engineered at a metropolis to unlock that family. Captured blueprints make up the title-screen gallery.
 - **Medals and war journal** entries for feats.
+- **As built (6d):** ten campaign medals from the war record (first victory, ten victories, 25 wrecks, 5 convoys beaten, 3 enemy flagships sunk, 5 settlements captured, a rival capital, 3 charters, 2 truces, 3 families reverse-engineered). The War room (the map's top bar) has tabs Relations, Journal (newest first; daily income hidden unless asked; up to 400 entries, including battles, captures, medals, new levels, refits and lost captains), Medals (with the war record) and Victory (capitals taken, settlements held of the 60% needed, every faction's count). Every enemy design you destroy in a campaign battle, and every part family you reverse-engineer, goes to the Blueprints screen's Campaign captures, kept across campaigns.

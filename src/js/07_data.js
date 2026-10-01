@@ -296,6 +296,22 @@ const MEDALS = [
   { id: 'level10', name: 'Level 10 cleared', how: 'Clear level 10 of the Gauntlet.' },
 ];
 
+// Campaign medals (6d, design/01 §16): feats from the war record (campaign.stats). Facts only.
+const CAMPAIGN_MEDALS = [
+  { id: 'c_first', name: 'First victory', how: 'Win a campaign battle.', stat: 'won', n: 1 },
+  { id: 'c_ten', name: 'Ten victories', how: 'Win 10 campaign battles.', stat: 'won', n: 10 },
+  { id: 'c_wrecks', name: 'Twenty-five wrecks', how: 'Destroy 25 enemy vehicles in the campaign.', stat: 'destroyed', n: 25 },
+  { id: 'c_raider', name: 'Convoy raider', how: 'Beat 5 trade convoys.', stat: 'convoys', n: 5 },
+  { id: 'c_flags', name: 'Flag hunter', how: 'Sink 3 enemy flagships.', stat: 'flagships', n: 3 },
+  { id: 'c_conquest', name: 'Five settlements taken', how: 'Capture 5 settlements by siege.', stat: 'captures', n: 5 },
+  { id: 'c_capital', name: 'A capital taken', how: 'Capture a rival capital.', stat: 'capitals', n: 1 },
+  { id: 'c_charters', name: 'Three charters', how: 'Buy 3 village charters.', stat: 'charters', n: 3 },
+  { id: 'c_truces', name: 'Two truces', how: 'Make 2 truces.', stat: 'truces', n: 2 },
+  { id: 'c_study', name: 'Three studies', how: 'Reverse-engineer 3 part families.', stat: 'studied', n: 3 },
+];
+const WIN_SHARE = 0.6;              // hold this share of all settlements to win (01 §14)
+const JOURNAL_MAX = 400;            // journal entries kept
+
 // Test range (Workshop). Land: flat start, a hill, mud, a trench, forest. Sea: a short
 // beach and open water with a shoal. No enemies.
 // ---------- Battle Simulator (design/01 §15): a battlefield from the player's choices.

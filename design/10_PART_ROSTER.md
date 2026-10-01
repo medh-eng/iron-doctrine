@@ -144,3 +144,13 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 ## Batch K: art for the Part 2d logistics parts and the redrawn drone parts
 
 - **K1 integrated:** `blade`, `bridge_l`, `ramp`, `tank_c`, `troop`, and `drotor`, `dcharge`, `dlaser` at 2×1 (art only; matched the game exactly).
+
+## Requested 2026-10-01 (status: todo)
+
+- **I3, Harbour League and Directorate materials:** `clipper` (Clipper hull: light, fast sea material, less armour; tier 1) and `slab` (Slab armour: cheap, very heavy; tier 1). materials.json entries with `look` and `unlock: {faction}`; no SVG.
+- **I4, Skyreach parts:** `sail_vane` (free thrust in wind, weak in storms; the wind mechanic is built after delivery) and `crows_nest` (spotting, fragile).
+- **I5, Salvage Clans:** `magnet_crane` (better salvage, draws power) and the `patchwork` material (cheap, varied, unreliable).
+- **H5, Levitator:** `levitator` (lift, tier 4, 2×2, numbers in 05).
+- **L1, faction designs tier 1** and **L2, tier 2:** for each faction, a tank, a corvette and a gunship using only parts of that tier or lower (`<faction>_tank_t1` etc.), in `src/vehicles/`, for AI builds, AI refits and recruits.
+- Later: wall and keep pieces for sieges (when sieges draw them).
+

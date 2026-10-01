@@ -46,8 +46,9 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 15j_relations.js       relations (6c): reputation, truces, war, charters, AI truces (campaign.rep, tension, lastFought)
 15k_flagships.js       flagships (v0.6.5): the admiral's ship, battle order, the flag lost or moved
 15l_officers.js        officers (v0.6.5): levelling by hand, upgrades and doctrines, combined arms, recruits' upgrades
+15m_war_record.js      the war record (6d): campaign medals, gallery captures, winning and losing
 16m_screen_missiles.js the Drafting Office's Missile and Drone tabs (one shared card)
-16n_screen_relations.js the map's Relations card (6c)
+16n_screen_relations.js the map's War room card: relations (6c), journal, medals, victory, the end card (6d)
 16o_screen_officers.js the officer card (v0.6.5)
 10h_energy.js          energy weapons (5d): power and capacitors, weapon heat, laser beams, plasma, flamethrowers, damage types
 10i_fab_clamps.js      fabricators, release clamps and detachable sections, the battle's music era (5e)
