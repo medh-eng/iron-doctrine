@@ -1,0 +1,65 @@
+{
+  "id": "sail_vane",
+  "name": "Sail vane",
+  "family": "sail",
+  "variant": "vane",
+  "category": "mobility",
+  "tier": 1,
+  "domains": [
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 3
+  },
+  "stats": {
+    "mass": 120,
+    "hp": 25,
+    "armor": 1,
+    "power": 0,
+    "rel": 0.998
+  },
+  "behaviour": {
+    "sail": true,
+    "info": "Free thrust in wind, no fuel; weak in storms"
+  },
+  "cost": {
+    "wood": 3,
+    "metal": 1,
+    "money": 20
+  },
+  "craftAt": "city",
+  "unlock": {
+    "faction": "skyreach"
+  },
+  "pros": [
+    "Thrust from wind: no fuel, no engine"
+  ],
+  "cons": [
+    "HP 25 (fragile in storms)",
+    "Armour 1",
+    "Footprint 2×3"
+  ],
+  "balanceNote": "Skyreach Concord signature part (09 §3): free thrust in wind, weak in storms. Declared as family \"sail\", variant \"vane\" so that the requested id sail_vane satisfies the checker's family_variant rule; there is no std sail to compare with, so the stats are the request's.",
+  "notes": "Faction signature part (design/09). Art: ivory ribbed fin sail with brass battens and a P2-painted panel, P3 trim along the leech, slim brass-hooped mast, boom and sheet to a deck winch, P1 mast step. The sail is the moving group (role turret, pivot on the mast) so the game can swing it to the wind.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 1.0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.6,
+      2.95
+    ]
+  },
+  "moving": {
+    "sail": {
+      "pivot": [
+        0.375,
+        1.0625
+      ]
+    }
+  }
+}

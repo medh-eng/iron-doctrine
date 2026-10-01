@@ -1,0 +1,63 @@
+{
+  "id": "levitator",
+  "name": "Levitator",
+  "family": "levitator",
+  "variant": "std",
+  "category": "lift",
+  "tier": 4,
+  "domains": [
+    "airship"
+  ],
+  "footprint": {
+    "w": 2,
+    "h": 2
+  },
+  "stats": {
+    "mass": 400,
+    "hp": 80,
+    "armor": 5,
+    "power": -250,
+    "rel": 0.98,
+    "liftForce": 78000,
+    "heat": 40
+  },
+  "cost": {
+    "metal": 6,
+    "elec": 10,
+    "scrap": 12,
+    "money": 500
+  },
+  "craftAt": "metropolis",
+  "unlock": {
+    "tech": "lift_levitator"
+  },
+  "pros": [],
+  "cons": [],
+  "notes": "Precursor field lifter (design/05). Art: smooth alloy bell housing (P1) with a P3 band, P2 mount flange with two bolts, glowing Precursor line channels and a core node, twin heat vents, and a dark emitter ring with a teal glow band; a faint teal field under the ring lies in the 0.25-cell bottom overhang. No moving parts.",
+  "overhang": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0.25
+  },
+  "anchors": {
+    "mount": [
+      1,
+      0.05
+    ],
+    "thrust": [
+      1,
+      2.2
+    ],
+    "exhaust": [
+      [
+        0.5,
+        0.55
+      ],
+      [
+        1.5,
+        0.55
+      ]
+    ]
+  }
+}

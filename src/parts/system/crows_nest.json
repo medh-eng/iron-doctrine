@@ -1,0 +1,61 @@
+{
+  "id": "crows_nest",
+  "name": "Crow's nest",
+  "family": "crows",
+  "variant": "nest",
+  "category": "system",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea",
+    "airship"
+  ],
+  "footprint": {
+    "w": 1,
+    "h": 2
+  },
+  "stats": {
+    "mass": 60,
+    "hp": 8,
+    "armor": 0,
+    "power": 0,
+    "rel": 0.998,
+    "spot": 1.9
+  },
+  "cost": {
+    "wood": 2,
+    "metal": 1,
+    "elec": 1
+  },
+  "craftAt": "city",
+  "unlock": {
+    "faction": "skyreach"
+  },
+  "pros": [
+    "Spotting 1.9 (+36% over optics)"
+  ],
+  "cons": [
+    "HP 8 (−20% vs optics)",
+    "No armour",
+    "Mass 60 kg (+100%)",
+    "Footprint 1×2 (+100% cells)"
+  ],
+  "balanceNote": "Skyreach Concord signature part (09 §3): spotting, fragile. Declared as family \"crows\", variant \"nest\" so that the requested id crows_nest satisfies the checker's family_variant rule; compared with optics by hand.",
+  "notes": "Faction signature part (design/09). Art: brass-railed lookout basket (P1 panel, P2 band) on a slim mast with a rope ladder, brass telescope resting on the rail, small P3 pennant on a finial pole, P1 plinth.",
+  "overhang": {
+    "left": 0,
+    "right": 0.5,
+    "top": 0.5,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      0.5,
+      1.95
+    ],
+    "eye": [
+      1.4,
+      0.05
+    ]
+  }
+}

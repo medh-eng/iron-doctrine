@@ -145,7 +145,9 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 
 - **K1 integrated:** `blade`, `bridge_l`, `ramp`, `tank_c`, `troop`, and `drotor`, `dcharge`, `dlaser` at 2×1 (art only; matched the game exactly).
 
-## Requested 2026-10-01 (status: todo)
+## Requested 2026-10-01 (status: integrated 2026-10-01, v0.6.7)
+
+- **Integrated:** all six batches (I3, I4, I5, H5, L1, L2) passed the checks with no format errors; existing parts unchanged. The 30 L1/L2 designs pass the design rules, stay within their tier and use only their own faction's signature parts. Still to wire in code: faction-only unlock for the three materials, the sail vane's wind thrust, the magnet crane's salvage bonus, patchwork's per-cell variation, and the AI and recruits using the L1/L2 designs.
 
 - **I3, Harbour League and Directorate materials:** `clipper` (Clipper hull: light, fast sea material, less armour; tier 1) and `slab` (Slab armour: cheap, very heavy; tier 1). materials.json entries with `look` and `unlock: {faction}`; no SVG.
 - **I4, Skyreach parts:** `sail_vane` (free thrust in wind, weak in storms; the wind mechanic is built after delivery) and `crows_nest` (spotting, fragile).
