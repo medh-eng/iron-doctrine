@@ -33,6 +33,25 @@ SCREENS.blueprints = {
       list.appendChild(card);
     }
     body.appendChild(list);
+    // Campaign captures (6d): enemy designs you destroyed and parts you reverse-engineered.
+    body.appendChild(el('div', 'ws-label', `Campaign captures · ${p.captured.length} designs · campaigns won ${p.campaigns.won}, lost ${p.campaigns.lost}`));
+    const cap = el('div', 'ws-lib bp-list');
+    if (!p.captured.length) cap.appendChild(el('p', 'bp-empty', 'None yet. Every enemy design you destroy in a campaign battle is kept here.'));
+    for (const b of p.captured.slice().reverse()) {
+      const d = b.design ? JSON.parse(JSON.stringify(b.design)) : TEMPLATES[b.id] ? Object.assign(designFromTemplate(b.id), { family: TEMPLATES[b.id].name, mark: 1 }) : null;
+      if (!d) continue;
+      d.paint = d.paint || { scheme: b.faction };
+      const st = statsOf(d);
+      const card = el('div', 'ws-card ws-libcard bp-card');
+      card.appendChild(designThumb(d, 150, 54));
+      card.appendChild(el('b', '', b.name));
+      card.appendChild(el('small', '', `${factionOf(b.faction) ? factionOf(b.faction).name : b.faction} · destroyed on day ${b.day}`));
+      card.appendChild(el('small', '', `${(st.mass / 1000).toFixed(1)} t · ${st.powerToWeight.toFixed(1)} kW/t`));
+      card.appendChild(button('Open in Workshop', () => { SCREENS.designer.returnTo = 'blueprints'; screens.go('designer', { design: d, base: d, owned: true }); }, 'btn btn-small'));
+      cap.appendChild(card);
+    }
+    body.appendChild(cap);
+    if (p.studied.length) body.appendChild(el('p', 'bp-empty', `Reverse-engineered: ${p.studied.map((id) => (PARTS[id] ? PARTS[id].name : id)).join(', ')}`));
     body.appendChild(el('div', 'ws-label', `Medals · ${p.medals.length} of ${MEDALS.length}`));
     const medals = el('div', 'bp-medals');
     for (const m of MEDALS) {

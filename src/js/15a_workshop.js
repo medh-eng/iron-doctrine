@@ -278,7 +278,7 @@ function finishJob(s, j, rng) {
   if (j.kind === 'refine') { s.store.elec += j.n; return `${s.name}: ${j.n} electronics refined.`; }
   if (j.kind === 'stock') return finishStock(s, j);
   if (j.kind === 'missile') { missilesAt(s.store)[j.m] = (missilesAt(s.store)[j.m] || 0) + j.n; return `${s.name}: ${jobName(j)} made.`; }
-  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
+  if (j.kind === 'study') { (campaign.unlocked = campaign.unlocked || []).push(j.p); gaXpFor('reverse'); warCount('studied'); galleryPart(j.p); return `${s.name}: the ${PARTS[j.p].name} family can now be made.`; }
   if (j.kind === 'ship') {
     const sh = makeShip(j.design, campaign.faction, rng);
     sh.garrison = s.id;

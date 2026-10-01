@@ -145,6 +145,10 @@ function applySiege(B, win) {
   s.keepHp = B.siege.keep ? share([B.siege.keep]) : 1;
   const defenderWon = (B.siege.defender === 0) === win;
   if (defenderWon) return ` ${s.name} holds; walls at ${Math.round(s.wallHp * 100)}%.`;
+  if (B.contact.faction === campaign.faction) {           // the war record (6d)
+    warCount('captures');
+    if (s.capital && (s.capitalOf || s.faction) !== campaign.faction) warCount('capitals');
+  }
   return ' ' + captureSettlement(s, B.contact.faction);
 }
 

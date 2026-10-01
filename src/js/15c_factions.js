@@ -138,7 +138,12 @@ function campaignTick(dtReal) {
       const { income, wages, news } = dailyEconomy();
       campaign.journal.push(`Day ${campaign.day}: income ${Math.round(income)}, wages ${Math.round(wages)}.`);
       for (const n of news) { campaign.journal.push(`Day ${campaign.day}: ${n}`); events.push({ msg: n }); }
-      if (campaign.journal.length > 60) campaign.journal.shift();
+      // Medals and the end of the war (6d); these write their own journal entries.
+      const late = [];
+      awardMedals(late);
+      if (checkWarEnd(late)) events.push({ stop: true, over: true });
+      for (const n of late) events.push({ msg: n });
+      while (campaign.journal.length > JOURNAL_MAX) campaign.journal.shift();
       campaignStore.save();
     }
     if (events.some((e) => e.stop)) campaign.running = false;

@@ -45,7 +45,7 @@ SCREENS.map = {
     this.cargoEl = el('span', 'map-fact map-cargo');
     top.appendChild(this.dateEl); top.appendChild(this.moneyEl); top.appendChild(this.cargoEl);
     const sp = el('span', 'map-spacer'); top.appendChild(sp);
-    top.appendChild(button('Relations', () => openRelations(), 'btn btn-small map-research'));
+    top.appendChild(button('War room', () => openRelations(), 'btn btn-small map-research'));
     top.appendChild(button('Research', () => openResearch(), 'btn btn-small map-research'));
     top.appendChild(button('❚❚', () => pauseGame(), 'btn btn-small map-icon'));
     top.appendChild(button('⚙', () => openSettingsPaused(), 'btn btn-small map-icon'));
@@ -99,6 +99,7 @@ SCREENS.map = {
 
   refresh() {
     if (!this.root) return;
+    if (campaign.over && !campaign.overSeen) openWarEnd();      // the end of the war (6d), once
     const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
     this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;

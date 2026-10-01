@@ -1,8 +1,9 @@
-/* ==== 16n RELATIONS CARD ==== */
+/* ==== 16n WAR ROOM CARD ==== */
 // Part 6c (design/02 map panels, 09 Relations): each faction's relation with you, your reputation
-// with it, contested-border days, and the truce and war buttons. Facts and numbers only.
+// with it, contested-border days, and the truce and war buttons. Part 6d (02 §8): the war journal,
+// campaign medals, and how far you are from winning. Facts and numbers only.
 
-function openRelations() {
+function openRelations(tab = 'relations') {
   const wasRunning = campaign.running;
   campaign.running = false;                    // the clock waits while you choose
   const c = ui.card('', 'card-research');
@@ -10,12 +11,15 @@ function openRelations() {
   const draw = () => {
     c.textContent = '';
     const head = el('div', 'rs-head');
-    head.appendChild(el('h2', 'card-title', 'Relations'));
+    head.appendChild(el('h2', 'card-title', 'War room'));
+    head.appendChild(el('span', 'ws-fact', `Day ${campaign.day}`));
     head.appendChild(el('span', 'ws-fact', `Money ${Math.floor(campaign.treasury)}`));
     c.appendChild(head);
     const top = el('div', 'card-row rs-tabs');
+    for (const [id, label] of [['relations', 'Relations'], ['journal', 'Journal'], ['medals', 'Medals'], ['victory', 'Victory']]) top.appendChild(button(label, () => { tab = id; draw(); }, 'btn btn-small map-tab' + (tab === id ? ' on' : '')));
     top.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
     c.appendChild(top);
+    if (tab !== 'relations') { c.appendChild(warRoomTab(tab)); return; }
     const box = el('div', 'rel-list');
     relState();
     for (const F of FACTIONS) {
@@ -58,3 +62,62 @@ function openRelations() {
   draw();
   close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
 }
+
+// The other War room tabs.
+function warRoomTab(tab) {
+  const box = el('div', 'rel-list');
+  const line = (t, cls = 'card-text map-note') => box.appendChild(el('div', cls, t));
+  if (tab === 'journal') {
+    // Newest first; the daily income lines can be hidden.
+    const list = campaign.journal.slice().reverse().filter((j) => SCREENS.map.journalAll || !/: income \d/.test(j));
+    box.appendChild(button(SCREENS.map.journalAll ? 'Hide daily income' : 'Show daily income', () => { SCREENS.map.journalAll = !SCREENS.map.journalAll; const n = warRoomTab('journal'); box.replaceWith(n); }, 'btn btn-small'));
+    if (!list.length) line('Nothing yet.');
+    for (const j of list) line(j, 'card-text rel-journal');
+  } else if (tab === 'medals') {
+    const got = campaign.medals || [];
+    line(`${got.length} of ${CAMPAIGN_MEDALS.length}`, 'ws-label');
+    const st = warStats();
+    for (const m of CAMPAIGN_MEDALS) {
+      const r = el('div', 'bp-medal' + (got.includes(m.id) ? ' got' : ''));
+      r.appendChild(el('span', 'bp-dot', got.includes(m.id) ? '★' : '·'));
+      const t = el('span', 'bp-medal-txt');
+      t.appendChild(el('b', '', m.name));
+      t.appendChild(el('small', '', `${m.how} (${Math.min(st[m.stat], m.n)} of ${m.n})`));
+      r.appendChild(t);
+      box.appendChild(r);
+    }
+    line('War record', 'ws-label');
+    line(`Battles won ${st.won} · lost ${st.lost} · enemy vehicles destroyed ${st.destroyed} · yours lost ${st.lostShips || 0} · convoys beaten ${st.convoys} · enemy flagships sunk ${st.flagships}`);
+    line(`Settlements captured ${st.captures} (capitals ${st.capitals}) · charters ${st.charters} · truces ${st.truces} · families reverse-engineered ${st.studied}`);
+  } else {
+    const v = victoryProgress();
+    if (campaign.over) line(`${campaign.over.result === 'win' ? 'Victory' : 'Defeat'} on day ${campaign.over.day}: ${campaign.over.how}.`, 'ws-label');
+    line('You win by taking every rival capital, or by holding 60% of all settlements. You lose with no settlements and no fleets left.');
+    line(`Rival capitals taken: ${v.capitals} of ${v.capitalsAll}`);
+    line(`Settlements held: ${v.held} of ${v.all} (${Math.round(v.share * 100)}%; ${v.need} needed)`);
+    line(`Fleets: ${v.fleets}`);
+    for (const F of FACTIONS) line(`${F.name}: ${settlementsOf(F.id).length} settlements${F.id === campaign.faction ? ' (you)' : ''}`);
+    line(`Neutral: ${world.settlements.filter((s) => !s.faction).length}`);
+  }
+  return box;
+}
+
+// The end of the war (6d): shown once, from the map. A victory can be played on.
+function openWarEnd() {
+  const o = campaign.over;
+  if (!o) return;
+  campaign.overSeen = true;
+  const c = ui.card(o.result === 'win' ? 'Victory' : 'Defeat');
+  const st = warStats();
+  c.appendChild(el('p', 'card-text', `Day ${o.day}: ${o.how}.`));
+  c.appendChild(el('p', 'card-text', `Battles won ${st.won}, lost ${st.lost}. Enemy vehicles destroyed ${st.destroyed}. Settlements captured ${st.captures}. Medals ${(campaign.medals || []).length} of ${CAMPAIGN_MEDALS.length}.`));
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('War room', () => { close(); openRelations('victory'); }, 'btn'));
+  if (o.result === 'win') row.appendChild(button('Keep playing', () => close(), 'btn btn-primary'));
+  row.appendChild(button('Title', () => { close(); campaignStore.save(); screens.go('title'); }, o.result === 'win' ? 'btn' : 'btn btn-primary'));
+  c.appendChild(row);
+  close = ui.open(c);
+  audio.sfx(o.result === 'win' ? 'fanfare' : 'lifeLost');
+}
+

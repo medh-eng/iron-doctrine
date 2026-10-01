@@ -846,6 +846,11 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         OC(oc.gaOwed === 1 && oc.mixBefore !== '' && oc.take === '' && oc.mix === '' && oc.mixed && oc.deploys, 'combined-arms doctrine wrong');
         OC(oc.doctrine.cap === 1 && oc.doctrine.speed === 1.1 && oc.doctrine.burnDrop && oc.recruitsOk && oc.recruits.length > 0 && oc.oldOwed === 2, 'doctrines, recruits or owed upgrades wrong');
         steps.push('officers');
+        const wr = await G(() => window.__GAME__.warCheck());
+        const WC = (c, what) => check(c, `${what} ${JSON.stringify(wr)}`);
+        WC(wr.capitals && wr.battle.counted && wr.battle.destroyed && wr.battle.gallery && wr.medal && wr.once, 'war record, medals or gallery wrong');
+        WC(wr.notYet && wr.shareWin && wr.capitalWin && wr.lose && wr.studied, 'winning or losing the war wrong');
+        steps.push('war record');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -878,10 +883,17 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
       await wait(200);
       // Relations (Part 6c): one row per other faction.
-      await tapButton('Relations');
+      await tapButton('War room');
       await wait(200);
       check((await page.locator('.rel-row').count()) === 4, 'the Relations card does not list 4 factions');
       await shot('23e-relations');
+      await page.locator('.card-research').getByRole('button', { name: 'Journal', exact: true }).click();
+      await wait(150);
+      check((await page.locator('.rel-journal').count()) > 0, 'the war journal is empty');
+      await shot('23g-journal');
+      await page.locator('.card-research').getByRole('button', { name: 'Victory', exact: true }).click();
+      await wait(150);
+      await shot('23h-victory');
       await page.locator('.card-research').getByRole('button', { name: 'Close', exact: true }).click();
       await wait(200);
       // Officer card (v0.6.5): a captain of the flag fleet.

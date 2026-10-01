@@ -130,6 +130,7 @@ function applyBattleOutcome(B) {
   noteFielded([...rec.keys()].map((id) => byId('ships', id)).filter((s) => s && s.faction === campaign.faction).map(shipDesign));
   const flagsBefore = [...B.sides.myFleets, ...B.sides.theirFleets].map((fl) => [fl, flagshipOf(fl) ? fl.flagshipId : null]);
   let lostMine = 0, lostTheirs = 0, bounty = 0, gaXp = 0;
+  const destroyedTheirs = [];
   const wrecks = [];
   for (const [id, r] of rec) {
     const ship = byId('ships', id);
@@ -141,7 +142,8 @@ function applyBattleOutcome(B) {
     if (r.lost) {
       wrecks.push({ design: d, own: ship.faction === campaign.faction });
       if (ship.faction === campaign.faction) lostMine++;
-      else { lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
+      else {
+        destroyedTheirs.push(ship); lostTheirs++; bounty += st.cost * BOUNTY; const cls = classById(st.cls); gaXp += 40 * Math.pow(2, cls ? [1, 3, 5, 8].indexOf(cls.captain) : 0); }
       removeShip(ship, rng);
       continue;
     }
@@ -179,8 +181,14 @@ function applyBattleOutcome(B) {
   const siegeNote = B.siege ? applySiege(B, win) : '';
   const flagNews = [];
   flagshipsAfterBattle(flagsBefore, flagNews);
-  const summary = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
-  campaign.journal.push(`Day ${campaign.day}: ${summary}`);
+  // The war record, medals and the end of the war (6d).
+  const sunk = flagsBefore.filter(([fl, id]) => id && fl.faction !== campaign.faction && !byId('ships', id)).length;
+  warAfterBattle(win, destroyedTheirs, sides.theirFleets, sunk, lostMine);
+  awardMedals(flagNews);
+  checkWarEnd(flagNews);
+  const base = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
+  campaign.journal.push(`Day ${campaign.day}: ${base}`);       // flagship, medal and war-end news journal themselves
+  const summary = `${base}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaignStore.save();
   return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
 }
@@ -201,7 +209,10 @@ function removeShip(ship, rng) {
   const cap = byId('officers', ship.captainId);
   if (cap && cap.rank === 'captain') {
     if (rng.next() < CAPTAIN_SURVIVES) { cap.shipId = null; cap.fleetId = fl ? fl.id : null; }
-    else cap.alive = false;
+    else {
+      cap.alive = false;
+      if (cap.faction === campaign.faction) campaign.journal.push(`Day ${campaign.day}: Capt. ${cap.name} (level ${cap.level}) was lost with the ${shipStats(ship).name}.`);
+    }
   }
 }
 

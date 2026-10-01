@@ -176,6 +176,7 @@ function newCampaign(factionId, seed) {
       if (player) fl.hold.fuel = Math.min(holdCap(fl), START_HOLD_FUEL);
     }
   }
+  campaign.journal.push(`Day 1: the war begins. You command the ${factionOf(factionId).name} from ${world.settlements.find((q) => q.faction === factionId && q.capital).name}.`);
   campaignStore.save();
   return campaign;
 }

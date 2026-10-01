@@ -160,6 +160,7 @@ function placeSettlements(w, seed, playerFaction) {
     if (!capAt) capAt = find(cx, cy, 0, 100, 4, null);
     const cap = add(capAt[0], capAt[1], capType, F.id, F.capital);
     cap.capital = true;
+    cap.capitalOf = F.id;                    // whose capital it was, after any capture (6d)
     // AI factions get a coastal city too; the player's home city is already on the coast (01 §4.3).
     const coast = player ? null : find(cx, cy, 6, 24, 7, (x, y) => isCoastal(w, x, y));
     if (coast) add(coast[0], coast[1], 'city', F.id);
