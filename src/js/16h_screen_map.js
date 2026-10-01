@@ -179,13 +179,16 @@ SCREENS.map = {
       P.appendChild(tabs);
       const adm = fleetAdmiral(fl);
       if (this.tab === 'ships') {
-        for (const sh of fleetShips(fl)) {
+        const flag = flagshipOf(fl);
+        for (const sh of battleOrder(fl)) {
           const st = shipStats(sh), cap = byId('officers', sh.captainId);
           const r = el('div', 'map-ship');
-          r.appendChild(el('b', '', st.name));
+          r.appendChild(el('b', '', sh === flag ? `⚑ ${st.name} (flagship: ${adm && adm.id === campaign.ga ? 'Grand Admiral' : 'Adm.'} ${adm ? adm.name : ''})` : isSupport(sh) ? `${st.name} (support)` : st.name));
           r.appendChild(el('small', '', `${st.clsName} · ${cap ? `${cap.rank === 'grand' ? 'Grand Admiral' : 'Capt.'} ${cap.name} L${cap.level}` : 'no captain'} · hull ${Math.round(shipHealth(sh) * 100)}% · fuel ${Math.round((sh.fuel / st.fuelCap) * 100)}% · ammo ${Math.round(sh.ammo * 100)}%`));
           const btns = el('div', 'map-row');
-          btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
+          if (cap) btns.appendChild(button(`${canLevelUp(cap) || picksOwed(cap) > 0 ? '★ ' : ''}Capt. ${cap.name.split(' ')[1] || cap.name}`, () => openOfficer(cap, fl), 'btn btn-small'));
+          if (sh !== flag && !isSupport(sh) && adm) btns.appendChild(button('Fly the flag here', () => { const why = setFlagship(fl, sh); ui.toast(why || `The flag moves to the ${st.name}.`); this.refresh(); }, 'btn btn-small'));
+          if (sh !== flag) btns.appendChild(button('Detach', () => { const why = detachShip(fl, sh); ui.toast(why || `${st.name} detached.`); this.refresh(); }, 'btn btn-small'));
           if (!cap) for (const o of campaign.officers.filter((q) => q.alive && q.fleetId === fl.id && q.rank === 'captain' && !q.shipId)) {
             btns.appendChild(button(`Give command to ${o.name}`, () => { const why = assignCaptain(fl, sh, o); if (why) ui.toast(why); this.refresh(); }, 'btn btn-small'));
           }
@@ -202,7 +205,12 @@ SCREENS.map = {
           for (const sh of campaign.ships.filter((s) => s.outpost === o.id)) body.appendChild(button(`Take ${shipStats(sh).name} from the outpost`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
         const spare = campaign.officers.filter((o) => o.alive && o.fleetId === fl.id && o.rank === 'captain' && !o.shipId);
-        if (spare.length) row('Captains without a ship', spare.map((o) => o.name).join(', '));
+        if (spare.length) {
+          row('Captains without a ship', spare.map((o) => o.name).join(', '));
+          const r = el('div', 'map-row');
+          for (const o of spare) r.appendChild(button(`Capt. ${o.name.split(' ')[1] || o.name}`, () => openOfficer(o, fl), 'btn btn-small'));
+          body.appendChild(r);
+        }
       } else if (this.tab === 'cargo') {
         const f = fleetFuel(fl);
         row('Fuel in tanks and hold', `${f.fuel.toFixed(1)} of ${f.cap.toFixed(1)} units`);
@@ -234,7 +242,15 @@ SCREENS.map = {
         row('Commander', adm ? `${adm.rank === 'grand' ? 'Grand Admiral' : 'Admiral'} ${adm.name}` : '—');
         row('Level', lvl);
         row('XP', adm ? Math.round(adm.xp) : 0);
-        row('Fleet size', `${fl.shipIds.length} of ${fleetCap(fl)}`);
+        { const f = flagshipOf(fl); row('Flagship', f ? `${shipStats(f).name} (${shipStats(f).clsName})` : '—'); }
+        { const sup = fl.shipIds.length - fleetCount(fl); row('Fleet size', `${fleetCount(fl)} of ${fleetCap(fl)}${sup ? ` + ${sup} support` : ''}`); }
+        if (adm) {
+          const docs = traitsOf(adm);
+          row('Doctrines', docs.length ? docs.map((t) => t.name).join(', ') : 'none');
+          const mixed = fleetShips(fl).filter((s) => shipStats(s).domain !== fl.domain).length;
+          if (mixed) row('Combined arms', `${mixed} aircraft with the ${fl.domain} ships`);
+          body.appendChild(button(`${canLevelUp(adm) || picksOwed(adm) > 0 ? '★ ' : ''}Open the ${adm.rank === 'grand' ? 'Grand Admiral' : 'admiral'}'s card`, () => openOfficer(adm, fl), 'btn btn-small btn-primary'));
+        }
       }
       P.appendChild(body);
       return;
@@ -274,8 +290,8 @@ SCREENS.map = {
       const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
       row('Garrison', `${gar.length} of ${T.garrison}${gar.length ? `: ${gar.map((sh) => shipStats(sh).name).join(', ')}` : ''}`);
       for (const fl of docked) {
-        const room = fleetCap(fl) - fl.shipIds.length;
-        for (const sh of gar.filter((g) => mapDomain(designReport(shipDesign(g)).domain) === fl.domain)) {
+        const room = fleetCap(fl) - fleetCount(fl);
+        for (const sh of gar.filter((g) => fleetAccepts(fl, mapDomain(designReport(shipDesign(g)).domain)))) {
           if (room > 0) body.appendChild(button(`${fl.name}: take ${shipStats(sh).name}`, () => { const why = pickUp(fl, sh); ui.toast(why || 'Taken aboard.'); this.refresh(); }, 'btn btn-small'));
         }
       }
@@ -401,8 +417,24 @@ SCREENS.map = {
       const S = SCREENS.map;
       const cx = S.toCellX(x), cy = S.toCellY(y);
       const r = 1.2 * Math.max(1, 12 / S.cam.z);
-      const fl = campaign.fleets.find((f) => f.shipIds.length && (f.faction === campaign.faction || f.seen) && Math.abs(S.sx(f.x) + (f.drawDx || 0) - x) < 16 && Math.abs(S.sy(f.y) - y) < 14);
-      const s = world.settlements.find((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < r);
+      // What's under the finger: the nearest fleet and the nearest settlement (by screen distance).
+      let fl = null, fd = 1e9, s = null, sd = 1e9;
+      for (const f of campaign.fleets) {
+        if (!f.shipIds.length || !(f.faction === campaign.faction || f.seen)) continue;
+        const dx = S.sx(f.x) + (f.drawDx || 0) - x, dy = S.sy(f.y) - y;
+        if (Math.abs(dx) < 16 && Math.abs(dy) < 14 && Math.hypot(dx, dy) < fd) { fl = f; fd = Math.hypot(dx, dy); }
+      }
+      for (const q of world.settlements) {
+        const d = Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy);
+        if (d < r && d * S.cam.z < sd) { s = q; sd = d * S.cam.z; }
+      }
+      // Both under the finger: the closer one, and a second tap on the same spot switches between them.
+      if (fl && s) {
+        const cur = S.sel;
+        if (cur && cur.kind === 'fleet' && cur.id === fl.id && !(S.plan && S.plan.target === s.id)) { S.plan = null; S.select('settlement', s.id); return; }
+        const onSettlement = cur && cur.kind === 'settlement' && cur.id === s.id;
+        if (!onSettlement && sd <= fd) fl = null;
+      }
       const mine = S.selFleet();
       // With one of your fleets selected, a tap elsewhere plans a move there (a settlement: dock at it).
       if (mine && mine.faction === campaign.faction && !(fl && fl.faction === campaign.faction)) {

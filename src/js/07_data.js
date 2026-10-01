@@ -355,6 +355,10 @@ const WORLD_GEN = 2;                  // map generator version (saves keep the o
 const ROAD_SPEED = 1.5;               // × on a road
 const MARCH = 0.5;                    // a fleet marches at this share of its slowest ship's top speed
 const AIR_MAP_FUEL = 1.3;             // air fleets burn more on the map (08 §8)
+// Ships on the map (producer's play test, v0.6.4): they cruise economically, and every
+// watertight hull section (whull, hull, phull) holds a fuel bunker.
+const SEA_MAP_FUEL = 0.35;            // sea fleets' burn on the map
+const HULL_BUNKER = 0.25;             // fuel units per hull section
 const STRANDED_SPEED = 0.1;           // an empty fleet crawls (land, sea); air can't move
 const DETECT_CELLS = { fleet: 8, settlement: 6 };
 const CONTACT_CELLS = 1.6;            // hostile fleets this close meet in battle
@@ -440,6 +444,29 @@ const AMMO_PER_SHOT = [[8, 0.0001], [20, 0.004], [37, 0.012], [57, 0.03], [75, 0
 // XP (08 §10).
 const CAPTAIN_XP = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200];
 const FLEET_SIZE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 11];
+// Officer upgrades (producer's play test, v0.6.5). You level your captains and admirals up by
+// hand once they have the XP, choosing one upgrade each time. Captains' are skills for their own
+// ship (each up to 3 times); admirals' are doctrines for their fleet (each once). The Grand
+// Admiral chooses a doctrine each time their command level rises. Recruits may come with some.
+const OFFICER_TRAITS = {
+  captain: [
+    { id: 'gunnery', name: 'Gunnery drill', text: 'accuracy +6%', acc: 0.06 },
+    { id: 'loaders', name: 'Fast loaders', text: 'reload 8% faster', reload: 0.08 },
+    { id: 'nerves', name: 'Steady nerves', text: 'reaction time −12%', react: 0.12 },
+    { id: 'thrift', name: 'Fuel discipline', text: 'this ship burns 10% less fuel on the map', burn: 0.1 },
+  ],
+  admiral: [
+    { id: 'land_air', name: 'Combined arms: land and air', text: 'aircraft and airships can join this land fleet', mix: 'land' },
+    { id: 'sea_air', name: 'Combined arms: sea and air', text: 'aircraft and airships can join this sea fleet', mix: 'sea' },
+    { id: 'wide', name: 'Wide command', text: 'fleet size +1', cap: 1 },
+    { id: 'march', name: 'Forced march', text: 'march speed +10%', speed: 0.1 },
+    { id: 'logistics', name: 'Fuel doctrine', text: 'the fleet burns 10% less fuel', burn: 0.1 },
+    { id: 'veterans', name: 'Veteran crews', text: 'every ship in the fleet: accuracy +3%', acc: 0.03 },
+  ],
+};
+const TRAIT_STACK = { captain: 3, admiral: 1 };
+const RECRUIT_GIFTED = 0.3;          // chance a recruit brings one upgrade more than their level gives
+const RECRUIT_TRAIT_PRICE = 0.2;     // each upgrade a recruit brings adds this share to the price
 
 // ---------- the tech tree and perks (design/08 §11–12, Part 5a)
 // Research costs per tier: Command Points, money (treasury), electronics and scrap (from the
@@ -532,6 +559,9 @@ const START_FLEETS = [
   { domain: 'air', ships: ['gunship_t0', 'gunship_t0', 'gunship_t0'] },
 ];
 const START_DESIGN_KIND = { land: 'tank', sea: 'corvette', air: 'gunship' };
+// Each of your starting fleets also has a support vehicle with fuel in its hold (v0.6.4).
+const START_SUPPORT = { land: 'supply_wagon', sea: 'fuel_tender', air: 'supply_airship' };
+const START_HOLD_FUEL = 20;
 const AI_FLEETS = [
   { domain: 'land', ships: ['light', 'mgcar', 'scout'] },
   { domain: 'sea', ships: ['gunboat', 'gunboat'] },

@@ -204,6 +204,28 @@ function droneCheck() {
 }
 // Part 5c2: an escort carrier's air wing at sea: launches up to its hangar, fights, lands on
 // recall, and is lost with its carrier; wings are never objectives.
+// Flying an airship or a helicopter: Fire aims at the target within each gun's arc (not just
+// straight ahead); a target on the other side is out of arc.
+function airAimCheck() {
+  const out = {};
+  for (const id of ['gunship_t0', 'heli']) {
+    const B = createBattle(0, { squad: [designFromTemplate(id)], cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 77 }), reserves: true, enemyForce: ['light'] });
+    for (let t = 0; t < 1; t += SIM_STEP) updateBattle(B, SIM_STEP);
+    const V = B.me;
+    const x = V.body.x + V.dir * 60, y = B.T.height(x) + 1;
+    for (const w of V.weapons) w.reload = 0;
+    V.shells = 50;
+    const said = playerFire(B, x, y, false);
+    const angs = [];
+    shells.forEachAlive((s) => { if (s.shooter === V) angs.push(Math.atan2(s.vy - V.body.vy, s.vx - V.body.vx)); });
+    const want = Math.atan2(y - V.body.y, x - V.body.x);
+    for (const w of V.weapons) w.reload = 0;
+    const behind = playerFire(B, V.body.x - V.dir * 60, B.T.height(V.body.x - V.dir * 60) + 1, false);
+    out[id] = { said, shots: angs.length, err: angs.length ? Math.round(Math.max(...angs.map((a) => Math.abs(a - want))) * 180 / Math.PI) : null, down: angs.length ? angs.every((a) => Math.sin(a) < -0.05) : false, behind };
+    shells.forEachAlive((s) => { s.alive = false; });
+  }
+  return out;
+}
 function wingCheck() {
   const B = createBattle(0, { squad: [designFromTemplate('carrier_t3')], cfg: simulatorConfig({ field: 'sea', weather: 'clear', light: 'day', seed: 77 }), reserves: true, enemyForce: [designFromTemplate('gunboat')] });
   const C = B.me;

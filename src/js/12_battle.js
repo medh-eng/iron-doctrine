@@ -320,7 +320,7 @@ function takeVehicle(B, V) {
 // Returns a short reason when it can't.
 function playerFire(B, tx, ty, manual) {
   const V = B.me;
-  if (V.flier) return fireForward(B, V);
+  if (V.flier) return fireForward(B, V, tx, ty);
   const w = mainWeapon(V);
   if (!w) return V.weapons.some((x) => x.def.secondary) ? playerSecondary(B) : 'No gun';
   if (w.reload > 0) return 'Reloading';
@@ -608,6 +608,7 @@ function campaignCheck() {
   for (let k = 0; k < 8 && campaign.running; k++) ev = ev.concat(campaignTick(1));
   out.burn = { before: +f0.toFixed(2), after: +fleetFuel(land).fuel.toFixed(2), moved: land.path.length < plan.path.length };
   for (const s of fleetShips(air)) s.fuel = 0;
+  air.hold.fuel = 0;                     // the support vehicle's reserve too
   const far = planMove(air, air.x + 20, air.y);
   out.strandWarn = far.strands;
   orderMove(air, far);
@@ -651,11 +652,11 @@ function campaignCheck() {
   const sea2 = playerFleets().find((fl) => fl.domain === 'sea');
   const homeS = world.settlements.find((q) => q.faction === 'league' && q.capital);
   sea2.docked = homeS.id;
-  const g1 = fleetShips(sea2)[0];
+  const g1 = fleetShips(sea2).find((sh) => sh !== flagshipOf(sea2));
   const w1 = detachShip(sea2, g1);
   const inGarrison = g1.garrison === homeS.id && byId('officers', g1.captainId).garrisonedAt === homeS.id && !g1.fleetId;
   sea2.docked = null; sea2.x += 0; 
-  const g2 = fleetShips(sea2)[0];
+  const g2 = fleetShips(sea2).find((sh) => sh !== flagshipOf(sea2));
   detachShip(sea2, g2);
   const outpost = !!g2.outpost && campaign.outposts.some((o) => o.id === g2.outpost);
   const back = pickUp(sea2, g2) === '' && sea2.shipIds.includes(g2.id) && !campaign.outposts.length;

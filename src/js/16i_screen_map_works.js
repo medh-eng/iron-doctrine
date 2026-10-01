@@ -124,7 +124,7 @@ Object.assign(SCREENS.map, {
         if (this.refitShip !== sh.id) continue;
         for (const id of yardDesigns(s)) {
           const d = shipDesign({ design: id });
-          if (id === sh.design || mapDomain(designReport(d).domain) !== fl.domain) continue;
+          if (id === sh.design || mapDomain(designReport(d).domain) !== shipStats(sh).domain) continue;
           const rq = refitQuote(s, sh, id);
           const o = el('div', 'map-good');
           o.appendChild(el('span', '', `→ ${markName(d)}`));
@@ -168,6 +168,7 @@ Object.assign(SCREENS.map, {
       const what = o.kind === 'captain' ? `Capt. ${o.name} L${o.level} with a ${markName(shipDesign({ design: o.design }))}` : o.kind === 'admiral' ? `Adm. ${o.name} L${o.level}` : `Quartermaster ${o.name}`;
       g.appendChild(el('span', '', what));
       g.appendChild(el('small', '', `money ${Math.ceil(offerPrice(o))} · wages ${o.kind === 'quartermaster' ? WAGES.quartermaster : WAGES[o.kind] * o.level}/day`));
+      if (o.traits && o.traits.length) g.appendChild(el('small', '', `Upgrades: ${o.traits.map((id) => traitById(o.kind, id).name).join(', ')}`));
       const r = el('div', 'map-row');
       r.appendChild(button('Hire', () => done(hire(s, o)), 'btn btn-small'));
       g.appendChild(r);

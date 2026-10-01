@@ -124,7 +124,7 @@ function fleetCap(fl) {
     if (o.rank === 'grand' && perk('wider_command')) cap += 2;
     if (o.rank === 'admiral' && perk('second_in_command')) cap += 1;
   }
-  return cap;
+  return cap + fleetDoctrine(fl, 'cap');                    // Wide command (15l)
 }
 
 // Captain skill in battle (08 §10): +2% accuracy and −3% reaction time per level above 1, and
@@ -134,10 +134,13 @@ function applyCaptain(V) {
   if (!id || !campaign || !V.ai) return;
   const ship = byId('ships', id);
   const cap = ship && byId('officers', ship.captainId);
-  const L = cap ? cap.level : 1;
+  let L = cap ? cap.level : 1;
+  // The flagship's crew fights at the admiral's command level when that's higher (v0.6.5).
+  if (V.design._flag) { L = Math.max(L, V.design._flag.level); V.flagship = V.design._flag; }
   V.ai.accuracy *= 1 + CAPTAIN_ACC_PER_LEVEL * (L - 1) + (ship && ship.faction === campaign.faction && perk('veteran_eye') ? 0.05 : 0);
   V.ai.reaction *= Math.max(0.4, 1 - CAPTAIN_REACT_PER_LEVEL * (L - 1)) * (ship && ship.faction === campaign.faction && perk('iron_discipline') ? 0.8 : 1);
   V.captainLevel = L;
+  applyTraits(V, ship);                  // the captain's upgrades and the admiral's doctrines (15l)
 }
 
 // Grand Admiral XP from outside battle (08 §10): captures, convoy deliveries, reverse-engineering.

@@ -796,6 +796,14 @@ function drawMarkers(g, B) {
     flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
   }
   if (B.depot) flag(B.depot, PAL.league);
+  // Flagships fly a pennant (v0.6.5): amber for yours, red for theirs.
+  for (const V of B.units) {
+    if (!V.flagship || V.destroyed || V.gone || (V.side === 1 && !V.seen)) continue;
+    const sx = view.sx(V.body.x), sy = view.sy(V.body.y + V.height) - 6;
+    g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 18, 2, 18);
+    g.fillStyle = V.side === 0 ? PAL.amber : PAL.danger;
+    g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill();
+  }
   g.setLineDash([5, 4]);
   g.lineWidth = 2;
   for (const w of B.warnings) {

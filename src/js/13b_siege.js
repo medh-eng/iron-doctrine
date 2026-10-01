@@ -115,7 +115,7 @@ function createSiegeBattle(contact, headless) {
   cfg.name = `Siege of ${s.name} · ${cfg.name}`;
   cfg.how = playerDefends ? 'Hold the walls: the enemy wins by destroying your keep or every defender.' : 'Destroy the keep, or every defender, to take the settlement.';
   const B = createBattle(0, { cfg, reserves: true, demo: !!headless, squad: playerDefends ? def : atk, enemyForce: playerDefends ? atk : def });
-  for (const V of B.units) applyShipState(V);
+  for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   buildDefences(B, s, playerDefends ? 0 : 1);
   B.contact = contact;
   // applyBattleOutcome's fleet bookkeeping: your fleets and theirs.

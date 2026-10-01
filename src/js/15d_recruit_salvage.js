@@ -16,13 +16,18 @@ function makeOffers(s) {
   const rng = makeRng(campaign.seed + campaign.day * 17 + s.x * 131 + s.y);
   const pool = Object.keys(TEMPLATES).filter((id) => {
     const d = designFromTemplate(id), cls = classFor(d);
-    if (!cls || cls.captain < R.cls[0] || cls.captain > R.cls[1]) return false;
+    if (!cls || cls.captain < R.cls[0] || cls.captain > R.cls[1] || !designResearched(d) || isSupport({ design: id })) return false;
     return !seaDomain(domainOf(d)) || s.coastal;
   });
   // Citadels with no large designs to offer fall back to the medium ones.
-  const designs = pool.length ? pool : Object.keys(TEMPLATES).filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
-  for (let k = 0; k < 3 && designs.length; k++) s.offers.push({ kind: 'captain', level: rng.int(R.cap[0], R.cap[1]), design: rng.pick(designs), name: officerName(rng) });
-  s.offers.push({ kind: 'admiral', level: rng.int(R.adm[0], R.adm[1]), name: officerName(rng) });
+  const designs = pool.length ? pool : campaignBaseDesigns().filter((id) => { const c = classFor(designFromTemplate(id)); return c && c.captain <= 3 && !isSupport({ design: id }) && (!seaDomain(domainOf(designFromTemplate(id))) || s.coastal); });
+  // Recruits come with the upgrades of their level, and sometimes one more (15l).
+  for (let k = 0; k < 3 && designs.length; k++) {
+    const level = rng.int(R.cap[0], R.cap[1]);
+    s.offers.push({ kind: 'captain', level, design: rng.pick(designs), name: officerName(rng), traits: recruitTraits('captain', level, rng) });
+  }
+  const al = rng.int(R.adm[0], R.adm[1]);
+  s.offers.push({ kind: 'admiral', level: al, name: officerName(rng), traits: recruitTraits('admiral', al, rng) });
   s.offersDay = campaign.day;
 }
 function offersAt(s) {
@@ -36,8 +41,9 @@ function offersAt(s) {
   return list;
 }
 function offerPrice(o) {
-  if (o.kind === 'captain') return RECRUIT.captain * o.level * o.level + designCostIndex(shipDesign({ design: o.design })) * RECRUIT.listPrice;
-  if (o.kind === 'admiral') return RECRUIT.admiral * o.level;
+  const gifted = 1 + RECRUIT_TRAIT_PRICE * Math.max(0, (o.traits || []).length - (o.level - 1));   // an upgrade beyond their level costs extra
+  if (o.kind === 'captain') return RECRUIT.captain * o.level * o.level * gifted + designCostIndex(shipDesign({ design: o.design })) * RECRUIT.listPrice;
+  if (o.kind === 'admiral') return RECRUIT.admiral * o.level * gifted;
   return RECRUIT.quartermaster;
 }
 // Hire: captains arrive with their ship in the garrison; admirals and quartermasters wait there.
@@ -54,9 +60,9 @@ function hire(s, o) {
   if (o.kind === 'captain') {
     const sh = makeShip(o.design, campaign.faction, rng);
     const cap = byId('officers', sh.captainId);
-    Object.assign(cap, { name: o.name, level: o.level, xp: CAPTAIN_XP[o.level - 1] || 0, garrisonedAt: s.id });
+    Object.assign(cap, { name: o.name, level: o.level, xp: CAPTAIN_XP[o.level - 1] || 0, garrisonedAt: s.id, traits: (o.traits || []).slice() });
     sh.garrison = s.id;
-  } else campaign.officers.push({ id: newId('o'), name: o.name, rank: o.kind, faction: campaign.faction, level: o.level, xp: 0, alive: true, garrisonedAt: s.id });
+  } else campaign.officers.push({ id: newId('o'), name: o.name, rank: o.kind, faction: campaign.faction, level: o.level, xp: o.kind === 'admiral' ? (CAPTAIN_XP[o.level - 1] || 0) * 2 : 0, alive: true, garrisonedAt: s.id, traits: (o.traits || []).slice() });
   if (s.offers) s.offers = s.offers.filter((x) => x !== o);
   return '';
 }
@@ -90,7 +96,7 @@ function promote(s, fl, ship) {
   if (fl.docked !== s.id || s.faction !== campaign.faction) return 'Dock at your own settlement to promote.';
   const price = RECRUIT.promote * o.level;
   if (!spend(price)) return noMoney(price);
-  o.rank = 'admiral'; o.level = 1; o.xp = 0; o.shipId = null; o.fleetId = null; o.garrisonedAt = s.id;
+  o.rank = 'admiral'; o.level = 1; o.xp = 0; o.traits = []; o.shipId = null; o.fleetId = null; o.garrisonedAt = s.id;   // a new admiral starts their doctrines afresh
   ship.captainId = null;
   return '';
 }

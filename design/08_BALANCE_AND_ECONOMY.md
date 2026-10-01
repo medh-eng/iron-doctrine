@@ -191,6 +191,7 @@ Base prices, in money per unit:
 
 **Map fuel** (units per hour, per ship) = Σ engine fuel L/h × 0.25 ÷ 100.
 - Air: × 1.3.
+- Sea: × 0.35 (ships cruise economically; v0.6.4). Every watertight hull section (wooden, steel or pressure hull, 2×2) also holds 0.25 fuel units on the map.
 - Roads: × 0.85.
 - Storms (air): × 1.5.
 - Lift engines add their own fuel.
