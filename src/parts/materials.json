@@ -296,5 +296,77 @@
   },
   "gasLift": 1.7,
   "planned": true
+ },
+ "clipper": {
+  "name": "Clipper hull",
+  "tier": 1,
+  "mass": 70,
+  "hp": 45,
+  "armor": 8,
+  "cost": {
+   "wood": 2,
+   "metal": 1
+  },
+  "burns": true,
+  "unlock": {
+   "faction": "league"
+  },
+  "look": {
+   "kind": "wood",
+   "color": "#C79A5E",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 3
+  },
+  "balanceNote": "Harbour League signature material (09 §1): lighter and less armoured than ironwood (mass 70 vs 110, armour 8 vs 12, hp 45 vs 55), same cost. Intended for ship hulls; the game has no per-domain limit for materials.",
+  "notes": "Faction signature material (design/09). Look: varnished light planking, long plank seams every 3 cells, brass rivets along the edges; takes P1 (League steel blue). Cream trim comes from the plank colour showing through at the seams."
+ },
+ "slab": {
+  "name": "Slab armour",
+  "tier": 1,
+  "mass": 600,
+  "hp": 130,
+  "armor": 40,
+  "cost": {
+   "metal": 3
+  },
+  "unlock": {
+   "faction": "directorate"
+  },
+  "look": {
+   "kind": "heavy",
+   "color": "#4A4E55",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": true,
+   "seam": 2
+  },
+  "balanceNote": "Directorate signature material (09 §2): armour 40 at tier 1 for 3 metal (arm40: tier 2, 5 metal), paid for in mass (600 vs 380 kg). Deliberately outside the material bands: cheap and very heavy.",
+  "notes": "Faction signature material (design/09). Look: heavy kind (thick bevel, big rivets) in oxblood P1 over gunmetal. The hazard-chevron option is not expressible in look (no field for it); it would need a renderer change, so this entry does not include it."
+ },
+ "patchwork": {
+  "name": "Patchwork plate",
+  "tier": 1,
+  "mass": 110,
+  "hp": 55,
+  "armor": 15,
+  "cost": {
+   "scrap": 2,
+   "metal": 1
+  },
+  "unlock": {
+   "faction": "clans"
+  },
+  "look": {
+   "kind": "plate",
+   "color": "#9A5A34",
+   "paintable": true,
+   "paint": "p1",
+   "rivets": false,
+   "seam": 1
+  },
+  "balanceNote": "Salvage Clans signature material (09 §4): cheap, varied, unreliable. Against Hull plate: mass 110 vs 120, hp 55 vs 60, armour 15, cost index 16 vs 20. The 'unreliable' part is the game's job (it varies each cell); the entry holds the average.",
+  "notes": "Faction signature material (design/09). Look: plate kind with a seam every cell (seam 1) and no rivets, so each cell reads as a separate welded patch; takes P1 (Clans rust). The mismatched tones come from mixing it with plate, plank and ironwood in designs; look cannot vary tone per cell."
  }
 }

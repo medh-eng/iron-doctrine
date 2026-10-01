@@ -1,0 +1,69 @@
+{
+  "id": "magnet_crane",
+  "name": "Magnet crane",
+  "family": "magnet",
+  "variant": "crane",
+  "category": "logistics",
+  "tier": 1,
+  "domains": [
+    "land",
+    "sea"
+  ],
+  "footprint": {
+    "w": 3,
+    "h": 2
+  },
+  "stats": {
+    "mass": 1000,
+    "hp": 70,
+    "armor": 8,
+    "power": -40,
+    "rel": 0.995
+  },
+  "behaviour": {
+    "info": "Salvage +25% (campaign)"
+  },
+  "cost": {
+    "metal": 3,
+    "elec": 1,
+    "scrap": 8
+  },
+  "craftAt": "city",
+  "unlock": {
+    "faction": "clans"
+  },
+  "pros": [
+    "Salvage +25% (campaign)",
+    "Metal cost 3 (−40%); built mostly from scrap"
+  ],
+  "cons": [
+    "Needs 40 kW",
+    "HP 70 (−13%)",
+    "Armour 8 (−20%)",
+    "Footprint 3×2 (+50% cells)"
+  ],
+  "balanceNote": "Salvage Clans signature part (09 §4): better salvage, draws power. Declared as family \"magnet\", variant \"crane\" so that the id \"magnet_crane\" satisfies the checker's family_variant rule; it is balanced against the Recovery winch (crane) by hand: same tier and size class, cheaper metal, 40 kW draw, less HP and armour.",
+  "notes": "Faction signature part (design/09). Art: patchwork welded box boom (P1 with P2 and bare-rust patches, weld beads), cab and generator with a salvaged Precursor coil, a scrap bin on the deck, electromagnet on a chain bridle with a scrap plate stuck to it, P3 hazard stripes on the base.",
+  "overhang": {
+    "left": 0,
+    "right": 0.45,
+    "top": 1.0,
+    "bottom": 0
+  },
+  "anchors": {
+    "mount": [
+      1.5,
+      1.95
+    ],
+    "hook": [
+      3.09,
+      1.15
+    ],
+    "smoke": [
+      [
+        1.3,
+        0.7
+      ]
+    ]
+  }
+}
