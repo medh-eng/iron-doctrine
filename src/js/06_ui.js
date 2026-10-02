@@ -205,6 +205,7 @@ const ui = {
         row('Show FPS', toggle('showFps')),
       ],
       Data: () => this.dataSection(row),
+      Help: () => helpSection(row),           // how to play, objectives, glossary, tutorial (v0.7.1)
     };
 
     const tabBtns = [];

@@ -55,11 +55,12 @@ SCREENS.battle = {
     this.pick = null;
     this.closeWheel();
     this.buildControls();
+    if (opts.tutorial) setupTutorial(this);   // the guided practice battle (16q)
     this.layout();
     audio.setIntensity(0);
     audio.setEra(battleEra(B));
     audio.playTheme('battle');
-    this.showHowTo();
+    if (!opts.tutorial) this.showHowTo();   // the tutorial has its own banner
     if (B.loaned) ui.toast(`Sea battle: a fleet is lent to you (${B.squad.map((V) => V.name).join(', ')}).`, 4000);
     else if (B.ashore.length) ui.toast(`Sea battle: ${B.ashore.map((d) => d.name).join(', ')} stay${B.ashore.length > 1 ? '' : 's'} ashore.`, 3500);
     if (B.inPort.length) ui.toast(`No sea on this map: ${B.inPort.map((d) => d.name).join(', ')} stay${B.inPort.length > 1 ? '' : 's'} in port.`, 3500);
@@ -82,6 +83,7 @@ SCREENS.battle = {
 
   exit() {
     game.frozen = false;
+    endTutorial(this);
     this.closeWheel();
     this.B = null;
     if (this.howEl) { this.howEl.remove(); this.howEl = null; }
@@ -90,6 +92,7 @@ SCREENS.battle = {
 
   pauseOpts() {
     if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.tutorial) return { restartLabel: 'Restart the tutorial', restart: () => { endTutorial(this); this.enter(this.opts); }, quitLabel: 'Leave the tutorial', quit: () => screens.go('title') };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
@@ -551,6 +554,7 @@ SCREENS.battle = {
       C.alt.disabled = this.frozen || n === 0;
     }
     C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
+    if (this.opts.tutorial) stepTutorial(this);
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -620,6 +624,14 @@ SCREENS.battle = {
       if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
       if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
       btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.tutorial) {
+      // The tutorial: done, or another go.
+      endTutorial(this);
+      if (win) { audio.sfx('fanfare'); spawnConfetti(); save.profile.tutorial.done = true; save.touch('profile'); save.flush(); } else audio.sfx('lifeLost');
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'WELL DONE' : 'TRY AGAIN'));
+      c.appendChild(el('p', 'card-text', win ? 'That’s the battle basics. The campaign adds fleets, settlements, trade and research; How to play and the Glossary are in Settings → Help.' : 'Your vehicles were lost. Try the tutorial again.'));
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, win ? 'btn' : 'btn', 'back'));
+      btns.appendChild(button(win ? 'Play again' : 'Try again', () => { close(); this.enter(this.opts); }, 'btn btn-primary'));
     } else if (this.opts.sim) {
       // Battle Simulator (design/01 §15): facts only, no campaign effects.
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }

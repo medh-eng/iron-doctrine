@@ -31,6 +31,7 @@ SCREENS.title = {
     audio.playTheme('title');
     audio.quiet = true;
     this.demo = null;
+    offerTutorial();                            // once, to a new player (16q)
   },
   exit() {
     if (this.root) this.root.remove();

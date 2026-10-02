@@ -116,6 +116,42 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
   check(info.stencil, 'stencil font not loaded');
   await shot('1-title');
   steps.push('title');
+  // v0.7.1: the tutorial is offered once to a new player; Help lives in Settings.
+  if (!vp.portrait) {
+    check((await page.getByRole('button', { name: 'Play the tutorial' }).count()) === 1, 'the tutorial was not offered to a new player');
+    await shot('1b-tutorial-offer');
+    await page.getByRole('button', { name: 'Not now', exact: true }).click();
+    await wait(200);
+    await page.locator('.title-screen button', { hasText: 'Settings' }).first().click();
+    await wait(200);
+    await page.getByRole('tab', { name: 'Help' }).click();
+    await wait(150);
+    await page.locator('.set-row', { hasText: 'Glossary' }).getByRole('button').click();
+    await wait(400);
+    await page.locator('.help-search').fill('laser');
+    await wait(300);
+    check((await page.locator('.card-help .rel-row').count()) >= 1, 'the glossary search found nothing for "laser"');
+    await shot('1c-glossary');
+    await page.locator('.card-help').getByRole('button', { name: 'Close', exact: true }).click();
+    await wait(150);
+    await page.locator('.set-row', { hasText: 'How to play' }).getByRole('button').click();
+    await wait(200);
+    check((await page.locator('.card-help .help-p').count()) >= 3, 'How to play is empty');
+    await page.locator('.card-help').getByRole('button', { name: 'Close', exact: true }).click();
+    await wait(150);
+    await page.getByRole('tab', { name: 'Audio' }).click();     // Settings remembers its tab
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await wait(200);
+    // The tutorial starts with its first step and can be left.
+    await G(() => window.__GAME__.evalIn('startTutorial()'));
+    await wait(700);
+    check(/^1\/7/.test((await page.locator('.tut-text').textContent()) || ''), 'the tutorial did not start at step 1');
+    await shot('1d-tutorial');
+    await G(() => window.__GAME__.go('title'));
+    await wait(300);
+    check((await page.locator('.tut-banner').count()) === 0, 'the tutorial banner stayed after leaving');
+    steps.push('help and tutorial');
+  }
 
   if (vp.portrait) {
     check(info.rotateVisible, 'rotate card not shown in portrait');
@@ -874,6 +910,10 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(300);
       if (await page.getByRole('button', { name: /^Start as / }).count()) { await page.getByRole('button', { name: /^Start as / }).click(); await wait(300); }
       check((await G(() => window.__GAME__.screens.name)) === 'map', 'New campaign did not open the world map');
+      // First visit: the campaign tips, once.
+      check((await page.getByRole('button', { name: 'Got it', exact: true }).count()) === 1, 'the first-time map tips did not show');
+      await page.getByRole('button', { name: 'Got it', exact: true }).click();
+      await wait(200);
       await wait(500);
       await shot('23-world-map');
       // Research and perks (Part 5a): the tech tree, a node card, the perk list.

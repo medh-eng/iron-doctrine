@@ -50,6 +50,8 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 16m_screen_missiles.js the Drafting Office's Missile and Drone tabs (one shared card)
 16n_screen_relations.js the map's War room card: relations (6c), journal, medals, victory, the end card (6d)
 16o_screen_officers.js the officer card (v0.6.5)
+16p_screen_help.js     Settings → Help: how to play, objectives, glossary (v0.7.1)
+16q_tutorial.js        the guided tutorial battle, the first-launch offer and map tips (v0.7.1)
 10h_energy.js          energy weapons (5d): power and capacitors, weapon heat, laser beams, plasma, flamethrowers, damage types
 10i_fab_clamps.js      fabricators, release clamps and detachable sections, the battle's music era (5e)
 10g_drones.js          drones (5c): drone stats and rules, carriers, launching, orders, flight, hits, spotting, drawing
