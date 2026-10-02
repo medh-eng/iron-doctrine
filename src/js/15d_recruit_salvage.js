@@ -103,10 +103,13 @@ function promote(s, fl, ship) {
 
 // ---------- salvage (08 §9): only when you win and hold the field
 function salvageRates(ships) {
-  let cranes = 0;
-  for (const sh of ships) for (const c of shipDesign(sh).cells) if (PARTS[c.p].salvage || c.p === 'crane') cranes++;
+  let cranes = 0, magnet = false;
+  for (const sh of ships) for (const c of shipDesign(sh).cells) {
+    if (PARTS[c.p].salvage || c.p === 'crane' || c.p === 'magnet_crane') cranes++;
+    if (c.p === 'magnet_crane') magnet = true;                // the Clans' magnet crane: +25% (v0.6.8)
+  }
   cranes = Math.min(SALVAGE.maxCranes, cranes);
-  const clan = campaign.faction === 'clans' ? SALVAGE.clans : 1;
+  const clan = (campaign.faction === 'clans' ? SALVAGE.clans : 1) * (magnet ? SALVAGE.magnet : 1);
   // Scavengers (08 §12): +4% part chance, +20% scrap.
   const sc = perk('scavengers');
   return { part: (SALVAGE.part + cranes * SALVAGE.crane + (sc ? 0.04 : 0)) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan * (sc ? 1.2 : 1) };
@@ -161,7 +164,7 @@ function makeScrapFields(rng) {
   }
 }
 const fieldNear = (fl) => (campaign.scrapFields || []).find((f) => f.left > 0 && Math.hypot(f.x - fl.x, f.y - fl.y) < 1.5);
-const hasCrane = (fl) => fleetShips(fl).some((sh) => shipDesign(sh).cells.some((c) => c.p === 'crane' || PARTS[c.p].salvage));
+const hasCrane = (fl) => fleetShips(fl).some((sh) => shipDesign(sh).cells.some((c) => c.p === 'crane' || c.p === 'magnet_crane' || PARTS[c.p].salvage));
 function stepSalvage(dt) {
   const t = hoursNow();
   if (campaign.wrecks) campaign.wrecks = campaign.wrecks.filter((w) => w.until > t);

@@ -50,6 +50,10 @@ const BOMB = { dmg: 200, radius: 5 };
 // Airships (design/05 §3.2, step 2.7). An envelope cell's gasLift is in units of 100 kg.
 const GAS_LIFT_KG = 100;
 const AIRSHIP_CDA = 0.6;          // m² of drag area per metre of the airship's height
+// Sail vanes (Skyreach, v0.6.8): each gives an airship this much propeller power from the wind,
+// with no engine or fuel. Rain brings storm winds: more push, but the vanes take damage.
+const PATCH_STEPS = [0.6, 0.8, 1, 1.2, 1.4];   // patchwork plate: armour and hp factors by cell (v0.6.8)
+const SAIL = { kw: 60, clear: 1, rain: 1.5, stormWear: 0.5 };   // stormWear: hp a second each vane loses in rain
 const AIRSHIP_MIN_LIFT = 0.85;    // valving gas: an airship can shed lift down to this share of its weight
 const AIRSHIP_ALT = 30;           // metres over the ground an airship deploys at
 
@@ -133,6 +137,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   if (m.shape === 'slope') PARTS[id].sloped = true;
   if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
   if (m.resist) PARTS[id].resist = m.resist;         // damage-type resistances (Part 5d)
+  if (id === 'patchwork') PARTS[id].vary = true;     // varies cell by cell (v0.6.8; PATCH_STEPS)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -436,7 +441,7 @@ const RECRUIT = { captain: 120, admiral: 600, quartermaster: 250, promote: 400, 
 const PROMOTE_LEVEL = 6;
 const OFFER_DAYS = 7;                        // forts and citadels renew their offers weekly
 // Salvage (08 §9).
-const SALVAGE = { part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
+const SALVAGE = { magnet: 1.25, part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
 const WRECK_HOURS = 24;                      // salvage left on the field is lost after a day
 const SCRAP_FIELDS = 10, SCRAP_FIELD_SIZE = [200, 600], SCRAP_FIELD_RATE = 4;   // fields, scrap each, scrap per hour
 const STUDY_DAYS = 3;                        // reverse-engineering at a metropolis

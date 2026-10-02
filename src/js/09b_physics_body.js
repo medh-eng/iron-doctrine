@@ -13,6 +13,17 @@ const LOW_GEAR_SPEED = 2.5;      // m/s: below this, drive force stops rising (l
 
 let nextVehicleId = 1;
 
+// Materials that vary cell by cell (the Clans' patchwork plate, v0.6.8): each cell's armour and
+// hit points are the material's times one of PATCH_STEPS factors, picked from its position.
+const _patch = {};
+function patchDef(id, x, y) {
+  const P = PARTS[id], n = PATCH_STEPS.length;
+  const k = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+  const f = PATCH_STEPS[k % n];
+  const key = id + f;
+  return _patch[key] || (_patch[key] = Object.assign({}, P, { armor: Math.round(P.armor * f), hp: Math.round(P.hp * f) }));
+}
+
 function makeVehicle(design, side, x, dir, terrain) {
   const V = {
     id: nextVehicleId++,
@@ -21,7 +32,7 @@ function makeVehicle(design, side, x, dir, terrain) {
     side,                       // 0 = player (League), 1 = enemy (Directorate)
     dir,                        // +1 faces right, −1 faces left
     parts: design.cells.map((c) => {
-      const d = PARTS[c.p];
+      const d = PARTS[c.p].vary ? patchDef(c.p, c.x, c.y) : PARTS[c.p];
       return { def: d, x: c.x, y: c.y, hp: d.hp, alive: true, burn: 0, scorch: 0 };
     }),
     alive: null,                // Uint8Array mirror of parts[i].alive

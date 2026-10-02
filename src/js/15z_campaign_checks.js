@@ -659,6 +659,45 @@ function startFleetCheck() {
 // Officers (v0.6.5): levelling by hand with an upgrade; captains' upgrades in battle; admirals'
 // doctrines (combined arms, size, march, fuel); recruits with upgrades; upgrades owed.
 // The war record (6d): battles counted, medals, the gallery, winning and losing.
+// The new faction art at work (v0.6.8): materials for their own faction, patchwork varying
+// cell by cell, sail vanes in wind and storm, the magnet crane's salvage, faction designs used.
+function factionArtCheck() {
+  const out = {};
+  newCampaign('league', 4141);
+  out.mat = { clipper: partUnlocked('clipper'), slab: partUnlocked('slab'), patchwork: partUnlocked('patchwork'), plate: partUnlocked('plate') };
+  // Patchwork: armour differs between cells.
+  const pd = designFromTemplate('clans_tank_t2');
+  const V = makeVehicle(pd, 0, 50, 1, makeTerrain(simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 1 })));
+  out.patch = [...new Set(V.parts.filter((p) => p.def.id === 'patchwork').map((p) => p.def.armor))].sort((a, b) => a - b);
+  // Sail vanes: an airship with its propellers taken off still validates and moves on the wind,
+  // with no fuel; in rain the vanes wear out.
+  // (The Skyreach gunship with its air propeller swapped for a vane.)
+  const sd = designFromTemplate('skyreach_gunship_t1');
+  const bare = Object.assign({}, sd, { cells: sd.cells.filter((c) => c.p !== 'aprop').concat([{ p: 'sail_vane', x: 0, y: 5 }]) });
+  out.sails = bare.cells.filter((c) => c.p === 'sail_vane').length;
+  out.noProp = validateDesign(Object.assign({}, sd, { cells: sd.cells.filter((c) => c.p !== 'aprop') })).ok;
+  out.bareValid = validateDesign(bare).ok;
+  const fly = (weather) => {
+    const B = createBattle(0, { squad: [bare], cfg: simulatorConfig({ field: 'inland', weather, light: 'day', seed: 77 }), reserves: true, enemyForce: [] });
+    const A = B.me, x0 = A.body.x;
+    A.fuel = 0;
+    for (let t = 0; t < 40; t += SIM_STEP) { A.moveCmd = 1; updateBattle(B, SIM_STEP); }
+    return { moved: Math.round(A.body.x - x0), vanes: A.parts.filter((p) => p.alive && p.def.sail).length };
+  };
+  out.clear = fly('clear');
+  out.rain = fly('rain');
+  // Magnet crane: salvage rates with one against a plain crane.
+  const mk = (id) => ({ design: id });
+  const fakeShip = (cells) => { const d = { id: 'x', name: 'x', w: 4, h: 2, cells }; campaign.aiDesigns = campaign.aiDesigns || {}; campaign.aiDesigns['_t' + cells[0].p] = d; return { design: '_t' + cells[0].p }; };
+  const rc = salvageRates([fakeShip([{ p: 'crane', x: 0, y: 0 }])]), rm = salvageRates([fakeShip([{ p: 'magnet_crane', x: 0, y: 0 }])]);
+  out.magnet = +(rm.part / rc.part).toFixed(2);
+  // Faction designs in the AI's pool and the Drafting Office.
+  out.aiPool = aiDesignPool('directorate').filter((id) => /_t[12]$/.test(id) && id.startsWith('directorate'));
+  out.baseStart = campaignBaseDesigns().filter((id) => /^league_.*_t[12]$/.test(id)).length;
+  techState().known.push(...TECH.map((n) => n.id));
+  out.baseAll = campaignBaseDesigns().filter((id) => /^league_.*_t[12]$/.test(id)).length;
+  return out;
+}
 function warCheck() {
   newCampaign('league', 3131);
   const out = {};

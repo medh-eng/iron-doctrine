@@ -5,6 +5,7 @@
 function createBattle(level, opts = {}) {
   const cfg = opts.cfg || levelConfig(level);
   const T = makeTerrain(cfg);
+  battleWind = cfg.weather === 'rain' ? SAIL.rain : SAIL.clear;     // sail vanes (v0.6.8)
   const B = {
     cfg, T, level,
     test: !!opts.test,
