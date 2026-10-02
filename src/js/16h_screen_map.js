@@ -28,6 +28,7 @@ SCREENS.map = {
     updateVisibility();
     this.build();
     audio.playTheme('title');
+    mapTips();                                  // first visit only (16q)
   },
   exit() { if (this.root) this.root.remove(); this.root = null; campaignStore.save(); },
   pauseOpts() {

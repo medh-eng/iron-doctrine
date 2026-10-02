@@ -326,6 +326,7 @@ function launchWing(B, V) {
   const U = makeVehicle(d, V.side, V.body.x + V.dir * 3, V.dir, B.T);
   launchFlier(U, B.T, U.domain === 'heli' ? 12 : 30);
   U.body.y = Math.max(U.body.y, V.body.y + V.height + 6);
+  if (V.airfield) U.body.vx = V.dir * 40;               // flying in from the airfield beyond the edge
   U.ai = makeAI(V.side === 0 ? 'squad' : 'attack', B.cfg);
   U.wing = V;
   U.name = d.name;
@@ -337,19 +338,21 @@ function launchWing(B, V) {
   const s = spawnParticle(FX_SMOKE, U.body.x, U.body.y, 0, 1, 1, 1.2);
   if (s) { s.grow = 1.2; s.shade = 0.8; }
   audio.sfx('clunk', B.panOf(U.body.x));
-  if (V.side === 0) floatText(`${d.name} launched`, U.body.x, U.body.y + 3, false);
+  if (V.side === 0) floatText(V.airfield ? `${d.name} from ${V.name}` : `${d.name} launched`, clamp(U.body.x, 10, B.T.length - 10), U.body.y + 3, false);
 }
 
 function stepWings(B, dt) {
-  for (const V of B.units) {
-    if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) continue;
-    V.wingT -= dt;
-    if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) continue;
-    if (V.side === 1 && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) continue;
-    if (B.cfg && B.cfg.holdFire && V.side === 1) continue;
-    launchWing(B, V);
-    V.wingT = 1 / Math.max(0.02, V.wingRate);
-  }
+  for (const V of B.units) stepWing(B, V, dt);
+  if (B.airfields) for (const V of B.airfields) stepWing(B, V, dt);   // airfields off the edge (5c3)
+}
+function stepWing(B, V, dt) {
+  if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) return;
+  V.wingT -= dt;
+  if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) return;
+  if (V.side === 1 && !V.airfield && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) return;
+  if (B.cfg && B.cfg.holdFire && V.side === 1) return;
+  launchWing(B, V);
+  V.wingT = 1 / Math.max(0.02, V.wingRate);
 }
 
 // What an air-wing aircraft flies at (from airThink): a real enemy its order allows, or a point.
@@ -357,6 +360,8 @@ function wingTarget(B, V, bomber) {
   const C = V.wing, T = B.T;
   const pt = V._pt || (V._pt = { body: { x: 0, y: 0, vx: 0, vy: 0 }, height: 0, flier: true, pseudo: true, destroyed: false, seen: false });
   const at = (x) => { pt.body.x = x; pt.body.y = Math.max(T.height(clamp(x, 0, T.length)), T.sea || -1e9) + 40; return pt; };
+  // From an airfield: anything its weapons can fight, anywhere on the field.
+  if (C.airfield) return nearestTarget(B, V, 3000, (U) => !bomber || !U.flier) || at(T.length / 2);
   if (C.destroyed || C.gone || C.withdrawn) {
     // No carrier: the wing leaves by its own edge and is lost.
     if (!V.leaving) { V.leaving = true; if (V.side === 0) floatText('Air wing lost with its carrier', V.body.x, V.body.y + 3, false); }

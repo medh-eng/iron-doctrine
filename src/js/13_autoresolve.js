@@ -96,6 +96,7 @@ function createCampaignBattle(contact, headless) {
     squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
   });
   for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
+  setupAirfields(B, battleAirfields(sides));                // air support from nearby airfields (5c3)
   B.contact = contact;
   B.sides = sides;
   return B;
@@ -178,7 +179,7 @@ function applyBattleOutcome(B) {
     const got = takeSalvage(salvageFrom(wrecks, winners.flatMap(fleetShips), rng), winners, winners[0].x, winners[0].y);
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
-  const siegeNote = B.siege ? applySiege(B, win) : '';
+  const siegeNote = (B.siege ? applySiege(B, win) : '') + airfieldsAfterBattle(B);
   const flagNews = [];
   flagshipsAfterBattle(flagsBefore, flagNews);
   // The war record, medals and the end of the war (6d).

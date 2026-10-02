@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.9';
+const GAME_VERSION = '0.7.1';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -68,6 +68,7 @@ const DEFAULT_PROFILE = {
   campaigns: { won: 0, lost: 0 },
   captured: [],            // enemy designs destroyed in the campaign: { id, name, faction, day, design? }
   studied: [],             // part ids reverse-engineered in the campaign
+  tutorial: { offered: false, done: false, mapTips: false },   // the tutorial and first-time tips (v0.7.1)
   // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
   sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [], scheme: 'league' },
 };

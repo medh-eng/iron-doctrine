@@ -602,3 +602,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .rel-name { font-weight: 600; font-size: 14px; }
 .rel-row .card-text { margin: 0; }
 .rel-journal { margin: 0; padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; }
+
+/* Help and tutorial (v0.7.1) */
+.card-help { max-width: min(96vw, 760px); }
+.help-p { margin: 0 0 6px; }
+.help-search { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
+.help-body .rel-row canvas { max-width: 150px; height: auto; }
+.tut-banner { position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--safe-t) + 52px); max-width: min(92vw, 640px);
+  display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 20, 0.88); border: 1px solid var(--amber); border-radius: 10px;
+  padding: 6px 10px; pointer-events: auto; z-index: 5; }
+.tut-text { font-size: 14px; line-height: 1.3; }

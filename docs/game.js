@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.9';
+const GAME_VERSION = '0.7.1';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -72,6 +72,7 @@ const DEFAULT_PROFILE = {
   campaigns: { won: 0, lost: 0 },
   captured: [],            // enemy designs destroyed in the campaign: { id, name, faction, day, design? }
   studied: [],             // part ids reverse-engineered in the campaign
+  tutorial: { offered: false, done: false, mapTips: false },   // the tutorial and first-time tips (v0.7.1)
   // Battle Simulator choices (v0.2.7; older saves get these defaults). lineup, enemy: design ids.
   sim: { lineup: ['medium', 'light', 'scout', 'assault'], field: 'inland', weather: 'clear', light: 'day', size: 4, enemy: [], scheme: 'league' },
 };
@@ -2265,6 +2266,7 @@ const ui = {
         row('Show FPS', toggle('showFps')),
       ],
       Data: () => this.dataSection(row),
+      Help: () => helpSection(row),           // how to play, objectives, glossary, tutorial (v0.7.1)
     };
 
     const tabBtns = [];
@@ -3060,6 +3062,10 @@ const AI_DESIGNS = {
   3: { land: ['assault', 'drone_truck'], sea: ['destroyer', 'sub'], air: ['gunship_t2', 'dropship'] },
   4: { land: ['laser_tank', 'assault'], sea: ['carrier_t3', 'destroyer'], air: ['dropship'] },
 };
+// AI missiles (5b3): from this tech tier AI refits put a rack with this missile in place of a gun.
+const AI_MISSILE = { tier: 3, t3: 'msl_s_heat', t4: 'msl_s_radar' };
+// Airfields in campaign battles (5c3, 13c): reach in map cells, settlement types, aircraft.
+const AIRFIELD = { reach: 4, types: ['city', 'metropolis', 'fort', 'citadel'], max: 3, aiTier: 2, aiWing: 2, rate: 0.12, delay: 6 };
 const AI_CONVOY = { land: ['truck', 'truck'], sea: ['gunboat'], air: ['gunship_t0'] };
 // Name parts for officers and settlements (fictional).
 const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
@@ -7043,6 +7049,7 @@ function launchWing(B, V) {
   const U = makeVehicle(d, V.side, V.body.x + V.dir * 3, V.dir, B.T);
   launchFlier(U, B.T, U.domain === 'heli' ? 12 : 30);
   U.body.y = Math.max(U.body.y, V.body.y + V.height + 6);
+  if (V.airfield) U.body.vx = V.dir * 40;               // flying in from the airfield beyond the edge
   U.ai = makeAI(V.side === 0 ? 'squad' : 'attack', B.cfg);
   U.wing = V;
   U.name = d.name;
@@ -7054,19 +7061,21 @@ function launchWing(B, V) {
   const s = spawnParticle(FX_SMOKE, U.body.x, U.body.y, 0, 1, 1, 1.2);
   if (s) { s.grow = 1.2; s.shade = 0.8; }
   audio.sfx('clunk', B.panOf(U.body.x));
-  if (V.side === 0) floatText(`${d.name} launched`, U.body.x, U.body.y + 3, false);
+  if (V.side === 0) floatText(V.airfield ? `${d.name} from ${V.name}` : `${d.name} launched`, clamp(U.body.x, 10, B.T.length - 10), U.body.y + 3, false);
 }
 
 function stepWings(B, dt) {
-  for (const V of B.units) {
-    if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) continue;
-    V.wingT -= dt;
-    if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) continue;
-    if (V.side === 1 && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) continue;
-    if (B.cfg && B.cfg.holdFire && V.side === 1) continue;
-    launchWing(B, V);
-    V.wingT = 1 / Math.max(0.02, V.wingRate);
-  }
+  for (const V of B.units) stepWing(B, V, dt);
+  if (B.airfields) for (const V of B.airfields) stepWing(B, V, dt);   // airfields off the edge (5c3)
+}
+function stepWing(B, V, dt) {
+  if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) return;
+  V.wingT -= dt;
+  if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) return;
+  if (V.side === 1 && !V.airfield && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) return;
+  if (B.cfg && B.cfg.holdFire && V.side === 1) return;
+  launchWing(B, V);
+  V.wingT = 1 / Math.max(0.02, V.wingRate);
 }
 
 // What an air-wing aircraft flies at (from airThink): a real enemy its order allows, or a point.
@@ -7074,6 +7083,8 @@ function wingTarget(B, V, bomber) {
   const C = V.wing, T = B.T;
   const pt = V._pt || (V._pt = { body: { x: 0, y: 0, vx: 0, vy: 0 }, height: 0, flier: true, pseudo: true, destroyed: false, seen: false });
   const at = (x) => { pt.body.x = x; pt.body.y = Math.max(T.height(clamp(x, 0, T.length)), T.sea || -1e9) + 40; return pt; };
+  // From an airfield: anything its weapons can fight, anywhere on the field.
+  if (C.airfield) return nearestTarget(B, V, 3000, (U) => !bomber || !U.flier) || at(T.length / 2);
   if (C.destroyed || C.gone || C.withdrawn) {
     // No carrier: the wing leaves by its own edge and is lost.
     if (!V.leaving) { V.leaving = true; if (V.side === 0) floatText('Air wing lost with its carrier', V.body.x, V.body.y + 3, false); }
@@ -9329,6 +9340,7 @@ function createCampaignBattle(contact, headless) {
     squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
   });
   for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
+  setupAirfields(B, battleAirfields(sides));                // air support from nearby airfields (5c3)
   B.contact = contact;
   B.sides = sides;
   return B;
@@ -9411,7 +9423,7 @@ function applyBattleOutcome(B) {
     const got = takeSalvage(salvageFrom(wrecks, winners.flatMap(fleetShips), rng), winners, winners[0].x, winners[0].y);
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
-  const siegeNote = B.siege ? applySiege(B, win) : '';
+  const siegeNote = (B.siege ? applySiege(B, win) : '') + airfieldsAfterBattle(B);
   const flagNews = [];
   flagshipsAfterBattle(flagsBefore, flagNews);
   // The war record, medals and the end of the war (6d).
@@ -9755,6 +9767,66 @@ function aiSiegeTarget(fl) {
     if (d < bd && fleetStrength(fl) >= defenceStrength(s) * SIEGE.aiEdge) { best = s; bd = d; }
   }
   return best;
+}
+
+/* ---------- 13c_airfields.js ---------- */
+/* ==== 13c AIRFIELDS IN CAMPAIGN BATTLES ==== */
+// Part 5c3 (design/01 §5, roadmap 5c3; v0.7.0). A campaign battle within AIRFIELD.reach cells of
+// a city, metropolis, fort or citadel lets that settlement's owner send aircraft in from their own
+// edge of the field, as an air wing with no carrier: yours are the aircraft stored in that
+// settlement's warehouse (built at a yard for air wings), up to AIRFIELD.max, and the ones that
+// survive go back to the warehouse; an AI faction from tech tier AIRFIELD.aiTier sends
+// AIRFIELD.aiWing fighters. They don't count towards the three on the field or the win.
+
+// The airfield nearest the battle for each side, if any.
+function battleAirfields(sides) {
+  const at = sides.myFleets[0] || sides.theirFleets[0];
+  if (!at) return [];
+  const near = (fid) => world.settlements
+    .filter((s) => s.faction === fid && AIRFIELD.types.includes(s.type) && Math.hypot(s.x + 0.5 - at.x, s.y + 0.5 - at.y) <= AIRFIELD.reach)
+    .sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y))[0] || null;
+  const out = [];
+  const mine = near(campaign.faction);
+  if (mine) {
+    // The aircraft type the warehouse holds most of.
+    const stock = Object.entries(stockAt(mine.store, 'wings')).filter(([id, n]) => n > 0 && wingDesignOf(id)).sort((a, b) => b[1] - a[1])[0];
+    if (stock) out.push({ side: 0, s: mine, id: stock[0], n: Math.min(AIRFIELD.max, stock[1]) });
+  }
+  const foe = sides.theirFleets[0] && sides.theirFleets[0].faction;
+  const theirs = foe && foe !== campaign.faction && aiTierOf(foe) >= AIRFIELD.aiTier ? near(foe) : null;
+  if (theirs) out.push({ side: 1, s: theirs, id: DEFAULT_WING, n: AIRFIELD.aiWing });
+  return out;
+}
+
+// Each airfield is a carrier that never enters the field: it sits just off its side's edge.
+function setupAirfields(B, list) {
+  B.airfields = [];
+  for (const a of list) {
+    const d = wingDesignOf(a.id);
+    if (!d || a.n <= 0) continue;
+    if (a.side === 0) takeStock(a.s, 'wings', a.id, a.n);       // they leave the warehouse
+    const x = a.side === 0 ? -15 : B.T.length + 15;
+    B.airfields.push({
+      airfield: true, side: a.side, dir: a.side === 0 ? 1 : -1, name: a.s.name, settlement: a.s.id, wingId: a.id,
+      body: { x, y: B.T.height(clamp(x, 0, B.T.length)) + 35, vx: 0, vy: 0, a: 0 }, height: 0,
+      seen: a.side === 0, droneOrder: 'attack', wingCap: a.n, wingAboard: a.n, wingRate: AIRFIELD.rate, wingT: AIRFIELD.delay,
+      wingDesign: d, destroyed: false, gone: false, withdrawn: false, empT: 0, launched: 0,
+    });
+  }
+}
+
+// After the battle: your aircraft still aboard or in the air go back to the warehouse.
+function airfieldsAfterBattle(B) {
+  let note = '';
+  for (const C of B.airfields || []) {
+    if (C.side !== 0) continue;
+    let back = C.wingAboard;
+    for (const U of B.units) if (U.wing === C && !U.destroyed) back++;
+    const s = byId('settlements', C.settlement);
+    if (s && back > 0) { const st = stockAt(s.store, 'wings'); st[C.wingId] = (st[C.wingId] || 0) + back; }
+    note += ` Air support from ${C.name}: ${C.wingCap - back} of ${C.wingCap} aircraft lost.`;
+  }
+  return note;
 }
 
 /* ---------- 14_world.js ---------- */
@@ -12160,6 +12232,13 @@ function refitDesign(base, counters, fid, tier) {
       const order = ['smoke', 'radio'].map((id) => d.cells.findIndex((c) => c.p === id)).filter((i) => i >= 0);
       if (weapons().length >= 2) { const mg = d.cells.findIndex((c) => c.p === 'mg'); if (mg >= 0) order.push(mg); }
       for (const i of order) if (trySwap(i, 'flare')) break;
+    } else if (k === 'rack') {
+      // A missile rack in place of the weakest gun of its size (with two or more weapons), loaded
+      // with the faction's missile of its tier.
+      if (d.cells.some((c) => PARTS[c.p].secondary === 'launcher') || !refitAllowed(PARTS.rack, fid, Math.max(tier, PARTS.rack.tier), key)) continue;
+      const ws = weapons().filter((e) => !e.P.secondary && sameSize(e.P, PARTS.rack));
+      if (weapons().length < 2 || !ws.length) continue;
+      if (trySwap(weakest(ws).i, 'rack')) d.missile = tier >= 4 ? AI_MISSILE.t4 : AI_MISSILE.t3;
     } else if (k === 'energy') {
       if (airDomain(dom) || !PARTS.composite || PARTS.composite.tier > tier) continue;
       d.cells.forEach((c, i) => { const P = PARTS[c.p]; if (P.cat === 'structure' && P.armor >= 20 && P.armor < PARTS.composite.armor) trySwap(i, 'composite'); });
@@ -12183,17 +12262,20 @@ function aiReview(fid, news) {
   const want = wantedCounters(st.counters);
   const tier = aiTierOf(fid);
   if (want.join() === st.counters.join() && tier === st.refitTier) return;
-  const added = want.filter((k) => !st.counters.includes(k));
+  const added = want.filter((k) => !st.counters.includes(k)).map((k) => COUNTERS[k]);
+  // From tech tier 3 every refit also fits a missile rack (5b3); news when that first happens.
+  const racks = tier >= AI_MISSILE.tier;
+  if (racks && !((st.refitTier || 0) >= AI_MISSILE.tier)) added.push('missile racks');
   st.counters = want;
   st.refitTier = tier;
   st.refit = {};
   campaign.aiDesigns = campaign.aiDesigns || {};
   st.marks = st.marks || {};
   const names = [];
-  if (want.length) {
+  if (want.length || racks) {
     for (const id of aiDesignPool(fid)) {
       const base = designFromTemplate(id);
-      const d = refitDesign(base, want, fid, tier);
+      const d = refitDesign(base, racks ? want.concat('rack') : want, fid, tier);
       if (!d) continue;
       st.marks[id] = (st.marks[id] || 1) + 1;
       d.id = `ai_${fid}_${id}_${st.marks[id]}`;
@@ -12207,7 +12289,7 @@ function aiReview(fid, news) {
   }
   st.refits = (st.refits || 0) + (names.length ? 1 : 0);
   if (added.length && names.length) {
-    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.map((k) => COUNTERS[k]).join(', ')}.`;
+    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.join(', ')}.`;
     campaign.journal.push(msg);
     news.push(msg.replace(/^Day \d+: t/, 'T'));
   }
@@ -12654,6 +12736,7 @@ SCREENS.title = {
     audio.playTheme('title');
     audio.quiet = true;
     this.demo = null;
+    offerTutorial();                            // once, to a new player (16q)
   },
   exit() {
     if (this.root) this.root.remove();
@@ -12893,11 +12976,12 @@ SCREENS.battle = {
     this.pick = null;
     this.closeWheel();
     this.buildControls();
+    if (opts.tutorial) setupTutorial(this);   // the guided practice battle (16q)
     this.layout();
     audio.setIntensity(0);
     audio.setEra(battleEra(B));
     audio.playTheme('battle');
-    this.showHowTo();
+    if (!opts.tutorial) this.showHowTo();   // the tutorial has its own banner
     if (B.loaned) ui.toast(`Sea battle: a fleet is lent to you (${B.squad.map((V) => V.name).join(', ')}).`, 4000);
     else if (B.ashore.length) ui.toast(`Sea battle: ${B.ashore.map((d) => d.name).join(', ')} stay${B.ashore.length > 1 ? '' : 's'} ashore.`, 3500);
     if (B.inPort.length) ui.toast(`No sea on this map: ${B.inPort.map((d) => d.name).join(', ')} stay${B.inPort.length > 1 ? '' : 's'} in port.`, 3500);
@@ -12920,6 +13004,7 @@ SCREENS.battle = {
 
   exit() {
     game.frozen = false;
+    endTutorial(this);
     this.closeWheel();
     this.B = null;
     if (this.howEl) { this.howEl.remove(); this.howEl = null; }
@@ -12928,6 +13013,7 @@ SCREENS.battle = {
 
   pauseOpts() {
     if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.tutorial) return { restartLabel: 'Restart the tutorial', restart: () => { endTutorial(this); this.enter(this.opts); }, quitLabel: 'Leave the tutorial', quit: () => screens.go('title') };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
     return {
@@ -13389,6 +13475,7 @@ SCREENS.battle = {
       C.alt.disabled = this.frozen || n === 0;
     }
     C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
+    if (this.opts.tutorial) stepTutorial(this);
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -13458,6 +13545,14 @@ SCREENS.battle = {
       if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
       if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
       btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
+    } else if (this.opts.tutorial) {
+      // The tutorial: done, or another go.
+      endTutorial(this);
+      if (win) { audio.sfx('fanfare'); spawnConfetti(); save.profile.tutorial.done = true; save.touch('profile'); save.flush(); } else audio.sfx('lifeLost');
+      c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'WELL DONE' : 'TRY AGAIN'));
+      c.appendChild(el('p', 'card-text', win ? 'That’s the battle basics. The campaign adds fleets, settlements, trade and research; How to play and the Glossary are in Settings → Help.' : 'Your vehicles were lost. Try the tutorial again.'));
+      btns.appendChild(button('Title', () => { close(); screens.go('title'); }, win ? 'btn' : 'btn', 'back'));
+      btns.appendChild(button(win ? 'Play again' : 'Try again', () => { close(); this.enter(this.opts); }, 'btn btn-primary'));
     } else if (this.opts.sim) {
       // Battle Simulator (design/01 §15): facts only, no campaign effects.
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
@@ -15168,6 +15263,7 @@ SCREENS.map = {
     updateVisibility();
     this.build();
     audio.playTheme('title');
+    mapTips();                                  // first visit only (16q)
   },
   exit() { if (this.root) this.root.remove(); this.root = null; campaignStore.save(); },
   pauseOpts() {
@@ -16718,6 +16814,327 @@ function openOfficer(o, fl) {
   };
   draw();
   close = ui.open(c, () => { campaign.running = wasRunning; if (screens.name === 'map') SCREENS.map.refresh(); });
+}
+
+/* ---------- 16p_screen_help.js ---------- */
+/* ==== 16p HELP: HOW TO PLAY, OBJECTIVES, GLOSSARY ==== */
+// Producer's request (v0.7.1): help that takes no screen space, opened from Settings → Help.
+// How to play: short pages per subject. Objectives: what the current battle or campaign asks.
+// Glossary: every vehicle, part, faction and term, read from the game's own data (so new parts
+// and designs appear by themselves), with a search box. Facts only: nothing says what is best.
+
+const HOW_TO = [
+  ['Basics', [
+    'You are the Grand Admiral of one faction. You drive one vehicle in battle; captains drive the rest.',
+    'Hold the phone sideways. Tap ❚❚ to pause; ⚙ opens Settings, where this Help lives.',
+    'Battles: up to three of your vehicles fight at a time; the rest wait in reserve and come in when one is lost or pulled back.',
+    'The campaign: move fleets on the world map, fight, take settlements, trade, research, and build your own vehicles part by part.',
+  ]],
+  ['Battle controls', [
+    'Drive: hold ◀ ▶ (keyboard A/D or arrows). Aircraft, airships, helicopters and submarines also use ▲ ▼ (W/S).',
+    'Fire: tap Fire (Space) to shoot at the nearest enemy in reach. To aim by hand, hold Fire and slide out into the battlefield; let go to fire.',
+    'Alt: the secondary weapon when your vehicle has one (missiles, torpedoes, bombs, rockets) (F).',
+    'Swap: drive the next vehicle of your three (E or Tab). Tap a vehicle card to take it; hold a card for its command wheel.',
+    'Orders for the others: Follow, Escort, Hold, Attack, Back (keys 1–5). Smoke (Q) hides you for a while.',
+    'Time stop (T) freezes the battle so you can give orders calmly. Pinch to zoom, drag with two fingers to look around.',
+  ]],
+  ['Vehicles and damage', [
+    'Vehicles are built from parts on a grid. Each part has hit points and armour; a shell must beat the armour (penetration) to hurt what is behind.',
+    'Destroy the crew, engines or tracks and a vehicle stops; a hit on ammunition or a capacitor can blow it apart.',
+    'Ships float by their hull and sink when flooded; submarines dive with ballast; aircraft need speed over their wings; airships float on gas.',
+    'Heat, fuel, ammunition and power all run out. Energy weapons need spare engine power or a capacitor.',
+  ]],
+  ['Campaign map', [
+    'Tap a fleet, then tap where it should go: the path shows the time and fuel. Start ▶ runs the clock (1×, 3×, 10×).',
+    'Meeting an enemy fleet starts a battle: fight it yourself or auto-resolve. Settlements are taken by siege.',
+    'Tap a settlement for its market, warehouse, workshop, yard and barracks. A second tap on the same spot switches between a fleet and a city.',
+    'War room (top bar): relations and truces, the war journal, medals, and how close you are to victory. Research: the tech tree and perks.',
+  ]],
+  ['Fleets and officers', [
+    'Each fleet has an admiral riding its flagship (first into battle, with a pennant). The admiral’s level sets the fleet size.',
+    'Captains and admirals earn XP. Open their card from the fleet panel to level them up and choose an upgrade; admirals choose doctrines (for example combined arms, letting aircraft join a land or sea fleet).',
+    'Support vehicles (supply wagon, fuel tender, supply airship) carry fuel and goods and don’t count towards the fleet size.',
+    'Recruit officers at forts and citadels; promote a captain of level 6 to admiral.',
+  ]],
+  ['Economy and logistics', [
+    'Only money is shared everywhere. Wood, metal, electronics, scrap, fuel and ammunition sit in one warehouse or one hold at a time and must be carried.',
+    'Settlements earn money each day and produce goods; officers draw wages. Buy and sell at markets; prices differ by place and relation.',
+    'Fleets burn fuel on the move. Refuel at your settlements, from a support vehicle’s hold, or with a convoy on a standing route.',
+    'Win battles to salvage scrap and damaged parts; reverse-engineer parts at a metropolis to learn their family.',
+  ]],
+  ['Drafting Office and research', [
+    'Design vehicles part by part. Each class has a grid size and part limit; the panel shows mass, speed, armour, firepower and cost as plain numbers.',
+    'Test drive a design, save it as a new mark, then build it at a yard or refit a ship to it.',
+    'Research unlocks part families at your cities and metropolises with Command Points from the Grand Admiral’s level. In the campaign only researched parts can be placed.',
+  ]],
+];
+
+// Terms for the glossary (game words, plain meanings).
+const GLOSSARY_TERMS = [
+  ['Admiral', 'Commands a fleet from its flagship. Level sets fleet size and the largest flagship class; chooses doctrines.'],
+  ['Airfield', 'A city, metropolis, fort or citadel near a battle sends its owner’s aircraft in from the edge.'],
+  ['Auto-resolve', 'Settles a battle without playing it, by the same rules.'],
+  ['Captain', 'Drives one vehicle. Level adds accuracy and quicker reactions; upgrades add more.'],
+  ['Charter', 'Buying a neutral village with a fleet docked there; costs reputation with nearby factions.'],
+  ['Class', 'A vehicle’s size category (tank, behemoth, corvette, destroyer, gunship…): grid size and part limit.'],
+  ['Command Points (CP)', 'Earned with the Grand Admiral’s level; spent on research and perks.'],
+  ['Convoy', 'A fleet run by a quartermaster on a standing route, carrying goods between settlements.'],
+  ['Doctrine', 'An admiral’s upgrade that changes the whole fleet.'],
+  ['Flagship', 'The ship the admiral rides. If it is lost the admiral moves to another ship.'],
+  ['Garrison', 'Ships and captains left at a settlement to defend it.'],
+  ['Mark', 'A saved version of a design (Mk.I, Mk.II…).'],
+  ['Penetration', 'How much armour a shot can pass through.'],
+  ['Reputation', 'How a faction regards you, −100 to 100. It decides truces.'],
+  ['Reserve', 'Vehicles waiting to enter a battle when one of the three on the field is lost or pulled back.'],
+  ['Salvage', 'Scrap and damaged parts recovered after a battle you win and hold.'],
+  ['Siege', 'A battle for a settlement: walls, emplacements and the keep.'],
+  ['Stranded', 'A fleet out of fuel. Land fleets crawl; ships and aircraft wait for supply.'],
+  ['Tier', 'A part’s technology level (0 to 4).'],
+  ['Truce', 'Trade but no fighting with a faction. Made with tribute or offered by them; broken over contested borders.'],
+];
+
+// Settings → Help.
+function helpSection(row) {
+  const rows = [];
+  const add = (label, note, fn) => rows.push(row(label, button('Open', () => { audio.sfx('tap'); fn(); }, 'btn btn-small'), note));
+  add('How to play', 'Controls, battles, the campaign', openHowTo);
+  add('Objectives', 'What this battle or campaign asks', openObjectives);
+  add('Glossary', 'Every vehicle, part, faction and term', openGlossary);
+  add('Tutorial', screens.cur && screens.cur.pausable ? 'From the title screen' : 'A guided practice battle', () => {
+    if (screens.cur && screens.cur.pausable) { ui.toast('Start the tutorial from the title screen.'); return; }
+    ui.closeTop();
+    startTutorial();
+  });
+  return rows;
+}
+
+// A scrolling card with tab buttons along the top.
+function helpCard(title, tabs, draw) {
+  const c = ui.card('', 'card-research card-help');
+  let close = null, tab = tabs[0];
+  const render = () => {
+    c.textContent = '';
+    const head = el('div', 'rs-head');
+    head.appendChild(el('h2', 'card-title', title));
+    c.appendChild(head);
+    const row = el('div', 'card-row rs-tabs help-tabs');
+    for (const t of tabs) row.appendChild(button(t, () => { tab = t; render(); }, 'btn btn-small map-tab' + (t === tab ? ' on' : '')));
+    row.appendChild(button('Close', () => close(), 'btn btn-small', 'back'));
+    c.appendChild(row);
+    const box = el('div', 'rel-list help-body');
+    draw(tab, box, render);
+    c.appendChild(box);
+  };
+  render();
+  close = ui.open(c);
+  return close;
+}
+
+function openHowTo() {
+  helpCard('How to play', HOW_TO.map((p) => p[0]), (tab, box) => {
+    for (const t of HOW_TO.find((p) => p[0] === tab)[1]) box.appendChild(el('p', 'card-text help-p', t));
+  });
+}
+
+// ---------- objectives: of the battle under way, the campaign, or the game
+function openObjectives() {
+  const c = ui.card('Objectives', 'card-help');
+  const p = (t, cls = 'card-text help-p') => c.appendChild(el('p', cls, t));
+  const S = SCREENS.battle, B = screens.name === 'battle' && S ? S.B : null;
+  if (B) {
+    if (S.opts.tutorial) p(`Tutorial step ${S.tut.i + 1} of ${TUTORIAL.length}: ${TUTORIAL[S.tut.i].text}`);
+    else if (S.opts.campaign) {
+      p(B.siege ? 'Siege: break the defences and destroy the keep, or (defending) hold until the attackers are beaten.' : 'Campaign battle: destroy or drive off every enemy vehicle, on the field and in reserve. Retreating counts as a loss.');
+      p(`Enemy vehicles destroyed: ${B.stats.kills || 0}. Yours on the field: ${B.squad.filter((V) => V && !V.destroyed).length}, in reserve: ${B.reserve ? B.reserve[0].length : 0}.`);
+    } else if (S.opts.sim) p(`Battle Simulator: destroy every enemy vehicle (${B.goalDone} of ${B.goalTotal}). No campaign effects.`);
+    else if (S.opts.test) p('Test drive: try the design on the range. Pause to go back to the Drafting Office.');
+    else {
+      const g = B.cfg.goal;
+      p(`Level ${S.level}: ${g.text}.`);
+      if (g.type === 'hold') p(`Held: ${Math.floor(B.holdT || 0)} of ${g.time} s.`);
+      else if (B.goalTotal) p(`Progress: ${B.goalDone} of ${B.goalTotal}.`);
+    }
+  } else if (campaign && (screens.name === 'map' || screens.name === 'designer')) {
+    const v = victoryProgress();
+    p('Win the war by taking every rival capital, or by holding 60% of all settlements. You lose with no settlements and no fleets left.');
+    p(`Rival capitals taken: ${v.capitals} of ${v.capitalsAll}. Settlements held: ${v.held} of ${v.all} (${v.need} needed). Fleets: ${v.fleets}.`);
+    p(`Medals: ${(campaign.medals || []).length} of ${CAMPAIGN_MEDALS.length}. Day ${campaign.day}.`);
+    if (campaign.over) p(`${campaign.over.result === 'win' ? 'Victory' : 'Defeat'} on day ${campaign.over.day}: ${campaign.over.how}.`);
+  } else {
+    p('Campaign: lead your faction to victory by taking every rival capital or 60% of all settlements.');
+    p('Gauntlet (Play): clear levels one after another; each level states its goal at the start.');
+    p('Battle Simulator: set up any battle with no consequences. Drafting Office: design and test vehicles.');
+  }
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('Close', () => close(), 'btn btn-primary', 'back'));
+  c.appendChild(row);
+  close = ui.open(c);
+}
+
+// ---------- glossary
+function openGlossary() {
+  let q = '';
+  const match = (...s) => !q || s.some((x) => String(x).toLowerCase().includes(q));
+  helpCard('Glossary', ['Vehicles', 'Parts', 'Factions', 'Places', 'Terms'], (tab, box, render) => {
+    const inp = el('input', 'text-in help-search');
+    inp.type = 'search'; inp.placeholder = 'Search'; inp.value = q;
+    inp.addEventListener('input', () => { q = inp.value.trim().toLowerCase(); const caret = inp.selectionStart; render(); const n = document.querySelector('.help-search'); if (n) { n.focus(); n.setSelectionRange(caret, caret); } });
+    box.appendChild(inp);
+    const item = (title, lines) => {
+      const r = el('div', 'rel-row');
+      r.appendChild(el('div', 'rel-name', title));
+      for (const t of lines.filter(Boolean)) r.appendChild(el('div', 'card-text map-note', t));
+      box.appendChild(r);
+      return r;
+    };
+    let n = 0;
+    if (tab === 'Vehicles') {
+      for (const id of Object.keys(TEMPLATES)) {
+        if (/^(msl_|drn_)/.test(id)) continue;
+        const T = TEMPLATES[id], d = designFromTemplate(id), dom = domainOf(d), cls = classFor(d);
+        const fac = T.faction ? factionOf(T.faction) : null;
+        if (!match(T.name, id, dom, cls ? cls.name : '', fac ? fac.name : '')) continue;
+        const st = statsOf(d), rep = designReport(d);
+        const guns = [...new Set(d.cells.map((c) => PARTS[c.p]).filter((x) => x.cat === 'weapon').map((x) => x.name))].join(', ');
+        const r = item(T.name, [
+          `${DOMAIN_NAMES[dom]} · ${cls ? cls.name : 'outside class limits'}${fac ? ` · ${fac.name}` : ''}`,
+          `${(st.mass / 1000).toFixed(1)} t · top speed ${Math.round(rep.topSpeed || 0)} km/h · ${d.cells.length} parts · cost ${costOf(d)}`,
+          `Weapons: ${guns || 'none'}`,
+        ]);
+        if (n++ < 24) r.insertBefore(designThumb(d, 150, 54), r.firstChild.nextSibling);
+      }
+    } else if (tab === 'Parts') {
+      const cats = {};
+      for (const P of Object.values(PARTS)) (cats[P.cat] = cats[P.cat] || []).push(P);
+      for (const cat of Object.keys(cats)) for (const P of cats[cat]) {
+        const lib = PART_LIBRARY.parts[P.id] || PART_LIBRARY.materials[P.id] || {};
+        if (!match(P.name, P.id, cat)) continue;
+        const stats = ['mass', 'hp', 'armor', 'power', 'pen', 'dmg', 'range', 'reload', 'cargo', 'fuel', 'spot', 'liftForce'].filter((k) => P[k]).map((k) => `${k === 'armor' ? 'armour' : k === 'liftForce' ? 'lift' : k} ${P[k]}`).join(' · ');
+        const fac = lib.unlock && lib.unlock.faction ? factionOf(lib.unlock.faction) : null;
+        item(P.name, [
+          `${cat} · tier ${P.tier} · ${P.w}×${P.h}${fac ? ` · ${fac.name} only` : ''}${P.domains ? ` · ${P.domains.join(', ')}` : ''}`,
+          stats,
+          P.info || '',
+          (lib.pros || []).concat(lib.cons || []).join(' · '),
+        ]);
+      }
+    } else if (tab === 'Factions') {
+      for (const F of FACTIONS) {
+        if (!match(F.name, F.identity)) continue;
+        const sig = Object.values(PART_LIBRARY.parts).filter((p) => p.unlock && p.unlock.faction === F.id).map((p) => p.name)
+          .concat(Object.entries(PART_LIBRARY.materials).filter(([, m]) => m.unlock && m.unlock.faction === F.id).map(([, m]) => m.name));
+        const P = AI_PERSONA[F.id], doms = P ? Object.entries(P.domains).sort((a, b) => b[1] - a[1]).map(([k, w]) => `${k} ${w}`).join(', ') : '';
+        item(F.name, [F.identity, `Capital: ${F.capital}`, `Strengths: ${F.pros.join('; ')}`, `Weaknesses: ${F.cons.join('; ')}`, sig.length ? `Signature parts: ${sig.join(', ')}` : '', doms ? `As an AI, builds by weight: ${doms}` : '']);
+      }
+    } else if (tab === 'Places') {
+      for (const [id, T] of Object.entries(SETTLEMENT_TYPES)) if (match(T.name, id)) item(T.name, [`Money a day ${T.money} · garrison ${T.garrison}`, id === 'city' || id === 'metropolis' ? 'Workshop and yard' : id === 'fort' || id === 'citadel' ? 'Barracks: officers for hire' : '']);
+      for (const k of GOODS) if (match(GOOD_NAMES[k])) item(GOOD_NAMES[k], [`Base price ${PRICES[k]} a unit (${GOOD_UNITS[k]})${SELL_ONLY[k] ? '; markets buy it but don\u2019t sell it' : ''}`]);
+    } else {
+      for (const [t, d] of GLOSSARY_TERMS) if (match(t, d)) item(t, [d]);
+    }
+    if (box.children.length === 1) box.appendChild(el('p', 'card-text map-note', 'Nothing matches.'));
+  });
+}
+
+/* ---------- 16q_tutorial.js ---------- */
+/* ==== 16q TUTORIAL ==== */
+// Producer's request (v0.7.1). A guided practice battle: a banner gives one step at a time and
+// moves on when you have done it (drive, fire, aim by hand, swap, give an order, stop time, then
+// win). The enemy holds fire until the last step. Offered once on the first launch, and any time
+// from Settings → Help. The campaign map shows a few first-time tips once.
+
+const TUTORIAL = [
+  { text: 'Drive: hold ▶ (or D) to move forward.', done: (S, B, t) => Math.abs(B.me.body.x - t.x0) > 12 },
+  { text: 'Fire: tap Fire (or Space). It aims at the nearest enemy in reach.', done: (S, B) => B.stats.shots >= 1 },
+  { text: 'Aim by hand: press and hold Fire, slide your finger out into the battlefield to aim, and let go to fire.', done: (S, B, t) => t.dragged && B.stats.shots >= 2 },
+  { text: 'Swap: tap Swap (or E) to drive your other vehicle.', done: (S, B, t) => B.me !== t.first },
+  { text: 'Orders: tap an order such as Attack or Hold (keys 1–5) for the vehicles you aren’t driving.', done: (S, B, t) => B.order !== t.order0 },
+  { text: 'Time stop: tap the stopwatch (or T) to freeze the battle, then tap it again to carry on.', done: (S, B, t) => t.froze && !S.frozen },
+  { text: 'Now win: destroy the enemy armoured car. It fires back from now on.', done: (S, B) => B.result === 'win' },
+];
+const TUTORIAL_SIM = {
+  field: 'inland', weather: 'clear', light: 'day', seed: 7,
+  squad: () => ['light', 'scout'].map(designFromTemplate),
+  enemy: () => [designFromTemplate('mgcar')],
+};
+
+function startTutorial() {
+  audio.unlock();
+  screens.go('battle', { sim: TUTORIAL_SIM, tutorial: true });
+}
+
+// From the battle screen's enter().
+function setupTutorial(S) {
+  const B = S.B;
+  B.cfg.holdFire = true;                    // the enemy waits until the last step
+  S.tut = { i: 0, x0: B.me.body.x, first: B.me, order0: B.order, dragged: false, froze: false, el: null };
+  const bar = el('div', 'tut-banner');
+  const txt = el('div', 'tut-text');
+  bar.appendChild(txt);
+  bar.appendChild(button('Skip', () => { save.profile.tutorial.done = true; save.touch('profile'); screens.go('title'); }, 'btn btn-small'));
+  uiLayer.insertBefore(bar, ui.toastBox);
+  S.tut.el = bar; S.tut.txt = txt;
+  showTutorialStep(S);
+}
+function showTutorialStep(S) {
+  const t = S.tut;
+  t.txt.textContent = `${t.i + 1}/${TUTORIAL.length} · ${TUTORIAL[t.i].text}`;
+  if (t.i === TUTORIAL.length - 1) S.B.cfg.holdFire = false;
+}
+// Every frame (from the battle screen's update()).
+function stepTutorial(S) {
+  const t = S.tut, B = S.B;
+  if (!t || B.result === 'lost') return;
+  if (S.aim) t.dragged = true;
+  if (S.frozen) t.froze = true;
+  if (t.i < TUTORIAL.length - 1 && TUTORIAL[t.i].done(S, B, t)) {
+    t.i++;
+    audio.sfx('objective');
+    haptic('tap');
+    showTutorialStep(S);
+  }
+}
+function endTutorial(S) {
+  if (S.tut && S.tut.el) S.tut.el.remove();
+  if (S.tut) S.tut.el = null;
+}
+
+// Offered once, on the title screen, to a player with no battles yet.
+function offerTutorial() {
+  const p = save.profile;
+  if (p.tutorial.offered || p.tutorial.done || p.stats.battles > 0) return;
+  p.tutorial.offered = true;
+  save.touch('profile');
+  const c = ui.card('New to Iron Doctrine?');
+  c.appendChild(el('p', 'card-text', 'A short practice battle shows how to drive, aim, fire, swap vehicles and give orders. You can play it later from Settings → Help.'));
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('Not now', () => close(), 'btn', 'back'));
+  row.appendChild(button('Play the tutorial', () => { close(); startTutorial(); }, 'btn btn-primary'));
+  c.appendChild(row);
+  close = ui.open(c);
+}
+
+// First visit to the campaign map: a few tips, once.
+const MAP_TIPS = [
+  'Tap a fleet, then tap where it should go. The path shows time and fuel; tap Move, then Start ▶ to run the clock.',
+  'Tap a settlement for its market, warehouse, workshop, yard and barracks. Your capital is where you start.',
+  'Meeting an enemy fleet starts a battle: fight it yourself or auto-resolve it.',
+  'War room (top bar) holds relations, the journal, medals and victory progress. Help is in Settings (⚙).',
+];
+function mapTips() {
+  const p = save.profile;
+  if (p.tutorial.mapTips) return;
+  p.tutorial.mapTips = true;
+  save.touch('profile');
+  const c = ui.card('The campaign map');
+  for (const t of MAP_TIPS) c.appendChild(el('p', 'card-text help-p', t));
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('Got it', () => close(), 'btn btn-primary', 'back'));
+  c.appendChild(row);
+  close = ui.open(c);
 }
 
 /* ---------- 17_main.js ---------- */

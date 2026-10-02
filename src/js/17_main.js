@@ -169,6 +169,7 @@ window.__GAME__ = {
   officersCheck: () => officersCheck(),
   warCheck: () => warCheck(),
   factionArtCheck: () => factionArtCheck(),
+  airPowerCheck: () => airPowerCheck(),
   missileShowcase: (id) => missileShowcase(id),
   systemsCheck: () => systemsCheck(),
   evalIn: (src) => eval(src),       // debugging: run code inside the game's scope

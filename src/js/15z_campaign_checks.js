@@ -698,6 +698,49 @@ function factionArtCheck() {
   out.baseAll = campaignBaseDesigns().filter((id) => /^league_.*_t[12]$/.test(id)).length;
   return out;
 }
+// AI missiles and airfields (5b3/5c3, v0.7.0).
+function airPowerCheck() {
+  const out = {};
+  // AI factions at tech tier 3 refit with missile racks.
+  newCampaign('league', 5252);
+  campaign.day = 42;
+  const news = [];
+  aiReview('directorate', news);
+  const st = aiState('directorate');
+  const racked = Object.values(st.refit).map((id) => campaign.aiDesigns[id]).filter((d) => d.cells.some((c) => c.p === 'rack'));
+  out.racks = { designs: racked.length, missile: racked.length ? racked[0].missile : null, news: news.some((m) => /missile racks/.test(m)), valid: racked.every((d) => validateDesign(d).ok) };
+  if (racked.length) {
+    const B = createBattle(0, { squad: [designFromTemplate('light')], cfg: simulatorConfig({ field: 'inland', weather: 'clear', light: 'day', seed: 77 }), reserves: true, enemyForce: [JSON.parse(JSON.stringify(racked[0]))] });
+    const E = B.units.find((u) => u.side === 1) || null;
+    const w = E && E.weapons.find((x) => x.def.id === 'rack');
+    out.racks.loaded = w ? { msl: w.msl && w.msl.id, rounds: w.rounds } : null;
+  }
+  // Your airfield: fighters from a city's warehouse join a battle near it; survivors return.
+  newCampaign('league', 5253);
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const city = world.settlements.find((s) => s.faction === 'league' && AIRFIELD.types.includes(s.type));
+  stockAt(city.store, 'wings').fighter = 2;
+  const en = campaign.fleets.find((fl) => fl.faction !== 'league' && fl.domain === 'land' && relation(fl.faction, 'league') === 'war');
+  land.x = city.x + 0.5; land.y = city.y + 0.5; en.x = land.x + 1; en.y = land.y;
+  const B = createCampaignBattle({ mine: land.id, theirs: en.id }, true);
+  out.mine = { fields: (B.airfields || []).filter((a) => a.side === 0).map((a) => ({ n: a.wingCap, id: a.wingId })), stockLeft: stockAt(city.store, 'wings').fighter || 0 };
+  for (let t = 0; t < 30; t += SIM_STEP) updateBattle(B, SIM_STEP);
+  out.mine.launched = B.stats.wings || 0;
+  out.mine.flying = B.units.filter((u) => u.wing && u.wing.airfield && !u.destroyed).length;
+  const note = airfieldsAfterBattle(B);
+  out.mine.back = stockAt(city.store, 'wings').fighter || 0;
+  out.mine.note = /Air support from/.test(note);
+  // An AI airfield at tech tier 2 sends fighters into a battle next to its city.
+  newCampaign('league', 5254);
+  campaign.day = 30;
+  const foe = world.settlements.find((s) => s.faction && s.faction !== 'league' && relation(s.faction, 'league') === 'war' && AIRFIELD.types.includes(s.type));
+  const l2 = playerFleets().find((fl) => fl.domain === 'land');
+  const e2 = campaign.fleets.find((fl) => fl.faction === foe.faction && fl.shipIds.length && !fl.aiConvoy);
+  l2.x = foe.x + 0.5; l2.y = foe.y + 0.5; e2.x = l2.x + 0.5; e2.y = l2.y;
+  const B2 = createCampaignBattle({ mine: l2.id, theirs: e2.id }, true);
+  out.ai = (B2.airfields || []).filter((a) => a.side === 1).map((a) => a.wingCap);
+  return out;
+}
 function warCheck() {
   newCampaign('league', 3131);
   const out = {};
