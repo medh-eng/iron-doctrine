@@ -90,6 +90,7 @@ function applySettings(name) {
   audio.applySettings();
   if (name === 'quality' || name === 'btnSize' || name === 'leftHanded' || name === '*') resize();
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion);
+  document.documentElement.style.setProperty('--ts', String(textScale()));
 }
 
 function boot() {

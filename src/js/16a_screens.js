@@ -202,7 +202,7 @@ function pickFaction() {
     b.textContent = '';
     const dot = el('i', 'paint-dot'); dot.style.background = F.color;
     const t = el('span', 'faction-txt');
-    const head = el('b', ''); head.appendChild(dot); head.appendChild(document.createTextNode(F.name));
+    const head = el('b', ''); head.appendChild(dot); head.appendChild(factionMarkEl(F.id)); head.appendChild(document.createTextNode(F.name));
     t.appendChild(head);
     t.appendChild(el('small', '', `${F.identity} ${F.pros.join('. ')}. ${F.cons.join('. ')}.`));
     b.appendChild(t);

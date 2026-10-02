@@ -734,7 +734,7 @@ SCREENS.battle = {
       const { w, h, safe } = layout;
       g.fillStyle = 'rgba(19,70,107,0.18)';
       g.fillRect(0, 0, w, h);
-      g.font = `700 16px ${FONT_UI}`;
+      g.font = `700 ${fontPx(16)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       drawAcetate(g, w / 2 - 75, safe.t + 42, 150, 26);
       g.fillStyle = PAL.linen;
@@ -788,7 +788,7 @@ SCREENS.battle = {
         g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34, 2.5);
         g.fillStyle = V.destroyed ? '#5b5e66' : col; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34 * clamp(f, 0, 1), 2.5);
       });
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12, 1.15)}px ${FONT_UI}`;
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
       g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
@@ -805,7 +805,7 @@ SCREENS.battle = {
       else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
       else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
       else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
-      g.font = `400 13px ${FONT_UI}`;
+      g.font = `400 ${fontPx(13, 1.15)}px ${FONT_UI}`;   // the top bar has a fixed height
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
       g.fillText(text, left, safe.t + 9, right - left);
@@ -814,7 +814,7 @@ SCREENS.battle = {
       if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
-        g.font = `700 12px ${FONT_UI}`;
+        g.font = `700 ${fontPx(12, 1.15)}px ${FONT_UI}`;
         g.fillStyle = PAL.linen;
         const sc = `L${this.level}  ${(run.score + B.score).toLocaleString('en-US')}`;
         g.fillText(sc, left, safe.t + 27);
@@ -837,12 +837,12 @@ SCREENS.battle = {
       const alt = Math.round(me.body.y - ground);
       const text = me.domain === 'air' ? `Throttle ${Math.round(me.throttle * 100)}% · height ${alt} m`
         : `Height ${alt} m · order ${Math.round((me.altCmd === undefined || me.altCmd === null ? me.body.y : me.altCmd) - ground)} m`;
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.fillStyle = PAL.linen;
       g.fillText(text, C.up.x, C.up.y - C.up.r - 4);
       if (me.domain === 'air' && !me.destroyed && Math.abs((me.alpha || 0) * 180 / Math.PI) > STALL_DEG) {
-        g.fillStyle = PAL.danger; g.font = `700 16px ${FONT_UI}`;
+        g.fillStyle = PAL.danger; g.font = `700 ${fontPx(16)}px ${FONT_UI}`;
         g.fillText('STALL', C.up.x, C.up.y - C.up.r - 20);
       }
     }
@@ -851,7 +851,7 @@ SCREENS.battle = {
       const me = B.me;
       const depth = Math.max(0, B.T.sea - (me.body.y + (me.bounds.maxY - me.com.y)));
       const order = me.depthCmd === null || me.depthCmd === undefined ? 'surface' : `${Math.max(0, Math.round(B.T.sea - me.depthCmd - (me.bounds.maxY - me.com.y)))} m`;
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.fillStyle = PAL.linen;
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
@@ -884,7 +884,10 @@ SCREENS.battle = {
     for (const V of B.units) {
       if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
       g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;
-      g.fillRect(X(V.body.x) - 1.5, Y(V.body.y) - 4, 3, 3);
+      // Yours are squares, theirs are triangles (6f: shape as well as colour).
+      const ux = X(V.body.x), uy = Y(V.body.y) - 2.5;
+      if (V.side === 0) g.fillRect(ux - 1.5, uy - 1.5, 3, 3);
+      else { g.beginPath(); g.moveTo(ux - 2.5, uy - 2); g.lineTo(ux + 2.5, uy - 2); g.lineTo(ux, uy + 2); g.closePath(); g.fill(); }
     }
     const vw = layout.w / view.S;
     g.strokeStyle = 'rgba(230,220,195,0.8)';

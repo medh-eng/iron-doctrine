@@ -200,6 +200,7 @@ const ui = {
       ],
       Display: () => [
         row('Full screen', toggle('fullscreen'), 'Goes full screen on your first tap'),
+        row('Text size', segmented('textSize', ['S', 'M', 'L', 'XL'])),
         row('Graphics quality', segmented('quality', ['Low', 'Medium', 'High'])),
         row('Reduced motion', toggle('reducedMotion'), 'No shake, fewer flashes'),
         row('Show FPS', toggle('showFps')),
@@ -327,9 +328,9 @@ function drawFloaters(g, toScreenX, toScreenY) {
   floaters.forEachAlive((f) => {
     const p = f.t / 0.9;
     const e = easeOutCubic(p);
-    const size = Math.round(15 * lerp(1.2, 1, clamp(p * 3, 0, 1)));
+    const size = Math.round(15 * (save.settings.reducedMotion ? 1 : lerp(1.2, 1, clamp(p * 3, 0, 1))));
     g.globalAlpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
-    g.font = `700 ${size}px ${FONT_UI}`;
+    g.font = `700 ${fontPx(size)}px ${FONT_UI}`;
     g.fillStyle = f.amber ? PAL.amber : PAL.linen;
     const half = g.measureText(f.text).width / 2 + 8;
     const sx = clamp(toScreenX(f.x), layout.safe.l + half, layout.w - layout.safe.r - half);

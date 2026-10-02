@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.7.3';
+const GAME_VERSION = '0.7.4';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS = {
   quality: 'High',        // Low, Medium, High
   reducedMotion: false,   // first run copies the system preference
   showFps: false,
+  textSize: 'M',          // S, M, L, XL (v0.7.4)
   hints: true,            // a Hint button on the campaign map (v0.7.2)
 };
 
@@ -85,7 +86,9 @@ const QUALITY = {
 };
 
 // Thumb controls (design/02 §1, §8)
-const BTN_SCALE = { S: 0.85, M: 1, L: 1.15 };  // FIRE is 64 / 76 / 88 px across
+const BTN_SCALE = { S: 0.85, M: 1, L: 1.15 };
+// Text size setting (6f): every menu font and the battle and map labels are scaled by this.
+const TEXT_SCALE = { S: 0.9, M: 1, L: 1.15, XL: 1.3 };  // FIRE is 64 / 76 / 88 px across
 const FIRE_DIAMETER = 76;
 const CONTROL_GHOST_AFTER = 4;     // seconds untouched before controls fade
 const CONTROL_GHOST_ALPHA = 0.6;

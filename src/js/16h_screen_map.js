@@ -499,7 +499,7 @@ SCREENS.map = {
     // Paths of your fleets and the move preview.
     g.lineWidth = 2;
     for (const fl of playerFleets()) if (fl.path.length) this.drawPath(g, fl.x, fl.y, fl.path, 'rgba(123,196,127,0.8)');
-    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, true);
+    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, this.plan.strands ? [2, 5] : [6, 4]);
     // Settlements.
     for (const s of world.settlements) this.drawSettlement(g, s);
     // Fog of war over what your fleets and settlements can't see.
@@ -531,7 +531,7 @@ SCREENS.map = {
 
   drawPath(g, x, y, path, col, dashed) {
     g.strokeStyle = col;
-    g.setLineDash(dashed ? [6, 4] : []);
+    g.setLineDash(dashed || []);   // a dash pattern; a stranding plan is dotted (6f)
     g.beginPath(); g.moveTo(this.sx(x), this.sy(y));
     for (const [px, py] of path) g.lineTo(this.sx(px), this.sy(py));
     g.stroke();
@@ -556,8 +556,9 @@ SCREENS.map = {
     // Pennant in the owner's colour.
     g.fillStyle = F ? F.color : '#9A9DA1';
     g.beginPath(); g.moveTo(x - k, y - k * 0.7); g.lineTo(x - k, y - k * 2); g.lineTo(x - k + 8, y - k * 1.7); g.lineTo(x - k, y - k * 1.4); g.fill();
+    if (F) drawFactionMark(g, F.id, x - k + 12, y - k * 1.7, 3.5);
     if (this.cam.z >= 5 || s.capital) {
-      g.font = `${s.capital ? 700 : 400} 12px ${FONT_UI}`;
+      g.font = `${s.capital ? 700 : 400} ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'top';
       g.fillStyle = 'rgba(10,14,20,0.7)';
       const tw = g.measureText(s.name).width;
@@ -581,9 +582,10 @@ SCREENS.map = {
     if (fl.domain === 'land') { g.fillRect(x - 9, y - 1, 12, 5); g.fillRect(x - 6, y - 4, 6, 3); g.fillRect(x, y - 3, 6, 1.5); }
     else if (fl.domain === 'sea') { g.beginPath(); g.moveTo(x - 10, y); g.lineTo(x + 4, y); g.lineTo(x + 1, y + 4); g.lineTo(x - 8, y + 4); g.fill(); g.fillRect(x - 5, y - 4, 4, 4); }
     else { g.beginPath(); g.ellipse(x - 3, y - 1, 7, 3.5, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x - 5, y + 3, 4, 2); }
-    g.font = `700 12px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.font = `700 ${fontPx(12)}px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
     g.fillText(String(fl.shipIds.length), x + W / 2 - 2, y);
+    drawFactionMark(g, fl.faction, x - W / 2, y - H / 2, 3.5);
     if (fl.faction === campaign.faction) {
       const f = fleetFuel(fl);
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - W / 2, y + H / 2 + 1, W, 3);

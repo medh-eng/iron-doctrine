@@ -27,7 +27,7 @@ function openRelations(tab = 'relations') {
       const rel = relation(F.id, campaign.faction);
       const alive = settlementsOf(F.id).length > 0;
       const row = el('div', 'rel-row');
-      row.appendChild(el('div', 'rel-name', F.name));
+      const nm = el('div', 'rel-name'); nm.appendChild(factionMarkEl(F.id)); nm.appendChild(document.createTextNode(F.name)); row.appendChild(nm);
       const facts = [
         alive ? (rel === 'war' ? 'At war' : 'Truce') : 'No settlements left',
         `Reputation ${repOf(F.id) > 0 ? '+' : ''}${repOf(F.id)}`,

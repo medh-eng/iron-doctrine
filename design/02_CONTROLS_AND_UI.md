@@ -253,8 +253,13 @@ Only the services that type has are shown (01 §7.1).
   | High | 2 | 300 |
 
   - fullscreen
-  - reduced motion
+  - text size: S, M, L, XL (90%, 100%, 115%, 130%); scales every menu and the battle and map labels. The battle's top bar and the map's button bars stop at 115% and 110%, because they have no room to grow (6f)
+  - reduced motion: no screen shake, flashes at 60% size and under half brightness, no pulsing warnings or popping numbers, every menu animation ends at once
   - show FPS
+- **Colour is never the only sign (6f):**
+  - each faction has a mark shape beside its colour: League ● circle, Directorate ■ square, Skyreach ▲ triangle, Clans ✚ cross, Lumen ◆ diamond. It shows on the map (settlement pennants and fleet counters), in the War room and on the faction picker
+  - battle minimap: yours are squares, theirs are triangles; flagship pennants are a triangle for yours and a square flag for theirs
+  - map fuel rings: solid red ring when stranded or out of fuel, dashed amber ring when low; a planned move that would strand is dotted, not dashed, and its line says "strands on the way"
 - **Gameplay:** clock auto-stop events, auto-resolve default, difficulty (set at campaign start).
 - **Data:** Export save (copy a code), Import save (paste a code), Reset (confirm twice), version number.
 

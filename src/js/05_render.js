@@ -185,6 +185,28 @@ function strokeGlyph(g, lines, cx, cy, s) {
   g.stroke();
 }
 
+// A faction's mark shape (6f), filled in its colour with a dark rim, centred on x, y.
+function drawFactionMark(g, fid, x, y, r) {
+  const F = factionOf(fid);
+  g.fillStyle = F.color; g.strokeStyle = 'rgba(10,12,16,0.85)'; g.lineWidth = 1.5;
+  g.beginPath();
+  switch (FACTION_SHAPE[fid]) {
+    case 'square': g.rect(x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7); break;
+    case 'triangle': g.moveTo(x, y - r * 1.05); g.lineTo(x + r, y + r * 0.8); g.lineTo(x - r, y + r * 0.8); g.closePath(); break;
+    case 'diamond': g.moveTo(x, y - r * 1.1); g.lineTo(x + r, y); g.lineTo(x, y + r * 1.1); g.lineTo(x - r, y); g.closePath(); break;
+    case 'cross': { const a = r * 0.38; g.moveTo(x - a, y - r); g.lineTo(x + a, y - r); g.lineTo(x + a, y - a); g.lineTo(x + r, y - a); g.lineTo(x + r, y + a); g.lineTo(x + a, y + a); g.lineTo(x + a, y + r); g.lineTo(x - a, y + r); g.lineTo(x - a, y + a); g.lineTo(x - r, y + a); g.lineTo(x - r, y - a); g.lineTo(x - a, y - a); g.closePath(); break; }
+    default: g.arc(x, y, r, 0, Math.PI * 2);
+  }
+  g.fill(); g.stroke();
+}
+// The same mark as a coloured text glyph for menus.
+function factionMarkEl(fid) {
+  const m = el('span', 'faction-mark', FACTION_GLYPH[FACTION_SHAPE[fid]] || '●');
+  m.style.color = factionOf(fid).color;
+  m.setAttribute('aria-hidden', 'true');
+  return m;
+}
+
 function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y);
