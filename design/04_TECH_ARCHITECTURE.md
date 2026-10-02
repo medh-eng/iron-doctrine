@@ -56,6 +56,7 @@ The files in `src/js/` are joined in filename order inside one strict IIFE. Keep
 12c_reserves.js        three on the field: reserve line-ups, entry, pull back, win and lose (01 §10.3)
 16g_screen_simulator.js the Battle Simulator screen (01 §15)
 13_autoresolve.js      campaign battles: battlefield, sides, headless auto-resolve, results, retreat, garrisons
+13c_airfields.js       airfields in campaign battles (5c3): air support from nearby settlements
 14_world.js            world generation (terrain, settlements, roads, territory), path finding
 14b_command.js         campaign state and saves, officers, ships, fleets, movement, fuel, weather
 15f_research.js        tech tree, research jobs, Command Points, perks, fleet caps, captain skill (Part 5a)
