@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.9';
+const GAME_VERSION = '0.7.0';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -3060,6 +3060,10 @@ const AI_DESIGNS = {
   3: { land: ['assault', 'drone_truck'], sea: ['destroyer', 'sub'], air: ['gunship_t2', 'dropship'] },
   4: { land: ['laser_tank', 'assault'], sea: ['carrier_t3', 'destroyer'], air: ['dropship'] },
 };
+// AI missiles (5b3): from this tech tier AI refits put a rack with this missile in place of a gun.
+const AI_MISSILE = { tier: 3, t3: 'msl_s_heat', t4: 'msl_s_radar' };
+// Airfields in campaign battles (5c3, 13c): reach in map cells, settlement types, aircraft.
+const AIRFIELD = { reach: 4, types: ['city', 'metropolis', 'fort', 'citadel'], max: 3, aiTier: 2, aiWing: 2, rate: 0.12, delay: 6 };
 const AI_CONVOY = { land: ['truck', 'truck'], sea: ['gunboat'], air: ['gunship_t0'] };
 // Name parts for officers and settlements (fictional).
 const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
@@ -7043,6 +7047,7 @@ function launchWing(B, V) {
   const U = makeVehicle(d, V.side, V.body.x + V.dir * 3, V.dir, B.T);
   launchFlier(U, B.T, U.domain === 'heli' ? 12 : 30);
   U.body.y = Math.max(U.body.y, V.body.y + V.height + 6);
+  if (V.airfield) U.body.vx = V.dir * 40;               // flying in from the airfield beyond the edge
   U.ai = makeAI(V.side === 0 ? 'squad' : 'attack', B.cfg);
   U.wing = V;
   U.name = d.name;
@@ -7054,19 +7059,21 @@ function launchWing(B, V) {
   const s = spawnParticle(FX_SMOKE, U.body.x, U.body.y, 0, 1, 1, 1.2);
   if (s) { s.grow = 1.2; s.shade = 0.8; }
   audio.sfx('clunk', B.panOf(U.body.x));
-  if (V.side === 0) floatText(`${d.name} launched`, U.body.x, U.body.y + 3, false);
+  if (V.side === 0) floatText(V.airfield ? `${d.name} from ${V.name}` : `${d.name} launched`, clamp(U.body.x, 10, B.T.length - 10), U.body.y + 3, false);
 }
 
 function stepWings(B, dt) {
-  for (const V of B.units) {
-    if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) continue;
-    V.wingT -= dt;
-    if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) continue;
-    if (V.side === 1 && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) continue;
-    if (B.cfg && B.cfg.holdFire && V.side === 1) continue;
-    launchWing(B, V);
-    V.wingT = 1 / Math.max(0.02, V.wingRate);
-  }
+  for (const V of B.units) stepWing(B, V, dt);
+  if (B.airfields) for (const V of B.airfields) stepWing(B, V, dt);   // airfields off the edge (5c3)
+}
+function stepWing(B, V, dt) {
+  if (!V.wingCap || V.destroyed || V.gone || V.withdrawn || !V.wingDesign || V.empT > 0) return;
+  V.wingT -= dt;
+  if (V.droneOrder === 'recall' || V.wingAboard <= 0 || V.wingT > 0) return;
+  if (V.side === 1 && !V.airfield && !B.units.some((U) => U.side === 0 && !U.destroyed && Math.abs(U.body.x - V.body.x) < DRN.reach * 2)) return;
+  if (B.cfg && B.cfg.holdFire && V.side === 1) return;
+  launchWing(B, V);
+  V.wingT = 1 / Math.max(0.02, V.wingRate);
 }
 
 // What an air-wing aircraft flies at (from airThink): a real enemy its order allows, or a point.
@@ -7074,6 +7081,8 @@ function wingTarget(B, V, bomber) {
   const C = V.wing, T = B.T;
   const pt = V._pt || (V._pt = { body: { x: 0, y: 0, vx: 0, vy: 0 }, height: 0, flier: true, pseudo: true, destroyed: false, seen: false });
   const at = (x) => { pt.body.x = x; pt.body.y = Math.max(T.height(clamp(x, 0, T.length)), T.sea || -1e9) + 40; return pt; };
+  // From an airfield: anything its weapons can fight, anywhere on the field.
+  if (C.airfield) return nearestTarget(B, V, 3000, (U) => !bomber || !U.flier) || at(T.length / 2);
   if (C.destroyed || C.gone || C.withdrawn) {
     // No carrier: the wing leaves by its own edge and is lost.
     if (!V.leaving) { V.leaving = true; if (V.side === 0) floatText('Air wing lost with its carrier', V.body.x, V.body.y + 3, false); }
@@ -9329,6 +9338,7 @@ function createCampaignBattle(contact, headless) {
     squad: sides.mine.map(battleDesign), enemyForce: sides.theirs.map(battleDesign),
   });
   for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
+  setupAirfields(B, battleAirfields(sides));                // air support from nearby airfields (5c3)
   B.contact = contact;
   B.sides = sides;
   return B;
@@ -9411,7 +9421,7 @@ function applyBattleOutcome(B) {
     const got = takeSalvage(salvageFrom(wrecks, winners.flatMap(fleetShips), rng), winners, winners[0].x, winners[0].y);
     salvage = ` Salvage: scrap ${got.scrap.toFixed(1)}, parts ${got.items}${got.leftScrap > 0.05 || got.leftItems ? ` (left on the field: scrap ${got.leftScrap.toFixed(1)}, parts ${got.leftItems})` : ''}.`;
   }
-  const siegeNote = B.siege ? applySiege(B, win) : '';
+  const siegeNote = (B.siege ? applySiege(B, win) : '') + airfieldsAfterBattle(B);
   const flagNews = [];
   flagshipsAfterBattle(flagsBefore, flagNews);
   // The war record, medals and the end of the war (6d).
@@ -9755,6 +9765,66 @@ function aiSiegeTarget(fl) {
     if (d < bd && fleetStrength(fl) >= defenceStrength(s) * SIEGE.aiEdge) { best = s; bd = d; }
   }
   return best;
+}
+
+/* ---------- 13c_airfields.js ---------- */
+/* ==== 13c AIRFIELDS IN CAMPAIGN BATTLES ==== */
+// Part 5c3 (design/01 §5, roadmap 5c3; v0.7.0). A campaign battle within AIRFIELD.reach cells of
+// a city, metropolis, fort or citadel lets that settlement's owner send aircraft in from their own
+// edge of the field, as an air wing with no carrier: yours are the aircraft stored in that
+// settlement's warehouse (built at a yard for air wings), up to AIRFIELD.max, and the ones that
+// survive go back to the warehouse; an AI faction from tech tier AIRFIELD.aiTier sends
+// AIRFIELD.aiWing fighters. They don't count towards the three on the field or the win.
+
+// The airfield nearest the battle for each side, if any.
+function battleAirfields(sides) {
+  const at = sides.myFleets[0] || sides.theirFleets[0];
+  if (!at) return [];
+  const near = (fid) => world.settlements
+    .filter((s) => s.faction === fid && AIRFIELD.types.includes(s.type) && Math.hypot(s.x + 0.5 - at.x, s.y + 0.5 - at.y) <= AIRFIELD.reach)
+    .sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y))[0] || null;
+  const out = [];
+  const mine = near(campaign.faction);
+  if (mine) {
+    // The aircraft type the warehouse holds most of.
+    const stock = Object.entries(stockAt(mine.store, 'wings')).filter(([id, n]) => n > 0 && wingDesignOf(id)).sort((a, b) => b[1] - a[1])[0];
+    if (stock) out.push({ side: 0, s: mine, id: stock[0], n: Math.min(AIRFIELD.max, stock[1]) });
+  }
+  const foe = sides.theirFleets[0] && sides.theirFleets[0].faction;
+  const theirs = foe && foe !== campaign.faction && aiTierOf(foe) >= AIRFIELD.aiTier ? near(foe) : null;
+  if (theirs) out.push({ side: 1, s: theirs, id: DEFAULT_WING, n: AIRFIELD.aiWing });
+  return out;
+}
+
+// Each airfield is a carrier that never enters the field: it sits just off its side's edge.
+function setupAirfields(B, list) {
+  B.airfields = [];
+  for (const a of list) {
+    const d = wingDesignOf(a.id);
+    if (!d || a.n <= 0) continue;
+    if (a.side === 0) takeStock(a.s, 'wings', a.id, a.n);       // they leave the warehouse
+    const x = a.side === 0 ? -15 : B.T.length + 15;
+    B.airfields.push({
+      airfield: true, side: a.side, dir: a.side === 0 ? 1 : -1, name: a.s.name, settlement: a.s.id, wingId: a.id,
+      body: { x, y: B.T.height(clamp(x, 0, B.T.length)) + 35, vx: 0, vy: 0, a: 0 }, height: 0,
+      seen: a.side === 0, droneOrder: 'attack', wingCap: a.n, wingAboard: a.n, wingRate: AIRFIELD.rate, wingT: AIRFIELD.delay,
+      wingDesign: d, destroyed: false, gone: false, withdrawn: false, empT: 0, launched: 0,
+    });
+  }
+}
+
+// After the battle: your aircraft still aboard or in the air go back to the warehouse.
+function airfieldsAfterBattle(B) {
+  let note = '';
+  for (const C of B.airfields || []) {
+    if (C.side !== 0) continue;
+    let back = C.wingAboard;
+    for (const U of B.units) if (U.wing === C && !U.destroyed) back++;
+    const s = byId('settlements', C.settlement);
+    if (s && back > 0) { const st = stockAt(s.store, 'wings'); st[C.wingId] = (st[C.wingId] || 0) + back; }
+    note += ` Air support from ${C.name}: ${C.wingCap - back} of ${C.wingCap} aircraft lost.`;
+  }
+  return note;
 }
 
 /* ---------- 14_world.js ---------- */
@@ -12160,6 +12230,13 @@ function refitDesign(base, counters, fid, tier) {
       const order = ['smoke', 'radio'].map((id) => d.cells.findIndex((c) => c.p === id)).filter((i) => i >= 0);
       if (weapons().length >= 2) { const mg = d.cells.findIndex((c) => c.p === 'mg'); if (mg >= 0) order.push(mg); }
       for (const i of order) if (trySwap(i, 'flare')) break;
+    } else if (k === 'rack') {
+      // A missile rack in place of the weakest gun of its size (with two or more weapons), loaded
+      // with the faction's missile of its tier.
+      if (d.cells.some((c) => PARTS[c.p].secondary === 'launcher') || !refitAllowed(PARTS.rack, fid, Math.max(tier, PARTS.rack.tier), key)) continue;
+      const ws = weapons().filter((e) => !e.P.secondary && sameSize(e.P, PARTS.rack));
+      if (weapons().length < 2 || !ws.length) continue;
+      if (trySwap(weakest(ws).i, 'rack')) d.missile = tier >= 4 ? AI_MISSILE.t4 : AI_MISSILE.t3;
     } else if (k === 'energy') {
       if (airDomain(dom) || !PARTS.composite || PARTS.composite.tier > tier) continue;
       d.cells.forEach((c, i) => { const P = PARTS[c.p]; if (P.cat === 'structure' && P.armor >= 20 && P.armor < PARTS.composite.armor) trySwap(i, 'composite'); });
@@ -12183,17 +12260,20 @@ function aiReview(fid, news) {
   const want = wantedCounters(st.counters);
   const tier = aiTierOf(fid);
   if (want.join() === st.counters.join() && tier === st.refitTier) return;
-  const added = want.filter((k) => !st.counters.includes(k));
+  const added = want.filter((k) => !st.counters.includes(k)).map((k) => COUNTERS[k]);
+  // From tech tier 3 every refit also fits a missile rack (5b3); news when that first happens.
+  const racks = tier >= AI_MISSILE.tier;
+  if (racks && !((st.refitTier || 0) >= AI_MISSILE.tier)) added.push('missile racks');
   st.counters = want;
   st.refitTier = tier;
   st.refit = {};
   campaign.aiDesigns = campaign.aiDesigns || {};
   st.marks = st.marks || {};
   const names = [];
-  if (want.length) {
+  if (want.length || racks) {
     for (const id of aiDesignPool(fid)) {
       const base = designFromTemplate(id);
-      const d = refitDesign(base, want, fid, tier);
+      const d = refitDesign(base, racks ? want.concat('rack') : want, fid, tier);
       if (!d) continue;
       st.marks[id] = (st.marks[id] || 1) + 1;
       d.id = `ai_${fid}_${id}_${st.marks[id]}`;
@@ -12207,7 +12287,7 @@ function aiReview(fid, news) {
   }
   st.refits = (st.refits || 0) + (names.length ? 1 : 0);
   if (added.length && names.length) {
-    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.map((k) => COUNTERS[k]).join(', ')}.`;
+    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.join(', ')}.`;
     campaign.journal.push(msg);
     news.push(msg.replace(/^Day \d+: t/, 'T'));
   }

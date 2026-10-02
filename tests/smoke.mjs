@@ -857,6 +857,11 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         FA(fa.sails === 1 && !fa.noProp && fa.bareValid && fa.clear.moved > 50 && fa.rain.moved > fa.clear.moved, 'sail vanes wrong');
         FA(fa.magnet === 1.25 && fa.aiPool.length === 9 && fa.baseStart === 0 && fa.baseAll === 9, 'magnet crane or faction designs wrong');
         steps.push('faction art');
+        const ap = await G(() => window.__GAME__.airPowerCheck());
+        const AP = (c, what) => check(c, `${what} ${JSON.stringify(ap)}`);
+        AP(ap.racks.designs > 3 && ap.racks.valid && ap.racks.news && ap.racks.missile === 'msl_s_heat' && ap.racks.loaded && ap.racks.loaded.rounds > 0, 'AI missile racks wrong');
+        AP(ap.mine.fields.length === 1 && ap.mine.fields[0].n === 2 && ap.mine.stockLeft === 0 && ap.mine.launched === 2 && ap.mine.back === ap.mine.flying && ap.mine.note && ap.ai[0] === 2, 'airfields wrong');
+        steps.push('air power');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));

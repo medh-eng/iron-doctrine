@@ -372,6 +372,7 @@ Side view, landscape, generated from the location.
 - These hold a detachable section: a drone, a bomb, or a whole module.
 - When released, the section becomes its own unit, guided by its drone computer if it has one; otherwise it falls free.
 - This makes missile barges, parasite fighters and drop-ship designs possible.
+- **Airfields (5c3, v0.7.0):** a campaign battle within 4 map cells of a city, metropolis, fort or citadel brings its owner's aircraft in from their own edge, as a wing with no carrier: yours are up to 3 from that settlement's air-wing stock, and the survivors return to it; an AI faction from tech tier 2 sends 2 fighters. They don't count towards the three on the field or the win.
 - **Numbers (5e):** each clamp holds 2 t; a section is a group of parts that touches the ship only through clamps. Release (command wheel) lets every section go at once if their total mass is within the clamps' hold; the section keeps its speed, becomes its own unit under the squad or enemy AI, and doesn't count towards the three on the field or the win.
 
 ### 10.6 Damage and aftermath

@@ -121,6 +121,13 @@ function refitDesign(base, counters, fid, tier) {
       const order = ['smoke', 'radio'].map((id) => d.cells.findIndex((c) => c.p === id)).filter((i) => i >= 0);
       if (weapons().length >= 2) { const mg = d.cells.findIndex((c) => c.p === 'mg'); if (mg >= 0) order.push(mg); }
       for (const i of order) if (trySwap(i, 'flare')) break;
+    } else if (k === 'rack') {
+      // A missile rack in place of the weakest gun of its size (with two or more weapons), loaded
+      // with the faction's missile of its tier.
+      if (d.cells.some((c) => PARTS[c.p].secondary === 'launcher') || !refitAllowed(PARTS.rack, fid, Math.max(tier, PARTS.rack.tier), key)) continue;
+      const ws = weapons().filter((e) => !e.P.secondary && sameSize(e.P, PARTS.rack));
+      if (weapons().length < 2 || !ws.length) continue;
+      if (trySwap(weakest(ws).i, 'rack')) d.missile = tier >= 4 ? AI_MISSILE.t4 : AI_MISSILE.t3;
     } else if (k === 'energy') {
       if (airDomain(dom) || !PARTS.composite || PARTS.composite.tier > tier) continue;
       d.cells.forEach((c, i) => { const P = PARTS[c.p]; if (P.cat === 'structure' && P.armor >= 20 && P.armor < PARTS.composite.armor) trySwap(i, 'composite'); });
@@ -144,17 +151,20 @@ function aiReview(fid, news) {
   const want = wantedCounters(st.counters);
   const tier = aiTierOf(fid);
   if (want.join() === st.counters.join() && tier === st.refitTier) return;
-  const added = want.filter((k) => !st.counters.includes(k));
+  const added = want.filter((k) => !st.counters.includes(k)).map((k) => COUNTERS[k]);
+  // From tech tier 3 every refit also fits a missile rack (5b3); news when that first happens.
+  const racks = tier >= AI_MISSILE.tier;
+  if (racks && !((st.refitTier || 0) >= AI_MISSILE.tier)) added.push('missile racks');
   st.counters = want;
   st.refitTier = tier;
   st.refit = {};
   campaign.aiDesigns = campaign.aiDesigns || {};
   st.marks = st.marks || {};
   const names = [];
-  if (want.length) {
+  if (want.length || racks) {
     for (const id of aiDesignPool(fid)) {
       const base = designFromTemplate(id);
-      const d = refitDesign(base, want, fid, tier);
+      const d = refitDesign(base, racks ? want.concat('rack') : want, fid, tier);
       if (!d) continue;
       st.marks[id] = (st.marks[id] || 1) + 1;
       d.id = `ai_${fid}_${id}_${st.marks[id]}`;
@@ -168,7 +178,7 @@ function aiReview(fid, news) {
   }
   st.refits = (st.refits || 0) + (names.length ? 1 : 0);
   if (added.length && names.length) {
-    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.map((k) => COUNTERS[k]).join(', ')}.`;
+    const msg = `Day ${campaign.day}: the ${factionOf(fid).name} refit ${names.length} design${names.length > 1 ? 's' : ''} with ${added.join(', ')}.`;
     campaign.journal.push(msg);
     news.push(msg.replace(/^Day \d+: t/, 'T'));
   }

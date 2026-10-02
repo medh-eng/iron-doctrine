@@ -655,6 +655,10 @@ const AI_DESIGNS = {
   3: { land: ['assault', 'drone_truck'], sea: ['destroyer', 'sub'], air: ['gunship_t2', 'dropship'] },
   4: { land: ['laser_tank', 'assault'], sea: ['carrier_t3', 'destroyer'], air: ['dropship'] },
 };
+// AI missiles (5b3): from this tech tier AI refits put a rack with this missile in place of a gun.
+const AI_MISSILE = { tier: 3, t3: 'msl_s_heat', t4: 'msl_s_radar' };
+// Airfields in campaign battles (5c3, 13c): reach in map cells, settlement types, aircraft.
+const AIRFIELD = { reach: 4, types: ['city', 'metropolis', 'fort', 'citadel'], max: 3, aiTier: 2, aiWing: 2, rate: 0.12, delay: 6 };
 const AI_CONVOY = { land: ['truck', 'truck'], sea: ['gunboat'], air: ['gunship_t0'] };
 // Name parts for officers and settlements (fictional).
 const NAME_FIRST = ['Ada', 'Bram', 'Cora', 'Dex', 'Edda', 'Fenn', 'Gale', 'Hask', 'Ines', 'Jory', 'Kell', 'Lio', 'Mara', 'Nils', 'Orla', 'Pim', 'Quill', 'Rhea', 'Sten', 'Tove', 'Ulla', 'Vane', 'Wren', 'Yara'];
