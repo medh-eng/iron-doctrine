@@ -871,7 +871,7 @@ SCREENS.designer = {
       g.setLineDash([8, 5]);
       g.beginPath(); g.moveTo(ox, wy); g.lineTo(ox + d.w * cs, wy); g.stroke();
       g.setLineDash([]);
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'right'; g.textBaseline = 'bottom';
       g.fillStyle = BLUEPRINT.valid;
       g.fillText(st.reserve > 0 ? `waterline · draft ${st.draft.toFixed(2)} m` : 'hull under water', Math.min(ox + d.w * cs, this.gridRect.x + this.gridRect.w) - 4, wy - 2);
@@ -909,7 +909,7 @@ SCREENS.designer = {
     g.fillStyle = PAL.amber;
     g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, -Math.PI / 2, 0); g.lineTo(px, py); g.fill();
     g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, Math.PI / 2, Math.PI); g.lineTo(px, py); g.fill();
-    g.font = `700 12px ${FONT_UI}`;
+    g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
     if (rep.domain === 'air' && st.col) {

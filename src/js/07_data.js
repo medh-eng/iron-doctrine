@@ -388,6 +388,11 @@ const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
 const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
 
 // Factions (09): where their territory sits (share of the map), capital type and name, looks.
+// Each faction's mark (6f): a shape beside its colour on the map and in lists, so
+// owners can be told apart without telling the colours apart.
+const FACTION_SHAPE = { league: 'circle', directorate: 'square', skyreach: 'triangle', clans: 'cross', lumen: 'diamond' };
+const FACTION_GLYPH = { circle: '●', square: '■', triangle: '▲', cross: '✚', diamond: '◆' };
+
 const FACTIONS = [
   { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
     identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },

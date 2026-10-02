@@ -693,17 +693,20 @@ function drawShells(g) {
 
 function drawParticles(g) {
   const S = view.S;
+  const calm = save.settings.reducedMotion;   // reduced motion: flashes dimmer and smaller (6f)
   particles.forEachAlive((p) => {
     const k = p.t / p.life;
     const x = view.sx(p.x), y = view.sy(p.y);
     switch (p.kind) {
-      case FX_FLASH:
-        g.globalAlpha = 1 - k;
+      case FX_FLASH: {
+        const fs = calm ? 0.6 : 1;
+        g.globalAlpha = (1 - k) * (calm ? 0.45 : 1);
         g.fillStyle = '#FFE9B8';
-        g.beginPath(); g.arc(x, y, p.size * S * 0.6, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, p.size * S * 0.6 * fs, 0, Math.PI * 2); g.fill();
         g.fillStyle = 'rgba(255,178,62,0.6)';
-        g.beginPath(); g.arc(x, y, p.size * S, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, p.size * S * fs, 0, Math.PI * 2); g.fill();
         break;
+      }
       case FX_SMOKE: {
         const c = Math.round(60 + p.shade * 110);
         g.globalAlpha = 0.55 * (1 - k);
@@ -796,22 +799,23 @@ function drawMarkers(g, B) {
     flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
   }
   if (B.depot) flag(B.depot, PAL.league);
-  // Flagships fly a pennant (v0.6.5): amber for yours, red for theirs.
+  // Flagships fly a pennant (v0.6.5): an amber triangle for yours, a red square flag for theirs.
   for (const V of B.units) {
     if (!V.flagship || V.destroyed || V.gone || (V.side === 1 && !V.seen)) continue;
     const sx = view.sx(V.body.x), sy = view.sy(V.body.y + V.height) - 6;
     g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 18, 2, 18);
     g.fillStyle = V.side === 0 ? PAL.amber : PAL.danger;
-    g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill();
+    if (V.side === 0) { g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill(); }
+    else g.fillRect(sx + 1, sy - 18, 10, 8);
   }
   g.setLineDash([5, 4]);
   g.lineWidth = 2;
   for (const w of B.warnings) {
     const sx = view.sx(w.x), sy = view.sy(B.T.height(w.x));
-    const r = Math.max(10, 6 * view.S) * (0.8 + 0.2 * Math.sin(B.time * 10));
+    const r = Math.max(10, 6 * view.S) * (save.settings.reducedMotion ? 1 : 0.8 + 0.2 * Math.sin(B.time * 10));
     g.strokeStyle = PAL.danger;
     g.beginPath(); g.ellipse(sx, sy, r, r * 0.35, 0, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = PAL.danger; g.font = `700 14px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+    g.fillStyle = PAL.danger; g.font = `700 ${fontPx(14)}px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
     g.fillText('!', sx, sy - r * 0.4);
   }
   g.setLineDash([]);

@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.7.3';
+const GAME_VERSION = '0.7.4';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -55,6 +55,7 @@ const DEFAULT_SETTINGS = {
   quality: 'High',        // Low, Medium, High
   reducedMotion: false,   // first run copies the system preference
   showFps: false,
+  textSize: 'M',          // S, M, L, XL (v0.7.4)
   hints: true,            // a Hint button on the campaign map (v0.7.2)
 };
 
@@ -89,7 +90,9 @@ const QUALITY = {
 };
 
 // Thumb controls (design/02 §1, §8)
-const BTN_SCALE = { S: 0.85, M: 1, L: 1.15 };  // FIRE is 64 / 76 / 88 px across
+const BTN_SCALE = { S: 0.85, M: 1, L: 1.15 };
+// Text size setting (6f): every menu font and the battle and map labels are scaled by this.
+const TEXT_SCALE = { S: 0.9, M: 1, L: 1.15, XL: 1.3 };  // FIRE is 64 / 76 / 88 px across
 const FIRE_DIAMETER = 76;
 const CONTROL_GHOST_AFTER = 4;     // seconds untouched before controls fade
 const CONTROL_GHOST_ALPHA = 0.6;
@@ -128,6 +131,9 @@ const MAX_TRACERS = 48;
 /* ==== 01 UTIL ==== */
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+// Text size setting (6f): canvas labels scale with it like the menus do.
+const textScale = () => (typeof save !== 'undefined' && save.settings && TEXT_SCALE[save.settings.textSize]) || 1;
+const fontPx = (n, cap = 2) => Math.round(n * Math.min(cap, textScale()));   // cap: for fixed-height strips
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
 // Seeded RNG (mulberry32). All simulation randomness must come from one of these.
@@ -1529,6 +1535,28 @@ function strokeGlyph(g, lines, cx, cy, s) {
   g.stroke();
 }
 
+// A faction's mark shape (6f), filled in its colour with a dark rim, centred on x, y.
+function drawFactionMark(g, fid, x, y, r) {
+  const F = factionOf(fid);
+  g.fillStyle = F.color; g.strokeStyle = 'rgba(10,12,16,0.85)'; g.lineWidth = 1.5;
+  g.beginPath();
+  switch (FACTION_SHAPE[fid]) {
+    case 'square': g.rect(x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7); break;
+    case 'triangle': g.moveTo(x, y - r * 1.05); g.lineTo(x + r, y + r * 0.8); g.lineTo(x - r, y + r * 0.8); g.closePath(); break;
+    case 'diamond': g.moveTo(x, y - r * 1.1); g.lineTo(x + r, y); g.lineTo(x, y + r * 1.1); g.lineTo(x - r, y); g.closePath(); break;
+    case 'cross': { const a = r * 0.38; g.moveTo(x - a, y - r); g.lineTo(x + a, y - r); g.lineTo(x + a, y - a); g.lineTo(x + r, y - a); g.lineTo(x + r, y + a); g.lineTo(x + a, y + a); g.lineTo(x + a, y + r); g.lineTo(x - a, y + r); g.lineTo(x - a, y + a); g.lineTo(x - r, y + a); g.lineTo(x - r, y - a); g.lineTo(x - a, y - a); g.closePath(); break; }
+    default: g.arc(x, y, r, 0, Math.PI * 2);
+  }
+  g.fill(); g.stroke();
+}
+// The same mark as a coloured text glyph for menus.
+function factionMarkEl(fid) {
+  const m = el('span', 'faction-mark', FACTION_GLYPH[FACTION_SHAPE[fid]] || '●');
+  m.style.color = factionOf(fid).color;
+  m.setAttribute('aria-hidden', 'true');
+  return m;
+}
+
 function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y);
@@ -2262,6 +2290,7 @@ const ui = {
       ],
       Display: () => [
         row('Full screen', toggle('fullscreen'), 'Goes full screen on your first tap'),
+        row('Text size', segmented('textSize', ['S', 'M', 'L', 'XL'])),
         row('Graphics quality', segmented('quality', ['Low', 'Medium', 'High'])),
         row('Reduced motion', toggle('reducedMotion'), 'No shake, fewer flashes'),
         row('Show FPS', toggle('showFps')),
@@ -2389,9 +2418,9 @@ function drawFloaters(g, toScreenX, toScreenY) {
   floaters.forEachAlive((f) => {
     const p = f.t / 0.9;
     const e = easeOutCubic(p);
-    const size = Math.round(15 * lerp(1.2, 1, clamp(p * 3, 0, 1)));
+    const size = Math.round(15 * (save.settings.reducedMotion ? 1 : lerp(1.2, 1, clamp(p * 3, 0, 1))));
     g.globalAlpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
-    g.font = `700 ${size}px ${FONT_UI}`;
+    g.font = `700 ${fontPx(size)}px ${FONT_UI}`;
     g.fillStyle = f.amber ? PAL.amber : PAL.linen;
     const half = g.measureText(f.text).width / 2 + 8;
     const sx = clamp(toScreenX(f.x), layout.safe.l + half, layout.w - layout.safe.r - half);
@@ -2796,6 +2825,11 @@ const CLOCK_SPEEDS = [1, 3, 10];      // in-game hours per second
 const LOW_FUEL = 0.15;                // the clock stops when a fleet's fuel falls below this share
 
 // Factions (09): where their territory sits (share of the map), capital type and name, looks.
+// Each faction's mark (6f): a shape beside its colour on the map and in lists, so
+// owners can be told apart without telling the colours apart.
+const FACTION_SHAPE = { league: 'circle', directorate: 'square', skyreach: 'triangle', clans: 'cross', lumen: 'diamond' };
+const FACTION_GLYPH = { circle: '●', square: '■', triangle: '▲', cross: '✚', diamond: '◆' };
+
 const FACTIONS = [
   { id: 'league', name: 'Harbour League', at: [0.2, 0.78], capital: 'Saltmarch', capType: 'metropolis', coastal: true, color: '#2E6DB4',
     identity: 'Merchant republic of port cities.', pros: ['Sea ships +10% speed', 'Fuel and ammo −15% at their own settlements'], cons: ['Land parts +10% cost'] },
@@ -8872,17 +8906,20 @@ function drawShells(g) {
 
 function drawParticles(g) {
   const S = view.S;
+  const calm = save.settings.reducedMotion;   // reduced motion: flashes dimmer and smaller (6f)
   particles.forEachAlive((p) => {
     const k = p.t / p.life;
     const x = view.sx(p.x), y = view.sy(p.y);
     switch (p.kind) {
-      case FX_FLASH:
-        g.globalAlpha = 1 - k;
+      case FX_FLASH: {
+        const fs = calm ? 0.6 : 1;
+        g.globalAlpha = (1 - k) * (calm ? 0.45 : 1);
         g.fillStyle = '#FFE9B8';
-        g.beginPath(); g.arc(x, y, p.size * S * 0.6, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, p.size * S * 0.6 * fs, 0, Math.PI * 2); g.fill();
         g.fillStyle = 'rgba(255,178,62,0.6)';
-        g.beginPath(); g.arc(x, y, p.size * S, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, p.size * S * fs, 0, Math.PI * 2); g.fill();
         break;
+      }
       case FX_SMOKE: {
         const c = Math.round(60 + p.shade * 110);
         g.globalAlpha = 0.55 * (1 - k);
@@ -8975,22 +9012,23 @@ function drawMarkers(g, B) {
     flag(B.zone.x0, PAL.amber); flag(B.zone.x1, PAL.amber);
   }
   if (B.depot) flag(B.depot, PAL.league);
-  // Flagships fly a pennant (v0.6.5): amber for yours, red for theirs.
+  // Flagships fly a pennant (v0.6.5): an amber triangle for yours, a red square flag for theirs.
   for (const V of B.units) {
     if (!V.flagship || V.destroyed || V.gone || (V.side === 1 && !V.seen)) continue;
     const sx = view.sx(V.body.x), sy = view.sy(V.body.y + V.height) - 6;
     g.fillStyle = '#1b1d21'; g.fillRect(sx - 1, sy - 18, 2, 18);
     g.fillStyle = V.side === 0 ? PAL.amber : PAL.danger;
-    g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill();
+    if (V.side === 0) { g.beginPath(); g.moveTo(sx + 1, sy - 18); g.lineTo(sx + 13, sy - 14); g.lineTo(sx + 1, sy - 10); g.closePath(); g.fill(); }
+    else g.fillRect(sx + 1, sy - 18, 10, 8);
   }
   g.setLineDash([5, 4]);
   g.lineWidth = 2;
   for (const w of B.warnings) {
     const sx = view.sx(w.x), sy = view.sy(B.T.height(w.x));
-    const r = Math.max(10, 6 * view.S) * (0.8 + 0.2 * Math.sin(B.time * 10));
+    const r = Math.max(10, 6 * view.S) * (save.settings.reducedMotion ? 1 : 0.8 + 0.2 * Math.sin(B.time * 10));
     g.strokeStyle = PAL.danger;
     g.beginPath(); g.ellipse(sx, sy, r, r * 0.35, 0, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = PAL.danger; g.font = `700 14px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+    g.fillStyle = PAL.danger; g.font = `700 ${fontPx(14)}px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'bottom';
     g.fillText('!', sx, sy - r * 0.4);
   }
   g.setLineDash([]);
@@ -12941,7 +12979,7 @@ function pickFaction() {
     b.textContent = '';
     const dot = el('i', 'paint-dot'); dot.style.background = F.color;
     const t = el('span', 'faction-txt');
-    const head = el('b', ''); head.appendChild(dot); head.appendChild(document.createTextNode(F.name));
+    const head = el('b', ''); head.appendChild(dot); head.appendChild(factionMarkEl(F.id)); head.appendChild(document.createTextNode(F.name));
     t.appendChild(head);
     t.appendChild(el('small', '', `${F.identity} ${F.pros.join('. ')}. ${F.cons.join('. ')}.`));
     b.appendChild(t);
@@ -13689,7 +13727,7 @@ SCREENS.battle = {
       const { w, h, safe } = layout;
       g.fillStyle = 'rgba(19,70,107,0.18)';
       g.fillRect(0, 0, w, h);
-      g.font = `700 16px ${FONT_UI}`;
+      g.font = `700 ${fontPx(16)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       drawAcetate(g, w / 2 - 75, safe.t + 42, 150, 26);
       g.fillStyle = PAL.linen;
@@ -13743,7 +13781,7 @@ SCREENS.battle = {
         g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34, 2.5);
         g.fillStyle = V.destroyed ? '#5b5e66' : col; g.fillRect(cd.x + 6, cd.y + 15 + k * 4, 34 * clamp(f, 0, 1), 2.5);
       });
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12, 1.15)}px ${FONT_UI}`;
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
       g.fillText(String(i + 1), cd.x + 33, cd.y + 9);
@@ -13760,7 +13798,7 @@ SCREENS.battle = {
       else if (goal.type === 'hold') { text = `${goal.text} ${Math.floor(B.holdT)}/${goal.time} s`; f = B.holdT / goal.time; }
       else if (goal.type === 'escort' && B.escort) { const m = Math.max(0, Math.round(B.depot - B.escort.body.x)); text = `${goal.text}: ${m} m`; f = 1 - m / (B.depot - 62); }
       else { text = `${goal.text} ${B.goalDone}/${B.goalTotal}`; f = B.goalDone / Math.max(1, B.goalTotal); }
-      g.font = `400 13px ${FONT_UI}`;
+      g.font = `400 ${fontPx(13, 1.15)}px ${FONT_UI}`;   // the top bar has a fixed height
       g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillStyle = PAL.linen;
       g.fillText(text, left, safe.t + 9, right - left);
@@ -13769,7 +13807,7 @@ SCREENS.battle = {
       if (!B.test && !this.opts.sim && !this.opts.campaign) {
         // Level, score and lives (dog tags).
         const run = save.profile.run;
-        g.font = `700 12px ${FONT_UI}`;
+        g.font = `700 ${fontPx(12, 1.15)}px ${FONT_UI}`;
         g.fillStyle = PAL.linen;
         const sc = `L${this.level}  ${(run.score + B.score).toLocaleString('en-US')}`;
         g.fillText(sc, left, safe.t + 27);
@@ -13792,12 +13830,12 @@ SCREENS.battle = {
       const alt = Math.round(me.body.y - ground);
       const text = me.domain === 'air' ? `Throttle ${Math.round(me.throttle * 100)}% · height ${alt} m`
         : `Height ${alt} m · order ${Math.round((me.altCmd === undefined || me.altCmd === null ? me.body.y : me.altCmd) - ground)} m`;
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.fillStyle = PAL.linen;
       g.fillText(text, C.up.x, C.up.y - C.up.r - 4);
       if (me.domain === 'air' && !me.destroyed && Math.abs((me.alpha || 0) * 180 / Math.PI) > STALL_DEG) {
-        g.fillStyle = PAL.danger; g.font = `700 16px ${FONT_UI}`;
+        g.fillStyle = PAL.danger; g.font = `700 ${fontPx(16)}px ${FONT_UI}`;
         g.fillText('STALL', C.up.x, C.up.y - C.up.r - 20);
       }
     }
@@ -13806,7 +13844,7 @@ SCREENS.battle = {
       const me = B.me;
       const depth = Math.max(0, B.T.sea - (me.body.y + (me.bounds.maxY - me.com.y)));
       const order = me.depthCmd === null || me.depthCmd === undefined ? 'surface' : `${Math.max(0, Math.round(B.T.sea - me.depthCmd - (me.bounds.maxY - me.com.y)))} m`;
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.fillStyle = PAL.linen;
       g.fillText(`Depth ${Math.round(depth)} m · order ${order}`, C.up.x, C.up.y - C.up.r - 4);
@@ -13839,7 +13877,10 @@ SCREENS.battle = {
     for (const V of B.units) {
       if (V.side === 1 && !V.seen && !(V.destroyed && V.everSeen)) continue;
       g.fillStyle = V.destroyed ? '#6b6e76' : V.side === 0 ? (V === B.me ? PAL.amber : '#7fb0ea') : PAL.directorate;
-      g.fillRect(X(V.body.x) - 1.5, Y(V.body.y) - 4, 3, 3);
+      // Yours are squares, theirs are triangles (6f: shape as well as colour).
+      const ux = X(V.body.x), uy = Y(V.body.y) - 2.5;
+      if (V.side === 0) g.fillRect(ux - 1.5, uy - 1.5, 3, 3);
+      else { g.beginPath(); g.moveTo(ux - 2.5, uy - 2); g.lineTo(ux + 2.5, uy - 2); g.lineTo(ux, uy + 2); g.closePath(); g.fill(); }
     }
     const vw = layout.w / view.S;
     g.strokeStyle = 'rgba(230,220,195,0.8)';
@@ -14986,7 +15027,7 @@ SCREENS.designer = {
       g.setLineDash([8, 5]);
       g.beginPath(); g.moveTo(ox, wy); g.lineTo(ox + d.w * cs, wy); g.stroke();
       g.setLineDash([]);
-      g.font = `700 12px ${FONT_UI}`;
+      g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'right'; g.textBaseline = 'bottom';
       g.fillStyle = BLUEPRINT.valid;
       g.fillText(st.reserve > 0 ? `waterline · draft ${st.draft.toFixed(2)} m` : 'hull under water', Math.min(ox + d.w * cs, this.gridRect.x + this.gridRect.w) - 4, wy - 2);
@@ -15024,7 +15065,7 @@ SCREENS.designer = {
     g.fillStyle = PAL.amber;
     g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, -Math.PI / 2, 0); g.lineTo(px, py); g.fill();
     g.beginPath(); g.moveTo(px, py); g.arc(px, py, 7, Math.PI / 2, Math.PI); g.lineTo(px, py); g.fill();
-    g.font = `700 12px ${FONT_UI}`;
+    g.font = `700 ${fontPx(12)}px ${FONT_UI}`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
     if (rep.domain === 'air' && st.col) {
@@ -15768,7 +15809,7 @@ SCREENS.map = {
     // Paths of your fleets and the move preview.
     g.lineWidth = 2;
     for (const fl of playerFleets()) if (fl.path.length) this.drawPath(g, fl.x, fl.y, fl.path, 'rgba(123,196,127,0.8)');
-    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, true);
+    if (this.plan && this.plan.path && this.selFleet()) this.drawPath(g, this.selFleet().x, this.selFleet().y, this.plan.path, this.plan.strands ? PAL.danger : PAL.amber, this.plan.strands ? [2, 5] : [6, 4]);
     // Settlements.
     for (const s of world.settlements) this.drawSettlement(g, s);
     // Fog of war over what your fleets and settlements can't see.
@@ -15800,7 +15841,7 @@ SCREENS.map = {
 
   drawPath(g, x, y, path, col, dashed) {
     g.strokeStyle = col;
-    g.setLineDash(dashed ? [6, 4] : []);
+    g.setLineDash(dashed || []);   // a dash pattern; a stranding plan is dotted (6f)
     g.beginPath(); g.moveTo(this.sx(x), this.sy(y));
     for (const [px, py] of path) g.lineTo(this.sx(px), this.sy(py));
     g.stroke();
@@ -15825,8 +15866,9 @@ SCREENS.map = {
     // Pennant in the owner's colour.
     g.fillStyle = F ? F.color : '#9A9DA1';
     g.beginPath(); g.moveTo(x - k, y - k * 0.7); g.lineTo(x - k, y - k * 2); g.lineTo(x - k + 8, y - k * 1.7); g.lineTo(x - k, y - k * 1.4); g.fill();
+    if (F) drawFactionMark(g, F.id, x - k + 12, y - k * 1.7, 3.5);
     if (this.cam.z >= 5 || s.capital) {
-      g.font = `${s.capital ? 700 : 400} 12px ${FONT_UI}`;
+      g.font = `${s.capital ? 700 : 400} ${fontPx(12)}px ${FONT_UI}`;
       g.textAlign = 'center'; g.textBaseline = 'top';
       g.fillStyle = 'rgba(10,14,20,0.7)';
       const tw = g.measureText(s.name).width;
@@ -15850,9 +15892,10 @@ SCREENS.map = {
     if (fl.domain === 'land') { g.fillRect(x - 9, y - 1, 12, 5); g.fillRect(x - 6, y - 4, 6, 3); g.fillRect(x, y - 3, 6, 1.5); }
     else if (fl.domain === 'sea') { g.beginPath(); g.moveTo(x - 10, y); g.lineTo(x + 4, y); g.lineTo(x + 1, y + 4); g.lineTo(x - 8, y + 4); g.fill(); g.fillRect(x - 5, y - 4, 4, 4); }
     else { g.beginPath(); g.ellipse(x - 3, y - 1, 7, 3.5, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x - 5, y + 3, 4, 2); }
-    g.font = `700 12px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.font = `700 ${fontPx(12)}px ${FONT_UI}`; g.textAlign = 'right'; g.textBaseline = 'middle';
     g.fillStyle = PAL.linen;
     g.fillText(String(fl.shipIds.length), x + W / 2 - 2, y);
+    drawFactionMark(g, fl.faction, x - W / 2, y - H / 2, 3.5);
     if (fl.faction === campaign.faction) {
       const f = fleetFuel(fl);
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - W / 2, y + H / 2 + 1, W, 3);
@@ -16263,7 +16306,7 @@ Object.assign(SCREENS.map, {
       g.fillStyle = PAL.linen; g.fillRect(x, y, 28 * clamp(storeUsed(s) / storeCap(s), 0, 1), 4);
     }
     // Fleets: fuel in days of marching, ammo share; amber when low, red when stranded.
-    g.font = `600 10px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'top';
+    g.font = `600 ${fontPx(10)}px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'top';
     for (const fl of playerFleets()) {
       if (!fl.shipIds.length) continue;
       const f = fleetFuel(fl), burn = fleetBurn(fl), am = fleetAmmo(fl);
@@ -16271,8 +16314,12 @@ Object.assign(SCREENS.map, {
       const low = f.cap && (f.fuel / f.cap < LOW_FUEL || am < 0.25);
       const x = this.sx(fl.x) + (fl.drawDx || 0), y = this.sy(fl.y);
       if (fl.stranded || f.fuel <= 0 || low) {
-        g.strokeStyle = fl.stranded || f.fuel <= 0 ? PAL.danger : PAL.warning; g.lineWidth = 3;
+        // Stranded or empty: a solid red ring; low: a dashed amber one (6f: told apart by the dashes too).
+        const out = fl.stranded || f.fuel <= 0;
+        g.strokeStyle = out ? PAL.danger : PAL.warning; g.lineWidth = 3;
+        g.setLineDash(out ? [] : [5, 4]);
         g.beginPath(); g.arc(x, y, 20, 0, Math.PI * 2); g.stroke();
+        g.setLineDash([]);
       }
       // Under the counter's fuel bar: an ammo bar, then days of fuel on the march.
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 13, y + 14, 26, 3);
@@ -16695,7 +16742,7 @@ function openRelations(tab = 'relations') {
       const rel = relation(F.id, campaign.faction);
       const alive = settlementsOf(F.id).length > 0;
       const row = el('div', 'rel-row');
-      row.appendChild(el('div', 'rel-name', F.name));
+      const nm = el('div', 'rel-name'); nm.appendChild(factionMarkEl(F.id)); nm.appendChild(document.createTextNode(F.name)); row.appendChild(nm);
       const facts = [
         alive ? (rel === 'war' ? 'At war' : 'Truce') : 'No settlements left',
         `Reputation ${repOf(F.id) > 0 ? '+' : ''}${repOf(F.id)}`,
@@ -17332,6 +17379,7 @@ function applySettings(name) {
   audio.applySettings();
   if (name === 'quality' || name === 'btnSize' || name === 'leftHanded' || name === '*') resize();
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion);
+  document.documentElement.style.setProperty('--ts', String(textScale()));
 }
 
 function boot() {

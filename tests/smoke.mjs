@@ -248,6 +248,14 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await page.locator('.seg-btn[data-setting="btnSize"][data-value="L"]').click();
     check((await G(() => window.__GAME__.save.settings.btnSize)) === 'L', 'button size did not change');
     await shot('2-settings-controls');
+    // Text size (6f): XL scales the menus; nothing may spill off the screen sideways.
+    await tapButton('Display', 'tab');
+    await page.locator('.seg-btn[data-setting="textSize"][data-value="XL"]').click();
+    const ts = await G(() => ({ v: getComputedStyle(document.documentElement).getPropertyValue('--ts').trim(), title: parseFloat(getComputedStyle(document.querySelector('.card-settings .card-title') || document.body).fontSize), right: document.querySelector('.card-settings').getBoundingClientRect().right }));
+    check(ts.v === '1.3', `text size XL did not set the scale (${ts.v})`);
+    check(ts.right <= vp.width + 1, `settings card spills off the screen at text size XL (${ts.right})`);
+    await shot('2-settings-display-xl');
+    check(await G(() => window.__GAME__.evalIn('FACTIONS.every((F) => FACTION_GLYPH[FACTION_SHAPE[F.id]])')), 'a faction has no mark shape');
     await tapButton('Data', 'tab');
     await shot('2-settings-data');
     await tapButton('Done');
@@ -258,6 +266,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     await tapButton('Play from level 1');
     check((await G(() => window.__GAME__.screens.name)) === 'battle', 'Play did not open the battle');
     await wait(300);
+    await shot('3-battle-text-xl');
+    await G(() => window.__GAME__.save.setSetting('textSize', 'M'));
 
     // ---------- 4. Both thumbs at once: hold drive right, tap Fire
     const x0 = (await range()).x;
@@ -926,6 +936,10 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(150);
       await wait(500);
       await shot('23-world-map');
+      await G(() => window.__GAME__.save.setSetting('textSize', 'XL'));
+      await wait(400);
+      await shot('23-world-map-xl');
+      await G(() => window.__GAME__.save.setSetting('textSize', 'M'));
       // Research and perks (Part 5a): the tech tree, a node card, the perk list.
       await tapButton('Research');
       await wait(200);

@@ -1,6 +1,9 @@
 /* ==== 01 UTIL ==== */
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+// Text size setting (6f): canvas labels scale with it like the menus do.
+const textScale = () => (typeof save !== 'undefined' && save.settings && TEXT_SCALE[save.settings.textSize]) || 1;
+const fontPx = (n, cap = 2) => Math.round(n * Math.min(cap, textScale()));   // cap: for fixed-height strips
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
 // Seeded RNG (mulberry32). All simulation randomness must come from one of these.

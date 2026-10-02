@@ -80,7 +80,7 @@ Object.assign(SCREENS.map, {
       g.fillStyle = PAL.linen; g.fillRect(x, y, 28 * clamp(storeUsed(s) / storeCap(s), 0, 1), 4);
     }
     // Fleets: fuel in days of marching, ammo share; amber when low, red when stranded.
-    g.font = `600 10px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'top';
+    g.font = `600 ${fontPx(10)}px ${FONT_UI}`; g.textAlign = 'center'; g.textBaseline = 'top';
     for (const fl of playerFleets()) {
       if (!fl.shipIds.length) continue;
       const f = fleetFuel(fl), burn = fleetBurn(fl), am = fleetAmmo(fl);
@@ -88,8 +88,12 @@ Object.assign(SCREENS.map, {
       const low = f.cap && (f.fuel / f.cap < LOW_FUEL || am < 0.25);
       const x = this.sx(fl.x) + (fl.drawDx || 0), y = this.sy(fl.y);
       if (fl.stranded || f.fuel <= 0 || low) {
-        g.strokeStyle = fl.stranded || f.fuel <= 0 ? PAL.danger : PAL.warning; g.lineWidth = 3;
+        // Stranded or empty: a solid red ring; low: a dashed amber one (6f: told apart by the dashes too).
+        const out = fl.stranded || f.fuel <= 0;
+        g.strokeStyle = out ? PAL.danger : PAL.warning; g.lineWidth = 3;
+        g.setLineDash(out ? [] : [5, 4]);
         g.beginPath(); g.arc(x, y, 20, 0, Math.PI * 2); g.stroke();
+        g.setLineDash([]);
       }
       // Under the counter's fuel bar: an ammo bar, then days of fuel on the march.
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 13, y + 14, 26, 3);
