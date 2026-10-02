@@ -156,3 +156,6 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 - **L1, faction designs tier 1** and **L2, tier 2:** for each faction, a tank, a corvette and a gunship using only parts of that tier or lower (`<faction>_tank_t1` etc.), in `src/vehicles/`, for AI builds, AI refits and recruits.
 - Later: wall and keep pieces for sieges (when sieges draw them).
 
+## Batch M: large faction designs
+
+- **M1 integrated (v0.6.9):** for each faction a behemoth (land), a destroyer (sea) and an air frigate (airship), tier 2. All pass the design rules within tier 2. The AI builds them a quarter of the time from tech tier 2; yours appear in the Drafting Office once researched. (L2 was re-sent unchanged.)

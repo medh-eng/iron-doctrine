@@ -66,8 +66,11 @@ function aiBuild(fid, rng) {
     const own0 = `${fid}_${START_DESIGN_KIND[dom]}_t0`;
     const pool = tier >= 1 && AI_DESIGNS[tier] ? AI_DESIGNS[tier][dom].filter((id) => TEMPLATES[id]) : [];
     // Its own faction design of its tier (1–2; batch L1/L2), when there is one, half the time.
+    // From tier 2, sometimes its large design of that domain (batch M1).
+    const big = tier >= 2 ? `${fid}_${BIG_DESIGN_KIND[dom]}_t2` : null;
     const ownT = tier >= 1 ? `${fid}_${START_DESIGN_KIND[dom]}_t${Math.min(2, tier)}` : null;
-    const id = ownT && TEMPLATES[ownT] && rng.next() < 0.5 ? ownT
+    const id = big && TEMPLATES[big] && rng.next() < 0.25 ? big
+      : ownT && TEMPLATES[ownT] && rng.next() < 0.5 ? ownT
       : pool.length && rng.next() < 0.75 ? rng.pick(pool) : TEMPLATES[own0] ? own0 : (AI_DESIGNS[1][dom] || [])[0];
     if (!id) return;
     st.next = { dom, id };

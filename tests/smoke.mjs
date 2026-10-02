@@ -855,7 +855,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         const FA = (c, what) => check(c, `${what} ${JSON.stringify(fa)}`);
         FA(fa.mat.clipper && !fa.mat.slab && !fa.mat.patchwork && fa.mat.plate && fa.patch.length >= 3, 'faction materials or patchwork variation wrong');
         FA(fa.sails === 1 && !fa.noProp && fa.bareValid && fa.clear.moved > 50 && fa.rain.moved > fa.clear.moved, 'sail vanes wrong');
-        FA(fa.magnet === 1.25 && fa.aiPool.length === 6 && fa.baseStart === 0 && fa.baseAll === 6, 'magnet crane or faction designs wrong');
+        FA(fa.magnet === 1.25 && fa.aiPool.length === 9 && fa.baseStart === 0 && fa.baseAll === 9, 'magnet crane or faction designs wrong');
         steps.push('faction art');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
