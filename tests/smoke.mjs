@@ -898,6 +898,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         AP(ap.racks.designs > 3 && ap.racks.valid && ap.racks.news && ap.racks.missile === 'msl_s_heat' && ap.racks.loaded && ap.racks.loaded.rounds > 0, 'AI missile racks wrong');
         AP(ap.mine.fields.length === 1 && ap.mine.fields[0].n === 2 && ap.mine.stockLeft === 0 && ap.mine.launched === 2 && ap.mine.back === ap.mine.flying && ap.mine.note && ap.ai[0] === 2, 'airfields wrong');
         steps.push('air power');
+        const gc = await G(() => window.__GAME__.garrisonCheck());
+        check(gc.garrison > 0 && gc.commanders.includes('grand') && gc.hintsNoFleet && gc.form === '' && gc.formed && gc.formed.ships === gc.garrison && gc.appoint === '' && gc.paid === 600 && gc.appointed === 1 && gc.hints > 0, `forming a fleet from the garrison, appointing an admiral or hints wrong ${JSON.stringify(gc)}`);
+        steps.push('garrison and hints');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -914,6 +917,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check((await page.getByRole('button', { name: 'Got it', exact: true }).count()) === 1, 'the first-time map tips did not show');
       await page.getByRole('button', { name: 'Got it', exact: true }).click();
       await wait(200);
+      // Hints (v0.7.2): the Hint button opens ideas for what to do next.
+      await page.getByRole('button', { name: 'Hint', exact: true }).click();
+      await wait(200);
+      check((await page.locator('.card-help .help-p').count()) >= 2, 'the Hint card is empty');
+      await shot('23i-hints');
+      await page.locator('.card-help').getByRole('button', { name: 'Close', exact: true }).click();
+      await wait(150);
       await wait(500);
       await shot('23-world-map');
       // Research and perks (Part 5a): the tech tree, a node card, the perk list.
