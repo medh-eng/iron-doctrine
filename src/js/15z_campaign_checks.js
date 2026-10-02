@@ -699,6 +699,38 @@ function factionArtCheck() {
   return out;
 }
 // AI missiles and airfields (5b3/5c3, v0.7.0).
+// Stuck without a fleet (v0.7.2): the Grand Admiral forms one from a garrison; an admiral can be
+// appointed anywhere you own; hints say what can be done.
+function garrisonCheck() {
+  newCampaign('league', 6363);
+  const out = {};
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const home = world.settlements.find((s) => s.faction === 'league' && s.capital);
+  // The flag fleet's tanks go to the garrison, then the fleet is lost: the Grand Admiral waits there.
+  land.docked = home.id;
+  for (const sh of fleetShips(land).slice()) { if (flagshipOf(land) === sh) continue; detachShip(land, sh); }
+  const flag = flagshipOf(land);
+  land.flagshipId = null; land.admiralId = null;
+  detachShip(land, flag);
+  fleetLost(land);
+  const ga = grandAdmiral();
+  out.gaHere = ga.garrisonedAt;
+  out.garrison = campaign.ships.filter((sh) => sh.garrison === ga.garrisonedAt).length;
+  const s = byId('settlements', ga.garrisonedAt);
+  out.commanders = commandersAt(s).map((o) => o.rank);
+  out.hintsNoFleet = campaignHints().some((h) => /Garrison/.test(h) || /garrison/.test(h));
+  out.form = formFleet(s, ga, 'land');
+  const nf = playerFleets().find((fl) => fl.admiralId === ga.id);
+  out.formed = nf ? { name: nf.name, ships: nf.shipIds.length } : null;
+  // Appointing an admiral elsewhere.
+  const other = world.settlements.find((q) => q.faction === 'league' && q !== s);
+  const m0 = campaign.treasury;
+  out.appoint = appointAdmiral(other);
+  out.paid = Math.round(m0 - campaign.treasury);
+  out.appointed = commandersAt(other).length;
+  out.hints = campaignHints().length;
+  return out;
+}
 function airPowerCheck() {
   const out = {};
   // AI factions at tech tier 3 refit with missile racks.

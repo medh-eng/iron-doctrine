@@ -58,6 +58,8 @@ SCREENS.map = {
     bot.appendChild(this.detailsBtn);
     this.supplyBtn = button('Supply', () => { this.logistics = !this.logistics; this.refresh(); }, 'btn btn-small map-speed');
     bot.appendChild(this.supplyBtn);
+    this.hintBtn = button('Hint', () => openHints(), 'btn btn-small map-speed');   // Settings → Help → Hints (v0.7.2)
+    bot.appendChild(this.hintBtn);
     const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
     this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
     this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
@@ -101,6 +103,7 @@ SCREENS.map = {
   refresh() {
     if (!this.root) return;
     if (campaign.over && !campaign.overSeen) openWarEnd();      // the end of the war (6d), once
+    if (this.hintBtn) this.hintBtn.hidden = !save.settings.hints;
     const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
     this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;
@@ -298,6 +301,7 @@ SCREENS.map = {
         }
       }
       if (own && !OFFER_RANK[s.type]) this.barracks(s, body, row, act, done);
+      if (own) this.garrisonSection(s, body, row, act, done);
       if (own) this.defences(s, body, row, done);
       if (s.plunder >= campaign.day && own) row('Plunder', `${Math.round(plunderValue(s))} a day until day ${s.plunder}`);
       if (s.restart > campaign.day) row('Production', `restarts on day ${s.restart}`);

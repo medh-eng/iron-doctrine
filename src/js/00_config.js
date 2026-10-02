@@ -1,6 +1,6 @@
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.7.1';
+const GAME_VERSION = '0.7.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS = {
   quality: 'High',        // Low, Medium, High
   reducedMotion: false,   // first run copies the system preference
   showFps: false,
+  hints: true,            // a Hint button on the campaign map (v0.7.2)
 };
 
 // Profile defaults (design/01 §14.4). Stored under irondoctrine.profile.

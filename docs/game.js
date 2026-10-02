@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.7.1';
+const GAME_VERSION = '0.7.2';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -55,6 +55,7 @@ const DEFAULT_SETTINGS = {
   quality: 'High',        // Low, Medium, High
   reducedMotion: false,   // first run copies the system preference
   showFps: false,
+  hints: true,            // a Hint button on the campaign map (v0.7.2)
 };
 
 // Profile defaults (design/01 §14.4). Stored under irondoctrine.profile.
@@ -2266,7 +2267,7 @@ const ui = {
         row('Show FPS', toggle('showFps')),
       ],
       Data: () => this.dataSection(row),
-      Help: () => helpSection(row),           // how to play, objectives, glossary, tutorial (v0.7.1)
+      Help: () => helpSection(row, toggle),           // how to play, objectives, glossary, tutorial (v0.7.1)
     };
 
     const tabBtns = [];
@@ -11212,6 +11213,17 @@ function hire(s, o) {
   if (s.offers) s.offers = s.offers.filter((x) => x !== o);
   return '';
 }
+// Who can lead a garrison out as a fleet here: idle admirals, and the Grand Admiral when waiting
+// here without a fleet (after the flag fleet was lost; v0.7.2).
+const commandersAt = (s) => idleAt(s, 'admiral').concat(idleAt(s, 'grand'));
+// Appoint a level 1 admiral at any of your settlements, so a garrison is never stuck (v0.7.2).
+function appointAdmiral(s) {
+  if (s.faction !== campaign.faction) return 'Only at your own settlements.';
+  if (!spend(RECRUIT.admiral)) return noMoney(RECRUIT.admiral);
+  const rng = makeRng(campaign.seed + campaign.nextId * 7);
+  campaign.officers.push({ id: newId('o'), name: officerName(rng), rank: 'admiral', faction: campaign.faction, level: 1, xp: 0, alive: true, garrisonedAt: s.id, traits: [] });
+  return '';
+}
 const idleAt = (s, rank) => campaign.officers.filter((o) => o.alive && o.faction === campaign.faction && o.rank === rank && o.garrisonedAt === s.id && !o.fleetId && !o.shipId);
 
 // An idle admiral takes the garrison's ships of one domain out as a new fleet.
@@ -11223,7 +11235,7 @@ function formFleet(s, admiral, domain) {
   delete admiral.garrisonedAt;
   const fl = makeFleet(campaign.faction, domain, at[0], at[1], [], null, admiral);
   admiral.fleetId = fl.id;
-  fl.name = `${admiral.name.split(' ')[1]}'s ${domain} fleet`;
+  fl.name = admiral.rank === 'grand' ? 'Flag fleet' : `${admiral.name.split(' ')[1]}'s ${domain} fleet`;
   fl.docked = s.id;
   for (const sh of ships) if (pickUp(fl, sh)) break;
   return '';
@@ -15293,6 +15305,8 @@ SCREENS.map = {
     bot.appendChild(this.detailsBtn);
     this.supplyBtn = button('Supply', () => { this.logistics = !this.logistics; this.refresh(); }, 'btn btn-small map-speed');
     bot.appendChild(this.supplyBtn);
+    this.hintBtn = button('Hint', () => openHints(), 'btn btn-small map-speed');   // Settings → Help → Hints (v0.7.2)
+    bot.appendChild(this.hintBtn);
     const sp2 = el('span', 'map-spacer'); bot.appendChild(sp2);
     this.speedBtns = CLOCK_SPEEDS.map((v) => { const b = button(`${v}×`, () => { campaign.speed = v; this.refresh(); }, 'btn btn-small map-speed'); bot.appendChild(b); return b; });
     this.goBtn = button('Start ▶', () => this.toggleClock(), 'btn btn-primary map-go');
@@ -15336,6 +15350,7 @@ SCREENS.map = {
   refresh() {
     if (!this.root) return;
     if (campaign.over && !campaign.overSeen) openWarEnd();      // the end of the war (6d), once
+    if (this.hintBtn) this.hintBtn.hidden = !save.settings.hints;
     const hh = Math.floor(campaign.hour), mm = Math.floor((campaign.hour % 1) * 60);
     this.dateEl.textContent = `Day ${campaign.day}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     this.moneyEl.textContent = `Treasury ${Math.floor(campaign.treasury).toLocaleString('en-US')}`;
@@ -15533,6 +15548,7 @@ SCREENS.map = {
         }
       }
       if (own && !OFFER_RANK[s.type]) this.barracks(s, body, row, act, done);
+      if (own) this.garrisonSection(s, body, row, act, done);
       if (own) this.defences(s, body, row, done);
       if (s.plunder >= campaign.day && own) row('Plunder', `${Math.round(plunderValue(s))} a day until day ${s.plunder}`);
       if (s.restart > campaign.day) row('Production', `restarts on day ${s.restart}`);
@@ -16113,15 +16129,26 @@ Object.assign(SCREENS.map, {
     }
     const here = ['admiral', 'quartermaster', 'captain'].flatMap((rank) => idleAt(s, rank));
     if (here.length) row('Officers here', here.map((o) => `${o.rank === 'admiral' ? 'Adm.' : o.rank === 'captain' ? 'Capt.' : 'QM'} ${o.name}`).join(', '));
+  },
+
+  // The garrison (v0.7.2): its ships, and the buttons to take them out as a fleet or a convoy.
+  garrisonSection(s, body, row, act, done) {
     const gar = campaign.ships.filter((sh) => sh.garrison === s.id);
+    if (!gar.length) return;
     const domains = [...new Set(gar.map((sh) => shipStats(sh).domain))];
-    for (const a of idleAt(s, 'admiral')) for (const dom of domains) {
-      act().appendChild(button(`Adm. ${a.name}: form a ${dom} fleet`, () => done(formFleet(s, a, dom)), 'btn btn-small'));
+    body.appendChild(el('div', 'ws-label', 'Garrison: take ships out'));
+    const cmd = commandersAt(s);
+    for (const a of cmd) for (const dom of domains) {
+      const n = gar.filter((sh) => shipStats(sh).domain === dom).length;
+      act().appendChild(button(`${a.rank === 'grand' ? 'Grand Admiral' : 'Adm.'} ${a.name}: form a ${dom} fleet (${n})`, () => done(formFleet(s, a, dom)), 'btn btn-small btn-primary'));
     }
     for (const q of idleAt(s, 'quartermaster')) for (const dom of domains) {
       act().appendChild(button(`QM ${q.name}: form a ${dom} convoy`, () => done(formConvoy(s, q, dom)), 'btn btn-small'));
     }
-    if ((idleAt(s, 'admiral').length || idleAt(s, 'quartermaster').length) && !domains.length) body.appendChild(el('p', 'card-text map-note', 'Officers here can form a fleet or a convoy from ships in the garrison.'));
+    if (!cmd.length) {
+      body.appendChild(el('p', 'card-text map-note', 'A fleet needs an admiral. Appoint one here, hire one at a fort or citadel, promote a captain of level 6, or bring the Grand Admiral here.'));
+      act().appendChild(button(`Appoint an admiral here: ${RECRUIT.admiral}`, () => done(appointAdmiral(s)), 'btn btn-small btn-primary'));
+    }
   },
 });
 
@@ -16855,6 +16882,8 @@ const HOW_TO = [
     'Captains and admirals earn XP. Open their card from the fleet panel to level them up and choose an upgrade; admirals choose doctrines (for example combined arms, letting aircraft join a land or sea fleet).',
     'Support vehicles (supply wagon, fuel tender, supply airship) carry fuel and goods and don’t count towards the fleet size.',
     'Recruit officers at forts and citadels; promote a captain of level 6 to admiral.',
+    'Ships waiting in a garrison: open the settlement, Info tab, Garrison. An admiral there (or the Grand Admiral, after losing the flag fleet) forms them into a fleet; with none, Appoint an admiral there for money.',
+    'Build new vehicles at a city or metropolis yard; they wait in that garrison with a new captain.',
   ]],
   ['Economy and logistics', [
     'Only money is shared everywhere. Wood, metal, electronics, scrap, fuel and ammunition sit in one warehouse or one hold at a time and must be carried.',
@@ -16866,6 +16895,7 @@ const HOW_TO = [
     'Design vehicles part by part. Each class has a grid size and part limit; the panel shows mass, speed, armour, firepower and cost as plain numbers.',
     'Test drive a design, save it as a new mark, then build it at a yard or refit a ship to it.',
     'Research unlocks part families at your cities and metropolises with Command Points from the Grand Admiral’s level. In the campaign only researched parts can be placed.',
+    'Command Points come from the Grand Admiral’s level, which rises with XP: battles won, settlements captured, convoy deliveries and parts reverse-engineered.',
   ]],
 ];
 
@@ -16894,8 +16924,9 @@ const GLOSSARY_TERMS = [
 ];
 
 // Settings → Help.
-function helpSection(row) {
+function helpSection(row, toggle) {
   const rows = [];
+  rows.push(row('Hints on the map', toggle('hints'), 'A Hint button with ideas for what to do next'));
   const add = (label, note, fn) => rows.push(row(label, button('Open', () => { audio.sfx('tap'); fn(); }, 'btn btn-small'), note));
   add('How to play', 'Controls, battles, the campaign', openHowTo);
   add('Objectives', 'What this battle or campaign asks', openObjectives);
@@ -16931,8 +16962,18 @@ function helpCard(title, tabs, draw) {
 }
 
 function openHowTo() {
-  helpCard('How to play', HOW_TO.map((p) => p[0]), (tab, box) => {
-    for (const t of HOW_TO.find((p) => p[0] === tab)[1]) box.appendChild(el('p', 'card-text help-p', t));
+  let q = '';
+  helpCard('How to play', HOW_TO.map((p) => p[0]), (tab, box, render) => {
+    // Search every page and the glossary terms; empty: the page of this tab.
+    const inp = el('input', 'text-in help-search');
+    inp.type = 'search'; inp.placeholder = 'Search all of Help'; inp.value = q;
+    inp.addEventListener('input', () => { q = inp.value.trim().toLowerCase(); const caret = inp.selectionStart; render(); const n = document.querySelector('.help-search'); if (n) { n.focus(); n.setSelectionRange(caret, caret); } });
+    box.appendChild(inp);
+    if (!q) { for (const t of HOW_TO.find((p) => p[0] === tab)[1]) box.appendChild(el('p', 'card-text help-p', t)); return; }
+    let n = 0;
+    for (const [page, lines] of HOW_TO) for (const t of lines) if (t.toLowerCase().includes(q)) { box.appendChild(el('p', 'card-text help-p', `${page}: ${t}`)); n++; }
+    for (const [t, d] of GLOSSARY_TERMS) if ((t + ' ' + d).toLowerCase().includes(q)) { box.appendChild(el('p', 'card-text help-p', `${t}: ${d}`)); n++; }
+    if (!n) box.appendChild(el('p', 'card-text map-note', 'Nothing matches. The Glossary covers every vehicle, part and faction.'));
   });
 }
 
@@ -17036,6 +17077,49 @@ function openGlossary() {
     if (box.children.length === 1) box.appendChild(el('p', 'card-text map-note', 'Nothing matches.'));
   });
 }
+
+// ---------- hints (v0.7.2): ideas for what to do next on the campaign map, from the situation.
+// They say what is possible and where, never which choice is better.
+function campaignHints() {
+  const out = [];
+  const mine = playerFleets().filter((fl) => fl.shipIds.length && !fl.convoy);
+  const own = world.settlements.filter((s) => s.faction === campaign.faction);
+  const garrisoned = own.filter((s) => campaign.ships.some((sh) => sh.garrison === s.id));
+  if (campaign.over) out.push(`The war is over (${campaign.over.result === 'win' ? 'victory' : 'defeat'}). You can keep playing, or start a new campaign from the title.`);
+  if (!mine.length) {
+    out.push(garrisoned.length
+      ? `You have no fleets, but ships wait in the garrison at ${garrisoned.map((s) => s.name).join(', ')}. Tap the settlement, Info tab, Garrison: form a fleet with an admiral there, or Appoint an admiral.`
+      : 'You have no fleets and no ships in garrison. Build vehicles at a city or metropolis yard (Yard tab); they wait in that garrison.');
+  } else if (garrisoned.length) out.push(`Ships wait in the garrison at ${garrisoned.map((s) => s.name).join(', ')}. A docked fleet can take them aboard (Info tab), or an admiral can form a new fleet.`);
+  for (const fl of mine) {
+    if (fl.stranded) out.push(`${fl.name} is stranded without fuel. Send fuel by convoy or a support vehicle's hold, or move another fleet to it.`);
+    else { const f = fleetFuel(fl); if (f.cap && f.fuel / f.cap < 0.3) out.push(`${fl.name} is low on fuel (${Math.round((f.fuel / f.cap) * 100)}%). Refuel at one of your settlements (Market or Stores).`); }
+  }
+  const ready = campaign.officers.filter((o) => o.alive && o.faction === campaign.faction && (canLevelUp(o) || picksOwed(o) > 0));
+  if (ready.length) out.push(`${ready.length} officer${ready.length > 1 ? 's are' : ' is'} ready to level up or choose an upgrade: open them from the fleet panel (★).`);
+  const t = techState();
+  if (!t.job) out.push(cpFree() > 0 ? `${cpFree()} Command Point${cpFree() > 1 ? 's' : ''} free: open Research to start a node at one of your cities.` : 'No Command Points free. They come from the Grand Admiral’s level: win battles, capture settlements, deliver convoys, reverse-engineer parts.');
+  if (campaign.treasury < 300) out.push(`Money is short (${Math.floor(campaign.treasury)}). Settlements pay daily; selling goods at a market, convoys and battle bounties add more.`);
+  if (mine.length) {
+    const near = world.settlements.filter((s) => s.faction !== campaign.faction && (!s.faction || relation(s.faction, campaign.faction) === 'war'))
+      .map((s) => ({ s, d: Math.min(...mine.map((fl) => Math.hypot(fl.x - s.x, fl.y - s.y))) })).sort((a, b) => a.d - b.d)[0];
+    if (near) out.push(`Nearest settlement you could take: ${near.s.name} (${near.s.faction ? factionOf(near.s.faction).name : 'neutral'}${near.s.type === 'village' && !near.s.faction ? ', a charter can buy it' : ''}). Move a fleet there; besiege it from its Info tab.`);
+  }
+  const v = victoryProgress();
+  out.push(`Victory: ${v.capitals} of ${v.capitalsAll} rival capitals, ${v.held} of ${v.need} settlements needed.`);
+  return out;
+}
+function openHints() {
+  const c = ui.card('Hints', 'card-help');
+  for (const h of campaignHints().slice(0, 6)) c.appendChild(el('p', 'card-text help-p', '• ' + h));
+  c.appendChild(el('p', 'card-text map-note', 'Turn hints off in Settings → Help.'));
+  const row = el('div', 'card-row');
+  let close = null;
+  row.appendChild(button('Close', () => close(), 'btn btn-primary', 'back'));
+  c.appendChild(row);
+  close = ui.open(c);
+}
+
 
 /* ---------- 16q_tutorial.js ---------- */
 /* ==== 16q TUTORIAL ==== */

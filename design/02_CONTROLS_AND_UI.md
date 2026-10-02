@@ -231,6 +231,8 @@ Only the services that type has are shown (01 §7.1).
   - **How to play:** short pages: Basics, Battle controls, Vehicles and damage, Campaign map, Fleets and officers, Economy and logistics, Drafting Office and research.
   - **Objectives:** what the battle under way asks (level goal and progress, campaign battle or siege, Simulator, tutorial step), or the campaign's victory conditions and progress, or an overview from the title.
   - **Glossary:** Vehicles (every design: domain, class, faction, mass, speed, weapons, picture), Parts (every part and material: category, tier, size, numbers, faction-only), Factions (identity, strengths, weaknesses, signature parts, AI build weights), Places (settlement types, goods and prices), Terms; read from the game's data, with a search box.
+  - **Hints (v0.7.2):** a toggle (on by default) for a Hint button on the campaign map with ideas for what to do next, from the situation. How to play has a search box over every page and the glossary terms.
+  - **Garrison (v0.7.2):** a settlement's Info tab lists buttons to take garrison ships out: an admiral or the Grand Admiral there forms a fleet; with none, Appoint an admiral (600).
   - **Tutorial:** a guided practice battle (two of yours against an armoured car that holds fire until the last step): drive, fire, aim by hand, swap, give an order, stop time, then win; a banner shows one step at a time and moves on when it's done; Skip leaves. Offered once on the title screen to a player with no battles yet, and from Help on the title screen. The campaign map shows four first-time tips once.
 
 ## 9. Settings

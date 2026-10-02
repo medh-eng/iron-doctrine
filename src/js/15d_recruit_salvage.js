@@ -66,6 +66,17 @@ function hire(s, o) {
   if (s.offers) s.offers = s.offers.filter((x) => x !== o);
   return '';
 }
+// Who can lead a garrison out as a fleet here: idle admirals, and the Grand Admiral when waiting
+// here without a fleet (after the flag fleet was lost; v0.7.2).
+const commandersAt = (s) => idleAt(s, 'admiral').concat(idleAt(s, 'grand'));
+// Appoint a level 1 admiral at any of your settlements, so a garrison is never stuck (v0.7.2).
+function appointAdmiral(s) {
+  if (s.faction !== campaign.faction) return 'Only at your own settlements.';
+  if (!spend(RECRUIT.admiral)) return noMoney(RECRUIT.admiral);
+  const rng = makeRng(campaign.seed + campaign.nextId * 7);
+  campaign.officers.push({ id: newId('o'), name: officerName(rng), rank: 'admiral', faction: campaign.faction, level: 1, xp: 0, alive: true, garrisonedAt: s.id, traits: [] });
+  return '';
+}
 const idleAt = (s, rank) => campaign.officers.filter((o) => o.alive && o.faction === campaign.faction && o.rank === rank && o.garrisonedAt === s.id && !o.fleetId && !o.shipId);
 
 // An idle admiral takes the garrison's ships of one domain out as a new fleet.
@@ -77,7 +88,7 @@ function formFleet(s, admiral, domain) {
   delete admiral.garrisonedAt;
   const fl = makeFleet(campaign.faction, domain, at[0], at[1], [], null, admiral);
   admiral.fleetId = fl.id;
-  fl.name = `${admiral.name.split(' ')[1]}'s ${domain} fleet`;
+  fl.name = admiral.rank === 'grand' ? 'Flag fleet' : `${admiral.name.split(' ')[1]}'s ${domain} fleet`;
   fl.docked = s.id;
   for (const sh of ships) if (pickUp(fl, sh)) break;
   return '';
