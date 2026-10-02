@@ -7,6 +7,9 @@
 // Battle speeds are × AIR_SPEED_SCALE (07_data): the air is denser by 1 ÷ scale² and
 // propeller power is × scale, so the sheet numbers hold at the scaled speed.
 
+// Wind for sail vanes in the battle under way (set by createBattle from the weather).
+let battleWind = SAIL.clear;
+
 const AIR_RHO_BATTLE = AIR_RHO / (AIR_SPEED_SCALE * AIR_SPEED_SCALE);
 const CRASH_SPEED = 7;            // m/s: touching the ground faster than this is a crash
 const HELI_TILT = 0.26;           // radians of tilt at full ◀ or ▶ (15°)
@@ -19,7 +22,7 @@ function buildAirParts(V) {
   if (!V.flier) return;
   const st = V.stats;
   const D = V.design;
-  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0;
+  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0, sails = 0;
   V.parts.forEach((p) => {
     if (!p.alive) return;
     const d = p.def;
@@ -28,6 +31,7 @@ function buildAirParts(V) {
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.jet) jet += d.jet;
     if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
     if (d.liftForce) eng += d.liftForce;
@@ -42,6 +46,7 @@ function buildAirParts(V) {
   if (tailA) { gridToLocal(V, tx / tailA, ty / tailA, tmp); V.tailL = { x: tmp.x, y: tmp.y }; } else V.tailL = null;
   V.jetThrust = jet;
   V.airPower = airprops ? V.power : 0;
+  V.sailKw = sails * SAIL.kw;                // sail vanes: wind power, no engine or fuel (v0.6.8)
   V.rotors = rotors;
   V.trotors = trotors;
   V.rotorLift = rotors ? rotors * ROTOR_LIFT * Math.min(1, V.power / (ROTOR_POWER * rotors)) : 0;
@@ -105,7 +110,8 @@ function airForces(V, T, ca, sa, out) {
     // envelopes and lift engines give), propellers push either way, and the envelopes above
     // the centre of mass keep it level.
     out.fy += V.liftNow || 0;
-    if (live && V.airPower && V.moveCmd) out.fx += V.moveCmd * (V.heatMul || 1) * (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
+    const P = (live ? V.airPower * (V.heatMul || 1) : 0) + (V.destroyed ? 0 : (V.sailKw || 0) * battleWind);
+    if (P && V.moveCmd) out.fx += V.moveCmd * (P * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.airshipCdA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     out.tq += b.I * (-3 * b.a - 2.5 * b.w);
   } else {

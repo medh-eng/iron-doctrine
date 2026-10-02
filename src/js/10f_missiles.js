@@ -128,7 +128,8 @@ function launchDesigned(B, V, w, U) {
   m.ang = m.vert ? Math.PI / 2 : Math.atan2(ty - m.y, tx - m.x);
   m.locked = !!msl.seeker && B.rng.next() < seekerLock(V, U, msl);
   // A seeker without a lock wanders off by 6–14°; an unguided missile flies true where aimed.
-  if (msl.seeker && !m.locked) m.ang += (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25);
+  // (A VLS still leaves straight up; without a lock it simply never turns onto the target.)
+  if (msl.seeker && !m.locked) { const off = (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25); if (!m.vert) m.ang += off; }
   w.rounds--;
   w.reload = w.def.reload;
   V.revealT = Math.max(V.revealT, 3);

@@ -9,8 +9,11 @@
 // reverse-engineered family (campaign.unlocked).
 const partUnlocked = (id) => {
   const lib = PART_LIBRARY.parts[id];
-  if (!lib) return true;
   const known = campaign.unlocked || [];
+  // A faction's signature material: its own faction only (v0.6.8); other materials are known.
+  const mat = PART_LIBRARY.materials[id];
+  if (mat) return !(mat.unlock && mat.unlock.faction) || mat.unlock.faction === campaign.faction || known.includes(id);
+  if (!lib) return true;
   // A faction's signature part (design/09): its own faction has it once the family's research is
   // done; anyone else only by reverse-engineering that part itself.
   if (lib.unlock && lib.unlock.faction) return known.includes(id) || (lib.unlock.faction === campaign.faction && familyTechKnown(lib.family));
@@ -29,7 +32,7 @@ const designResearched = (d) => d.cells.every((c) => partUnlocked(c.p));
 // Base designs you may start from in the campaign: your faction's own starting designs, the
 // support vehicles, and the templates whose parts you have all researched.
 function campaignBaseDesigns() {
-  const ids = Object.values(START_DESIGN_KIND).map((k) => `${campaign.faction}_${k}_t0`).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
+  const ids = Object.values(START_DESIGN_KIND).flatMap((k) => [0, 1, 2].map((t) => `${campaign.faction}_${k}_t${t}`)).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
   return ids.filter((id, i) => TEMPLATES[id] && ids.indexOf(id) === i && designResearched(designFromTemplate(id)));
 }
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';

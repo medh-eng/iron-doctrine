@@ -148,6 +148,12 @@ All five factions are original. Scheme ids match `src/parts/paints.json`. Every 
 
 - **The player** starts at war with the two nearest factions and in **truce** with the other two. A truce allows trade but no attacks.
 - **AI factions** start at war with each other, except one seeded pair in truce.
+- **Signature parts at work (v0.6.8):**
+  - Clipper hull, Slab armour and Patchwork plate (materials) are available only to their own faction.
+  - Patchwork plate: each cell's armour and hit points are the material's × 0.6, 0.8, 1, 1.2 or 1.4, fixed by the cell's position.
+  - Sail vane: 60 kW of propeller power from the wind for an airship, with no engine or fuel (an airship may fly on vanes alone); in rain the wind gives 1.5× and each vane loses 0.5 hp a second.
+  - Magnet crane: counts as a salvage crane, and salvage is × 1.25 with one in the winning fleets.
+  - The AI factions build their own tier 1–2 designs (batches L1/L2) half the time once their tech tier allows; they're refitted like the others, and offered in your Drafting Office for your faction once their parts are researched.
 - Truces can break when territory is contested for long (Part 5).
 - **As built (6c, numbers in `REL`, 07_data):**
   - Reputation runs −100 to 100: −20 with factions at war, +20 in truce at the start, drifting 0.5 a day back towards 0.

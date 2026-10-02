@@ -4,7 +4,7 @@ const ART_MANIFEST = [];
 /* ---------- 00_config.js ---------- */
 /* ==== 00 CONFIG ==== */
 // Version shown in Settings. Minor = build part (Part 1 = 0.1.x), patch = fixes.
-const GAME_VERSION = '0.6.7';
+const GAME_VERSION = '0.6.8';
 // Bump when the save format changes, and add a migration in 02_save.js.
 const SAVE_VERSION = 2;
 const STORE_PREFIX = 'irondoctrine.';
@@ -2455,6 +2455,10 @@ const BOMB = { dmg: 200, radius: 5 };
 // Airships (design/05 §3.2, step 2.7). An envelope cell's gasLift is in units of 100 kg.
 const GAS_LIFT_KG = 100;
 const AIRSHIP_CDA = 0.6;          // m² of drag area per metre of the airship's height
+// Sail vanes (Skyreach, v0.6.8): each gives an airship this much propeller power from the wind,
+// with no engine or fuel. Rain brings storm winds: more push, but the vanes take damage.
+const PATCH_STEPS = [0.6, 0.8, 1, 1.2, 1.4];   // patchwork plate: armour and hp factors by cell (v0.6.8)
+const SAIL = { kw: 60, clear: 1, rain: 1.5, stormWear: 0.5 };   // stormWear: hp a second each vane loses in rain
 const AIRSHIP_MIN_LIFT = 0.85;    // valving gas: an airship can shed lift down to this share of its weight
 const AIRSHIP_ALT = 30;           // metres over the ground an airship deploys at
 
@@ -2538,6 +2542,7 @@ for (const [id, m] of Object.entries(PART_LIBRARY.materials)) {
   if (m.shape === 'slope') PARTS[id].sloped = true;
   if (m.gasLift) PARTS[id].gasLift = m.gasLift;     // airship envelopes (step 2.7)
   if (m.resist) PARTS[id].resist = m.resist;         // damage-type resistances (Part 5d)
+  if (id === 'patchwork') PARTS[id].vary = true;     // varies cell by cell (v0.6.8; PATCH_STEPS)
 }
 for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier || a.stats.mass - b.stats.mass)) {
   if (d.planned) continue;
@@ -2841,7 +2846,7 @@ const RECRUIT = { captain: 120, admiral: 600, quartermaster: 250, promote: 400, 
 const PROMOTE_LEVEL = 6;
 const OFFER_DAYS = 7;                        // forts and citadels renew their offers weekly
 // Salvage (08 §9).
-const SALVAGE = { part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
+const SALVAGE = { magnet: 1.25, part: 0.12, crane: 0.06, maxCranes: 2, scrap: 0.3, craneScrap: 0.2, clans: 1.5 };
 const WRECK_HOURS = 24;                      // salvage left on the field is lost after a day
 const SCRAP_FIELDS = 10, SCRAP_FIELD_SIZE = [200, 600], SCRAP_FIELD_RATE = 4;   // fields, scrap each, scrap per hour
 const STUDY_DAYS = 3;                        // reverse-engineering at a metropolis
@@ -3158,7 +3163,7 @@ function validateDesign(design) {
   const count = new Int16Array(W * H);
   const domain = domainOf(design);
   let lowest = -1;
-  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0, wings = 0, tails = 0, airprops = 0, jets = 0, rotors = 0, trotors = 0, airOnly = 0;
+  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0, wings = 0, tails = 0, airprops = 0, jets = 0, rotors = 0, trotors = 0, airOnly = 0, sails = 0;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) { errors.push(`Unknown part ${c.p}.`); continue; }
@@ -3176,6 +3181,7 @@ function validateDesign(design) {
     if (d.lift) wings++;
     if (d.tail) tails++;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.jet) { jets++; engines++; }
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
@@ -3189,7 +3195,7 @@ function validateDesign(design) {
       if (!tails) errors.push('No tail unit.');
       if (!jets && !airprops) errors.push('No jet or air propeller.');
     } else if (domain === 'airship') {
-      if (!airprops) errors.push('No air propeller.');
+      if (!airprops && !sails) errors.push('No air propeller or sail vane.');
     } else if (!trotors) errors.push('No tail rotor.');
   } else if (airOnly) {
     errors.push('Aero engines and bomb racks only work on aircraft.');
@@ -3299,7 +3305,7 @@ const dragRise = (v) => (v > DRAG_RISE_SPEED ? 1 + ((v - DRAG_RISE_SPEED) / 30) 
 
 // Aircraft and helicopters (design/05 §7.4), design-sheet units (m/s, N).
 function airNumbers(design, alive, mass, height) {
-  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0;
+  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0, sails = 0;
   design.cells.forEach((c, i) => {
     if (alive && !alive[i]) return;
     const d = PARTS[c.p];
@@ -3311,6 +3317,7 @@ function airNumbers(design, alive, mass, height) {
     if (d.tail) tailA += d.tail;
     if (d.jet) jet += d.jet;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.power > 0) power += d.power;
@@ -3341,7 +3348,7 @@ function airNumbers(design, alive, mass, height) {
     // Airship (step 2.7): gas lift from envelopes plus lift engines; propellers push against drag.
     out.gasLift = gas; out.engineLift = eng; out.airshipLift = gas + eng;
     out.liftMargin = W ? (gas + eng) / W : 0;
-    out.propPower = airprops ? power : 0;
+    out.propPower = (airprops ? power : 0) + sails * SAIL.kw;   // sail vanes in an average wind
     out.airshipCdA = AIRSHIP_CDA * height;
   }
   return out;
@@ -4072,6 +4079,17 @@ const LOW_GEAR_SPEED = 2.5;      // m/s: below this, drive force stops rising (l
 
 let nextVehicleId = 1;
 
+// Materials that vary cell by cell (the Clans' patchwork plate, v0.6.8): each cell's armour and
+// hit points are the material's times one of PATCH_STEPS factors, picked from its position.
+const _patch = {};
+function patchDef(id, x, y) {
+  const P = PARTS[id], n = PATCH_STEPS.length;
+  const k = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+  const f = PATCH_STEPS[k % n];
+  const key = id + f;
+  return _patch[key] || (_patch[key] = Object.assign({}, P, { armor: Math.round(P.armor * f), hp: Math.round(P.hp * f) }));
+}
+
 function makeVehicle(design, side, x, dir, terrain) {
   const V = {
     id: nextVehicleId++,
@@ -4080,7 +4098,7 @@ function makeVehicle(design, side, x, dir, terrain) {
     side,                       // 0 = player (League), 1 = enemy (Directorate)
     dir,                        // +1 faces right, −1 faces left
     parts: design.cells.map((c) => {
-      const d = PARTS[c.p];
+      const d = PARTS[c.p].vary ? patchDef(c.p, c.x, c.y) : PARTS[c.p];
       return { def: d, x: c.x, y: c.y, hp: d.hp, alive: true, burn: 0, scorch: 0 };
     }),
     alive: null,                // Uint8Array mirror of parts[i].alive
@@ -4778,6 +4796,9 @@ function domainGuard(B, V) {
 // Battle speeds are × AIR_SPEED_SCALE (07_data): the air is denser by 1 ÷ scale² and
 // propeller power is × scale, so the sheet numbers hold at the scaled speed.
 
+// Wind for sail vanes in the battle under way (set by createBattle from the weather).
+let battleWind = SAIL.clear;
+
 const AIR_RHO_BATTLE = AIR_RHO / (AIR_SPEED_SCALE * AIR_SPEED_SCALE);
 const CRASH_SPEED = 7;            // m/s: touching the ground faster than this is a crash
 const HELI_TILT = 0.26;           // radians of tilt at full ◀ or ▶ (15°)
@@ -4790,7 +4811,7 @@ function buildAirParts(V) {
   if (!V.flier) return;
   const st = V.stats;
   const D = V.design;
-  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0;
+  let tailA = 0, tx = 0, ty = 0, rotors = 0, trotors = 0, airprops = 0, jet = 0, gas = 0, eng = 0, sails = 0;
   V.parts.forEach((p) => {
     if (!p.alive) return;
     const d = p.def;
@@ -4799,6 +4820,7 @@ function buildAirParts(V) {
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.jet) jet += d.jet;
     if (d.gasLift) gas += d.gasLift * GAS_LIFT_KG * GRAVITY;
     if (d.liftForce) eng += d.liftForce;
@@ -4813,6 +4835,7 @@ function buildAirParts(V) {
   if (tailA) { gridToLocal(V, tx / tailA, ty / tailA, tmp); V.tailL = { x: tmp.x, y: tmp.y }; } else V.tailL = null;
   V.jetThrust = jet;
   V.airPower = airprops ? V.power : 0;
+  V.sailKw = sails * SAIL.kw;                // sail vanes: wind power, no engine or fuel (v0.6.8)
   V.rotors = rotors;
   V.trotors = trotors;
   V.rotorLift = rotors ? rotors * ROTOR_LIFT * Math.min(1, V.power / (ROTOR_POWER * rotors)) : 0;
@@ -4876,7 +4899,8 @@ function airForces(V, T, ca, sa, out) {
     // envelopes and lift engines give), propellers push either way, and the envelopes above
     // the centre of mass keep it level.
     out.fy += V.liftNow || 0;
-    if (live && V.airPower && V.moveCmd) out.fx += V.moveCmd * (V.heatMul || 1) * (V.airPower * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
+    const P = (live ? V.airPower * (V.heatMul || 1) : 0) + (V.destroyed ? 0 : (V.sailKw || 0) * battleWind);
+    if (P && V.moveCmd) out.fx += V.moveCmd * (P * 1000 * AIRPROP_EFF * AIR_SPEED_SCALE) / Math.max(Math.abs(b.vx), 3 * AIR_SPEED_SCALE);
     if (v > 0.1) { const D = 0.5 * AIR_RHO_BATTLE * V.airshipCdA * v2; out.fx -= (D * b.vx) / v; out.fy -= (D * b.vy) / v; }
     out.tq += b.I * (-3 * b.a - 2.5 * b.w);
   } else {
@@ -6203,6 +6227,16 @@ function stepSystems(B, V, dt) {
   stepWarheadEffects(B, V, dt);
   stepEnergy(B, V, dt);
   stepFab(B, V, dt);
+  // Storm winds wear sail vanes down (v0.6.8).
+  // (Worn quietly: no redraw every frame; a vane that gives out breaks off.)
+  if (V.sailKw && battleWind > SAIL.clear) {
+    for (let i = 0; i < V.parts.length; i++) {
+      const p = V.parts[i];
+      if (!p.alive || !p.def.sail) continue;
+      p.hp -= SAIL.stormWear * dt;
+      if (p.hp <= 0) destroyPart(B, V, i, null);
+    }
+  }
   // Heat: engines only run hot while driving (fliers always).
   const running = V.flier || V.throttle !== 0;
   const ter = B.T.terrainAt(V.body.x);
@@ -6409,7 +6443,8 @@ function launchDesigned(B, V, w, U) {
   m.ang = m.vert ? Math.PI / 2 : Math.atan2(ty - m.y, tx - m.x);
   m.locked = !!msl.seeker && B.rng.next() < seekerLock(V, U, msl);
   // A seeker without a lock wanders off by 6–14°; an unguided missile flies true where aimed.
-  if (msl.seeker && !m.locked) m.ang += (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25);
+  // (A VLS still leaves straight up; without a lock it simply never turns onto the target.)
+  if (msl.seeker && !m.locked) { const off = (B.rng.next() < 0.5 ? -1 : 1) * B.rng.range(0.1, 0.25); if (!m.vert) m.ang += off; }
   w.rounds--;
   w.reload = w.def.reload;
   V.revealT = Math.max(V.revealT, 3);
@@ -7735,6 +7770,7 @@ function aiBomb(B, V, w) {
 function createBattle(level, opts = {}) {
   const cfg = opts.cfg || levelConfig(level);
   const T = makeTerrain(cfg);
+  battleWind = cfg.weather === 'rain' ? SAIL.rain : SAIL.clear;     // sail vanes (v0.6.8)
   const B = {
     cfg, T, level,
     test: !!opts.test,
@@ -10546,8 +10582,11 @@ function dailyEconomy() {
 // reverse-engineered family (campaign.unlocked).
 const partUnlocked = (id) => {
   const lib = PART_LIBRARY.parts[id];
-  if (!lib) return true;
   const known = campaign.unlocked || [];
+  // A faction's signature material: its own faction only (v0.6.8); other materials are known.
+  const mat = PART_LIBRARY.materials[id];
+  if (mat) return !(mat.unlock && mat.unlock.faction) || mat.unlock.faction === campaign.faction || known.includes(id);
+  if (!lib) return true;
   // A faction's signature part (design/09): its own faction has it once the family's research is
   // done; anyone else only by reverse-engineering that part itself.
   if (lib.unlock && lib.unlock.faction) return known.includes(id) || (lib.unlock.faction === campaign.faction && familyTechKnown(lib.family));
@@ -10566,7 +10605,7 @@ const designResearched = (d) => d.cells.every((c) => partUnlocked(c.p));
 // Base designs you may start from in the campaign: your faction's own starting designs, the
 // support vehicles, and the templates whose parts you have all researched.
 function campaignBaseDesigns() {
-  const ids = Object.values(START_DESIGN_KIND).map((k) => `${campaign.faction}_${k}_t0`).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
+  const ids = Object.values(START_DESIGN_KIND).flatMap((k) => [0, 1, 2].map((t) => `${campaign.faction}_${k}_t${t}`)).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
   return ids.filter((id, i) => TEMPLATES[id] && ids.indexOf(id) === i && designResearched(designFromTemplate(id)));
 }
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
@@ -11136,10 +11175,13 @@ function promote(s, fl, ship) {
 
 // ---------- salvage (08 §9): only when you win and hold the field
 function salvageRates(ships) {
-  let cranes = 0;
-  for (const sh of ships) for (const c of shipDesign(sh).cells) if (PARTS[c.p].salvage || c.p === 'crane') cranes++;
+  let cranes = 0, magnet = false;
+  for (const sh of ships) for (const c of shipDesign(sh).cells) {
+    if (PARTS[c.p].salvage || c.p === 'crane' || c.p === 'magnet_crane') cranes++;
+    if (c.p === 'magnet_crane') magnet = true;                // the Clans' magnet crane: +25% (v0.6.8)
+  }
   cranes = Math.min(SALVAGE.maxCranes, cranes);
-  const clan = campaign.faction === 'clans' ? SALVAGE.clans : 1;
+  const clan = (campaign.faction === 'clans' ? SALVAGE.clans : 1) * (magnet ? SALVAGE.magnet : 1);
   // Scavengers (08 §12): +4% part chance, +20% scrap.
   const sc = perk('scavengers');
   return { part: (SALVAGE.part + cranes * SALVAGE.crane + (sc ? 0.04 : 0)) * clan, scrap: SALVAGE.scrap * (1 + cranes * SALVAGE.craneScrap) * clan * (sc ? 1.2 : 1) };
@@ -11194,7 +11236,7 @@ function makeScrapFields(rng) {
   }
 }
 const fieldNear = (fl) => (campaign.scrapFields || []).find((f) => f.left > 0 && Math.hypot(f.x - fl.x, f.y - fl.y) < 1.5);
-const hasCrane = (fl) => fleetShips(fl).some((sh) => shipDesign(sh).cells.some((c) => c.p === 'crane' || PARTS[c.p].salvage));
+const hasCrane = (fl) => fleetShips(fl).some((sh) => shipDesign(sh).cells.some((c) => c.p === 'crane' || c.p === 'magnet_crane' || PARTS[c.p].salvage));
 function stepSalvage(dt) {
   const t = hoursNow();
   if (campaign.wrecks) campaign.wrecks = campaign.wrecks.filter((w) => w.until > t);
@@ -11785,7 +11827,10 @@ function aiBuild(fid, rng) {
     const tier = aiTierOf(fid);
     const own0 = `${fid}_${START_DESIGN_KIND[dom]}_t0`;
     const pool = tier >= 1 && AI_DESIGNS[tier] ? AI_DESIGNS[tier][dom].filter((id) => TEMPLATES[id]) : [];
-    const id = pool.length && rng.next() < 0.75 ? rng.pick(pool) : TEMPLATES[own0] ? own0 : (AI_DESIGNS[1][dom] || [])[0];
+    // Its own faction design of its tier (1–2; batch L1/L2), when there is one, half the time.
+    const ownT = tier >= 1 ? `${fid}_${START_DESIGN_KIND[dom]}_t${Math.min(2, tier)}` : null;
+    const id = ownT && TEMPLATES[ownT] && rng.next() < 0.5 ? ownT
+      : pool.length && rng.next() < 0.75 ? rng.pick(pool) : TEMPLATES[own0] ? own0 : (AI_DESIGNS[1][dom] || [])[0];
     if (!id) return;
     st.next = { dom, id };
   }
@@ -12122,7 +12167,7 @@ function refitDesign(base, counters, fid, tier) {
 // The designs a faction might build: its own starting designs and the shared ones up to its tier.
 function aiDesignPool(fid) {
   const ids = new Set();
-  for (const k of Object.keys(START_DESIGN_KIND)) { const id = `${fid}_${START_DESIGN_KIND[k]}_t0`; if (TEMPLATES[id]) ids.add(id); }
+  for (const k of Object.keys(START_DESIGN_KIND)) for (const t of [0, 1, 2]) { const id = `${fid}_${START_DESIGN_KIND[k]}_t${t}`; if (TEMPLATES[id]) ids.add(id); }
   for (let t = 1; t <= 4; t++) for (const dom in AI_DESIGNS[t]) for (const id of AI_DESIGNS[t][dom]) if (TEMPLATES[id]) ids.add(id);
   return [...ids];
 }

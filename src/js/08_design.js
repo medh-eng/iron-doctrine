@@ -95,7 +95,7 @@ function validateDesign(design) {
   const count = new Int16Array(W * H);
   const domain = domainOf(design);
   let lowest = -1;
-  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0, wings = 0, tails = 0, airprops = 0, jets = 0, rotors = 0, trotors = 0, airOnly = 0;
+  let crew = 0, needCrew = 1, engines = 0, loco = 0, keels = 0, props = 0, wings = 0, tails = 0, airprops = 0, jets = 0, rotors = 0, trotors = 0, airOnly = 0, sails = 0;
   for (const c of design.cells) {
     const d = PARTS[c.p];
     if (!d) { errors.push(`Unknown part ${c.p}.`); continue; }
@@ -113,6 +113,7 @@ function validateDesign(design) {
     if (d.lift) wings++;
     if (d.tail) tails++;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.jet) { jets++; engines++; }
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
@@ -126,7 +127,7 @@ function validateDesign(design) {
       if (!tails) errors.push('No tail unit.');
       if (!jets && !airprops) errors.push('No jet or air propeller.');
     } else if (domain === 'airship') {
-      if (!airprops) errors.push('No air propeller.');
+      if (!airprops && !sails) errors.push('No air propeller or sail vane.');
     } else if (!trotors) errors.push('No tail rotor.');
   } else if (airOnly) {
     errors.push('Aero engines and bomb racks only work on aircraft.');
@@ -236,7 +237,7 @@ const dragRise = (v) => (v > DRAG_RISE_SPEED ? 1 + ((v - DRAG_RISE_SPEED) / 30) 
 
 // Aircraft and helicopters (design/05 §7.4), design-sheet units (m/s, N).
 function airNumbers(design, alive, mass, height) {
-  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0;
+  let S = 0, tailA = 0, lx = 0, ly = 0, jet = 0, prop = 0, airprops = 0, rotors = 0, trotors = 0, power = 0, gas = 0, eng = 0, sails = 0;
   design.cells.forEach((c, i) => {
     if (alive && !alive[i]) return;
     const d = PARTS[c.p];
@@ -248,6 +249,7 @@ function airNumbers(design, alive, mass, height) {
     if (d.tail) tailA += d.tail;
     if (d.jet) jet += d.jet;
     if (d.airprop) airprops++;
+    if (d.sail) sails++;
     if (d.rotor) rotors++;
     if (d.trotor) trotors++;
     if (d.power > 0) power += d.power;
@@ -278,7 +280,7 @@ function airNumbers(design, alive, mass, height) {
     // Airship (step 2.7): gas lift from envelopes plus lift engines; propellers push against drag.
     out.gasLift = gas; out.engineLift = eng; out.airshipLift = gas + eng;
     out.liftMargin = W ? (gas + eng) / W : 0;
-    out.propPower = airprops ? power : 0;
+    out.propPower = (airprops ? power : 0) + sails * SAIL.kw;   // sail vanes in an average wind
     out.airshipCdA = AIRSHIP_CDA * height;
   }
   return out;

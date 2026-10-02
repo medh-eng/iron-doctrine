@@ -140,6 +140,16 @@ function stepSystems(B, V, dt) {
   stepWarheadEffects(B, V, dt);
   stepEnergy(B, V, dt);
   stepFab(B, V, dt);
+  // Storm winds wear sail vanes down (v0.6.8).
+  // (Worn quietly: no redraw every frame; a vane that gives out breaks off.)
+  if (V.sailKw && battleWind > SAIL.clear) {
+    for (let i = 0; i < V.parts.length; i++) {
+      const p = V.parts[i];
+      if (!p.alive || !p.def.sail) continue;
+      p.hp -= SAIL.stormWear * dt;
+      if (p.hp <= 0) destroyPart(B, V, i, null);
+    }
+  }
   // Heat: engines only run hot while driving (fliers always).
   const running = V.flier || V.throttle !== 0;
   const ter = B.T.terrainAt(V.body.x);

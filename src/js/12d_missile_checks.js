@@ -97,10 +97,12 @@ function designedMissileCheck(n = 40) {
   out.capacity = { rack: rack.rounds, vls: vls.rounds, mag: S.magUnits };
   const T = target(B, []);
   B.units = [S, T];
-  launchDesigned(B, S, vls, T);
-  let ang = 0;
-  missiles.forEachAlive((m) => { ang = m.ang; });
-  out.vlsUp = Math.abs(ang - Math.PI / 2) < 0.01;
+  vls.reload = 0;
+  const fired = launchDesigned(B, S, vls, T);
+  // The missile this VLS just fired (not a leftover from an earlier check).
+  let ang = NaN;
+  missiles.forEachAlive((m) => { if (m.shooter === S && m.def === vls.def && m.t === 0) ang = m.ang; });
+  out.vlsUp = fired !== false && Math.abs(ang - Math.PI / 2) < 0.01;
   clearAll();
   rack.rounds = 0; rack.reload = 0;
   refillLauncher(S, rack);
