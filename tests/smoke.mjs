@@ -971,7 +971,9 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         for (let r = 4; r < 14; r++) for (let a = 0; a < 24; a++) {
           const cx = fl.x + Math.cos((a * Math.PI) / 12) * r, cy = fl.y + Math.sin((a * Math.PI) / 12) * r;
           if (C.campaign.fleets.some((f) => f.shipIds.length && Math.hypot(f.x - cx, f.y - cy) < 3)) continue;
-          if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < 2.5)) continue;
+          // Clear of every settlement by more than the map's tap radius at this zoom.
+          const clear = 1.2 * Math.max(1, 12 / S.cam.z) + 1;
+          if (C.campaign.settlements.some((q) => Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy) < Math.max(2.5, clear))) continue;
           if (C.planMove(fl, cx, cy).why) continue;
           // Put that cell in a clear part of the screen (a few places to try, left first).
           for (const [fx, fy] of [[0.3, 0.55], [0.45, 0.4], [0.2, 0.35], [0.6, 0.45]]) {

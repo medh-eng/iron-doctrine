@@ -582,6 +582,8 @@ const START_FLEETS = [
 const START_DESIGN_KIND = { land: 'tank', sea: 'corvette', air: 'gunship' };
 // Each faction's large tier 2 designs (batch M1), built from tech tier 2.
 const BIG_DESIGN_KIND = { land: 'behemoth', sea: 'destroyer', air: 'air_frigate' };
+// Each faction's extra-large tier 3 designs (batch M2), built from tech tier 3.
+const XL_DESIGN_KIND = { land: 'landship', sea: 'cruiser', air: 'air_cruiser' };
 // Each of your starting fleets also has a support vehicle with fuel in its hold (v0.6.4).
 const START_SUPPORT = { land: 'supply_wagon', sea: 'fuel_tender', air: 'supply_airship' };
 const START_HOLD_FUEL = 20;

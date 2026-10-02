@@ -14,13 +14,32 @@ function gunUnderWater(B, V, w) {
   return _p.y < B.T.sea;
 }
 
-// Battlefield range for engaging: the main gun, or a torpedo tube.
+// Battlefield range for engaging: the longest range at which most of the direct-fire
+// guns' firepower (damage per second) can reach, so a ship with one long gun and
+// several short ones closes in until the short ones fire too; or a torpedo tube.
+const ENGAGE_FIREPOWER_SHARE = 0.6;
+const gunFirepower = (V, w) => (!w.def.auto && !w.def.secondary && !w.def.flame && V.parts[w.part].alive ? (w.def.dmg || 0) / (w.def.reload || 1) : 0);
 function engageRange(V) {
-  const mw = mainWeapon(V);
-  let r = mw ? weaponRange(mw.def) : 0;
+  let total = 0, r = 0;
+  for (const w of V.weapons) total += gunFirepower(V, w);
+  for (const w of V.weapons) {
+    const fp = gunFirepower(V, w);
+    if (!fp) continue;
+    const wr = weaponRange(w.def);
+    if (wr <= r) continue;
+    let reach = 0;
+    for (const o of V.weapons) if (weaponRange(o.def) >= wr) reach += gunFirepower(V, o);
+    if (reach >= total * ENGAGE_FIREPOWER_SHARE) r = wr;
+  }
   for (const w of V.weapons) if (/^(torpedo|atgm|rockets|launcher)$/.test(w.def.secondary) && w.rounds > 0 && V.parts[w.part].alive) r = Math.max(r, secondaryRange(w) * 0.9);
   if (!r && V.weapons.length) r = weaponRange(V.weapons[0].def);
   return r;
+}
+
+// The longest reach of the main gun or a torpedo tube, for picking targets.
+function reachRange(V) {
+  const mw = mainWeapon(V);
+  return Math.max(mw ? weaponRange(mw.def) : 0, engageRange(V));
 }
 
 // Range of a secondary weapon; a missile launcher's comes from the missile it carries (10f).

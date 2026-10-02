@@ -142,6 +142,7 @@ function aiDesignPool(fid) {
   const ids = new Set();
   for (const k of Object.keys(START_DESIGN_KIND)) for (const t of [0, 1, 2]) { const id = `${fid}_${START_DESIGN_KIND[k]}_t${t}`; if (TEMPLATES[id]) ids.add(id); }
   for (const k of Object.values(BIG_DESIGN_KIND)) if (TEMPLATES[`${fid}_${k}_t2`]) ids.add(`${fid}_${k}_t2`);
+  for (const k of Object.values(XL_DESIGN_KIND)) if (TEMPLATES[`${fid}_${k}_t3`]) ids.add(`${fid}_${k}_t3`);
   for (let t = 1; t <= 4; t++) for (const dom in AI_DESIGNS[t]) for (const id of AI_DESIGNS[t][dom]) if (TEMPLATES[id]) ids.add(id);
   return [...ids];
 }

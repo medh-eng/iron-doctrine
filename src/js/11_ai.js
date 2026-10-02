@@ -182,12 +182,12 @@ function squadThink(B, V, dt) {
   else if (ai.hold !== null) goal = ai.hold;
   else if (B.order === 'Follow') goal = me.body.x - dir * 12 * slot;
   else if (B.order === 'Escort') goal = me.body.x + dir * (slot === 1 ? 10 : -10);
-  else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * (weaponRange(mainWeapon(V) ? mainWeapon(V).def : PARTS.mg) * 0.7) : me.body.x - dir * 10 * slot;
+  else if (B.order === 'Attack') goal = B.target && !B.target.destroyed ? B.target.body.x - dir * ((engageRange(V) || weaponRange(PARTS.mg)) * 0.7) : me.body.x - dir * 10 * slot;
   else if (B.order === 'Back') goal = me.body.x - dir * 30 * slot;
   V.throttle = goal === null ? 0 : Math.abs(goal - V.body.x) < 2 ? 0 : clamp((goal - V.body.x) * 0.25, -1, 1);
   if (V.ballast) V.depthCmd = me.ballast ? me.depthCmd : patrolDepth(B, V);
   // Engage: the Attack order uses your target; otherwise the nearest enemy in range.
-  const range = engageRange(V);
+  const range = reachRange(V);
   let tgt = null;
   // A "Fire at" order from the command wheel comes first, then the Attack order's target.
   if (ai.fireAt && (ai.fireAt.destroyed || !ai.fireAt.seen)) ai.fireAt = null;

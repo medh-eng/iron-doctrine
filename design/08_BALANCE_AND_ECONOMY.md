@@ -346,3 +346,10 @@ Parts already in the game were placed in the tree by the one-off v1 import (step
 ## 14. Faction modifiers
 
 See 09. Every faction bonus is paired with a real weakness. Balance factions across a whole campaign, not per battle.
+
+## 15. Balance pass notes (6e, v0.7.3)
+
+- **Fighting distance.** A vehicle driven by the AI (the enemy, or your ships you are not steering) closes to the longest range at which at least 60% of its direct-fire firepower (damage ÷ reload of its guns) can reach, not the range of its single biggest gun. A cruiser with one 203 mm and two 105 mm guns now closes until the 105s fire too; before, it held at the 203's range and the duel stalled. Torpedoes and missiles still extend it.
+- **Directorate slab landship (M2).** It came with two steam engines (8 kW/t, too little to climb); they are gas turbines now (17.9 kW/t, in line with the other tier 3 landships at 15 or more).
+- **Duels checked (AI against AI, 3 minutes):** the tier 3 cruisers, landships and air cruisers, the tier 2 destroyers and the v1 destroyer all close, fire and end with a result.
+- **Performance.** `tests/perf.mjs` measures a Gauntlet level 3 battle and a heavy sea battle of cruisers and air cruisers: game work stays about 1–2 ms a frame on the test machine; drawing is the bulk of each frame.

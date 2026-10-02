@@ -13,17 +13,26 @@ const page = await b.newPage({ viewport: { width: 915, height: 412 }, deviceScal
 page.on('pageerror', e => console.log('ERR', e.message));
 await page.goto(`http://127.0.0.1:${srv.address().port}/`);
 await page.waitForTimeout(300);
-await page.evaluate(() => window.__GAME__.go('battle', 3));
-await page.waitForTimeout(12000);   // enemies arrive, fighting starts
-const r = await page.evaluate(() => new Promise((res) => {
+// Average frame time and the game's own work (update + render) per frame over 300 frames.
+const probe = () => page.evaluate(() => new Promise((res) => {
   const S = window.__GAME__.SCREENS.battle; const B = S.B;
-  let n = 0, worst = 0, sum = 0, last = performance.now();
+  let n = 0, worst = 0, sum = 0, last = performance.now(), work = 0, worstWork = 0;
   const upd = S.update.bind(S), ren = S.render.bind(S);
-  let work = 0;
-  S.update = (...a) => { const t = performance.now(); upd(...a); work += performance.now() - t; };
+  S.update = (...a) => { const t = performance.now(); upd(...a); const w = performance.now() - t; work += w; worstWork = Math.max(worstWork, w); };
   S.render = (...a) => { const t = performance.now(); ren(...a); work += performance.now() - t; };
-  function f(now) { const d = now - last; last = now; sum += d; worst = Math.max(worst, d); n++; if (n < 300) requestAnimationFrame(f); else res({ avgFrame: (sum / n).toFixed(1), worst: worst.toFixed(1), avgWork: (work / n).toFixed(2), shots: B.stats.enemyShots }); }
+  function f(now) { const d = now - last; last = now; sum += d; worst = Math.max(worst, d); n++; if (n < 300) requestAnimationFrame(f); else { S.update = upd; S.render = ren; res({ avgFrame: +(sum / n).toFixed(1), worst: +worst.toFixed(1), avgWork: +(work / n).toFixed(2), worstUpdate: +worstWork.toFixed(2), units: B.units.length, shots: B.stats.shots + B.stats.enemyShots }); } }
   requestAnimationFrame(f);
 }));
-console.log(JSON.stringify(r));
+// 1. A Gauntlet level once the fighting has started.
+await page.evaluate(() => window.__GAME__.go('battle', 3));
+for (let t = 0; t < 40; t++) { await page.waitForTimeout(1000); if (await page.evaluate(() => { const B = window.__GAME__.SCREENS.battle.B; return B.stats.shots + B.stats.enemyShots > 3; })) break; }
+const level = await probe();
+// 2. Heavy: three cruisers and an air cruiser a side at sea (the largest designs, v0.7.3).
+await page.evaluate(() => window.__GAME__.evalIn(`screens.go('battle', { sim: { field: 'sea', weather: 'clear', light: 'day', seed: 9,
+  squad: () => ['league_cruiser_t3', 'clans_cruiser_t3', 'lumen_cruiser_t3', 'league_air_cruiser_t3'].map(designFromTemplate),
+  enemy: () => ['directorate_cruiser_t3', 'skyreach_cruiser_t3', 'directorate_cruiser_t3', 'skyreach_air_cruiser_t3'].map(designFromTemplate) } })`));
+// Wait until both sides are firing (up to 60 s).
+for (let t = 0; t < 60; t++) { await page.waitForTimeout(1000); if (await page.evaluate(() => { const B = window.__GAME__.SCREENS.battle.B; return B.stats.shots + B.stats.enemyShots > 5; })) break; }
+const heavy = await probe();
+console.log(JSON.stringify({ level, heavy }));
 await b.close(); srv.close();
