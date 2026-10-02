@@ -159,3 +159,4 @@ c57, mortar, flare, hold, repair, crane, flame, rocket, radar, workshop. **Integ
 ## Batch M: large faction designs
 
 - **M1 integrated (v0.6.9):** for each faction a behemoth (land), a destroyer (sea) and an air frigate (airship), tier 2. All pass the design rules within tier 2. The AI builds them a quarter of the time from tech tier 2; yours appear in the Drafting Office once researched. (L2 was re-sent unchanged.)
+- **M2 integrated (v0.7.3):** for each faction a landship (land), a cruiser (sea) and an air cruiser (airship), tier 3. All pass the design rules within tier 3. The AI builds them from tech tier 3 (half its large builds); yours appear in the Drafting Office once researched. The Directorate landship's two steam engines were changed to gas turbines (it couldn't climb at 8 kW/t).
