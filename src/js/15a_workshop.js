@@ -32,7 +32,7 @@ const designResearched = (d) => d.cells.every((c) => partUnlocked(c.p));
 // Base designs you may start from in the campaign: your faction's own starting designs, the
 // support vehicles, and the templates whose parts you have all researched.
 function campaignBaseDesigns() {
-  const ids = Object.values(START_DESIGN_KIND).flatMap((k) => [0, 1, 2].map((t) => `${campaign.faction}_${k}_t${t}`)).concat(Object.values(START_SUPPORT), STARTING_TEMPLATES);
+  const ids = Object.values(START_DESIGN_KIND).flatMap((k) => [0, 1, 2].map((t) => `${campaign.faction}_${k}_t${t}`)).concat(Object.values(BIG_DESIGN_KIND).map((k) => `${campaign.faction}_${k}_t2`), Object.values(START_SUPPORT), STARTING_TEMPLATES);
   return ids.filter((id, i) => TEMPLATES[id] && ids.indexOf(id) === i && designResearched(designFromTemplate(id)));
 }
 const hasWorkshop = (s) => s.type === 'city' || s.type === 'metropolis';
