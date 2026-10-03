@@ -79,3 +79,28 @@ function recruitTraits(kind, level, rng) {
   }
   return o.traits;
 }
+
+// ---------- other factions' officers (v0.7.5)
+// They level up by themselves (gainXp) and take an upgrade for each level, picked by a seeded roll.
+function aiTakeTraits(o) {
+  if (o.rank === 'grand') return;
+  let n = picksOwed(o);
+  if (n <= 0) return;
+  let h = 0;
+  for (const ch of String(o.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const rng = makeRng((campaign.seed ^ h ^ (o.level * 7919)) >>> 0);
+  while (n-- > 0) {
+    const c = traitChoices(o);
+    if (!c.length) break;
+    (o.traits = o.traits || []).push(rng.pick(c).id);
+  }
+}
+// What you can learn of another faction's fleet's officers: levels and upgrades.
+function enemyOfficerFacts(fl) {
+  const a = fleetAdmiral(fl);
+  const caps = fleetShips(fl).map((sh) => byId('officers', sh.captainId)).filter((o) => o && o.rank === 'captain');
+  return {
+    admiral: a ? `Adm. ${a.name} L${a.level}${a.traits && a.traits.length ? ` · ${traitsOf(a).map((t) => t.name).join(', ')}` : ''}` : 'none',
+    captains: caps.length ? caps.map((o) => `L${o.level}${o.traits && o.traits.length ? ` (${traitsOf(o).map((t) => t.name).join(', ')})` : ''}`).join(' · ') : 'none',
+  };
+}

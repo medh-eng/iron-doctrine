@@ -647,6 +647,13 @@ const REL = {
   borderCells: 8,            // settlements this close make a contested border
   tensionDays: 20, tensionFade: 0.5,
   aiDays: 10, aiTruce: 0.08, aiTruceBorder: 0.03, aiBreak: 0.5,
+  // Strength (v0.7.5): fleets plus half of what defends the settlements, in cost.
+  refuseAt: 2,               // they don't talk while this many times stronger than you
+  tributeMin: 0.5, tributeMax: 2,   // tribute × their strength ÷ yours, within these
+  weakOffer: 0.5,            // at war and this weak against you: they offer a truce...
+  weakOfferRep: 10,          // ...from this reputation
+  aiWeak: 0.5,               // AI pairs: the weaker side at this share seeks a truce (× 3 chance)
+  aiStrong: 2,               // ...and a side this many times stronger may break one on a contested border
 };
 // AI designs that evolve (6b): what you field is tallied after each battle and fades each day; a
 // faction refits when a trait makes up a share of it (see 15i).

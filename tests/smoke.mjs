@@ -911,6 +911,13 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
         const gc = await G(() => window.__GAME__.garrisonCheck());
         check(gc.garrison > 0 && gc.commanders.includes('grand') && gc.hintsNoFleet && gc.form === '' && gc.formed && gc.formed.ships === gc.garrison && gc.appoint === '' && gc.paid === 600 && gc.appointed === 1 && gc.hints > 0, `forming a fleet from the garrison, appointing an admiral or hints wrong ${JSON.stringify(gc)}`);
         steps.push('garrison and hints');
+        const eg = await G(() => window.__GAME__.endgameCheck());
+        const EG = (c, what) => check(c, `${what} ${JSON.stringify(eg)}`);
+        EG(eg.medals.includes('c_first'), 'awardMedals did not return the new medal for the report');
+        EG(eg.veteran.level === 3 && eg.veteran.traits === 2 && eg.rookie.level === 1 && eg.rookie.traits === 0 && eg.grown.level === 3 && eg.grown.traits === 2 && /Adm\./.test(eg.facts.admiral), 'enemy officers did not grow or show');
+        EG(eg.city && eg.siegeAir.includes(1), 'no air support in a siege by the defenders\' airfield');
+        EG(eg.strong.ratio >= 2 && /don't talk/.test(eg.strong.block) && eg.strong.tribute === eg.strong.base * 2 && eg.weakRatio <= 0.5 && eg.weakOffer === 'truce', 'truces did not weigh strength');
+        steps.push('endgame extras');
         E(ec.migrate.ok && ec.migrate.v >= 2 && ec.migrate.store === 80 && ec.migrate.market && ec.migrate.hold, 'the v1 campaign save was not migrated');
       }
       await G(() => window.__GAME__.go('title'));
@@ -1025,6 +1032,11 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await tapButton('Auto-resolve');
       await wait(300);
       check((await G(() => window.__GAME__.camp.campaign.journal.slice(-1)[0] || '')).includes('enemy ships destroyed'), 'auto-resolve did not record the battle');
+      // The battle report card (v0.7.5): facts, any news and medal ribbons.
+      check((await page.locator('.card-result .stamp').count()) === 1, 'auto-resolve did not show the battle report card');
+      await shot('24b-battle-report');
+      await page.locator('.card-result').getByRole('button', { name: 'Back to the map', exact: true }).click();
+      await wait(200);
       // Settlement panels: the home warehouse (with a truck fleet docked) and the market.
       await G(() => {
         const g = window.__GAME__, C = g.camp, S = g.SCREENS.map;

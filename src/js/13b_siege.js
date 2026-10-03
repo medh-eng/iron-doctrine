@@ -117,6 +117,8 @@ function createSiegeBattle(contact, headless) {
   const B = createBattle(0, { cfg, reserves: true, demo: !!headless, squad: playerDefends ? def : atk, enemyForce: playerDefends ? atk : def });
   for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   buildDefences(B, s, playerDefends ? 0 : 1);
+  // Air support from nearby airfields, the besieged settlement's own included (v0.7.5).
+  setupAirfields(B, battleAirfields({ myFleets: [], theirFleets: [] }, { x: s.x + 0.5, y: s.y + 0.5 }, playerDefends ? attacker.faction : s.faction));
   B.contact = contact;
   // applyBattleOutcome's fleet bookkeeping: your fleets and theirs.
   B.sides = playerDefends ? { myFleets: sides.defFleets, theirFleets: sides.atk } : { myFleets: sides.atk, theirFleets: sides.defFleets };

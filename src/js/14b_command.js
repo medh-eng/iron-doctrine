@@ -90,11 +90,24 @@ function shipStats(ship) {
 // Map domains: land, sea, air (airships and aircraft fly).
 function mapDomain(dom) { return seaDomain(dom) ? 'sea' : airDomain(dom) ? 'air' : 'land'; }
 
+// Other factions' officers raised later in the war start as veterans (v0.7.5): level 2 from tech
+// tier 2, level 3 at tier 4, with an upgrade for each level.
+function veteranStart(o) {
+  if (o.faction === campaign.faction) return;
+  const lv = 1 + Math.floor(aiTierOf(o.faction) / 2);
+  if (lv <= 1) return;
+  const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
+  o.xp = table[Math.min(lv - 1, table.length - 1)];
+  o.level = lv;
+  aiTakeTraits(o);
+}
+
 function makeShip(designId, faction, rng) {
   const ship = { id: newId('h'), design: designId, faction, captainId: null, fleetId: null, hp: null, fuel: 0, ammo: 1, xp: 0, kills: 0, battles: 0 };
   ship.fuel = shipStats(ship).fuelCap;
   campaign.ships.push(ship);
   const cap = { id: newId('o'), name: officerName(rng), rank: 'captain', faction, level: 1, xp: 0, alive: true, shipId: ship.id, fleetId: null };
+  veteranStart(cap);
   campaign.officers.push(cap);
   ship.captainId = cap.id;
   return ship;
@@ -105,6 +118,7 @@ function makeFleet(faction, domain, x, y, designs, rng, admiral) {
   if (admiral) fleet.admiralId = admiral.id;
   else {
     const a = { id: newId('o'), name: officerName(rng), rank: 'admiral', faction, level: 1, xp: 0, alive: true, fleetId: fleet.id };
+    veteranStart(a);
     campaign.officers.push(a);
     fleet.admiralId = a.id;
   }

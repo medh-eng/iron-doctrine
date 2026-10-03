@@ -175,6 +175,9 @@ SCREENS.map = {
         row('Relation', rel === 'war' ? 'At war' : 'Truce');
         row('Ships', fl.shipIds.length);
         row('Domain', fl.domain);
+        const of = enemyOfficerFacts(fl);       // their officers' levels and upgrades (v0.7.5)
+        row('Admiral', of.admiral);
+        row('Captains', of.captains);
         P.appendChild(body);
         return;
       }
@@ -637,8 +640,8 @@ SCREENS.map = {
 
   afterBattle(res) {
     if (!res) return;
-    ui.toast(res.summary, 5000);
-    this.refresh();
+    if (res.win === undefined) { ui.toast(res.summary, 5000); this.refresh(); return; }   // not a battle (a settlement let fall)
+    openBattleReport(res, () => this.refresh());   // the report first, then (if it ended) the war's end
   },
 };
 

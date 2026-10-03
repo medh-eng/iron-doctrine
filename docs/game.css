@@ -620,3 +620,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* The map's button bars have no room to grow: their text stops at 110% (6f). */
 .map-bottom > .btn-small, .map-top > .btn-small { font-size: calc(14px * min(var(--ts, 1), 1.1)); }
 .map-bottom > .btn:not(.btn-small), .map-top > .btn:not(.btn-small) { font-size: calc(16px * min(var(--ts, 1), 1.1)); }
+/* Battle report: news lines and medal ribbons (v0.7.5) */
+.report-news { color: var(--amber); }
+.report-medals { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.medal-ribbon { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255, 178, 62, 0.6); background: linear-gradient(90deg, rgba(46, 109, 180, 0.35), rgba(255, 178, 62, 0.2)); text-align: left; }
+.medal-ribbon span { display: flex; flex-direction: column; }
+.medal-ribbon small { font-size: calc(12px * var(--ts, 1)); color: rgba(230, 220, 195, 0.8); }
+.medal-disc { font-style: normal; font-size: calc(20px * var(--ts, 1)); color: var(--amber); }
