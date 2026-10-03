@@ -67,7 +67,10 @@ function aiBuild(fid, rng) {
     const pool = tier >= 1 && AI_DESIGNS[tier] ? AI_DESIGNS[tier][dom].filter((id) => TEMPLATES[id]) : [];
     // Its own faction design of its tier (1–2; batch L1/L2), when there is one, half the time.
     // From tier 2, sometimes its large design of that domain (batch M1).
-    const big = tier >= 3 && rng.next() < 0.5 ? `${fid}_${XL_DESIGN_KIND[dom]}_t3` : tier >= 2 ? `${fid}_${BIG_DESIGN_KIND[dom]}_t2` : null;
+    // From tier 3 its extra-large designs (M2) half of those times, from tier 4 its capital designs (M3) a third.
+    const roll = rng.next();
+    const big = tier >= 4 && roll < 0.34 ? `${fid}_${XXL_DESIGN_KIND[dom]}_t4`
+      : tier >= 3 && roll < 0.67 ? `${fid}_${XL_DESIGN_KIND[dom]}_t3` : tier >= 2 ? `${fid}_${BIG_DESIGN_KIND[dom]}_t2` : null;
     const ownT = tier >= 1 ? `${fid}_${START_DESIGN_KIND[dom]}_t${Math.min(2, tier)}` : null;
     const id = big && TEMPLATES[big] && rng.next() < 0.25 ? big
       : ownT && TEMPLATES[ownT] && rng.next() < 0.5 ? ownT

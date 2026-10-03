@@ -224,6 +224,8 @@ function enemyThink(B, V, dt) {
     if (d > want + 8) V.throttle = 0.8 * toward;
     else if (d < want - 15) V.throttle = -0.5 * toward;
     else V.throttle = 0;
+  } else if (B.time - V.lastHitT < 15 && V.lastHitDir) {
+    V.throttle = 0.8 * V.lastHitDir;    // shelled by something it can't see: close in toward the fire
   } else if (ai.lastX !== undefined && Math.abs(ai.lastX - x) > 6) {
     V.throttle = 0.6 * Math.sign(ai.lastX - x);   // search where the enemy was last seen
   } else {

@@ -299,6 +299,7 @@ function shellVsVehicle(B, s, V) {
     }
   }
   V.lastHitT = B.time;
+  V.lastHitDir = s.vx > 0 ? -1 : 1;     // the shell came from that side (v0.7.5: unseen shooters are hunted)
   if (V === B.me) { haptic('hit'); B.trauma = Math.min(1, B.trauma + 0.25); }
   if (!used && exitCell) {
     // Over-penetration: the shell leaves the far side and keeps flying.
