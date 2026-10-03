@@ -381,6 +381,7 @@ Side view, landscape, generated from the location.
 - **Destroyed ships** are gone. Their captain survives 60% of the time and returns unassigned; otherwise the captain is lost.
 - **Experience:** XP goes to captains, admirals and the Grand Admiral.
 - **Salvage and plunder:** the winner holds the field and gets salvage (§9), plus plunder in sieges.
+- **Report card (v0.7.5):** every campaign battle, fought, auto-resolved or ended by a retreat, closes on a card with the facts, salvage, siege and flagship news, the war's end if it came, and a ribbon for each medal just earned.
 
 ## 11. Sieges
 
@@ -393,6 +394,7 @@ Side view, landscape, generated from the location.
   - defence bonuses by type (08 §7)
 - **Winning:** destroy the garrison (on the field and in reserve), or destroy the keep.
 - **Losing:** a failed siege leaves the settlement damaged. Walls and emplacements repair over days.
+- **Air support (v0.7.5):** as in field battles (5c3), each side's nearest airfield within 4 cells sends aircraft; the besieged city can be its own defenders' airfield.
 
 ## 12. Progression
 
@@ -441,6 +443,9 @@ Full tree and perks: 08 §11–12.
   - Each faction reviews every 7 days. A trait at ≥ 35% of what you field (after at least 4 vehicles) calls for its counter, dropped again below 17.5%.
   - Counters are part-for-part refits of the same size within the faction's tier: heavy armour → the most penetrating gun; aircraft and drones → an anti-aircraft gun in place of the weakest weapon; submarines → a depth-charge rack; missiles → flares; energy and fire → composite armour. An aircraft may not get more than 5% heavier.
   - The refit is a new mark of the design, and what the faction builds from then on. The journal states which faction refit how many designs with what.
+- **Officers (v0.7.5):** other factions' captains and admirals gain XP from battles with you and with each other, level up by themselves and take an upgrade per level (a seeded roll). Officers raised later in the war start at level 2 from tech tier 2 and level 3 at tier 4. The enemy fleet panel shows their levels and upgrades.
+- **Strength and truces (v0.7.5):** a faction's strength is its fleets plus half of its settlements' defences, in cost, shown in the War room. A faction at least twice as strong as you won't talk; tribute is scaled by their strength over yours (×0.5 to ×2); at war and down to half your strength, a faction offers a truce from reputation +10. Among AI factions the weaker side (half or less) seeks truces three times as often, and a side twice as strong may break one on a contested border before the tension runs out.
+- **Large designs:** tier 2 (M1), tier 3 (M2, half of the large builds from tech tier 3) and tier 4 capital designs (M3: land dreadnought, battleship, sky fortress; a third of the large builds from tech tier 4).
 
 ## 14. Winning and losing
 

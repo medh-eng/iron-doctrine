@@ -32,6 +32,7 @@ function openRelations(tab = 'relations') {
         alive ? (rel === 'war' ? 'At war' : 'Truce') : 'No settlements left',
         `Reputation ${repOf(F.id) > 0 ? '+' : ''}${repOf(F.id)}`,
         `Settlements ${settlementsOf(F.id).length}`,
+        `Strength ${factionStrength(F.id).toLocaleString('en-US')} (yours ${factionStrength(campaign.faction).toLocaleString('en-US')})`,
       ];
       if (rel === 'truce') facts.push(`Contested border ${Math.round(campaign.tension[relKey(campaign.faction, F.id)] || 0)} of ${REL.tensionDays} days`);
       const last = campaign.lastFought[F.id];
@@ -121,3 +122,46 @@ function openWarEnd() {
   audio.sfx(o.result === 'win' ? 'fanfare' : 'lifeLost');
 }
 
+
+// ---------- the battle report (v0.7.5)
+// News and medals under a campaign battle's facts: flagships, the war's end, and a ribbon for
+// each medal just earned.
+function battleReportExtras(c, res) {
+  if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
+  if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
+  for (const n of res.news || []) c.appendChild(el('p', 'card-text report-news', n));
+  if (res.medals && res.medals.length) {
+    const box = el('div', 'report-medals');
+    for (const m of res.medals) {
+      const r = el('div', 'medal-ribbon');
+      r.appendChild(el('i', 'medal-disc', '★'));
+      const t = el('span', '');
+      t.appendChild(el('b', '', m.name));
+      t.appendChild(el('small', '', m.how));
+      r.appendChild(t);
+      box.appendChild(r);
+    }
+    c.appendChild(box);
+  }
+}
+
+// The report card on the map, for a battle resolved there or a retreat.
+function openBattleReport(res, onClose) {
+  ui.clearToasts();                         // nothing left over on top of the stamp
+  const c = ui.card('', 'card-result');
+  c.appendChild(el('div', res.win ? 'stamp' : 'stamp stamp-red', res.win ? 'VICTORY' : 'DEFEAT'));
+  const facts = el('div', 'result-facts');
+  const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+  row('Enemy ships destroyed', res.lostTheirs);
+  row('Your ships lost', res.lostMine);
+  if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+  c.appendChild(facts);
+  battleReportExtras(c, res);
+  if (res.medals && res.medals.length) audio.sfx('fanfare');
+  const btns = el('div', 'card-row');
+  let close = null;
+  btns.appendChild(button('Back to the map', () => close(), 'btn btn-primary'));
+  c.appendChild(btns);
+  close = ui.open(c, onClose);
+  return close;
+}

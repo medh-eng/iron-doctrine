@@ -43,11 +43,26 @@ function relationsAfterCapture(was, faction) {
   if (faction === campaign.faction && was && was !== campaign.faction) addRep(was, REL.captured);
 }
 
+// ---------- strength (v0.7.5)
+// A faction's strength: its fleets, plus half of what defends its settlements (in cost).
+function factionStrength(fid) {
+  let v = 0;
+  for (const fl of campaign.fleets) if (fl.faction === fid && fl.shipIds.length) v += fleetStrength(fl);
+  for (const s of settlementsOf(fid)) v += defenceStrength(s) * 0.5;
+  return Math.round(v);
+}
+// How many times stronger fid is than b (b defaults to you).
+const strengthRatio = (fid, b = campaign.faction) => factionStrength(fid) / Math.max(1, factionStrength(b));
+
 // ---------- your moves
-function truceTribute(fid) { return REL.tribute + REL.tributePerSettlement * settlementsOf(fid).length; }
+function truceTribute(fid) {
+  const base = REL.tribute + REL.tributePerSettlement * settlementsOf(fid).length;
+  return Math.round(base * clamp(strengthRatio(fid), REL.tributeMin, REL.tributeMax));
+}
 function truceBlock(fid) {
   if (relation(fid, campaign.faction) !== 'war') return 'Not at war.';
   if (repOf(fid) < REL.truceRep) return `Reputation ${repOf(fid)}; they talk at ${REL.truceRep} or more.`;
+  if (strengthRatio(fid) >= REL.refuseAt) return `Strength: theirs ${factionStrength(fid).toLocaleString('en-US')}, yours ${factionStrength(campaign.faction).toLocaleString('en-US')}; they don't talk while ${REL.refuseAt} times stronger.`;
   relState();
   const last = campaign.lastFought[fid];
   const since = last === undefined ? Infinity : campaign.day - last;
@@ -124,9 +139,10 @@ function relationsDay(news) {
         campaign.journal.push(`Day ${campaign.day}: ${msg}`);
         news.push(msg);
       }
-    } else if (rel === 'war' && R[fid] >= REL.offerRep) {
+    } else if (rel === 'war' && (R[fid] >= REL.offerRep || (R[fid] >= REL.weakOfferRep && strengthRatio(fid) <= REL.weakOffer))) {
       makeTruce(me, fid);
-      const msg = `The ${factionOf(fid).name} offered a truce, and it holds (reputation ${repOf(fid)}).`;
+      const weak = R[fid] < REL.offerRep;
+      const msg = `The ${factionOf(fid).name} offered a truce, and it holds (reputation ${repOf(fid)}${weak ? `; strength theirs ${factionStrength(fid).toLocaleString('en-US')}, yours ${factionStrength(me).toLocaleString('en-US')}` : ''}).`;
       campaign.journal.push(`Day ${campaign.day}: ${msg}`);
       news.push(msg);
     }
@@ -138,13 +154,16 @@ function relationsDay(news) {
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
     const a = ids[i], b = ids[j], key = relKey(a, b);
     const border = contested(a, b);
+    const ra = strengthRatio(a, b);                        // a's strength ÷ b's
+    const lopsided = ra >= REL.aiStrong || ra <= 1 / REL.aiStrong;
     if (relation(a, b) === 'truce') {
       campaign.tension[key] = border ? (campaign.tension[key] || 0) + REL.aiDays : 0;
-      if (campaign.tension[key] >= REL.tensionDays && rng.next() < REL.aiBreak) {
+      // A much stronger side on a contested border may break it before the tension runs out.
+      if ((campaign.tension[key] >= REL.tensionDays || (border && lopsided)) && rng.next() < REL.aiBreak) {
         setRelation(a, b, 'war');
         campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} are at war.`);
       }
-    } else if (rng.next() < (border ? REL.aiTruceBorder : REL.aiTruce)) {
+    } else if (rng.next() < (border ? REL.aiTruceBorder : REL.aiTruce) * (Math.min(ra, 1 / ra) <= REL.aiWeak ? 3 : 1)) {   // the weak seek truces
       makeTruce(a, b);
       campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} made a truce.`);
     }

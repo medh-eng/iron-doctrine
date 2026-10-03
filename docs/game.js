@@ -2132,6 +2132,8 @@ const ui = {
     setTimeout(() => t.remove(), ms + 400);
   },
 
+  clearToasts() { this.toastBox.textContent = ''; },
+
   // Opens a modal card. Returns a close function.
   open(card, onClose) {
     const scrim = el('div', 'scrim');
@@ -3084,6 +3086,13 @@ const REL = {
   borderCells: 8,            // settlements this close make a contested border
   tensionDays: 20, tensionFade: 0.5,
   aiDays: 10, aiTruce: 0.08, aiTruceBorder: 0.03, aiBreak: 0.5,
+  // Strength (v0.7.5): fleets plus half of what defends the settlements, in cost.
+  refuseAt: 2,               // they don't talk while this many times stronger than you
+  tributeMin: 0.5, tributeMax: 2,   // tribute × their strength ÷ yours, within these
+  weakOffer: 0.5,            // at war and this weak against you: they offer a truce...
+  weakOfferRep: 10,          // ...from this reputation
+  aiWeak: 0.5,               // AI pairs: the weaker side at this share seeks a truce (× 3 chance)
+  aiStrong: 2,               // ...and a side this many times stronger may break one on a contested border
 };
 // AI designs that evolve (6b): what you field is tallied after each battle and fades each day; a
 // faction refits when a trait makes up a share of it (see 15i).
@@ -9468,7 +9477,9 @@ function applyBattleOutcome(B) {
     const hfl = r.fab && ship.faction === campaign.faction && byId('fleets', ship.fleetId);
     if (hfl) for (const g of ['metal', 'elec']) hfl.hold[g] = Math.max(0, (hfl.hold[g] || 0) - r.fab[g]);
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
+    else if (cap && cap.rank === 'captain') gainXp(cap, 20 + 30 + (win ? 0 : 20));     // enemy captains learn too (v0.7.5)
   }
+  for (const fl of B.sides.theirFleets) { const a = fleetAdmiral(fl); if (a && a.rank === 'admiral') gainXp(a, 30 + (win ? 0 : 20)); }
   if (!win) gaXp /= 2;
   const ga = byId('officers', campaign.ga);
   if (ga) gainXp(ga, gaXp);
@@ -9495,20 +9506,20 @@ function applyBattleOutcome(B) {
   // The war record, medals and the end of the war (6d).
   const sunk = flagsBefore.filter(([fl, id]) => id && fl.faction !== campaign.faction && !byId('ships', id)).length;
   warAfterBattle(win, destroyedTheirs, sides.theirFleets, sunk, lostMine);
-  awardMedals(flagNews);
+  const medals = awardMedals(flagNews);
   checkWarEnd(flagNews);
   const base = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
   campaign.journal.push(`Day ${campaign.day}: ${base}`);       // flagship, medal and war-end news journal themselves
   const summary = `${base}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaignStore.save();
-  return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
+  return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim(), medals, news: flagNews.filter((n) => !n.startsWith('Medal:')) };
 }
 
 function gainXp(o, xp) {
   o.xp += xp;
   const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
   // Your captains and admirals level up by hand on their officer card (15l); others by themselves.
-  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) o.level = levelFromXp(o.xp, table); }
+  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) { o.level = levelFromXp(o.xp, table); aiTakeTraits(o); } }
   else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
 }
 
@@ -9728,6 +9739,8 @@ function createSiegeBattle(contact, headless) {
   const B = createBattle(0, { cfg, reserves: true, demo: !!headless, squad: playerDefends ? def : atk, enemyForce: playerDefends ? atk : def });
   for (const V of B.units) { applyShipState(V); applyCaptain(V); }   // captain skill for the first on the field too
   buildDefences(B, s, playerDefends ? 0 : 1);
+  // Air support from nearby airfields, the besieged settlement's own included (v0.7.5).
+  setupAirfields(B, battleAirfields({ myFleets: [], theirFleets: [] }, { x: s.x + 0.5, y: s.y + 0.5 }, playerDefends ? attacker.faction : s.faction));
   B.contact = contact;
   // applyBattleOutcome's fleet bookkeeping: your fleets and theirs.
   B.sides = playerDefends ? { myFleets: sides.defFleets, theirFleets: sides.atk } : { myFleets: sides.atk, theirFleets: sides.defFleets };
@@ -9844,9 +9857,10 @@ function aiSiegeTarget(fl) {
 // survive go back to the warehouse; an AI faction from tech tier AIRFIELD.aiTier sends
 // AIRFIELD.aiWing fighters. They don't count towards the three on the field or the win.
 
-// The airfield nearest the battle for each side, if any.
-function battleAirfields(sides) {
-  const at = sides.myFleets[0] || sides.theirFleets[0];
+// The airfield nearest the battle for each side, if any. A siege (v0.7.5) passes the settlement
+// as the place and the other faction: the besieged city itself can be the defenders' airfield.
+function battleAirfields(sides, place, foeId) {
+  const at = place || sides.myFleets[0] || sides.theirFleets[0];
   if (!at) return [];
   const near = (fid) => world.settlements
     .filter((s) => s.faction === fid && AIRFIELD.types.includes(s.type) && Math.hypot(s.x + 0.5 - at.x, s.y + 0.5 - at.y) <= AIRFIELD.reach)
@@ -9858,7 +9872,7 @@ function battleAirfields(sides) {
     const stock = Object.entries(stockAt(mine.store, 'wings')).filter(([id, n]) => n > 0 && wingDesignOf(id)).sort((a, b) => b[1] - a[1])[0];
     if (stock) out.push({ side: 0, s: mine, id: stock[0], n: Math.min(AIRFIELD.max, stock[1]) });
   }
-  const foe = sides.theirFleets[0] && sides.theirFleets[0].faction;
+  const foe = foeId !== undefined ? foeId : sides.theirFleets[0] && sides.theirFleets[0].faction;
   const theirs = foe && foe !== campaign.faction && aiTierOf(foe) >= AIRFIELD.aiTier ? near(foe) : null;
   if (theirs) out.push({ side: 1, s: theirs, id: DEFAULT_WING, n: AIRFIELD.aiWing });
   return out;
@@ -10256,11 +10270,24 @@ function shipStats(ship) {
 // Map domains: land, sea, air (airships and aircraft fly).
 function mapDomain(dom) { return seaDomain(dom) ? 'sea' : airDomain(dom) ? 'air' : 'land'; }
 
+// Other factions' officers raised later in the war start as veterans (v0.7.5): level 2 from tech
+// tier 2, level 3 at tier 4, with an upgrade for each level.
+function veteranStart(o) {
+  if (o.faction === campaign.faction) return;
+  const lv = 1 + Math.floor(aiTierOf(o.faction) / 2);
+  if (lv <= 1) return;
+  const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
+  o.xp = table[Math.min(lv - 1, table.length - 1)];
+  o.level = lv;
+  aiTakeTraits(o);
+}
+
 function makeShip(designId, faction, rng) {
   const ship = { id: newId('h'), design: designId, faction, captainId: null, fleetId: null, hp: null, fuel: 0, ammo: 1, xp: 0, kills: 0, battles: 0 };
   ship.fuel = shipStats(ship).fuelCap;
   campaign.ships.push(ship);
   const cap = { id: newId('o'), name: officerName(rng), rank: 'captain', faction, level: 1, xp: 0, alive: true, shipId: ship.id, fleetId: null };
+  veteranStart(cap);
   campaign.officers.push(cap);
   ship.captainId = cap.id;
   return ship;
@@ -10271,6 +10298,7 @@ function makeFleet(faction, domain, x, y, designs, rng, admiral) {
   if (admiral) fleet.admiralId = admiral.id;
   else {
     const a = { id: newId('o'), name: officerName(rng), rank: 'admiral', faction, level: 1, xp: 0, alive: true, fleetId: fleet.id };
+    veteranStart(a);
     campaign.officers.push(a);
     fleet.admiralId = a.id;
   }
@@ -12177,6 +12205,13 @@ function aiClashes(news) {
       const sA = fleetStrength(A) * rng.range(0.85, 1.15), sB = fleetStrength(B) * rng.range(0.85, 1.15);
       aiLosses(A, AI.clashLoss * sB / (sA + sB), rng);
       aiLosses(B, AI.clashLoss * sA / (sA + sB), rng);
+      // The survivors' officers learn from it (v0.7.5).
+      for (const F of [A, B]) {
+        const won = F === A ? sA >= sB : sB > sA;
+        for (const sh of fleetShips(F)) { const c = byId('officers', sh.captainId); if (c && c.rank === 'captain') gainXp(c, 30 + (won ? 20 : 0)); }
+        const ad = fleetAdmiral(F);
+        if (ad && ad.rank === 'admiral') gainXp(ad, 30 + (won ? 20 : 0));
+      }
       campaign.aiClashes = (campaign.aiClashes || 0) + 1;
       A.cooldown = B.cooldown = AI.clashCooldown;
       const loser = sA < sB ? A : B;
@@ -12425,11 +12460,26 @@ function relationsAfterCapture(was, faction) {
   if (faction === campaign.faction && was && was !== campaign.faction) addRep(was, REL.captured);
 }
 
+// ---------- strength (v0.7.5)
+// A faction's strength: its fleets, plus half of what defends its settlements (in cost).
+function factionStrength(fid) {
+  let v = 0;
+  for (const fl of campaign.fleets) if (fl.faction === fid && fl.shipIds.length) v += fleetStrength(fl);
+  for (const s of settlementsOf(fid)) v += defenceStrength(s) * 0.5;
+  return Math.round(v);
+}
+// How many times stronger fid is than b (b defaults to you).
+const strengthRatio = (fid, b = campaign.faction) => factionStrength(fid) / Math.max(1, factionStrength(b));
+
 // ---------- your moves
-function truceTribute(fid) { return REL.tribute + REL.tributePerSettlement * settlementsOf(fid).length; }
+function truceTribute(fid) {
+  const base = REL.tribute + REL.tributePerSettlement * settlementsOf(fid).length;
+  return Math.round(base * clamp(strengthRatio(fid), REL.tributeMin, REL.tributeMax));
+}
 function truceBlock(fid) {
   if (relation(fid, campaign.faction) !== 'war') return 'Not at war.';
   if (repOf(fid) < REL.truceRep) return `Reputation ${repOf(fid)}; they talk at ${REL.truceRep} or more.`;
+  if (strengthRatio(fid) >= REL.refuseAt) return `Strength: theirs ${factionStrength(fid).toLocaleString('en-US')}, yours ${factionStrength(campaign.faction).toLocaleString('en-US')}; they don't talk while ${REL.refuseAt} times stronger.`;
   relState();
   const last = campaign.lastFought[fid];
   const since = last === undefined ? Infinity : campaign.day - last;
@@ -12506,9 +12556,10 @@ function relationsDay(news) {
         campaign.journal.push(`Day ${campaign.day}: ${msg}`);
         news.push(msg);
       }
-    } else if (rel === 'war' && R[fid] >= REL.offerRep) {
+    } else if (rel === 'war' && (R[fid] >= REL.offerRep || (R[fid] >= REL.weakOfferRep && strengthRatio(fid) <= REL.weakOffer))) {
       makeTruce(me, fid);
-      const msg = `The ${factionOf(fid).name} offered a truce, and it holds (reputation ${repOf(fid)}).`;
+      const weak = R[fid] < REL.offerRep;
+      const msg = `The ${factionOf(fid).name} offered a truce, and it holds (reputation ${repOf(fid)}${weak ? `; strength theirs ${factionStrength(fid).toLocaleString('en-US')}, yours ${factionStrength(me).toLocaleString('en-US')}` : ''}).`;
       campaign.journal.push(`Day ${campaign.day}: ${msg}`);
       news.push(msg);
     }
@@ -12520,13 +12571,16 @@ function relationsDay(news) {
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
     const a = ids[i], b = ids[j], key = relKey(a, b);
     const border = contested(a, b);
+    const ra = strengthRatio(a, b);                        // a's strength ÷ b's
+    const lopsided = ra >= REL.aiStrong || ra <= 1 / REL.aiStrong;
     if (relation(a, b) === 'truce') {
       campaign.tension[key] = border ? (campaign.tension[key] || 0) + REL.aiDays : 0;
-      if (campaign.tension[key] >= REL.tensionDays && rng.next() < REL.aiBreak) {
+      // A much stronger side on a contested border may break it before the tension runs out.
+      if ((campaign.tension[key] >= REL.tensionDays || (border && lopsided)) && rng.next() < REL.aiBreak) {
         setRelation(a, b, 'war');
         campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} are at war.`);
       }
-    } else if (rng.next() < (border ? REL.aiTruceBorder : REL.aiTruce)) {
+    } else if (rng.next() < (border ? REL.aiTruceBorder : REL.aiTruce) * (Math.min(ra, 1 / ra) <= REL.aiWeak ? 3 : 1)) {   // the weak seek truces
       makeTruce(a, b);
       campaign.journal.push(`Day ${campaign.day}: the ${factionOf(a).name} and the ${factionOf(b).name} made a truce.`);
     }
@@ -12688,6 +12742,31 @@ function recruitTraits(kind, level, rng) {
   return o.traits;
 }
 
+// ---------- other factions' officers (v0.7.5)
+// They level up by themselves (gainXp) and take an upgrade for each level, picked by a seeded roll.
+function aiTakeTraits(o) {
+  if (o.rank === 'grand') return;
+  let n = picksOwed(o);
+  if (n <= 0) return;
+  let h = 0;
+  for (const ch of String(o.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const rng = makeRng((campaign.seed ^ h ^ (o.level * 7919)) >>> 0);
+  while (n-- > 0) {
+    const c = traitChoices(o);
+    if (!c.length) break;
+    (o.traits = o.traits || []).push(rng.pick(c).id);
+  }
+}
+// What you can learn of another faction's fleet's officers: levels and upgrades.
+function enemyOfficerFacts(fl) {
+  const a = fleetAdmiral(fl);
+  const caps = fleetShips(fl).map((sh) => byId('officers', sh.captainId)).filter((o) => o && o.rank === 'captain');
+  return {
+    admiral: a ? `Adm. ${a.name} L${a.level}${a.traits && a.traits.length ? ` · ${traitsOf(a).map((t) => t.name).join(', ')}` : ''}` : 'none',
+    captains: caps.length ? caps.map((o) => `L${o.level}${o.traits && o.traits.length ? ` (${traitsOf(o).map((t) => t.name).join(', ')})` : ''}`).join(' · ') : 'none',
+  };
+}
+
 /* ---------- 15m_war_record.js ---------- */
 /* ==== 15m WAR RECORD: MEDALS, CAPTURES, WINNING AND LOSING ==== */
 // Part 6d (design/01 §14, §16; 02 §8). The campaign keeps a war record (campaign.stats) of
@@ -12706,16 +12785,20 @@ function warStats() {
 function warCount(stat, n = 1) { warStats()[stat] += n; }
 
 // New medals from the record; their names go into the news and the journal.
+// Returns the medals just earned (for the battle report card).
 function awardMedals(news) {
   const st = warStats();
+  const got = [];
   campaign.medals = campaign.medals || [];
   for (const m of CAMPAIGN_MEDALS) {
     if (campaign.medals.includes(m.id) || st[m.stat] < m.n) continue;
     campaign.medals.push(m.id);
+    got.push(m);
     const msg = `Medal: ${m.name}.`;
     campaign.journal.push(`Day ${campaign.day}: ${msg}`);
     if (news) news.push(msg);
   }
+  return got;
 }
 
 // ---------- the gallery (save.profile)
@@ -13094,7 +13177,7 @@ SCREENS.battle = {
   },
 
   pauseOpts() {
-    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); screens.go('map'); openBattleReport(res, () => SCREENS.map.refresh()); } };
     if (this.opts.tutorial) return { restartLabel: 'Restart the tutorial', restart: () => { endTutorial(this); this.enter(this.opts); }, quitLabel: 'Leave the tutorial', quit: () => screens.go('title') };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
@@ -13617,6 +13700,7 @@ SCREENS.battle = {
     if (this.opts.campaign) {
       // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
       const res = applyBattleOutcome(B);
+      ui.clearToasts();
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
       c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
       row('Enemy ships destroyed', res.lostTheirs);
@@ -13624,8 +13708,7 @@ SCREENS.battle = {
       if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
       row('Time', time);
       c.appendChild(facts);
-      if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
-      if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
+      battleReportExtras(c, res);           // salvage, siege, flagship and war news, medal ribbons
       btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
     } else if (this.opts.tutorial) {
       // The tutorial: done, or another go.
@@ -15495,6 +15578,9 @@ SCREENS.map = {
         row('Relation', rel === 'war' ? 'At war' : 'Truce');
         row('Ships', fl.shipIds.length);
         row('Domain', fl.domain);
+        const of = enemyOfficerFacts(fl);       // their officers' levels and upgrades (v0.7.5)
+        row('Admiral', of.admiral);
+        row('Captains', of.captains);
         P.appendChild(body);
         return;
       }
@@ -15957,8 +16043,8 @@ SCREENS.map = {
 
   afterBattle(res) {
     if (!res) return;
-    ui.toast(res.summary, 5000);
-    this.refresh();
+    if (res.win === undefined) { ui.toast(res.summary, 5000); this.refresh(); return; }   // not a battle (a settlement let fall)
+    openBattleReport(res, () => this.refresh());   // the report first, then (if it ended) the war's end
   },
 };
 
@@ -16757,6 +16843,7 @@ function openRelations(tab = 'relations') {
         alive ? (rel === 'war' ? 'At war' : 'Truce') : 'No settlements left',
         `Reputation ${repOf(F.id) > 0 ? '+' : ''}${repOf(F.id)}`,
         `Settlements ${settlementsOf(F.id).length}`,
+        `Strength ${factionStrength(F.id).toLocaleString('en-US')} (yours ${factionStrength(campaign.faction).toLocaleString('en-US')})`,
       ];
       if (rel === 'truce') facts.push(`Contested border ${Math.round(campaign.tension[relKey(campaign.faction, F.id)] || 0)} of ${REL.tensionDays} days`);
       const last = campaign.lastFought[F.id];
@@ -16846,6 +16933,49 @@ function openWarEnd() {
   audio.sfx(o.result === 'win' ? 'fanfare' : 'lifeLost');
 }
 
+
+// ---------- the battle report (v0.7.5)
+// News and medals under a campaign battle's facts: flagships, the war's end, and a ribbon for
+// each medal just earned.
+function battleReportExtras(c, res) {
+  if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
+  if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
+  for (const n of res.news || []) c.appendChild(el('p', 'card-text report-news', n));
+  if (res.medals && res.medals.length) {
+    const box = el('div', 'report-medals');
+    for (const m of res.medals) {
+      const r = el('div', 'medal-ribbon');
+      r.appendChild(el('i', 'medal-disc', '★'));
+      const t = el('span', '');
+      t.appendChild(el('b', '', m.name));
+      t.appendChild(el('small', '', m.how));
+      r.appendChild(t);
+      box.appendChild(r);
+    }
+    c.appendChild(box);
+  }
+}
+
+// The report card on the map, for a battle resolved there or a retreat.
+function openBattleReport(res, onClose) {
+  ui.clearToasts();                         // nothing left over on top of the stamp
+  const c = ui.card('', 'card-result');
+  c.appendChild(el('div', res.win ? 'stamp' : 'stamp stamp-red', res.win ? 'VICTORY' : 'DEFEAT'));
+  const facts = el('div', 'result-facts');
+  const row = (k, v) => { const r = el('div', 'fact'); r.appendChild(el('span', '', k)); r.appendChild(el('b', '', String(v))); facts.appendChild(r); };
+  row('Enemy ships destroyed', res.lostTheirs);
+  row('Your ships lost', res.lostMine);
+  if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
+  c.appendChild(facts);
+  battleReportExtras(c, res);
+  if (res.medals && res.medals.length) audio.sfx('fanfare');
+  const btns = el('div', 'card-row');
+  let close = null;
+  btns.appendChild(button('Back to the map', () => close(), 'btn btn-primary'));
+  c.appendChild(btns);
+  close = ui.open(c, onClose);
+  return close;
+}
 
 /* ---------- 16o_screen_officers.js ---------- */
 /* ==== 16o OFFICER CARD ==== */

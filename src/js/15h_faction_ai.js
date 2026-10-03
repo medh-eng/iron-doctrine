@@ -264,6 +264,13 @@ function aiClashes(news) {
       const sA = fleetStrength(A) * rng.range(0.85, 1.15), sB = fleetStrength(B) * rng.range(0.85, 1.15);
       aiLosses(A, AI.clashLoss * sB / (sA + sB), rng);
       aiLosses(B, AI.clashLoss * sA / (sA + sB), rng);
+      // The survivors' officers learn from it (v0.7.5).
+      for (const F of [A, B]) {
+        const won = F === A ? sA >= sB : sB > sA;
+        for (const sh of fleetShips(F)) { const c = byId('officers', sh.captainId); if (c && c.rank === 'captain') gainXp(c, 30 + (won ? 20 : 0)); }
+        const ad = fleetAdmiral(F);
+        if (ad && ad.rank === 'admiral') gainXp(ad, 30 + (won ? 20 : 0));
+      }
       campaign.aiClashes = (campaign.aiClashes || 0) + 1;
       A.cooldown = B.cooldown = AI.clashCooldown;
       const loser = sA < sB ? A : B;

@@ -15,16 +15,20 @@ function warStats() {
 function warCount(stat, n = 1) { warStats()[stat] += n; }
 
 // New medals from the record; their names go into the news and the journal.
+// Returns the medals just earned (for the battle report card).
 function awardMedals(news) {
   const st = warStats();
+  const got = [];
   campaign.medals = campaign.medals || [];
   for (const m of CAMPAIGN_MEDALS) {
     if (campaign.medals.includes(m.id) || st[m.stat] < m.n) continue;
     campaign.medals.push(m.id);
+    got.push(m);
     const msg = `Medal: ${m.name}.`;
     campaign.journal.push(`Day ${campaign.day}: ${msg}`);
     if (news) news.push(msg);
   }
+  return got;
 }
 
 // ---------- the gallery (save.profile)

@@ -6,9 +6,10 @@
 // survive go back to the warehouse; an AI faction from tech tier AIRFIELD.aiTier sends
 // AIRFIELD.aiWing fighters. They don't count towards the three on the field or the win.
 
-// The airfield nearest the battle for each side, if any.
-function battleAirfields(sides) {
-  const at = sides.myFleets[0] || sides.theirFleets[0];
+// The airfield nearest the battle for each side, if any. A siege (v0.7.5) passes the settlement
+// as the place and the other faction: the besieged city itself can be the defenders' airfield.
+function battleAirfields(sides, place, foeId) {
+  const at = place || sides.myFleets[0] || sides.theirFleets[0];
   if (!at) return [];
   const near = (fid) => world.settlements
     .filter((s) => s.faction === fid && AIRFIELD.types.includes(s.type) && Math.hypot(s.x + 0.5 - at.x, s.y + 0.5 - at.y) <= AIRFIELD.reach)
@@ -20,7 +21,7 @@ function battleAirfields(sides) {
     const stock = Object.entries(stockAt(mine.store, 'wings')).filter(([id, n]) => n > 0 && wingDesignOf(id)).sort((a, b) => b[1] - a[1])[0];
     if (stock) out.push({ side: 0, s: mine, id: stock[0], n: Math.min(AIRFIELD.max, stock[1]) });
   }
-  const foe = sides.theirFleets[0] && sides.theirFleets[0].faction;
+  const foe = foeId !== undefined ? foeId : sides.theirFleets[0] && sides.theirFleets[0].faction;
   const theirs = foe && foe !== campaign.faction && aiTierOf(foe) >= AIRFIELD.aiTier ? near(foe) : null;
   if (theirs) out.push({ side: 1, s: theirs, id: DEFAULT_WING, n: AIRFIELD.aiWing });
   return out;

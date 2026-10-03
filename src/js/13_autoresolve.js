@@ -158,7 +158,9 @@ function applyBattleOutcome(B) {
     const hfl = r.fab && ship.faction === campaign.faction && byId('fleets', ship.fleetId);
     if (hfl) for (const g of ['metal', 'elec']) hfl.hold[g] = Math.max(0, (hfl.hold[g] || 0) - r.fab[g]);
     if (cap && cap.faction === campaign.faction) gainXp(cap, 20 + 30 + (win ? 20 : 0));
+    else if (cap && cap.rank === 'captain') gainXp(cap, 20 + 30 + (win ? 0 : 20));     // enemy captains learn too (v0.7.5)
   }
+  for (const fl of B.sides.theirFleets) { const a = fleetAdmiral(fl); if (a && a.rank === 'admiral') gainXp(a, 30 + (win ? 0 : 20)); }
   if (!win) gaXp /= 2;
   const ga = byId('officers', campaign.ga);
   if (ga) gainXp(ga, gaXp);
@@ -185,20 +187,20 @@ function applyBattleOutcome(B) {
   // The war record, medals and the end of the war (6d).
   const sunk = flagsBefore.filter(([fl, id]) => id && fl.faction !== campaign.faction && !byId('ships', id)).length;
   warAfterBattle(win, destroyedTheirs, sides.theirFleets, sunk, lostMine);
-  awardMedals(flagNews);
+  const medals = awardMedals(flagNews);
   checkWarEnd(flagNews);
   const base = `${win ? 'Victory' : 'Defeat'}: enemy ships destroyed ${lostTheirs}, yours lost ${lostMine}${win && bounty ? `, bounty ${Math.round(bounty)}` : ''}.${salvage}${siegeNote}`;
   campaign.journal.push(`Day ${campaign.day}: ${base}`);       // flagship, medal and war-end news journal themselves
   const summary = `${base}${flagNews.length ? ' ' + flagNews.join(' ') : ''}`;
   campaignStore.save();
-  return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim() };
+  return { win, lostMine, lostTheirs, bounty, summary, salvage: salvage.trim(), siege: siegeNote.trim(), medals, news: flagNews.filter((n) => !n.startsWith('Medal:')) };
 }
 
 function gainXp(o, xp) {
   o.xp += xp;
   const table = o.rank === 'admiral' ? CAPTAIN_XP.map((v) => v * 2) : CAPTAIN_XP;
   // Your captains and admirals level up by hand on their officer card (15l); others by themselves.
-  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) o.level = levelFromXp(o.xp, table); }
+  if (o.rank !== 'grand') { if (o.faction !== campaign.faction) { o.level = levelFromXp(o.xp, table); aiTakeTraits(o); } }
   else { let L = 1; while (L < 30 && o.xp >= Math.round(150 * Math.pow(L, 1.7))) L++; o.level = L; }
 }
 

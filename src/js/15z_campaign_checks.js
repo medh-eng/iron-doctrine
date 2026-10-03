@@ -919,4 +919,57 @@ function aiCheck(days = 30, as = 'league') {
     messages,
   };
 }
+
+// The last extras before 1.0 (v0.7.5): medals on the battle report, other factions' officers,
+// air support in sieges, and truces weighed by strength.
+function endgameCheck() {
+  newCampaign('league', 7171);
+  const out = {};
+  // Medals come back from awardMedals for the report card.
+  warStats().won = 1;
+  out.medals = awardMedals([]).map((m) => m.id);
+  // Enemy officers: veterans later in the war, and upgrades as they level.
+  const rng = makeRng(5);
+  campaign.day = 4 * persona('directorate').tierDays;
+  const sh = makeShip(`directorate_${START_DESIGN_KIND.land}_t0`, 'directorate', rng);
+  const vet = byId('officers', sh.captainId);
+  out.veteran = { level: vet.level, traits: (vet.traits || []).length };
+  campaign.day = 1;
+  const sh2 = makeShip(`directorate_${START_DESIGN_KIND.land}_t0`, 'directorate', rng);
+  const rook = byId('officers', sh2.captainId);
+  out.rookie = { level: rook.level, traits: (rook.traits || []).length };
+  gainXp(rook, CAPTAIN_XP[2]);
+  out.grown = { level: rook.level, traits: (rook.traits || []).length };
+  const efl = campaign.fleets.find((fl) => fl.faction === 'directorate' && fl.shipIds.length);
+  out.facts = enemyOfficerFacts(efl);
+  // A siege next to the defenders' own airfield: their fighters join (from their tech tier 2).
+  campaign.day = 2 * persona('directorate').tierDays + 1;
+  const land = playerFleets().find((fl) => fl.domain === 'land');
+  const city = settlementsOf('directorate').find((q) => AIRFIELD.types.includes(q.type) && DEPLOY[battlePlace(q.x, q.y).field].includes('land'));
+  out.city = !!city;
+  if (city) {
+    land.x = city.x + 0.5; land.y = city.y + 1.5;
+    const B = createSiegeBattle({ siege: city.id, fleet: land.id }, true);
+    out.siegeAir = (B.airfields || []).map((a) => a.side);
+  }
+  campaign.day = 1;
+  // Strength: a much stronger faction won't talk and asks more tribute; a weak one offers a truce.
+  const foe = FACTIONS.map((F) => F.id).find((f) => f !== 'league' && relation(f, 'league') === 'war');
+  campaign.treasury = 1e6;
+  const saved = campaign.fleets;
+  campaign.fleets = saved.filter((fl) => fl.faction !== 'league');
+  for (const s of settlementsOf('league')) s.wallHp = 0;
+  out.strong = { ratio: Math.round(strengthRatio(foe) * 10) / 10, block: truceBlock(foe), tribute: truceTribute(foe), base: REL.tribute + REL.tributePerSettlement * settlementsOf(foe).length };
+  for (const s of settlementsOf('league')) delete s.wallHp;
+  campaign.lastFought = {};
+  campaign.rep[foe] = 15;
+  campaign.fleets = saved.filter((fl) => fl.faction !== foe);
+  for (const s of settlementsOf(foe)) s.wallHp = 0;
+  out.weakRatio = Math.round(strengthRatio(foe) * 100) / 100;
+  const news = [];
+  relationsDay(news);
+  out.weakOffer = relation(foe, 'league');
+  campaign.fleets = saved;
+  return out;
+}
 /*TEST:END*/

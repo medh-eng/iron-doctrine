@@ -42,6 +42,8 @@ const ui = {
     setTimeout(() => t.remove(), ms + 400);
   },
 
+  clearToasts() { this.toastBox.textContent = ''; },
+
   // Opens a modal card. Returns a close function.
   open(card, onClose) {
     const scrim = el('div', 'scrim');

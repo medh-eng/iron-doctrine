@@ -91,7 +91,7 @@ SCREENS.battle = {
   },
 
   pauseOpts() {
-    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); ui.toast(res.summary, 5000); screens.go('map'); } };
+    if (this.opts.campaign) return { restartLabel: 'Keep fighting', restart: () => {}, quitLabel: 'Retreat to the map (counts as a loss)', quit: () => { this.B.result = 'lost'; const res = applyBattleOutcome(this.B); screens.go('map'); openBattleReport(res, () => SCREENS.map.refresh()); } };
     if (this.opts.tutorial) return { restartLabel: 'Restart the tutorial', restart: () => { endTutorial(this); this.enter(this.opts); }, quitLabel: 'Leave the tutorial', quit: () => screens.go('title') };
     if (this.opts.sim) return { restartLabel: 'Restart battle', restart: () => this.enter(this.opts), quitLabel: 'Back to the Simulator', quit: () => screens.go('simulator') };
     if (this.opts.test) return { restartLabel: 'Restart test drive', restart: () => this.enter(this.opts), quitLabel: 'Back to the Workshop', quit: () => screens.go('designer', this.opts.back) };
@@ -614,6 +614,7 @@ SCREENS.battle = {
     if (this.opts.campaign) {
       // Campaign battle (design/01 §10.6): damage, losses and XP go back to the map.
       const res = applyBattleOutcome(B);
+      ui.clearToasts();
       if (win) { audio.sfx('fanfare'); haptic('clear'); spawnConfetti(); } else { audio.sfx('lifeLost'); haptic('lost'); }
       c.appendChild(el('div', win ? 'stamp' : 'stamp stamp-red', win ? 'VICTORY' : 'DEFEAT'));
       row('Enemy ships destroyed', res.lostTheirs);
@@ -621,8 +622,7 @@ SCREENS.battle = {
       if (res.bounty) row('Bounty', `+${Math.round(res.bounty)}`);
       row('Time', time);
       c.appendChild(facts);
-      if (res.salvage) c.appendChild(el('p', 'card-text', res.salvage));
-      if (res.siege) c.appendChild(el('p', 'card-text', res.siege));
+      battleReportExtras(c, res);           // salvage, siege, flagship and war news, medal ribbons
       btns.appendChild(button('Back to the map', () => { close(); screens.go('map'); }, 'btn btn-primary'));
     } else if (this.opts.tutorial) {
       // The tutorial: done, or another go.
