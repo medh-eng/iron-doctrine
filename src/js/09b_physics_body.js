@@ -57,6 +57,7 @@ function makeVehicle(design, side, x, dir, terrain) {
     spotted: 0,                 // seconds left visible to the other side
     revealT: 0,                 // muzzle flash reveals the shooter
     lastHitT: -99,
+    lastHitDir: 0,
     dirty: true,                // sprite needs redrawing
     ai: null,
   };
