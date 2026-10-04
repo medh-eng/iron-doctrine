@@ -10,6 +10,7 @@ const HOW_TO = [
     'Hold the phone sideways. Tap ❚❚ to pause; ⚙ opens Settings, where this Help lives.',
     'Battles: up to three of your vehicles fight at a time; the rest wait in reserve and come in when one is lost or pulled back.',
     'The campaign: move fleets on the world map, fight, take settlements, trade, research, and build your own vehicles part by part.',
+    'Stuck? With Hints on (Settings → Help), an amber tip in battle rings the button it means, and the map’s NEXT banner shows the next step; tap the banner for more ideas.',
   ]],
   ['Battle controls', [
     'Drive: hold ◀ ▶ (keyboard A/D or arrows). Aircraft, airships, helicopters and submarines also use ▲ ▼ (W/S).',
@@ -80,7 +81,7 @@ const GLOSSARY_TERMS = [
 // Settings → Help.
 function helpSection(row, toggle) {
   const rows = [];
-  rows.push(row('Hints on the map', toggle('hints'), 'A Hint button with ideas for what to do next'));
+  rows.push(row('Hints', toggle('hints'), 'Tips in battle, the next step on the map, and a Hint button'));
   const add = (label, note, fn) => rows.push(row(label, button('Open', () => { audio.sfx('tap'); fn(); }, 'btn btn-small'), note));
   add('How to play', 'Controls, battles, the campaign', openHowTo);
   add('Objectives', 'What this battle or campaign asks', openObjectives);

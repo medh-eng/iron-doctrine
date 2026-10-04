@@ -256,6 +256,24 @@ Only the services that type has are shown (01 §7.1).
   - text size: S, M, L, XL (90%, 100%, 115%, 130%); scales every menu and the battle and map labels. The battle's top bar and the map's button bars stop at 115% and 110%, because they have no room to grow (6f)
   - reduced motion: no screen shake, flashes at 60% size and under half brightness, no pulsing warnings or popping numbers, every menu animation ends at once
   - show FPS
+- **Hints (v0.8.0):** one setting (Settings → Help → Hints, on by default) for three things:
+  - **The battle coach:** one short tip at a time in an amber pill between the drive buttons and Fire (under the top bar on narrow screens), with a pulsing amber ring round the control it is about. A tip shows for 5 s, with at least 2 s between tips. The tips, in priority order:
+    - your vehicle under 35% health: Swap
+    - a vehicle out with a reserve waiting: Reserve
+    - an enemy in range while you haven't fired for 5 s: Fire (up to 4 times)
+    - an enemy beyond your gun's reach, with both distances: drive toward it
+    - not moved yet: drive
+    - nothing in sight and standing still: drive on
+    - once each: aim by hand, time stop, orders
+  - **The map's NEXT banner** (under the top bar, left of the panel): the next step, and a pulsing ring on its button:
+    - select a fleet (Fleet ▶)
+    - tap where it should go
+    - Move
+    - Start ▶
+    - then the first of the campaign hints
+    Tapping the banner opens the Hint card.
+  - **The Hint button.**
+  - Tips name controls and state facts; never which choice is better.
 - **Colour is never the only sign (6f):**
   - each faction has a mark shape beside its colour: League ● circle, Directorate ■ square, Skyreach ▲ triangle, Clans ✚ cross, Lumen ◆ diamond. It shows on the map (settlement pennants and fleet counters), in the War room and on the faction picker
   - battle minimap: yours are squares, theirs are triangles; flagship pennants are a triangle for yours and a square flag for theirs

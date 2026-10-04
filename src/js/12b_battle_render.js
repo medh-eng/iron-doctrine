@@ -602,11 +602,12 @@ function drawTerrain(g, B) {
   const x1 = Math.min(T.length, view.wx(w + 20));
   const step = Math.max(CELL, 3 / S);
   // Ground fill: slightly lighter just under the surface, cached per screen size.
+  // Lit earth (v0.8.0): warm soil under the grass, darker deeper down.
   if (!view.grad || view.gradH !== h || view.gradTop !== Math.round(view.horizon)) {
     view.grad = g.createLinearGradient(0, view.horizon - 60, 0, h);
-    view.grad.addColorStop(0, '#2B2F3A');
-    view.grad.addColorStop(0.5, PAL.ground);
-    view.grad.addColorStop(1, '#121318');
+    view.grad.addColorStop(0, '#7A6146');
+    view.grad.addColorStop(0.5, '#5A4632');
+    view.grad.addColorStop(1, '#33281D');
     view.gradH = h;
     view.gradTop = Math.round(view.horizon);
   }
@@ -629,7 +630,7 @@ function drawTerrain(g, B) {
     while (x <= x1 && T.matAt(x) === m) { x += step; g.lineTo(view.sx(x), view.sy(T.height(x)) + g.lineWidth / 2); }
     g.stroke();
   }
-  g.strokeStyle = PAL.groundEdge;
+  g.strokeStyle = 'rgba(40,30,18,0.55)';
   g.lineWidth = 1.5;
   g.beginPath();
   for (let xx = x0; xx <= x1 + step; xx += step) {
@@ -652,9 +653,9 @@ function drawTrees(g, B) {
     g.save();
     g.translate(sx, sy);
     if (!tr.alive) g.rotate(tr.fallDir * 1.35);
-    g.fillStyle = '#1b1f1c';
+    g.fillStyle = '#5A3E26';
     g.fillRect(-0.18 * S, -tr.h * 0.45 * S, 0.36 * S, tr.h * 0.45 * S);
-    g.fillStyle = '#18231d';
+    g.fillStyle = '#3E7A3A';
     for (let k = 0; k < 3; k++) {
       const by = -tr.h * (0.3 + k * 0.22) * S;
       const rw = tr.r * (1 - k * 0.22) * S;
@@ -854,7 +855,7 @@ function drawWater(g, B) {
   const S = view.S;
   const step = 10;
   const wave = (x) => sy - Math.sin(view.wx(x) * 0.45 + t * 1.6) * 0.14 * S - Math.sin(view.wx(x) * 0.17 - t * 0.9) * 0.08 * S;
-  g.fillStyle = 'rgba(26,64,94,0.56)';
+  g.fillStyle = 'rgba(36,122,182,0.6)';     // bright sea (v0.8.0)
   g.beginPath();
   g.moveTo(x0, h);
   for (let x = x0; x <= w + step; x += step) g.lineTo(x, wave(x));
@@ -862,9 +863,9 @@ function drawWater(g, B) {
   g.closePath();
   g.fill();
   const deep = view.sy(T.sea - 5);
-  if (deep < h) { g.fillStyle = 'rgba(8,22,38,0.35)'; g.fillRect(x0, deep, w - x0 + step, h - deep); }
-  g.strokeStyle = 'rgba(205,228,238,0.6)';
-  g.lineWidth = 1.5;
+  if (deep < h) { g.fillStyle = 'rgba(12,48,92,0.35)'; g.fillRect(x0, deep, w - x0 + step, h - deep); }
+  g.strokeStyle = 'rgba(235,248,255,0.85)';
+  g.lineWidth = 2;
   g.beginPath();
   for (let x = x0; x <= w + step; x += step) { if (x === x0) g.moveTo(x, wave(x)); else g.lineTo(x, wave(x)); }
   g.stroke();
@@ -872,7 +873,7 @@ function drawWater(g, B) {
 
 // Whole battlefield, back to front (design/04 §3).
 function renderBattle(g, B) {
-  drawBackground(g, view.cx * view.S * 0.25);
+  drawBackground(g, view.cx * view.S * 0.25, skyTheme(B.cfg));
   drawTrees(g, B);
   drawTerrain(g, B);
   drawMarkers(g, B);

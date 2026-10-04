@@ -321,7 +321,8 @@ function updateFloaters(dt) {
 }
 
 // toScreen(x, y) maps the stored position to screen px (world or screen space).
-function drawFloaters(g, toScreenX, toScreenY) {
+// rightLimit (v0.8.0): keep the texts left of a column of buttons (the battle's order chips).
+function drawFloaters(g, toScreenX, toScreenY, rightLimit) {
   g.save();
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -335,7 +336,7 @@ function drawFloaters(g, toScreenX, toScreenY) {
     g.font = `700 ${fontPx(size)}px ${FONT_UI}`;
     g.fillStyle = f.amber ? PAL.amber : PAL.linen;
     const half = g.measureText(f.text).width / 2 + 8;
-    const sx = clamp(toScreenX(f.x), layout.safe.l + half, layout.w - layout.safe.r - half);
+    const sx = clamp(toScreenX(f.x), layout.safe.l + half, Math.max(layout.safe.l + half, (rightLimit || layout.w - layout.safe.r) - half));
     const sy = toScreenY(f.y) - 40 * e;
     g.strokeText(f.text, sx, sy);
     g.fillText(f.text, sx, sy);

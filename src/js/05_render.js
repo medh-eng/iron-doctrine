@@ -9,7 +9,7 @@ const PORTRAIT_TOUCH = window.matchMedia('(orientation: portrait) and (pointer: 
 
 // Safe-area insets in CSS px, read from the CSS custom properties.
 const layout = { x: 0, y: 0, w: 1, h: 1, dpr: 1, safe: { t: 0, r: 0, b: 0, l: 0 } };
-const bg = { sky: null, mid: null, midW: 0 };
+const bg = { themes: {} };
 
 function readSafeAreas() {
   const cs = getComputedStyle(document.documentElement);
@@ -88,33 +88,67 @@ function ridge(g, w, h, baseY, amp, seed, color, period) {
   g.fill();
 }
 
-function buildBackground() {
+// Sky themes (v0.8.0, the bright pass): a clear day, a warm dusk (night darkens it), and rain.
+const SKY_THEMES = {
+  day: { stops: ['#3C8BD9', '#76B6EC', '#BCDDF3', '#F4ECD2'], far: '#7C9CB4', mid: '#5E7F98', sun: '#FFF4C8', clouds: 'rgba(255,255,255,0.85)' },
+  dusk: { stops: [PAL.skyTop, PAL.sky2, PAL.sky3, PAL.horizon], far: PAL.ridgeFar, mid: PAL.ridgeMid, sun: '#FFD08A', clouds: 'rgba(255,214,190,0.45)' },
+  rain: { stops: ['#55677A', '#7A8C9D', '#A3B1BC', '#C7CDCF'], far: '#66727E', mid: '#4E5A67', sun: null, clouds: 'rgba(214,222,230,0.7)' },
+};
+const skyTheme = (cfg) => (!cfg ? 'dusk' : cfg.weather === 'rain' ? 'rain' : cfg.light === 'day' ? 'day' : 'dusk');
+
+function buildBackground() { bg.themes = {}; }     // layers are built per theme on first use, once per resize
+
+function buildTheme(name) {
   const { w, h } = layout;
+  const T = SKY_THEMES[name] || SKY_THEMES.dusk;
   const sky = makeLayer(w, h);
   const grad = sky.g.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, PAL.skyTop);
-  grad.addColorStop(0.45, PAL.sky2);
-  grad.addColorStop(0.72, PAL.sky3);
-  grad.addColorStop(0.9, PAL.horizon);
+  grad.addColorStop(0, T.stops[0]);
+  grad.addColorStop(0.45, T.stops[1]);
+  grad.addColorStop(0.72, T.stops[2]);
+  grad.addColorStop(0.9, T.stops[3]);
   sky.g.fillStyle = grad;
   sky.g.fillRect(0, 0, w, h);
-  ridge(sky.g, w, h, h * 0.74, h * 0.07, 11, PAL.ridgeFar);
-  bg.sky = sky.c;
-
+  if (T.sun) {
+    // A soft sun with a glow.
+    const sx = w * 0.78, sy = h * 0.2, r = h * 0.07;
+    const glow = sky.g.createRadialGradient(sx, sy, r * 0.5, sx, sy, r * 4);
+    glow.addColorStop(0, 'rgba(255,244,200,0.55)');
+    glow.addColorStop(1, 'rgba(255,244,200,0)');
+    sky.g.fillStyle = glow; sky.g.fillRect(0, 0, w, h);
+    sky.g.fillStyle = T.sun; sky.g.beginPath(); sky.g.arc(sx, sy, r, 0, Math.PI * 2); sky.g.fill();
+  }
+  ridge(sky.g, w, h, h * 0.74, h * 0.07, 11, T.far);
+  // Clouds: a wide layer that wraps, drifting slower than the hills.
+  const cw = w * 2;
+  const cl = makeLayer(cw, h * 0.5);
+  const rng = makeRng(77);
+  cl.g.fillStyle = T.clouds;
+  for (let k = 0; k < 7; k++) {
+    const cx = (k + rng.range(0.1, 0.9)) * (cw / 7), cy = h * rng.range(0.08, 0.32), s = h * rng.range(0.035, 0.06);
+    for (const [dx, dy, r] of [[0, 0, 1], [1.1, 0.2, 0.8], [-1.1, 0.25, 0.75], [0.5, -0.45, 0.8], [-0.5, -0.35, 0.65]]) {
+      for (const off of [0, -cw]) { cl.g.beginPath(); cl.g.ellipse(cx + off + dx * s * 1.4, cy + dy * s, r * s * 1.7, r * s, 0, 0, Math.PI * 2); cl.g.fill(); }
+    }
+  }
   // Mid ridge is twice as wide and repeats every screen width, so it can scroll and wrap.
-  bg.midW = w * 2;
-  const mid = makeLayer(bg.midW, h);
-  ridge(mid.g, bg.midW, h, h * 0.84, h * 0.06, 29, PAL.ridgeMid, w);
-  bg.mid = mid.c;
+  const mid = makeLayer(cw, h);
+  ridge(mid.g, cw, h, h * 0.84, h * 0.06, 29, T.mid, w);
+  return { sky: sky.c, clouds: cl.c, mid: mid.c, midW: cw };
 }
 
-// Sky plus a mid ridge scrolled by `offset` px (wraps).
-function drawBackground(g, offset) {
+// Sky plus clouds and a mid ridge scrolled by `offset` px (wraps).
+function drawBackground(g, offset, theme = 'dusk') {
   const { w, h } = layout;
-  g.drawImage(bg.sky, 0, 0, w, h);
-  let off = offset % (bg.midW / 2);
-  if (off < 0) off += bg.midW / 2;
-  g.drawImage(bg.mid, -off, 0, bg.midW, h);
+  if (!bg.themes) bg.themes = {};
+  const L = bg.themes[theme] || (bg.themes[theme] = buildTheme(theme));
+  g.drawImage(L.sky, 0, 0, w, h);
+  const half = L.midW / 2;
+  let co = (offset * 0.4 + game.time * 6) % half;
+  if (co < 0) co += half;
+  g.drawImage(L.clouds, -co, 0, L.midW, h * 0.5);
+  let off = offset % half;
+  if (off < 0) off += half;
+  g.drawImage(L.mid, -off, 0, L.midW, h);
 }
 
 // ---------- grease-pencil glyphs (design/02 §8)
@@ -259,25 +293,25 @@ function drawControl(g, c, nowMs, ghost) {
     roundRect(g, cx - w / 2, cy - h / 2, w, h, Math.min(h / 2, 12));
     gs = h * 0.34;
   }
-  // Fill: staff ink at 18% idle, warming to tracer amber at 45% when pressed.
-  const fa = clamp(0.18 * k, 0.03, 0.6);
+  // Fill: deep blue at 40% idle (v0.8.0: readable on bright skies and earth), warming to amber when pressed.
+  const fa = clamp(0.4 * k, 0.06, 0.8);
   g.fillStyle = press > 0
     ? `rgba(${Math.round(lerp(34, 255, press))},${Math.round(lerp(48, 178, press))},${Math.round(lerp(63, 62, press))},${lerp(fa, 0.45, press)})`
-    : `rgba(34,48,63,${fa})`;
+    : `rgba(18,40,72,${fa})`;
   g.fill();
   // Outline: a dark under-stroke keeps it visible on bright skies, linen on top for dark ground.
   if (c.disabled) g.setLineDash([5, 4]);
   g.lineWidth = 3;
-  g.strokeStyle = `rgba(10,12,16,${clamp(0.3 * k, 0.1, 0.6)})`;
+  g.strokeStyle = `rgba(10,12,16,${clamp(0.4 * k, 0.12, 0.7)})`;
   g.stroke();
   g.lineWidth = 1.5;
-  g.strokeStyle = c.lit ? PAL.amber : `rgba(230,220,195,${clamp(0.5 * k, 0.15, 1)})`;
+  g.strokeStyle = c.lit ? PAL.amber : `rgba(246,241,228,${clamp(0.8 * k, 0.2, 1)})`;
   g.stroke();
   if (c.disabled) g.setLineDash([]);
 
   // Glyph or label at 70%, full when pressed.
-  const ga = clamp(lerp(0.7 * k, 1, press), 0.25, 1);
-  const col = c.lit ? '255,178,62' : '230,220,195';
+  const ga = clamp(lerp(0.95 * k, 1, press), 0.3, 1);
+  const col = c.lit ? '255,178,62' : '246,241,228';
   g.lineCap = 'round';
   g.lineJoin = 'round';
   if (c.glyphLines) {
