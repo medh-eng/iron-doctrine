@@ -146,12 +146,12 @@ for (const d of Object.values(PART_LIBRARY.parts).sort((a, b) => a.tier - b.tier
 
 // Terrain types (design/05 §6). softness, grip μ, concealment, colour of the top soil.
 const TERRAIN = [
-  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#2B3029' },
-  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#3A3A40' },
-  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#1F2A22' },
-  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#3B2E25' },
-  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#34363E' },
-  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#7A6A4A' },
+  { id: 'plains', name: 'Plains', soft: 0.1, grip: 0.75, conceal: 0.1, heat: 1, color: '#5E9A3C' },
+  { id: 'road', name: 'Road', soft: 0, grip: 0.9, conceal: 0, heat: 1, color: '#77736A' },
+  { id: 'forest', name: 'Forest floor', soft: 0.3, grip: 0.6, conceal: 0.5, heat: 0.9, color: '#3D7034' },
+  { id: 'mud', name: 'Mud', soft: 1.0, grip: 0.4, conceal: 0.1, heat: 1, color: '#7A5634' },
+  { id: 'rock', name: 'Rock', soft: 0, grip: 0.8, conceal: 0.3, heat: 0.9, color: '#8A8C92' },
+  { id: 'sand', name: 'Sand', soft: 0.5, grip: 0.5, conceal: 0.1, heat: 1.3, color: '#D9BC80' },
 ];
 const T_PLAINS = 0, T_ROAD = 1, T_FOREST = 2, T_MUD = 3, T_ROCK = 4, T_SAND = 5;
 
@@ -360,14 +360,14 @@ const WORLD_W = 192, WORLD_H = 144;   // map cells
 const WORLD_KM = 10;                  // km per map cell
 // Terrain types on the map. speed: × the fleet's march speed on land; road: × on roads.
 const MAP_TERRAIN = {
-  sea: { name: 'Sea', color: '#23507A' },
-  plains: { name: 'Plains', color: '#7E9A5A', speed: 1 },
-  forest: { name: 'Forest', color: '#4E6E3E', speed: 0.6 },
-  hills: { name: 'Hills', color: '#9A8F62', speed: 0.6 },
+  sea: { name: 'Sea', color: '#2F78B6' },
+  plains: { name: 'Plains', color: '#93BE5E', speed: 1 },
+  forest: { name: 'Forest', color: '#4F8A41', speed: 0.6 },
+  hills: { name: 'Hills', color: '#B9A66A', speed: 0.6 },
   mountains: { name: 'Mountains', color: '#8C8A86', speed: 0 },   // impassable except at passes
   pass: { name: 'Mountain pass', color: '#A09A8C', speed: 0.4 },
-  desert: { name: 'Desert', color: '#CDB27A', speed: 0.7 },
-  marsh: { name: 'Marsh', color: '#5F7A5E', speed: 0.4 },
+  desert: { name: 'Desert', color: '#E6CB8A', speed: 0.7 },
+  marsh: { name: 'Marsh', color: '#6F9A72', speed: 0.4 },
   tundra: { name: 'Tundra', color: '#A9B3A4', speed: 0.7 },
   ice: { name: 'Ice', color: '#E4EAEE', speed: 0.5 },
   ruins: { name: 'Precursor ruins', color: '#8E7F6E', speed: 0.6 },

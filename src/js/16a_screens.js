@@ -90,7 +90,7 @@ SCREENS.title = {
   newDemo() {
     this.demoN = (this.demoN || 0) + 1;
     const cfg = Object.assign(levelConfig(3), {
-      name: 'Demo', seed: 5000 + this.demoN * 131, length: 250, hills: 0.35, forest: 1, mud: 1, gaps: 0,
+      name: 'Demo', seed: 5000 + this.demoN * 131, light: 'day', weather: 'clear', length: 250, hills: 0.35, forest: 1, mud: 1, gaps: 0,
       enemies: [['light', 2, 'attack', 0], ['medium', 1, 'attack', 0]], accuracy: 0.5, reaction: 1, holdFire: false,
     });
     for (const pool of [shells, particles, debris, smokeScreens, smokeColumns]) pool.forEachAlive((p) => { p.alive = false; });
@@ -119,8 +119,15 @@ SCREENS.title = {
     view.shake.x = view.shake.y = 0;
     B.revealAll = true;
     renderBattle(g, B);
-    // Veil so the menu stays readable over the fight.
-    g.fillStyle = 'rgba(12,14,20,0.42)';
+    // A light veil, darker at the bottom, so the menu stays readable over a bright fight.
+    if (!this.veil || this.veilH !== h) {
+      this.veilH = h;
+      this.veil = g.createLinearGradient(0, 0, 0, h);
+      this.veil.addColorStop(0, 'rgba(10,24,48,0.18)');
+      this.veil.addColorStop(0.6, 'rgba(10,24,48,0.12)');
+      this.veil.addColorStop(1, 'rgba(10,18,30,0.55)');
+    }
+    g.fillStyle = this.veil;
     g.fillRect(0, 0, w, h);
   },
 };

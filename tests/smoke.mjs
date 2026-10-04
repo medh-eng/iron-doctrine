@@ -293,6 +293,8 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
     let s = await range();
     check(s.x > x0 + 1, `driving did not move the vehicle (${x0.toFixed(1)} -> ${s.x.toFixed(1)})`);
     check(s.shots === 1, `fire while driving gave ${s.shots} shots, expected 1`);
+    // The coach (v0.8.0): a direct tip has shown by now (Hints is on by default).
+    check(await G(() => window.__GAME__.evalIn('!!(SCREENS.battle.coach && Object.keys(SCREENS.battle.coach.last).length)')), 'the battle coach showed no tip');
     steps.push('two thumbs');
 
     // ---------- 5. Manual aim: press Fire, drag into the world, release
@@ -943,6 +945,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       await wait(150);
       await wait(500);
       await shot('23-world-map');
+      check(await page.locator('.map-coach').isVisible() && (await page.locator('.map-coach-text').textContent()).length > 10, 'the map shows no next step');
       await G(() => window.__GAME__.save.setSetting('textSize', 'XL'));
       await wait(400);
       await shot('23-world-map-xl');
@@ -1099,7 +1102,7 @@ for (const vp of VIEWPORTS.filter((v) => !ONLY || v.name.includes(ONLY))) {
       check(/Blueprint captured/.test(await page.locator('.card-result').textContent()), 'boss blueprint not announced');
       await G(() => window.__GAME__.go('blueprints'));
       await wait(300);
-      check((await page.locator('.bp-card').count()) === 1, 'blueprint missing from the gallery');
+      check((await page.locator('.bp-card', { hasText: 'boss' }).count()) === 1, 'blueprint missing from the gallery');   // campaign captures may add cards of their own
       await shot('15-blueprints');
       steps.push('boss blueprint, gallery');
     }

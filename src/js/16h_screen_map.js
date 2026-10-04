@@ -53,7 +53,8 @@ SCREENS.map = {
     r.appendChild(top);
     const bot = el('div', 'map-bottom');
     bot.appendChild(button('◀ Fleet', () => this.cycle(-1), 'btn btn-small'));
-    bot.appendChild(button('Fleet ▶', () => this.cycle(1), 'btn btn-small'));
+    this.nextFleetBtn = button('Fleet ▶', () => this.cycle(1), 'btn btn-small');
+    bot.appendChild(this.nextFleetBtn);
     this.detailsBtn = button('Details', () => { this.panelOpen = true; this.refresh(); }, 'btn btn-small');
     bot.appendChild(this.detailsBtn);
     this.supplyBtn = button('Supply', () => { this.logistics = !this.logistics; this.refresh(); }, 'btn btn-small map-speed');
@@ -69,6 +70,15 @@ SCREENS.map = {
     r.appendChild(this.panel);
     this.moveBar = el('div', 'map-move');
     r.appendChild(this.moveBar);
+    // The next step (16r, v0.8.0): a banner under the top bar; tap it for more ideas.
+    this.coachEl = el('button', 'map-coach');
+    this.coachEl.type = 'button';
+    this.coachEl.appendChild(el('b', 'map-coach-label', 'Next'));
+    this.coachTxt = el('span', 'map-coach-text');
+    this.coachEl.appendChild(this.coachTxt);
+    this.coachEl.addEventListener('click', () => { audio.sfx('tap'); openHints(); });
+    this.coachHi = null;
+    r.appendChild(this.coachEl);
     uiLayer.insertBefore(r, ui.toastBox);
     this.refresh();
   },
@@ -118,6 +128,7 @@ SCREENS.map = {
     this.goBtn.textContent = campaign.running ? 'Stop ❚❚' : 'Start ▶';
     this.buildPanel();
     this.buildMoveBar();
+    updateMapCoach(this);
   },
 
   buildMoveBar() {

@@ -24,10 +24,30 @@ Part art uses the full material palette and paint tokens in 07.
 | Staff ink | #22303F | Outlines on map, dark UI text |
 | Tracer amber | #FFB23E | Highlights, pressed controls, phosphor readouts, rewards |
 | Cyanotype | #13466B | Drafting Office background |
-| Acetate panel | rgba(18,24,32,0.62) | All floating panels (1 px edge rgba(230,220,195,0.25)) |
+| Acetate panel | rgba(30,58,92,0.86) | Floating chips and panels (1 px edge rgba(160,205,255,0.42)); v0.8.0, was a smoked grey |
+| Button steel | #3A6EA5 → #22476F | Buttons: a top-to-bottom gradient, light text, a 2 px drop and a highlight line (v0.8.0) |
+| Action amber | #FFD06A → #F5961C | The main action on a card or screen, the selected tab or speed, coach tips; dark text #2B1A04 (v0.8.0) |
+| Card | rgba(36,64,98,0.97) → rgba(20,36,58,0.97) | Cards: a blue gradient with a 3 px amber top edge (v0.8.0) |
 | Good / warning / danger | #7BC47F / #E8B04B / #E0533D | Status only (never used to judge parts) |
 
 Faction colours come from `src/parts/paints.json` (see 09).
+
+### 2.1 The bright pass (v0.8.0)
+
+From the producer: "attractive, bright".
+- **Battle skies by light and weather:**
+  - **Day:** a blue sky (#3C8BD9 to #F4ECD2 at the horizon), a soft sun with a glow, white clouds drifting slowly, and blue-grey hills.
+  - **Dusk:** keeps the warm palette.
+  - **Night:** the dusk palette under the night veil.
+  - **Rain:** grey-blue.
+  - Each theme is pre-drawn once per screen size.
+- **Ground:**
+  - lit earth (#7A6146 to #33281D) under a coloured top soil: grass #5E9A3C, road #77736A, forest floor #3D7034, mud #7A5634, rock #8A8C92, sand #D9BC80
+  - trees green with brown trunks
+  - a brighter sea with white foam
+- **Map:** brighter terrain (plains #93BE5E, forest #4F8A41, hills #B9A66A, desert #E6CB8A, sea #2F78B6).
+- **Title:** a gold gradient logo with a dark drop, over the daylight demo battle under a light veil. The menu section labels are pills.
+- **Thumb controls:** deep blue at 40% (at the default opacity) with a near-white rim and glyph, so they read on sky and on earth.
 
 ## 3. Type
 

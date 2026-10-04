@@ -56,6 +56,7 @@ SCREENS.battle = {
     this.closeWheel();
     this.buildControls();
     if (opts.tutorial) setupTutorial(this);   // the guided practice battle (16q)
+    setupCoach(this);                          // direct hints (16r, v0.8.0)
     this.layout();
     audio.setIntensity(0);
     audio.setEra(battleEra(B));
@@ -555,6 +556,7 @@ SCREENS.battle = {
     }
     C.up.hidden = C.down.hidden = !B.me.ballast && !B.me.flier;
     if (this.opts.tutorial) stepTutorial(this);
+    stepCoach(this, dt);
     if (B.result && B.resultT > 1.4 && !this.resultShown) this.showResult();
     stepConfetti(dt);
   },
@@ -729,7 +731,9 @@ SCREENS.battle = {
     }
     // Manual-aim trajectory preview.
     if (this.aim && save.settings.aimAssist && !B.me.destroyed) this.drawAimPreview(g);
-    drawFloaters(g, (x) => view.sx(x), (y) => view.sy(y));
+    let fr = layout.w - layout.safe.r;                 // left of the order chips when they show
+    for (const c of this.c.chips) if (!c.hidden) fr = Math.min(fr, c.x - 6);
+    drawFloaters(g, (x) => view.sx(x), (y) => view.sy(y), fr);
     if (this.frozen) {
       const { w, h, safe } = layout;
       g.fillStyle = 'rgba(19,70,107,0.18)';
@@ -830,6 +834,7 @@ SCREENS.battle = {
     this.drawMinimap(g);
     for (const c of [C.time, C.pause, C.settings, C.recenter]) drawControl(g, c, nowMs, 1);
     for (const c of [C.left, C.right, C.up, C.down, C.special, C.alt, C.swap, C.fire, ...C.chips]) drawControl(g, c, nowMs, ghost);
+    drawCoach(g, this, nowMs);                 // a tip and a ring round its control (16r)
     // Aircraft: throttle, height over the ground and a stall warning. Helicopters: height and order.
     if (B.me.flier && !C.up.hidden) {
       const me = B.me;
